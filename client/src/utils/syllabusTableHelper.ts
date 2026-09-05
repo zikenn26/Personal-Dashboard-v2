@@ -1,12 +1,12 @@
 import { ExamItem, ExamSubject, SyllabusTableColumn, SyllabusTableRow } from '../types';
 
 export const DEFAULT_SYLLABUS_COLUMNS: SyllabusTableColumn[] = [
-  { id: 'col-phase', label: 'Phase', key: 'phase', isCustom: false },
-  { id: 'col-subject', label: 'Paper / Subject', key: 'subject', isCustom: false },
-  { id: 'col-topic', label: 'Syllabus Topic / Unit', key: 'topic', isCustom: false },
-  { id: 'col-status', label: 'Status', key: 'status', isCustom: false },
-  { id: 'col-times', label: 'Times Completed', key: 'timesCompleted', type: 'number', isCustom: false },
-  { id: 'col-remarks', label: 'Remarks & Notes', key: 'remarks', isCustom: false },
+  { id: 'col-phase', label: 'Phase (1/2/3)', key: 'phase', width: 75, isCustom: false },
+  { id: 'col-subject', label: 'Paper / Subject', key: 'subject', width: 170, isCustom: false },
+  { id: 'col-topic', label: 'Syllabus Topic / Unit', key: 'topic', width: 320, isCustom: false },
+  { id: 'col-status', label: 'Status', key: 'status', width: 130, isCustom: false },
+  { id: 'col-times', label: 'Times Completed', key: 'timesCompleted', width: 120, type: 'number', isCustom: false },
+  { id: 'col-remarks', label: 'Remarks & Notes', key: 'remarks', width: 180, isCustom: false },
 ];
 
 export function detectPhaseFromSubjectName(subjectName: string): string {

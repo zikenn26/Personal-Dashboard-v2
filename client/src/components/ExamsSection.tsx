@@ -95,6 +95,14 @@ export const ExamsSection: React.FC<ExamsSectionProps> = ({
     Sound.click(soundEnabled);
   };
 
+  const handleUpdateExamDates = (examId: string, updated: Partial<ExamItem>) => {
+    const updatedList = exams.map((e) =>
+      e.id === examId ? { ...e, ...updated, updatedAt: Date.now() } : e
+    );
+    onUpdateExams(updatedList);
+    Sound.success(soundEnabled);
+  };
+
   // Filtered user exams for "My Exams"
   const filteredMyExams = exams.filter((e) => {
     const matchesSearch =
@@ -448,6 +456,8 @@ export const ExamsSection: React.FC<ExamsSectionProps> = ({
                         Sound.click(soundEnabled);
                       }}
                       onDelete={handleDeleteExam}
+                      onUpdateExam={handleUpdateExamDates}
+                      soundEnabled={soundEnabled}
                     />
                   ))}
 

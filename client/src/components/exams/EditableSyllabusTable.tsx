@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Plus,
   Trash2,
@@ -15,6 +15,9 @@ import {
   Edit2,
   PlusCircle,
   HelpCircle,
+  Check,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { ExamItem, SyllabusTableColumn, SyllabusTableRow } from '../../types';
 import {
@@ -35,10 +38,16 @@ export const EditableSyllabusTable: React.FC<EditableSyllabusTableProps> = ({
 }) => {
   // Rows and Columns State
   const rows = useMemo(() => getOrInitializeSyllabusRows(exam), [exam]);
-  const columns: SyllabusTableColumn[] = useMemo(() => {
+  const [columns, setColumns] = useState<SyllabusTableColumn[]>(() => {
     return exam.syllabusTableColumns && exam.syllabusTableColumns.length > 0
       ? exam.syllabusTableColumns
       : DEFAULT_SYLLABUS_COLUMNS;
+  });
+
+  useEffect(() => {
+    if (exam.syllabusTableColumns && exam.syllabusTableColumns.length > 0) {
+      setColumns(exam.syllabusTableColumns);
+    }
   }, [exam.syllabusTableColumns]);
 
   // Filters & Search
@@ -58,6 +67,14 @@ export const EditableSyllabusTable: React.FC<EditableSyllabusTableProps> = ({
   const [bulkSubject, setBulkSubject] = useState('');
   const [bulkTopicsText, setBulkTopicsText] = useState('');
 
+  // Row Inline Edit State (Editable only when Edit button is clicked, saved on Save / tick)
+  const [editingRowId, setEditingRowId] = useState<string | null>(null);
+  const [draftRow, setDraftRow] = useState<SyllabusTableRow | null>(null);
+
+  // Column Resizing via Drag
+  const resizeStartX = useRef<number>(0);
+  const resizeStartWidth = useRef<number>(0);
+
   // Update rows helper
   const commitRows = (updatedRows: SyllabusTableRow[]) => {
     onUpdateExam({
@@ -69,6 +86,7 @@ export const EditableSyllabusTable: React.FC<EditableSyllabusTableProps> = ({
 
   // Update columns helper
   const commitColumns = (updatedColumns: SyllabusTableColumn[]) => {
+    setColumns(updatedColumns);
     onUpdateExam({
       ...exam,
       syllabusTableColumns: updatedColumns,
@@ -76,39 +94,105 @@ export const EditableSyllabusTable: React.FC<EditableSyllabusTableProps> = ({
     });
   };
 
-  // Row Manipulation
-  const handleCellChange = (rowId: string, fieldKey: string, value: any, isCustom = false) => {
-    const nextRows = rows.map((r) => {
-      if (r.id !== rowId) return r;
-      if (isCustom) {
-        return {
-          ...r,
-          customData: {
-            ...(r.customData || {}),
-            [fieldKey]: value,
-          },
-        };
-      }
-      return {
-        ...r,
-        [fieldKey]: value,
-      };
+  // Row Edit Handlers
+  const startEditRow = (row: SyllabusTableRow) => {
+    setEditingRowId(row.id);
+    setDraftRow({
+      ...row,
+      customData: { ...(row.customData || {}) },
     });
-    commitRows(nextRows);
   };
 
-  const handleIncrementRevision = (rowId: string, delta: number) => {
-    const nextRows = rows.map((r) => {
-      if (r.id !== rowId) return r;
-      const current = r.timesCompleted || 0;
-      const updated = Math.max(0, current + delta);
-      return {
-        ...r,
-        timesCompleted: updated,
-        status: updated > 0 && r.status === 'Not Started' ? ('In Progress' as const) : r.status,
-      };
-    });
+  const cancelEditRow = () => {
+    setEditingRowId(null);
+    setDraftRow(null);
+  };
+
+  const saveDraftRow = () => {
+    if (!draftRow) return;
+    const nextRows = rows.map((r) => (r.id === draftRow.id ? draftRow : r));
     commitRows(nextRows);
+    setEditingRowId(null);
+    setDraftRow(null);
+  };
+
+  const handleDraftCellChange = (fieldKey: string, value: any, isCustom = false) => {
+    if (!draftRow) return;
+    if (isCustom) {
+      setDraftRow({
+        ...draftRow,
+        customData: {
+          ...(draftRow.customData || {}),
+          [fieldKey]: value,
+        },
+      });
+    } else {
+      setDraftRow({
+        ...draftRow,
+        [fieldKey]: value,
+      });
+    }
+  };
+
+  // Increase/Decrease Column Width by delta
+  const handleColumnWidthChange = (colId: string, delta: number) => {
+    const nextCols = columns.map((c) => {
+      if (c.id !== colId) return c;
+      const currentWidth =
+        c.width ||
+        (c.key === 'topic'
+          ? 320
+          : c.key === 'subject'
+          ? 170
+          : c.key === 'phase'
+          ? 75
+          : c.key === 'status'
+          ? 130
+          : c.key === 'timesCompleted'
+          ? 120
+          : 180);
+      const newWidth = Math.max(55, Math.min(600, currentWidth + delta));
+      return { ...c, width: newWidth };
+    });
+    commitColumns(nextCols);
+  };
+
+  // Drag-to-resize column
+  const handleResizeStart = (e: React.MouseEvent, col: SyllabusTableColumn) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizeStartX.current = e.clientX;
+    resizeStartWidth.current =
+      col.width ||
+      (col.key === 'topic'
+        ? 320
+        : col.key === 'subject'
+        ? 170
+        : col.key === 'phase'
+        ? 75
+        : col.key === 'status'
+        ? 130
+        : col.key === 'timesCompleted'
+        ? 120
+        : 180);
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const diff = moveEvent.clientX - resizeStartX.current;
+      const nextWidth = Math.max(55, Math.min(650, resizeStartWidth.current + diff));
+      setColumns((prev) => prev.map((c) => (c.id === col.id ? { ...c, width: nextWidth } : c)));
+    };
+
+    const onMouseUp = () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      setColumns((latestCols) => {
+        commitColumns(latestCols);
+        return latestCols;
+      });
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
   };
 
   const handleAddRow = (preferredPhase?: string) => {
@@ -125,12 +209,17 @@ export const EditableSyllabusTable: React.FC<EditableSyllabusTableProps> = ({
       customData: {},
     };
     commitRows([...rows, newRow]);
+    // Automatically open edit mode for the newly created row
+    startEditRow(newRow);
   };
 
   const handleDeleteRow = (rowId: string) => {
     if (rows.length <= 1) {
       alert('You must keep at least one row in the syllabus spreadsheet.');
       return;
+    }
+    if (editingRowId === rowId) {
+      cancelEditRow();
     }
     commitRows(rows.filter((r) => r.id !== rowId));
   };
@@ -232,6 +321,47 @@ export const EditableSyllabusTable: React.FC<EditableSyllabusTableProps> = ({
     };
   }, [rows]);
 
+  const renderPhaseDisplay = (phase: string) => {
+    switch (phase) {
+      case 'Prelims':
+        return (
+          <span
+            className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 font-extrabold text-xs border border-amber-300 dark:border-amber-800/60 shadow-2xs"
+            title="1: Prelims"
+          >
+            1
+          </span>
+        );
+      case 'Mains':
+        return (
+          <span
+            className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-300 font-extrabold text-xs border border-blue-300 dark:border-blue-800/60 shadow-2xs"
+            title="2: Mains"
+          >
+            2
+          </span>
+        );
+      case 'Interview':
+        return (
+          <span
+            className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-purple-100 dark:bg-purple-950/80 text-purple-800 dark:text-purple-300 font-extrabold text-xs border border-purple-300 dark:border-purple-800/60 shadow-2xs"
+            title="3: Interview"
+          >
+            3
+          </span>
+        );
+      default:
+        return (
+          <span
+            className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-bold text-xs"
+            title={phase}
+          >
+            {phase ? phase.charAt(0) : '1'}
+          </span>
+        );
+    }
+  };
+
   return (
     <div id="editable-syllabus-spreadsheet" className="space-y-4">
       {/* ========================================================================= */}
@@ -315,7 +445,8 @@ export const EditableSyllabusTable: React.FC<EditableSyllabusTableProps> = ({
                   : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 hover:bg-amber-100 border border-amber-200 dark:border-amber-900/50'
               }`}
             >
-              <span>📑 Phase 1: Prelims</span>
+              <span className="w-4 h-4 rounded-full bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100 font-bold inline-flex items-center justify-center text-[10px]">1</span>
+              <span>Prelims</span>
               <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/30 font-bold">
                 {stats.prelimsCount}
               </span>
@@ -329,7 +460,8 @@ export const EditableSyllabusTable: React.FC<EditableSyllabusTableProps> = ({
                   : 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100 border border-blue-200 dark:border-blue-900/50'
               }`}
             >
-              <span>📝 Phase 2: Mains</span>
+              <span className="w-4 h-4 rounded-full bg-blue-200 dark:bg-blue-900 text-blue-900 dark:text-blue-100 font-bold inline-flex items-center justify-center text-[10px]">2</span>
+              <span>Mains</span>
               <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/30 font-bold">
                 {stats.mainsCount}
               </span>
@@ -343,7 +475,8 @@ export const EditableSyllabusTable: React.FC<EditableSyllabusTableProps> = ({
                   : 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 hover:bg-purple-100 border border-purple-200 dark:border-purple-900/50'
               }`}
             >
-              <span>🎙️ Phase 3: Interview</span>
+              <span className="w-4 h-4 rounded-full bg-purple-200 dark:bg-purple-900 text-purple-900 dark:text-purple-100 font-bold inline-flex items-center justify-center text-[10px]">3</span>
+              <span>Interview</span>
               <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/30 font-bold">
                 {stats.interviewCount}
               </span>
@@ -411,67 +544,99 @@ export const EditableSyllabusTable: React.FC<EditableSyllabusTableProps> = ({
       </div>
 
       {/* ========================================================================= */}
-      {/* 3. EXCEL-LIKE EDITABLE TABLE */}
+      {/* 3. EXCEL-LIKE TABULAR SPREADSHEET */}
       {/* ========================================================================= */}
-      <div className="border border-gray-200 dark:border-gray-700/90 rounded-xl overflow-hidden bg-white dark:bg-gray-800/90 shadow-2xs">
+      <div className="border border-gray-300 dark:border-gray-700 rounded-lg overflow-hidden bg-white dark:bg-gray-900 shadow-2xs">
         <div className="overflow-x-auto max-h-[580px] overflow-y-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-gray-50 dark:bg-gray-900/80 sticky top-0 z-10 text-gray-700 dark:text-gray-300 font-semibold border-b border-gray-200 dark:border-gray-700">
+          <table className="w-full text-left text-xs border-collapse font-sans">
+            <thead className="bg-[#F8FAFC] dark:bg-gray-800/90 sticky top-0 z-10 text-gray-700 dark:text-gray-200 font-semibold border-b-2 border-gray-300 dark:border-gray-700 shadow-2xs select-none">
               <tr>
-                <th className="py-2.5 px-3 w-12 text-center text-gray-400 border-r border-gray-200 dark:border-gray-700/60">
+                <th className="py-2 px-2.5 w-10 text-center text-gray-400 dark:text-gray-500 border-r border-gray-300 dark:border-gray-700 font-mono text-[11px]">
                   #
                 </th>
-                {columns.map((col) => (
-                  <th
-                    key={col.id}
-                    className={`py-2.5 px-3 border-r border-gray-200 dark:border-gray-700/60 whitespace-nowrap ${
-                      col.key === 'topic'
-                        ? 'min-w-[280px]'
-                        : col.key === 'subject'
-                        ? 'min-w-[170px]'
-                        : col.key === 'phase'
-                        ? 'min-w-[110px]'
-                        : col.key === 'status'
-                        ? 'min-w-[130px]'
-                        : col.key === 'timesCompleted'
-                        ? 'min-w-[120px] text-center'
-                        : 'min-w-[160px]'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-1.5">
-                      <span>{col.label}</span>
-                      {col.isCustom && (
-                        <div className="flex items-center gap-1">
+                {columns.map((col) => {
+                  const colWidth =
+                    col.width ||
+                    (col.key === 'topic'
+                      ? 320
+                      : col.key === 'subject'
+                      ? 170
+                      : col.key === 'phase'
+                      ? 75
+                      : col.key === 'status'
+                      ? 130
+                      : col.key === 'timesCompleted'
+                      ? 120
+                      : 180);
+
+                  return (
+                    <th
+                      key={col.id}
+                      style={{ width: `${colWidth}px`, minWidth: `${Math.max(50, colWidth)}px` }}
+                      className="relative py-2 px-2.5 border-r border-gray-300 dark:border-gray-700 whitespace-nowrap group/th bg-[#F8FAFC] dark:bg-gray-800"
+                    >
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="truncate text-xs font-bold text-gray-800 dark:text-gray-100">
+                          {col.label}
+                        </span>
+                        {/* Top column resize buttons */}
+                        <div className="flex items-center gap-0.5 opacity-80 group-hover/th:opacity-100 transition-opacity">
                           <button
                             type="button"
-                            onClick={() => {
-                              setEditingColumn(col);
-                              setEditColumnName(col.label);
-                            }}
-                            className="text-gray-400 hover:text-indigo-600 transition-colors"
-                            title="Rename column"
+                            onClick={() => handleColumnWidthChange(col.id, -25)}
+                            className="w-4 h-4 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white flex items-center justify-center text-[10px] font-bold cursor-pointer transition-colors"
+                            title="Decrease column size"
                           >
-                            <Edit2 className="w-3 h-3" />
+                            -
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleDeleteColumn(col.id)}
-                            className="text-gray-400 hover:text-red-600 transition-colors"
-                            title="Delete custom column"
+                            onClick={() => handleColumnWidthChange(col.id, 25)}
+                            className="w-4 h-4 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white flex items-center justify-center text-[10px] font-bold cursor-pointer transition-colors"
+                            title="Increase column size"
                           >
-                            <Trash2 className="w-3 h-3" />
+                            +
                           </button>
+                          {col.isCustom && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingColumn(col);
+                                  setEditColumnName(col.label);
+                                }}
+                                className="p-0.5 text-gray-400 hover:text-indigo-600 transition-colors cursor-pointer"
+                                title="Rename column"
+                              >
+                                <Edit2 className="w-2.5 h-2.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteColumn(col.id)}
+                                className="p-0.5 text-gray-400 hover:text-red-600 transition-colors cursor-pointer"
+                                title="Delete custom column"
+                              >
+                                <Trash2 className="w-2.5 h-2.5" />
+                              </button>
+                            </>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  </th>
-                ))}
-                <th className="py-2.5 px-3 w-12 text-center text-gray-400">
+                      </div>
+                      {/* Drag-to-resize handle */}
+                      <div
+                        onMouseDown={(e) => handleResizeStart(e, col)}
+                        className="absolute top-0 right-0 w-1.5 h-full cursor-col-resize hover:bg-indigo-500 active:bg-indigo-600 transition-colors"
+                        title="Drag to resize column"
+                      />
+                    </th>
+                  );
+                })}
+                <th className="py-2 px-2.5 w-16 text-center text-gray-500 dark:text-gray-400 font-bold border-b border-gray-300 dark:border-gray-700">
                   Actions
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-700/60">
+            <tbody className="divide-y divide-gray-200 dark:divide-gray-700/80">
               {filteredRows.length === 0 ? (
                 <tr>
                   <td colSpan={columns.length + 2} className="py-8 text-center text-gray-500 dark:text-gray-400">
@@ -480,182 +645,323 @@ export const EditableSyllabusTable: React.FC<EditableSyllabusTableProps> = ({
                 </tr>
               ) : (
                 filteredRows.map((row, idx) => {
-                  const phaseColor =
-                    row.phase === 'Prelims'
-                      ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
-                      : row.phase === 'Mains'
-                      ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
-                      : 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800';
+                  const isEditing = editingRowId === row.id;
 
                   return (
                     <tr
                       key={row.id}
-                      className="hover:bg-gray-50/80 dark:hover:bg-gray-700/40 transition-colors group"
+                      className={`transition-colors group ${
+                        isEditing
+                          ? 'bg-indigo-50/50 dark:bg-indigo-950/30'
+                          : 'hover:bg-gray-50/80 dark:hover:bg-gray-800/40'
+                      }`}
                     >
                       {/* Row Index */}
-                      <td className="py-2 px-3 text-center text-[11px] text-gray-400 border-r border-gray-100 dark:border-gray-700/40 font-mono">
+                      <td className="py-1.5 px-2 text-center text-[11px] text-gray-400 dark:text-gray-500 border-r border-gray-200 dark:border-gray-700/80 font-mono">
                         {idx + 1}
                       </td>
 
                       {/* Columns */}
                       {columns.map((col) => {
+                        const colWidth =
+                          col.width ||
+                          (col.key === 'topic'
+                            ? 320
+                            : col.key === 'subject'
+                            ? 170
+                            : col.key === 'phase'
+                            ? 75
+                            : col.key === 'status'
+                            ? 130
+                            : col.key === 'timesCompleted'
+                            ? 120
+                            : 180);
+
+                        // 1. Phase column: Space-saving 1, 2, 3 with different colours
                         if (col.key === 'phase') {
                           return (
-                            <td key={col.id} className="py-1 px-2 border-r border-gray-100 dark:border-gray-700/40">
-                              <select
-                                value={row.phase}
-                                onChange={(e) => handleCellChange(row.id, 'phase', e.target.value)}
-                                className={`text-[11px] font-bold px-2 py-1 rounded-md border focus:outline-none cursor-pointer ${phaseColor}`}
-                              >
-                                <option value="Prelims">Prelims</option>
-                                <option value="Mains">Mains</option>
-                                <option value="Interview">Interview</option>
-                              </select>
+                            <td
+                              key={col.id}
+                              style={{ width: `${colWidth}px`, minWidth: `${Math.max(50, colWidth)}px` }}
+                              className="py-1.5 px-2 border-r border-gray-200 dark:border-gray-700/80 text-center"
+                            >
+                              {isEditing ? (
+                                <select
+                                  value={draftRow?.phase || 'Prelims'}
+                                  onChange={(e) => handleDraftCellChange('phase', e.target.value)}
+                                  className="w-full text-xs font-bold px-1 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                                >
+                                  <option value="Prelims">1: Prelims</option>
+                                  <option value="Mains">2: Mains</option>
+                                  <option value="Interview">3: Interview</option>
+                                </select>
+                              ) : (
+                                renderPhaseDisplay(row.phase)
+                              )}
                             </td>
                           );
                         }
 
+                        // 2. Paper / Subject column
                         if (col.key === 'subject') {
                           return (
-                            <td key={col.id} className="py-1 px-2 border-r border-gray-100 dark:border-gray-700/40">
-                              <input
-                                type="text"
-                                value={row.subject || ''}
-                                onChange={(e) => handleCellChange(row.id, 'subject', e.target.value)}
-                                placeholder="Paper / Subject name"
-                                className="w-full bg-transparent px-1.5 py-1 rounded hover:bg-gray-100/60 dark:hover:bg-gray-700/60 focus:bg-white dark:focus:bg-gray-800 focus:ring-1 focus:ring-indigo-500 font-medium text-gray-800 dark:text-gray-200 outline-none text-xs"
-                              />
+                            <td
+                              key={col.id}
+                              style={{ width: `${colWidth}px`, minWidth: `${Math.max(50, colWidth)}px` }}
+                              className="py-1.5 px-2.5 border-r border-gray-200 dark:border-gray-700/80"
+                            >
+                              {isEditing ? (
+                                <input
+                                  type="text"
+                                  value={draftRow?.subject || ''}
+                                  onChange={(e) => handleDraftCellChange('subject', e.target.value)}
+                                  placeholder="Paper / Subject name"
+                                  className="w-full px-2 py-1 rounded bg-white dark:bg-gray-800 border border-indigo-300 dark:border-indigo-600 text-xs font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                />
+                              ) : (
+                                <div
+                                  className="text-xs font-semibold text-gray-800 dark:text-gray-200 truncate"
+                                  title={row.subject}
+                                >
+                                  {row.subject || '-'}
+                                </div>
+                              )}
                             </td>
                           );
                         }
 
+                        // 3. Topic / Syllabus Unit column
                         if (col.key === 'topic') {
                           return (
-                            <td key={col.id} className="py-1 px-2 border-r border-gray-100 dark:border-gray-700/40">
-                              <input
-                                type="text"
-                                value={row.topic || ''}
-                                onChange={(e) => handleCellChange(row.id, 'topic', e.target.value)}
-                                placeholder="Topic / Syllabus Unit..."
-                                className="w-full bg-transparent px-1.5 py-1 rounded hover:bg-gray-100/60 dark:hover:bg-gray-700/60 focus:bg-white dark:focus:bg-gray-800 focus:ring-1 focus:ring-indigo-500 text-gray-900 dark:text-gray-100 outline-none text-xs"
-                              />
+                            <td
+                              key={col.id}
+                              style={{ width: `${colWidth}px`, minWidth: `${Math.max(50, colWidth)}px` }}
+                              className="py-1.5 px-2.5 border-r border-gray-200 dark:border-gray-700/80"
+                            >
+                              {isEditing ? (
+                                <input
+                                  type="text"
+                                  value={draftRow?.topic || ''}
+                                  onChange={(e) => handleDraftCellChange('topic', e.target.value)}
+                                  placeholder="Topic / Syllabus Unit..."
+                                  className="w-full px-2 py-1 rounded bg-white dark:bg-gray-800 border border-indigo-300 dark:border-indigo-600 text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                />
+                              ) : (
+                                <div
+                                  className="text-xs text-gray-900 dark:text-gray-100 font-normal break-words"
+                                  title={row.topic}
+                                >
+                                  {row.topic || '-'}
+                                </div>
+                              )}
                             </td>
                           );
                         }
 
+                        // 4. Status column
                         if (col.key === 'status') {
                           const statusBg =
                             row.status === 'Completed'
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-200 dark:border-emerald-700'
                               : row.status === 'In Progress'
-                              ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800'
+                              ? 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/80 dark:text-blue-200 dark:border-blue-700'
                               : row.status === 'Revision Needed'
-                              ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
-                              : 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700';
+                              ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/80 dark:text-amber-200 dark:border-amber-700'
+                              : 'bg-gray-100 text-gray-700 border-gray-300 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700';
 
                           return (
-                            <td key={col.id} className="py-1 px-2 border-r border-gray-100 dark:border-gray-700/40">
-                              <select
-                                value={row.status}
-                                onChange={(e) => {
-                                  const newStatus = e.target.value as any;
-                                  const nextRows = rows.map((r) => {
-                                    if (r.id !== row.id) return r;
-                                    return {
-                                      ...r,
-                                      status: newStatus,
-                                      timesCompleted:
-                                        newStatus === 'Completed' && (r.timesCompleted || 0) === 0
-                                          ? 1
-                                          : r.timesCompleted,
-                                    };
-                                  });
-                                  commitRows(nextRows);
-                                }}
-                                className={`text-[11px] font-semibold px-2 py-1 rounded-md border focus:outline-none cursor-pointer ${statusBg}`}
-                              >
-                                <option value="Not Started">Not Started</option>
-                                <option value="In Progress">In Progress</option>
-                                <option value="Completed">Completed</option>
-                                <option value="Revision Needed">Revision Needed</option>
-                              </select>
+                            <td
+                              key={col.id}
+                              style={{ width: `${colWidth}px`, minWidth: `${Math.max(50, colWidth)}px` }}
+                              className="py-1.5 px-2 border-r border-gray-200 dark:border-gray-700/80"
+                            >
+                              {isEditing ? (
+                                <select
+                                  value={draftRow?.status || 'Not Started'}
+                                  onChange={(e) => {
+                                    const nextStatus = e.target.value as any;
+                                    handleDraftCellChange('status', nextStatus);
+                                    if (nextStatus === 'Completed' && (!draftRow?.timesCompleted || draftRow.timesCompleted === 0)) {
+                                      handleDraftCellChange('timesCompleted', 1);
+                                    }
+                                  }}
+                                  className="w-full text-xs font-semibold px-2 py-1 rounded bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:outline-none cursor-pointer"
+                                >
+                                  <option value="Not Started">Not Started</option>
+                                  <option value="In Progress">In Progress</option>
+                                  <option value="Completed">Completed</option>
+                                  <option value="Revision Needed">Revision Needed</option>
+                                </select>
+                              ) : (
+                                <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold border ${statusBg}`}>
+                                  {row.status}
+                                </span>
+                              )}
                             </td>
                           );
                         }
 
+                        // 5. Times Completed / Revisions column
                         if (col.key === 'timesCompleted') {
                           return (
-                            <td key={col.id} className="py-1 px-2 border-r border-gray-100 dark:border-gray-700/40 text-center">
-                              <div className="inline-flex items-center gap-1 bg-gray-50 dark:bg-gray-800 px-1 py-0.5 rounded border border-gray-200 dark:border-gray-700">
-                                <button
-                                  type="button"
-                                  onClick={() => handleIncrementRevision(row.id, -1)}
-                                  className="w-4 h-4 rounded text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 flex items-center justify-center text-[10px] font-bold cursor-pointer"
-                                  title="Decrease revisions"
-                                >
-                                  -
-                                </button>
-                                <input
-                                  type="number"
-                                  min={0}
-                                  value={row.timesCompleted || 0}
-                                  onChange={(e) =>
-                                    handleCellChange(row.id, 'timesCompleted', Math.max(0, parseInt(e.target.value) || 0))
-                                  }
-                                  className="w-8 text-center bg-transparent font-mono font-bold text-gray-800 dark:text-gray-200 outline-none text-xs"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => handleIncrementRevision(row.id, 1)}
-                                  className="w-4 h-4 rounded text-indigo-600 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 flex items-center justify-center text-[10px] font-bold cursor-pointer"
-                                  title="Increase revisions completed"
-                                >
-                                  +
-                                </button>
-                              </div>
+                            <td
+                              key={col.id}
+                              style={{ width: `${colWidth}px`, minWidth: `${Math.max(50, colWidth)}px` }}
+                              className="py-1.5 px-2 border-r border-gray-200 dark:border-gray-700/80 text-center"
+                            >
+                              {isEditing ? (
+                                <div className="inline-flex items-center gap-1 bg-white dark:bg-gray-800 px-1 py-0.5 rounded border border-gray-300 dark:border-gray-600">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setDraftRow((prev) =>
+                                        prev
+                                          ? { ...prev, timesCompleted: Math.max(0, (prev.timesCompleted || 0) - 1) }
+                                          : prev
+                                      )
+                                    }
+                                    className="w-4 h-4 rounded text-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700 flex items-center justify-center text-[10px] font-bold cursor-pointer"
+                                    title="Decrease revisions"
+                                  >
+                                    -
+                                  </button>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={draftRow?.timesCompleted ?? 0}
+                                    onChange={(e) =>
+                                      handleDraftCellChange('timesCompleted', Math.max(0, parseInt(e.target.value) || 0))
+                                    }
+                                    className="w-8 text-center bg-transparent font-mono font-bold text-gray-900 dark:text-white outline-none text-xs"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setDraftRow((prev) =>
+                                        prev
+                                          ? { ...prev, timesCompleted: (prev.timesCompleted || 0) + 1 }
+                                          : prev
+                                      )
+                                    }
+                                    className="w-4 h-4 rounded text-indigo-600 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 flex items-center justify-center text-[10px] font-bold cursor-pointer"
+                                    title="Increase revisions"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700">
+                                  {row.timesCompleted || 0}
+                                </span>
+                              )}
                             </td>
                           );
                         }
 
+                        // 6. Remarks column
                         if (col.key === 'remarks') {
                           return (
-                            <td key={col.id} className="py-1 px-2 border-r border-gray-100 dark:border-gray-700/40">
-                              <input
-                                type="text"
-                                value={row.remarks || ''}
-                                onChange={(e) => handleCellChange(row.id, 'remarks', e.target.value)}
-                                placeholder="Notes, reference links, focus areas..."
-                                className="w-full bg-transparent px-1.5 py-1 rounded hover:bg-gray-100/60 dark:hover:bg-gray-700/60 focus:bg-white dark:focus:bg-gray-800 focus:ring-1 focus:ring-indigo-500 text-gray-700 dark:text-gray-300 outline-none text-xs"
-                              />
+                            <td
+                              key={col.id}
+                              style={{ width: `${colWidth}px`, minWidth: `${Math.max(50, colWidth)}px` }}
+                              className="py-1.5 px-2.5 border-r border-gray-200 dark:border-gray-700/80"
+                            >
+                              {isEditing ? (
+                                <input
+                                  type="text"
+                                  value={draftRow?.remarks || ''}
+                                  onChange={(e) => handleDraftCellChange('remarks', e.target.value)}
+                                  placeholder="Notes, reference links, focus areas..."
+                                  className="w-full px-2 py-1 rounded bg-white dark:bg-gray-800 border border-indigo-300 dark:border-indigo-600 text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                />
+                              ) : (
+                                <div
+                                  className="text-xs text-gray-600 dark:text-gray-300 truncate"
+                                  title={row.remarks}
+                                >
+                                  {row.remarks || '-'}
+                                </div>
+                              )}
                             </td>
                           );
                         }
 
                         // Custom Columns
-                        const customVal = (row.customData && row.customData[col.key]) || '';
+                        const customVal = isEditing
+                          ? draftRow?.customData?.[col.key] || ''
+                          : row.customData?.[col.key] || '';
+
                         return (
-                          <td key={col.id} className="py-1 px-2 border-r border-gray-100 dark:border-gray-700/40">
-                            <input
-                              type="text"
-                              value={customVal}
-                              onChange={(e) => handleCellChange(row.id, col.key, e.target.value, true)}
-                              placeholder={`Enter ${col.label}...`}
-                              className="w-full bg-transparent px-1.5 py-1 rounded hover:bg-gray-100/60 dark:hover:bg-gray-700/60 focus:bg-white dark:focus:bg-gray-800 focus:ring-1 focus:ring-indigo-500 text-gray-700 dark:text-gray-300 outline-none text-xs"
-                            />
+                          <td
+                            key={col.id}
+                            style={{ width: `${colWidth}px`, minWidth: `${Math.max(50, colWidth)}px` }}
+                            className="py-1.5 px-2.5 border-r border-gray-200 dark:border-gray-700/80"
+                          >
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                value={customVal}
+                                onChange={(e) => handleDraftCellChange(col.key, e.target.value, true)}
+                                placeholder={`Enter ${col.label}...`}
+                                className="w-full px-2 py-1 rounded bg-white dark:bg-gray-800 border border-indigo-300 dark:border-indigo-600 text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              />
+                            ) : (
+                              <div
+                                className="text-xs text-gray-600 dark:text-gray-300 truncate"
+                                title={customVal}
+                              >
+                                {customVal || '-'}
+                              </div>
+                            )}
                           </td>
                         );
                       })}
 
-                      {/* Row Actions */}
-                      <td className="py-1 px-2 text-center">
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteRow(row.id)}
-                          className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-950/40 text-gray-400 hover:text-red-500 transition-colors opacity-60 group-hover:opacity-100 cursor-pointer"
-                          title="Delete row"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                      {/* Row Actions: Edit and Delete buttons, Save (tick) when editing */}
+                      <td className="py-1.5 px-2 text-center border-b border-gray-200 dark:border-gray-700/80">
+                        {isEditing ? (
+                          <div className="flex items-center justify-center gap-1">
+                            {/* Save (tick) button */}
+                            <button
+                              type="button"
+                              onClick={saveDraftRow}
+                              className="p-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-colors cursor-pointer"
+                              title="Save changes (tick)"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                            {/* Cancel button */}
+                            <button
+                              type="button"
+                              onClick={cancelEditRow}
+                              className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 transition-colors cursor-pointer"
+                              title="Cancel editing"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-center gap-1">
+                            {/* Edit button next to delete */}
+                            <button
+                              type="button"
+                              onClick={() => startEditRow(row)}
+                              className="p-1 rounded hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+                              title="Edit row"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            {/* Delete button */}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteRow(row.id)}
+                              className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-950/40 text-gray-400 hover:text-red-500 transition-colors cursor-pointer"
+                              title="Delete row"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );
@@ -666,14 +972,14 @@ export const EditableSyllabusTable: React.FC<EditableSyllabusTableProps> = ({
         </div>
 
         {/* Quick Add Row Footer */}
-        <div className="bg-gray-50/70 dark:bg-gray-900/60 px-4 py-2 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between text-xs text-gray-500">
+        <div className="bg-[#F8FAFC] dark:bg-gray-800/80 px-4 py-2.5 border-t border-gray-300 dark:border-gray-700 flex items-center justify-between text-xs text-gray-600 dark:text-gray-400">
           <button
             type="button"
             onClick={() => handleAddRow()}
             className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400 font-semibold hover:underline cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>+ Add new topic row below</span>
+            <span>+ Add new topic row (starts edit mode)</span>
           </button>
           <span>Showing {filteredRows.length} of {rows.length} rows</span>
         </div>

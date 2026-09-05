@@ -482,6 +482,7 @@ export interface SyllabusTableColumn {
   key: string;
   type?: 'text' | 'number' | 'select';
   isCustom?: boolean;
+  width?: number;
 }
 
 export interface SyllabusTableRow {
@@ -504,6 +505,8 @@ export interface ExamItem {
   targetExamDate: string; // YYYY-MM-DD
   registrationStartDate?: string;
   registrationEndDate?: string;
+  registrationDate?: string;
+  firstPhaseExamDate?: string;
   currentStage?: string;
   officialWebsite?: string;
   badgeColor?: string;

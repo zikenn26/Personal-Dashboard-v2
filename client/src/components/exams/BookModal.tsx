@@ -30,13 +30,14 @@ export const BookModal: React.FC<BookModalProps> = ({
   const [link, setLink] = useState('');
 
   useEffect(() => {
+    if (!isOpen) return;
     if (bookToEdit) {
-      setSubjectId(bookToEdit.subjectId);
-      setTitle(bookToEdit.title);
+      setSubjectId(bookToEdit.subjectId || defaultSubjectId || subjects[0]?.id || '');
+      setTitle(bookToEdit.title || '');
       setAuthor(bookToEdit.author || '');
-      setStatus(bookToEdit.status);
-      setCurrentPage(bookToEdit.currentPage ? String(bookToEdit.currentPage) : '');
-      setTotalPages(bookToEdit.totalPages ? String(bookToEdit.totalPages) : '');
+      setStatus(bookToEdit.status || 'to_read');
+      setCurrentPage(bookToEdit.currentPage !== undefined ? String(bookToEdit.currentPage) : '');
+      setTotalPages(bookToEdit.totalPages !== undefined ? String(bookToEdit.totalPages) : '');
       setPriority(bookToEdit.priority || 'high');
       setNotes(bookToEdit.notes || '');
       setLink(bookToEdit.link || '');
@@ -51,7 +52,7 @@ export const BookModal: React.FC<BookModalProps> = ({
       setNotes('');
       setLink('');
     }
-  }, [bookToEdit, defaultSubjectId, subjects, isOpen]);
+  }, [isOpen, bookToEdit?.id]);
 
   if (!isOpen) return null;
 

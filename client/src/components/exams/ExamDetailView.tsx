@@ -34,6 +34,7 @@ import { BookModal } from './BookModal';
 import { SubjectModal } from './SubjectModal';
 import { StageModal } from './StageModal';
 import { EditableSyllabusTable } from './EditableSyllabusTable';
+import { EditableBooksTable } from './EditableBooksTable';
 import { ExamPhasesView } from './ExamPhasesView';
 import { Sound } from '../../utils/audio';
 
@@ -81,6 +82,12 @@ export const ExamDetailView: React.FC<ExamDetailViewProps> = ({
   const [isEditingMeta, setIsEditingMeta] = useState(false);
   const [metaName, setMetaName] = useState(exam.name);
   const [metaTargetDate, setMetaTargetDate] = useState(exam.targetExamDate);
+  const [metaRegDate, setMetaRegDate] = useState(
+    exam.registrationDate || exam.registrationStartDate || ''
+  );
+  const [metaFirstPhaseDate, setMetaFirstPhaseDate] = useState(
+    exam.firstPhaseExamDate || ''
+  );
   const [metaRegStart, setMetaRegStart] = useState(exam.registrationStartDate || '');
   const [metaRegEnd, setMetaRegEnd] = useState(exam.registrationEndDate || '');
   const [metaConductingBody, setMetaConductingBody] = useState(exam.conductingBody);
@@ -268,8 +275,10 @@ export const ExamDetailView: React.FC<ExamDetailViewProps> = ({
     onUpdateExam({
       name: metaName.trim(),
       targetExamDate: metaTargetDate,
-      registrationStartDate: metaRegStart || undefined,
-      registrationEndDate: metaRegEnd || undefined,
+      registrationDate: metaRegDate.trim() || undefined,
+      registrationStartDate: metaRegDate.trim() || metaRegStart.trim() || undefined,
+      registrationEndDate: metaRegEnd.trim() || undefined,
+      firstPhaseExamDate: metaFirstPhaseDate.trim() || undefined,
       conductingBody: metaConductingBody.trim(),
       officialWebsite: metaWebsite.trim() || undefined,
       updatedAt: Date.now(),
@@ -304,18 +313,33 @@ export const ExamDetailView: React.FC<ExamDetailViewProps> = ({
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <span className="text-xl sm:text-2xl">{exam.icon || '🏛️'}</span>
-              <h1 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white tracking-tight truncate">
+              <span className="text-xl sm:text-2xl shrink-0">{exam.icon || '🏛️'}</span>
+              <h1 className="workspace-heading font-extrabold text-[#111827] dark:text-white tracking-tight truncate max-w-xl" title={exam.name}>
                 {exam.name}
               </h1>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/50 dark:border-indigo-800/50">
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/50 dark:border-indigo-800/50 shrink-0">
                 {exam.shortName}
               </span>
             </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 flex items-center gap-2">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex flex-wrap items-center gap-2">
               <span>Conducted by {exam.conductingBody}</span>
+              <span>•</span>
+              <span className="inline-flex items-center gap-1 font-medium text-emerald-700 dark:text-emerald-400">
+                <span className="font-bold">Reg:</span>
+                <span>{exam.registrationDate || exam.registrationStartDate || 'Not set'}</span>
+              </span>
+              <span>•</span>
+              <span className="inline-flex items-center gap-1 font-medium text-amber-700 dark:text-amber-400">
+                <span className="font-bold">Phase 1 Exam:</span>
+                <span>{exam.firstPhaseExamDate || 'Not set'}</span>
+              </span>
+              <span>•</span>
+              <span className="inline-flex items-center gap-1 font-medium text-blue-700 dark:text-blue-400">
+                <span className="font-bold">Target:</span>
+                <span>{exam.targetExamDate}</span>
+              </span>
               {exam.officialWebsite && (
                 <>
                   <span>•</span>
@@ -367,13 +391,37 @@ export const ExamDetailView: React.FC<ExamDetailViewProps> = ({
             </div>
             <div>
               <label className="block text-[11px] font-bold text-gray-600 dark:text-gray-300 mb-1">
-                Target Exam Date
+                Phase 1 Exam Date
+              </label>
+              <input
+                type="date"
+                value={metaFirstPhaseDate}
+                onChange={(e) => setMetaFirstPhaseDate(e.target.value)}
+                className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-xs text-gray-900 dark:text-white"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-gray-600 dark:text-gray-300 mb-1">
+                Target / Final Exam Date
               </label>
               <input
                 type="date"
                 value={metaTargetDate}
                 onChange={(e) => setMetaTargetDate(e.target.value)}
                 required
+                className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-xs text-gray-900 dark:text-white"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            <div>
+              <label className="block text-[11px] font-bold text-gray-600 dark:text-gray-300 mb-1">
+                Registration Date
+              </label>
+              <input
+                type="date"
+                value={metaRegDate}
+                onChange={(e) => setMetaRegDate(e.target.value)}
                 className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-xs text-gray-900 dark:text-white"
               />
             </div>
@@ -385,19 +433,6 @@ export const ExamDetailView: React.FC<ExamDetailViewProps> = ({
                 type="text"
                 value={metaConductingBody}
                 onChange={(e) => setMetaConductingBody(e.target.value)}
-                className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-xs text-gray-900 dark:text-white"
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-[11px] font-bold text-gray-600 dark:text-gray-300 mb-1">
-                Registration Start Date
-              </label>
-              <input
-                type="date"
-                value={metaRegStart}
-                onChange={(e) => setMetaRegStart(e.target.value)}
                 className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-xs text-gray-900 dark:text-white"
               />
             </div>
@@ -565,163 +600,16 @@ export const ExamDetailView: React.FC<ExamDetailViewProps> = ({
 
 
       {/* ========================================================================= */}
-      {/* TAB 2: BOOKS SECTION */}
+      {/* TAB 2: BOOKS SECTION (Excel & Tabular List View) */}
       {/* ========================================================================= */}
       {activeTab === 'books' && (
-        <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h3 className="text-base font-bold text-gray-900 dark:text-white">
-                Books & Reference Materials Followed
-              </h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Organized consistently by examination subjects. Track your reading progress and revisions.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => handleOpenAddBook()}
-              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs transition-all flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Book Followed</span>
-            </button>
-          </div>
-
-          {/* Grouped by consistent subjects */}
-          <div className="space-y-6">
-            {exam.subjects.map((subject) => {
-              const subjectBooks = exam.books.filter((b) => b.subjectId === subject.id);
-
-              return (
-                <div
-                  key={subject.id}
-                  className="p-5 rounded-2xl bg-white dark:bg-[#111827] border border-gray-200 dark:border-gray-800 shadow-2xs space-y-3"
-                >
-                  <div className="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-gray-800">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300">
-                        {subject.code || 'SUBJECT'}
-                      </span>
-                      <h4 className="text-sm font-bold text-gray-900 dark:text-white">
-                        {subject.name}
-                      </h4>
-                      <span className="text-xs text-gray-400 font-medium">
-                        ({subjectBooks.length} {subjectBooks.length === 1 ? 'book' : 'books'})
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleOpenAddBook(subject.id)}
-                      className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Add Book for this Subject</span>
-                    </button>
-                  </div>
-
-                  {subjectBooks.length === 0 ? (
-                    <div className="p-4 rounded-xl bg-gray-50/60 dark:bg-gray-800/40 border border-dashed border-gray-200 dark:border-gray-700 text-center">
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        No books added yet for <strong>{subject.name}</strong>. Click the "+" button above to add a book you are following.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {subjectBooks.map((book) => {
-                        const hasPages = book.currentPage !== undefined && book.totalPages !== undefined;
-                        const pagePct = hasPages && book.totalPages! > 0
-                          ? Math.min(100, Math.round((book.currentPage! / book.totalPages!) * 100))
-                          : 0;
-
-                        const statusBadge = {
-                          to_read: { label: 'To Read', bg: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
-                          reading: { label: 'Reading', bg: 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 font-bold' },
-                          completed: { label: 'Completed', bg: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 font-bold' },
-                          revision: { label: 'Revision', bg: 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 font-bold' },
-                        }[book.status];
-
-                        return (
-                          <div
-                            key={book.id}
-                            className="p-3.5 rounded-xl border border-gray-200 dark:border-gray-800 hover:border-indigo-400/50 dark:hover:border-indigo-500/50 bg-white dark:bg-gray-800/40 flex flex-col justify-between transition-all"
-                          >
-                            <div>
-                              <div className="flex items-start justify-between gap-2 mb-1.5">
-                                <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${statusBadge.bg}`}>
-                                  {statusBadge.label}
-                                </span>
-                                <div className="flex items-center gap-1">
-                                  {book.link && (
-                                    <a
-                                      href={book.link}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="p-1 text-gray-400 hover:text-indigo-600"
-                                      title="Open book link"
-                                    >
-                                      <ExternalLink className="w-3.5 h-3.5" />
-                                    </a>
-                                  )}
-                                  <button
-                                    type="button"
-                                    onClick={() => handleEditBook(book)}
-                                    className="p-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded"
-                                    title="Edit book"
-                                  >
-                                    <Edit2 className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteBook(book.id)}
-                                    className="p-1 text-gray-400 hover:text-red-600 rounded"
-                                    title="Remove book"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </div>
-
-                              <h5 className="text-sm font-bold text-gray-900 dark:text-white">
-                                {book.title}
-                              </h5>
-                              {book.author && (
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                  by {book.author}
-                                </p>
-                              )}
-                              {book.notes && (
-                                <p className="text-[11px] text-gray-600 dark:text-gray-300 mt-2 p-2 rounded-lg bg-gray-50 dark:bg-gray-800/80 italic line-clamp-2">
-                                  "{book.notes}"
-                                </p>
-                              )}
-                            </div>
-
-                            {hasPages && (
-                              <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-800">
-                                <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 mb-1">
-                                  <span>Progress: {book.currentPage} / {book.totalPages} pages</span>
-                                  <span className="font-bold text-gray-900 dark:text-white">{pagePct}%</span>
-                                </div>
-                                <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-1.5 overflow-hidden">
-                                  <div
-                                    className="bg-indigo-600 h-1.5 rounded-full"
-                                    style={{ width: `${pagePct}%` }}
-                                  />
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+        <div className="space-y-4">
+          <EditableBooksTable
+            exam={exam}
+            onUpdateExam={onUpdateExam}
+            soundEnabled={soundEnabled}
+            onOpenBookModal={handleEditBook}
+          />
         </div>
       )}
 

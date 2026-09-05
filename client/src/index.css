@@ -376,18 +376,27 @@
 
 .workspace-compact-title{font-size:1.125rem!important;line-height:1.25!important;letter-spacing:-.02em!important}.workspace-compact-title .inline-block{font-size:1rem!important}
 
-.workspace-heading{font-size:1.25rem!important;line-height:1.25!important;letter-spacing:-.02em!important}.workspace-heading .inline-block{font-size:1rem!important}.lifemap-hero h1.workspace-heading{font-size:1.25rem!important}
-
-/* User-requested larger workspace headings: approximately 2x the prior medium scale */
-.workspace-heading{font-size:2.5rem!important;line-height:1.08!important;letter-spacing:-.035em!important}.workspace-heading .inline-block{font-size:1.5rem!important}.lifemap-hero h1.workspace-heading{font-size:2.5rem!important}
-@media (max-width:640px){.workspace-heading{font-size:2rem!important;line-height:1.1!important}.lifemap-hero h1.workspace-heading{font-size:2rem!important}}
-
-/* Reference-matched workspace headings: bold sans, medium-large, responsive */
-.workspace-heading{font-family:Inter,ui-sans-serif,system-ui,sans-serif!important;font-size:2.125rem!important;line-height:1.15!important;font-weight:700!important;letter-spacing:-.035em!important}.workspace-heading .inline-block{font-size:1.25rem!important}.lifemap-hero h1.workspace-heading{font-size:2.125rem!important}
-@media (max-width:640px){.workspace-heading{font-size:1.625rem!important;line-height:1.18!important}.lifemap-hero h1.workspace-heading{font-size:1.625rem!important}}
+/* Reference-matched workspace headings: bold sans, balanced responsive scale */
+.workspace-heading{font-family:Inter,ui-sans-serif,system-ui,sans-serif!important;font-size:1.75rem!important;line-height:1.2!important;font-weight:700!important;letter-spacing:-.03em!important;color:#111827}.workspace-heading .inline-block{font-size:1.25rem!important}.lifemap-hero h1.workspace-heading{font-size:1.75rem!important}
+@media (max-width:640px){.workspace-heading{font-size:1.45rem!important;line-height:1.2!important}.lifemap-hero h1.workspace-heading{font-size:1.45rem!important}}
 
 /* Compact workspace canvas: match the reference top rhythm */
 .workspace-canvas{padding-top:8px!important;padding-bottom:12px!important}.workspace-canvas>.max-w-5xl{margin-top:0!important}
 
 /* Unified account menu and dark-mode workspace title contrast */
-.account-menu-item{display:flex;align-items:center;gap:.55rem;width:100%;border-radius:.7rem;padding:.5rem .6rem;font-size:.72rem;font-weight:600;color:#37352F;cursor:pointer;transition:background .16s ease}.account-menu-item:hover{background:#F5F3FF}.dark .account-menu-item{color:#F8FAFC}.dark .account-menu-item:hover{background:#374151}.dark .workspace-heading,.dark h1.workspace-heading,.dark h2.workspace-heading{color:#F8FAFC!important}
+.account-menu-item{display:flex;align-items:center;gap:.55rem;width:100%;border-radius:.7rem;padding:.5rem .6rem;font-size:.72rem;font-weight:600;color:#37352F;cursor:pointer;transition:background .16s ease}.account-menu-item:hover{background:#F5F3FF}.dark .account-menu-item{color:#F8FAFC}.dark .account-menu-item:hover{background:#374151}
+
+/* High-contrast typography for dark mode across all titles, heroes, and workspace headings */
+.dark .workspace-heading,
+.dark h1.workspace-heading,
+.dark h2.workspace-heading,
+.dark h3.workspace-heading,
+.dark .lifemap-hero h1,
+html.dark .workspace-heading,
+html.dark h1.workspace-heading,
+html.dark h2.workspace-heading,
+html.dark .lifemap-hero h1,
+:where(.dark, .dark *) .workspace-heading,
+:where(.dark, .dark *) .lifemap-hero h1 {
+  color: #FFFFFF !important;
+}
