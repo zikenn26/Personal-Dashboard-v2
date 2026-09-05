@@ -17,7 +17,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { ExamItem } from '../types';
-import { ExamCard } from './exams/ExamCard';
+import { ExamListItem } from './exams/ExamListItem';
 import { ExamDetailView } from './exams/ExamDetailView';
 import { AddExamModal } from './exams/AddExamModal';
 import { ExamCountdown } from './exams/ExamCountdown';
@@ -122,18 +122,20 @@ export const ExamsSection: React.FC<ExamsSectionProps> = ({
       {/* Top Header */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-gray-200 dark:border-gray-800">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-2xl shadow-xs border border-indigo-100 dark:border-indigo-900/60">
+          <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xl shadow-2xs border border-indigo-100 dark:border-indigo-900/60">
             🎓
           </div>
           <div>
-            <h1 className="text-xl sm:text-2xl font-black text-gray-900 dark:text-white tracking-tight flex items-center gap-2.5">
-              <span>Competitive Exams Hub</span>
+            <div className="flex items-center gap-2.5">
+              <h1 className="workspace-heading font-extrabold text-[#111827] dark:text-white tracking-tight">
+                Exams
+              </h1>
               <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800">
                 {exams.length} Tracked
               </span>
-            </h1>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              Comprehensive syllabi, stage timelines, reference books, and live ticking exam countdowns
+            </div>
+            <p className="text-xs text-[#6B7280] dark:text-[#9CA3AF] mt-0.5">
+              Competitive examinations hub with syllabus spreadsheets, prelims/mains/interview stages, and live countdowns
             </p>
           </div>
         </div>
@@ -302,7 +304,7 @@ export const ExamsSection: React.FC<ExamsSectionProps> = ({
                 <div className="w-16 h-16 mx-auto rounded-3xl bg-gradient-to-tr from-indigo-100 to-purple-100 dark:from-indigo-950/80 dark:to-purple-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-3xl shadow-sm border border-indigo-200/60 dark:border-indigo-800/80">
                   🎯
                 </div>
-                <h2 className="text-xl sm:text-2xl font-black text-gray-900 dark:text-white tracking-tight">
+                <h2 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white tracking-tight">
                   My Exam Preparation Hub
                 </h2>
                 <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
@@ -433,24 +435,23 @@ export const ExamsSection: React.FC<ExamsSectionProps> = ({
               </div>
             </div>
           ) : (
-            /* User Has Tracked Exams: Render Grid */
-            <div className="space-y-4">
+            /* User Has Tracked Exams: Render List View */
+            <div className="space-y-3">
               {filteredMyExams.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                <div className="space-y-3">
                   {filteredMyExams.map((exam) => (
-                    <ExamCard
+                    <ExamListItem
                       key={exam.id}
                       exam={exam}
-                      onSelect={(id) => {
-                        setSelectedExamId(id);
+                      onOpen={(item) => {
+                        setSelectedExamId(item.id);
                         Sound.click(soundEnabled);
                       }}
                       onDelete={handleDeleteExam}
-                      soundEnabled={soundEnabled}
                     />
                   ))}
 
-                  {/* Add New Exam Card in the Grid */}
+                  {/* Add Another Exam Row in the List */}
                   <button
                     type="button"
                     onClick={() => {
@@ -458,19 +459,10 @@ export const ExamsSection: React.FC<ExamsSectionProps> = ({
                       setIsAddModalOpen(true);
                       Sound.click(soundEnabled);
                     }}
-                    className="group min-h-[260px] p-6 rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-800 hover:border-indigo-500 dark:hover:border-indigo-500 bg-white/50 dark:bg-gray-900/30 flex flex-col items-center justify-center text-center space-y-3 cursor-pointer transition-all"
+                    className="w-full p-4 rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-800 hover:border-indigo-500 dark:hover:border-indigo-500 bg-white/50 dark:bg-gray-900/30 flex items-center justify-center gap-2 cursor-pointer transition-all text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400"
                   >
-                    <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xl group-hover:scale-110 transition-transform">
-                      <Plus className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-gray-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
-                        Add Another Exam
-                      </h3>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        Select from catalog or create a custom exam goal
-                      </p>
-                    </div>
+                    <Plus className="w-4 h-4" />
+                    <span className="text-xs font-bold">Add Another Exam (from catalog or create custom)</span>
                   </button>
                 </div>
               ) : (
@@ -501,7 +493,7 @@ export const ExamsSection: React.FC<ExamsSectionProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="space-y-3">
             {filteredAllExams.map((preset) => {
               const isAlreadyAdded = exams.some((e) => e.name === preset.name);
               const totalTopicsCount = preset.subjects.reduce((sum, s) => sum + s.topics.length, 0);
@@ -509,75 +501,61 @@ export const ExamsSection: React.FC<ExamsSectionProps> = ({
               return (
                 <div
                   key={preset.name}
-                  className="flex flex-col justify-between bg-white dark:bg-[#111827] rounded-2xl border border-gray-200 dark:border-gray-800 hover:border-indigo-500/60 p-5 shadow-xs transition-all duration-200"
+                  className="bg-white dark:bg-[#111827] rounded-xl border border-gray-200 dark:border-gray-800 hover:border-indigo-500/60 p-3.5 sm:p-4 shadow-2xs hover:shadow-xs transition-all flex flex-col md:flex-row md:items-center justify-between gap-3.5"
                 >
-                  <div className="space-y-3">
-                    {/* Header */}
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-11 h-11 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-2xl flex items-center justify-center border border-indigo-100 dark:border-indigo-900/60 shadow-2xs">
-                          {preset.icon}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
-                              {preset.shortName}
-                            </span>
-                            <span className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">
-                              {preset.category}
-                            </span>
-                          </div>
-                          <h3 className="text-sm font-bold text-gray-900 dark:text-white mt-1 line-clamp-1">
-                            {preset.name}
-                          </h3>
-                        </div>
-                      </div>
+                  {/* Left: Important Details */}
+                  <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
+                    <div className="w-10 h-10 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-xl flex items-center justify-center border border-indigo-100 dark:border-indigo-900/60 shadow-2xs shrink-0">
+                      {preset.icon}
                     </div>
-
-                    <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
-                      {preset.description}
-                    </p>
-
-                    {/* Prominent Live Counter for catalog item */}
-                    <div>
-                      <ExamCountdown
-                        targetDateStr={preset.targetExamDate}
-                        label={preset.shortName}
-                        size="card"
-                      />
-                    </div>
-
-                    {/* Stats Pill */}
-                    <div className="grid grid-cols-2 gap-2 p-2.5 rounded-xl bg-gray-50/80 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-800 text-xs">
-                      <div>
-                        <span className="text-[10px] text-gray-400 uppercase font-bold block">Syllabus Depth</span>
-                        <span className="font-bold text-gray-800 dark:text-gray-200">
-                          {preset.subjects.length} Papers • {totalTopicsCount} Topics
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <h3 className="text-sm sm:text-base font-bold text-gray-900 dark:text-white truncate">
+                          {preset.name}
+                        </h3>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
+                          {preset.shortName}
+                        </span>
+                        <span className="text-[10px] text-gray-500 dark:text-gray-400 font-medium px-2 py-0.5 rounded bg-gray-50 dark:bg-gray-800/50">
+                          {preset.category}
                         </span>
                       </div>
-                      <div>
-                        <span className="text-[10px] text-gray-400 uppercase font-bold block">Target Exam Date</span>
-                        <span className="font-bold text-indigo-600 dark:text-indigo-400">
-                          {new Date(preset.targetExamDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                        </span>
+
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        <span>{preset.conductingBody}</span>
+                        <span>•</span>
+                        <span>{preset.subjects.length} Papers ({totalTopicsCount} Topics)</span>
+                        <span>•</span>
+                        <span>Target: {new Date(preset.targetExamDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                        {preset.officialWebsite && (
+                          <>
+                            <span>•</span>
+                            <a
+                              href={preset.officialWebsite}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-1"
+                            >
+                              <span>Official Site</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
 
-                  {/* Actions */}
-                  <div className="pt-4 mt-2 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between gap-2">
-                    {preset.officialWebsite && (
-                      <a
-                        href={preset.officialWebsite}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[11px] font-semibold text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1"
-                      >
-                        <span>Official Portal</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    )}
+                  {/* Center: Live Countdown Component */}
+                  <div className="shrink-0 flex items-center gap-3">
+                    <ExamCountdown
+                      targetDateStr={preset.targetExamDate}
+                      label={preset.shortName}
+                      size="list"
+                    />
+                  </div>
 
+                  {/* Right: Actions */}
+                  <div className="shrink-0 flex items-center gap-2 self-end md:self-auto">
                     {isAlreadyAdded ? (
                       <button
                         type="button"
@@ -585,7 +563,7 @@ export const ExamsSection: React.FC<ExamsSectionProps> = ({
                           const existing = exams.find((e) => e.name === preset.name);
                           if (existing) setSelectedExamId(existing.id);
                         }}
-                        className="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-xs border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5 cursor-pointer hover:bg-emerald-100"
+                        className="px-3.5 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-xs border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5 cursor-pointer hover:bg-emerald-100 transition-colors"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                         <span>Tracked (Open)</span>
@@ -594,7 +572,7 @@ export const ExamsSection: React.FC<ExamsSectionProps> = ({
                       <button
                         type="button"
                         onClick={() => handleAddPresetByName(preset.name)}
-                        className="px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer ml-auto"
+                        className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
                       >
                         <Plus className="w-3.5 h-3.5" />
                         <span>Add to My Exams</span>

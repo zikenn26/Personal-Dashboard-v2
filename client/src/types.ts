@@ -476,6 +476,25 @@ export interface ExamPattern {
   sections?: ExamPatternSection[];
 }
 
+export interface SyllabusTableColumn {
+  id: string;
+  label: string;
+  key: string;
+  type?: 'text' | 'number' | 'select';
+  isCustom?: boolean;
+}
+
+export interface SyllabusTableRow {
+  id: string;
+  phase: 'Prelims' | 'Mains' | 'Interview' | string;
+  subject: string;
+  topic: string;
+  status: 'Not Started' | 'In Progress' | 'Completed' | 'Revision Needed';
+  timesCompleted: number;
+  remarks: string;
+  customData?: Record<string, string>;
+}
+
 export interface ExamItem {
   id: string;
   name: string;
@@ -494,6 +513,8 @@ export interface ExamItem {
   stages: ExamStage[];
   subjects: ExamSubject[];
   books: ExamBook[]; // Initially empty for new user
+  syllabusTableRows?: SyllabusTableRow[];
+  syllabusTableColumns?: SyllabusTableColumn[];
   strategyNotes?: string;
   createdAt: number;
   updatedAt: number;

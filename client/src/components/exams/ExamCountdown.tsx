@@ -4,7 +4,7 @@ import { Clock, AlertCircle } from 'lucide-react';
 interface ExamCountdownProps {
   targetDateStr: string;
   label?: string;
-  size?: 'sm' | 'md' | 'lg' | 'card';
+  size?: 'sm' | 'md' | 'lg' | 'card' | 'list';
   showSeconds?: boolean;
 }
 
@@ -144,6 +144,26 @@ export const ExamCountdown: React.FC<ExamCountdownProps> = ({
     );
   }
 
+  // Horizontal List Row Variant
+  if (size === 'list') {
+    return (
+      <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-gray-50 dark:bg-gray-800/90 border border-gray-200/80 dark:border-gray-700/80 text-xs">
+        <span className="relative flex h-2 w-2 shrink-0">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+        </span>
+        <span className="font-bold text-gray-900 dark:text-white font-mono">
+          {time.days} Days Left
+        </span>
+        {showSeconds && (
+          <span className="text-[11px] font-mono text-gray-500 dark:text-gray-400">
+            ({String(time.hours).padStart(2, '0')}h {String(time.minutes).padStart(2, '0')}m {String(time.seconds).padStart(2, '0')}s)
+          </span>
+        )}
+      </div>
+    );
+  }
+
   // Small Pill
   if (size === 'sm') {
     return (
@@ -167,12 +187,12 @@ export const ExamCountdown: React.FC<ExamCountdownProps> = ({
   // Large Hero Countdown
   if (size === 'lg') {
     return (
-      <div className="flex flex-col gap-3 p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-indigo-50 via-white to-purple-50 dark:from-indigo-950/40 dark:via-gray-900 dark:to-purple-950/30 border border-indigo-100 dark:border-indigo-900/50 shadow-xs">
+      <div className="flex flex-col gap-2.5 p-3.5 sm:p-4 rounded-xl bg-gray-50 dark:bg-gray-800/90 border border-gray-200 dark:border-gray-700 shadow-2xs">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
-            <span className="relative flex h-2.5 w-2.5">
+          <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+            <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
             </span>
             <span>Live Countdown: {label}</span>
           </div>
@@ -181,30 +201,30 @@ export const ExamCountdown: React.FC<ExamCountdownProps> = ({
           </span>
         </div>
 
-        <div className="grid grid-cols-4 gap-2 sm:gap-3 text-center">
-          <div className="flex flex-col p-2 sm:p-3 rounded-xl bg-white dark:bg-gray-800/90 shadow-2xs border border-indigo-100 dark:border-gray-700">
-            <span className="text-2xl sm:text-3xl font-black text-indigo-600 dark:text-indigo-400 tracking-tight font-mono">
+        <div className="grid grid-cols-4 gap-2 text-center">
+          <div className="flex flex-col p-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700">
+            <span className="text-base sm:text-lg font-bold text-indigo-600 dark:text-indigo-400 tracking-tight font-mono">
               {time.days}
             </span>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Days Left</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Days Left</span>
           </div>
-          <div className="flex flex-col p-2 sm:p-3 rounded-xl bg-white dark:bg-gray-800/90 shadow-2xs border border-indigo-100 dark:border-gray-700">
-            <span className="text-2xl sm:text-3xl font-black text-purple-600 dark:text-purple-400 tracking-tight font-mono">
+          <div className="flex flex-col p-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700">
+            <span className="text-base sm:text-lg font-bold text-purple-600 dark:text-purple-400 tracking-tight font-mono">
               {String(time.hours).padStart(2, '0')}
             </span>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Hours</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Hours</span>
           </div>
-          <div className="flex flex-col p-2 sm:p-3 rounded-xl bg-white dark:bg-gray-800/90 shadow-2xs border border-indigo-100 dark:border-gray-700">
-            <span className="text-2xl sm:text-3xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight font-mono">
+          <div className="flex flex-col p-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700">
+            <span className="text-base sm:text-lg font-bold text-emerald-600 dark:text-emerald-400 tracking-tight font-mono">
               {String(time.minutes).padStart(2, '0')}
             </span>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Mins</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Mins</span>
           </div>
-          <div className="flex flex-col p-2 sm:p-3 rounded-xl bg-white dark:bg-gray-800/90 shadow-2xs border border-indigo-100 dark:border-gray-700">
-            <span className="text-2xl sm:text-3xl font-black text-amber-600 dark:text-amber-400 tracking-tight font-mono">
+          <div className="flex flex-col p-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700">
+            <span className="text-base sm:text-lg font-bold text-amber-600 dark:text-amber-400 tracking-tight font-mono">
               {String(time.seconds).padStart(2, '0')}
             </span>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Live Secs</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Secs</span>
           </div>
         </div>
       </div>

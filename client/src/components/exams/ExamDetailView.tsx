@@ -33,6 +33,8 @@ import { ExamCountdown } from './ExamCountdown';
 import { BookModal } from './BookModal';
 import { SubjectModal } from './SubjectModal';
 import { StageModal } from './StageModal';
+import { EditableSyllabusTable } from './EditableSyllabusTable';
+import { ExamPhasesView } from './ExamPhasesView';
 import { Sound } from '../../utils/audio';
 
 interface ExamDetailViewProps {
@@ -42,7 +44,7 @@ interface ExamDetailViewProps {
   soundEnabled: boolean;
 }
 
-type DetailTab = 'syllabus' | 'books' | 'pattern' | 'strategy';
+type DetailTab = 'syllabus-table' | 'phases' | 'books' | 'pattern' | 'strategy';
 
 export const ExamDetailView: React.FC<ExamDetailViewProps> = ({
   exam,
@@ -50,7 +52,7 @@ export const ExamDetailView: React.FC<ExamDetailViewProps> = ({
   onUpdateExam,
   soundEnabled,
 }) => {
-  const [activeTab, setActiveTab] = useState<DetailTab>('syllabus');
+  const [activeTab, setActiveTab] = useState<DetailTab>('syllabus-table');
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>(
     exam.subjects[0]?.id || ''
   );
@@ -304,11 +306,11 @@ export const ExamDetailView: React.FC<ExamDetailViewProps> = ({
           </button>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-2xl">{exam.icon || '🏛️'}</span>
-              <h1 className="text-xl sm:text-2xl font-black text-gray-900 dark:text-white tracking-tight">
+              <span className="text-xl sm:text-2xl">{exam.icon || '🏛️'}</span>
+              <h1 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white tracking-tight truncate">
                 {exam.name}
               </h1>
-              <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/50 dark:border-indigo-800/50">
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/50 dark:border-indigo-800/50">
                 {exam.shortName}
               </span>
             </div>
@@ -448,323 +450,119 @@ export const ExamDetailView: React.FC<ExamDetailViewProps> = ({
         size="lg"
       />
 
-      {/* Primary Navigation Tabs: Syllabus | Books | Pattern & Stages | Strategy & Notes */}
+      {/* Primary Navigation Tabs: Syllabus Spreadsheet | Exam Phases | Books | Pattern | Strategy */}
       <div className="border-b border-gray-200 dark:border-gray-800">
-        <nav className="flex space-x-2 sm:space-x-4 overflow-x-auto pb-1" aria-label="Tabs">
+        <nav className="flex space-x-2 overflow-x-auto pb-1" aria-label="Tabs">
           <button
             type="button"
-            onClick={() => setActiveTab('syllabus')}
-            className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 border transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === 'syllabus'
-                ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-500/20'
+            onClick={() => {
+              setActiveTab('syllabus-table');
+              Sound.click(soundEnabled);
+            }}
+            className={`py-2 px-3.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'syllabus-table'
+                ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
                 : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:border-gray-300'
             }`}
           >
-            <BookOpen className="w-4 h-4" />
-            <span>Syllabus ({totalExamTopics} Topics)</span>
+            <BookOpen className="w-3.5 h-3.5" />
+            <span>Syllabus Spreadsheet (Excel)</span>
           </button>
 
           <button
             type="button"
-            onClick={() => setActiveTab('books')}
-            className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 border transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === 'books'
-                ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-500/20'
+            onClick={() => {
+              setActiveTab('phases');
+              Sound.click(soundEnabled);
+            }}
+            className={`py-2 px-3.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'phases'
+                ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
                 : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:border-gray-300'
             }`}
           >
-            <BookMarked className="w-4 h-4" />
+            <Layers className="w-3.5 h-3.5" />
+            <span>Exam Phases (Prelims / Mains / Interview)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('books');
+              Sound.click(soundEnabled);
+            }}
+            className={`py-2 px-3.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'books'
+                ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <BookMarked className="w-3.5 h-3.5" />
             <span>Books Followed ({exam.books.length})</span>
           </button>
 
           <button
             type="button"
-            onClick={() => setActiveTab('pattern')}
-            className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 border transition-all cursor-pointer whitespace-nowrap ${
+            onClick={() => {
+              setActiveTab('pattern');
+              Sound.click(soundEnabled);
+            }}
+            className={`py-2 px-3.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer whitespace-nowrap ${
               activeTab === 'pattern'
-                ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-500/20'
+                ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
                 : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:border-gray-300'
             }`}
           >
-            <Layers className="w-4 h-4" />
-            <span>Pattern & Stages ({exam.stages.length})</span>
+            <Layers className="w-3.5 h-3.5" />
+            <span>Pattern &amp; Marking</span>
           </button>
 
           <button
             type="button"
-            onClick={() => setActiveTab('strategy')}
-            className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 border transition-all cursor-pointer whitespace-nowrap ${
+            onClick={() => {
+              setActiveTab('strategy');
+              Sound.click(soundEnabled);
+            }}
+            className={`py-2 px-3.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer whitespace-nowrap ${
               activeTab === 'strategy'
-                ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-500/20'
+                ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
                 : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:border-gray-300'
             }`}
           >
-            <Sparkles className="w-4 h-4" />
-            <span>Strategy & Notes</span>
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Strategy &amp; Notes</span>
           </button>
         </nav>
       </div>
 
       {/* ========================================================================= */}
-      {/* TAB 1: SYLLABUS VIEW */}
+      {/* TAB 1: EDITABLE SPREADSHEET SYLLABUS TABLE */}
       {/* ========================================================================= */}
-      {activeTab === 'syllabus' && (
-        <div className="space-y-6">
-          {/* Subjects Selection Bar */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <h3 className="text-sm font-bold text-gray-900 dark:text-white">
-                  Examination Subjects
-                </h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Select an individual subject to view and check off its syllabus topics
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setSubjectToEdit(null);
-                  setIsSubjectModalOpen(true);
-                  Sound.click(soundEnabled);
-                }}
-                className="px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900 border border-indigo-200/60 dark:border-indigo-800/60 text-xs font-bold text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Subject</span>
-              </button>
-            </div>
-
-            {/* Subject Badges / Segmented List */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {exam.subjects.map((sub) => {
-                const isSelected = sub.id === currentSubject?.id;
-                const subCompleted = sub.topics.filter((t) => t.completed).length;
-                const subTotal = sub.topics.length;
-                const subPct = subTotal > 0 ? Math.round((subCompleted / subTotal) * 100) : 0;
-
-                return (
-                  <button
-                    key={sub.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedSubjectId(sub.id);
-                      Sound.click(soundEnabled);
-                    }}
-                    className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
-                      isSelected
-                        ? 'bg-indigo-50/70 dark:bg-indigo-950/40 border-indigo-500 dark:border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs'
-                        : 'bg-white dark:bg-[#111827] border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700'
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <span
-                          className={`text-xs font-bold px-2 py-0.5 rounded-md ${
-                            isSelected
-                              ? 'bg-indigo-600 text-white'
-                              : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
-                          }`}
-                        >
-                          {sub.code || 'PAPER'}
-                        </span>
-                        <span className="text-xs font-bold text-gray-900 dark:text-white">
-                          {subPct}%
-                        </span>
-                      </div>
-                      <h4 className="text-sm font-bold text-gray-900 dark:text-white line-clamp-1">
-                        {sub.name}
-                      </h4>
-                      {sub.description && (
-                        <p className="text-[11px] text-gray-500 dark:text-gray-400 line-clamp-1 mt-0.5">
-                          {sub.description}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="mt-3">
-                      <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 mb-1">
-                        <span>{subCompleted} of {subTotal} topics</span>
-                      </div>
-                      <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-1.5 overflow-hidden">
-                        <div
-                          className="bg-indigo-600 h-1.5 rounded-full transition-all duration-300"
-                          style={{ width: `${subPct}%` }}
-                        />
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Active Subject Topics Checklist */}
-          {currentSubject && (
-            <div className="p-5 rounded-2xl bg-white dark:bg-[#111827] border border-gray-200 dark:border-gray-800 shadow-xs space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100 dark:border-gray-800">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">
-                      {currentSubject.code || 'SUBJECT'}
-                    </span>
-                    <h3 className="text-base font-bold text-gray-900 dark:text-white">
-                      {currentSubject.name} — Syllabus Checklist
-                    </h3>
-                  </div>
-                  {currentSubject.description && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                      {currentSubject.description}
-                    </p>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSubjectToEdit(currentSubject);
-                      setIsSubjectModalOpen(true);
-                      Sound.click(soundEnabled);
-                    }}
-                    className="p-1.5 text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                    title="Edit subject & paste topics"
-                  >
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteSubject(currentSubject.id)}
-                    className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                    title="Delete subject"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Add New Topic Input */}
-              <form onSubmit={handleAddTopic} className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder={`Add a new topic for ${currentSubject.name}...`}
-                  value={newTopicTitle}
-                  onChange={(e) => setNewTopicTitle(e.target.value)}
-                  className="flex-1 px-3.5 py-2 rounded-xl bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 text-xs sm:text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                />
-                <button
-                  type="submit"
-                  disabled={!newTopicTitle.trim()}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Add Topic</span>
-                </button>
-              </form>
-
-              {/* Topics List */}
-              <div className="space-y-2 pt-2">
-                {currentSubject.topics.length === 0 ? (
-                  <div className="p-8 text-center text-gray-400 dark:text-gray-500 text-xs">
-                    No topics added yet for this subject. Use the input above to add topics or click "Edit" to paste the syllabus.
-                  </div>
-                ) : (
-                  currentSubject.topics.map((topic, index) => {
-                    const isEditing = editingTopicId === topic.id;
-
-                    return (
-                      <div
-                        key={topic.id}
-                        className={`group flex items-start justify-between gap-3 p-2.5 rounded-xl border transition-all ${
-                          topic.completed
-                            ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-100 dark:border-emerald-900/40'
-                            : 'bg-white dark:bg-gray-800/50 border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700'
-                        }`}
-                      >
-                        <div className="flex items-start gap-3 flex-1 min-w-0">
-                          <button
-                            type="button"
-                            onClick={() => handleToggleTopic(topic.id)}
-                            className="mt-0.5 shrink-0 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
-                          >
-                            {topic.completed ? (
-                              <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 fill-emerald-50 dark:fill-emerald-950" />
-                            ) : (
-                              <Circle className="w-5 h-5 text-gray-300 dark:text-gray-600" />
-                            )}
-                          </button>
-
-                          {isEditing ? (
-                            <div className="flex items-center gap-2 flex-1">
-                              <input
-                                type="text"
-                                autoFocus
-                                value={editingTopicTitle}
-                                onChange={(e) => setEditingTopicTitle(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') handleSaveTopicTitle(topic.id);
-                                  if (e.key === 'Escape') setEditingTopicId(null);
-                                }}
-                                className="w-full px-2 py-1 rounded bg-white dark:bg-gray-900 border border-indigo-500 text-xs text-gray-900 dark:text-white"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => handleSaveTopicTitle(topic.id)}
-                                className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
-                              >
-                                <Check className="w-4 h-4" />
-                              </button>
-                            </div>
-                          ) : (
-                            <span
-                              onClick={() => handleToggleTopic(topic.id)}
-                              className={`text-xs sm:text-sm cursor-pointer select-none leading-relaxed ${
-                                topic.completed
-                                  ? 'line-through text-gray-400 dark:text-gray-500'
-                                  : 'text-gray-800 dark:text-gray-200 font-medium'
-                              }`}
-                            >
-                              <span className="text-[10px] font-bold text-gray-400 mr-2">
-                                #{index + 1}
-                              </span>
-                              {topic.title}
-                            </span>
-                          )}
-                        </div>
-
-                        {!isEditing && (
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingTopicId(topic.id);
-                                setEditingTopicTitle(topic.title);
-                              }}
-                              className="p-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded"
-                              title="Edit topic title"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteTopic(topic.id)}
-                              className="p-1 text-gray-400 hover:text-red-600 rounded"
-                              title="Delete topic"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          )}
+      {activeTab === 'syllabus-table' && (
+        <div className="space-y-4">
+          <EditableSyllabusTable
+            exam={exam}
+            onUpdateExam={onUpdateExam}
+            soundEnabled={soundEnabled}
+          />
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* TAB 2: DISTINCT EXAMINATION PHASES (Prelims / Mains / Interview) */}
+      {/* ========================================================================= */}
+      {activeTab === 'phases' && (
+        <div className="space-y-6">
+          <ExamPhasesView
+            exam={exam}
+            onSelectPhaseInSpreadsheet={() => {
+              setActiveTab('syllabus-table');
+            }}
+          />
+        </div>
+      )}
+
+
 
       {/* ========================================================================= */}
       {/* TAB 2: BOOKS SECTION */}
