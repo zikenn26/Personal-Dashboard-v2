@@ -19,9 +19,11 @@ import {
   EducationRecord,
   JobExperience,
   HobbyItem,
+  ExamItem,
 } from '../types';
 import { STOCK_IMAGES } from '../assets/stockImages';
 import { decryptJson, encryptJson, isEncryptedPayload, EncryptedPayload } from './crypto';
+import { INITIAL_USER_EXAMS } from '../data/defaultExams';
 
 const STORAGE_KEYS = {
   TODOS: 'notion_os_v4_todos',
@@ -42,6 +44,7 @@ const STORAGE_KEYS = {
   PHOTOS: 'notion_os_v4_photos',
   RESUME: 'notion_os_v4_resume',
   QUOTES: 'notion_os_v4_quotes',
+  EXAMS: 'notion_os_v5_my_exams',
 };
 
 export const INITIAL_EDUCATION_RECORDS: EducationRecord[] = [
@@ -771,6 +774,16 @@ export const Storage = {
   },
   setQuotes: (quotes: QuoteItem[]) => saveToStorage(STORAGE_KEYS.QUOTES, quotes),
 
+  getExams: (): ExamItem[] => {
+    const loaded = loadFromStorage<ExamItem[] | null>(STORAGE_KEYS.EXAMS, null);
+    if (loaded === null) {
+      // By default on clicking exam section, My Exams opens as a clean blank state
+      return [];
+    }
+    return Array.isArray(loaded) ? loaded : [];
+  },
+  setExams: (exams: ExamItem[]) => saveToStorage(STORAGE_KEYS.EXAMS, exams),
+
   getAllDataPayload: () => {
     return {
       version: '4.0.0',
@@ -793,6 +806,7 @@ export const Storage = {
       photos: Storage.getPhotos(),
       resume: Storage.getResume(),
       quotes: Storage.getQuotes(),
+      exams: Storage.getExams(),
     };
   },
 
@@ -803,7 +817,7 @@ export const Storage = {
         'profile', 'todos', 'habits', 'goals', 'vaultEncrypted', 'vault',
         'expenses', 'journal', 'media', 'achievements', 'doodles',
         'timeline', 'projects', 'skills', 'settings', 'sections',
-        'photos', 'resume', 'quotes', 'version'
+        'photos', 'resume', 'quotes', 'exams', 'version'
       ];
       const hasKnownKey = knownKeys.some((k) => k in data && data[k] !== undefined);
       if (!hasKnownKey) return false;
@@ -827,6 +841,7 @@ export const Storage = {
       if (data.photos) Storage.setPhotos(data.photos);
       if (data.resume) Storage.setResume(data.resume);
       if (data.quotes) Storage.setQuotes(data.quotes);
+      if (data.exams) Storage.setExams(data.exams);
       return true;
     } catch (err) {
       console.error('Failed to import payload:', err);
@@ -869,5 +884,6 @@ export const Storage = {
     Storage.setPhotos(INITIAL_PHOTOS);
     Storage.setResume(INITIAL_RESUME);
     Storage.setQuotes(INITIAL_QUOTES);
+    Storage.setExams(INITIAL_USER_EXAMS);
   },
 };

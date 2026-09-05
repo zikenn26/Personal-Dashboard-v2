@@ -323,6 +323,7 @@ export type MainNavView =
   | 'habits'
   | 'goals'
   | 'timeline'
+  | 'exams'
   | 'projects'
   | 'workfolio'
   | 'portfolio'
@@ -411,3 +412,90 @@ export interface AuthUser {
   lastLoginAt: number;
   provider: 'supabase' | 'local_demo' | 'local';
 }
+
+export type ExamStageStatus = 'upcoming' | 'ongoing' | 'completed';
+
+export interface ExamStage {
+  id: string;
+  name: string; // e.g. "Registration", "Prelims", "Mains", "Interview / GD"
+  startDate?: string;
+  endDate?: string;
+  date?: string; // Exact date if single day e.g. "2026-05-24"
+  status: ExamStageStatus;
+  notes?: string;
+}
+
+export interface SyllabusTopic {
+  id: string;
+  title: string;
+  subtopics?: string[];
+  completed?: boolean;
+  notes?: string;
+}
+
+export interface ExamSubject {
+  id: string;
+  name: string; // e.g. "General Studies I", "Quantitative Aptitude"
+  code?: string; // e.g. "GS-1", "QA", "VARC"
+  description?: string;
+  topics: SyllabusTopic[];
+}
+
+export type ExamBookStatus = 'to_read' | 'reading' | 'completed' | 'revision';
+
+export interface ExamBook {
+  id: string;
+  subjectId?: string; // Matches ExamSubject.id
+  subject?: string;
+  title: string;
+  author?: string;
+  status?: ExamBookStatus;
+  notes?: string;
+  link?: string;
+  currentPage?: number;
+  totalPages?: number;
+  priority?: 'high' | 'medium' | 'low' | 'essential' | 'recommended';
+  completed?: boolean;
+}
+
+export interface ExamPatternSection {
+  id: string;
+  name: string;
+  questions?: number;
+  marks?: number;
+  durationMinutes?: number;
+  negativeMarking?: string;
+}
+
+export interface ExamPattern {
+  mode?: string; // e.g. "Pen & Paper (OMR / Descriptive)" | "Computer-Based Test (CBT)"
+  totalDuration?: string;
+  totalMarks?: number | string;
+  negativeMarking?: string;
+  description?: string;
+  sections?: ExamPatternSection[];
+}
+
+export interface ExamItem {
+  id: string;
+  name: string;
+  shortName: string;
+  category: 'Civil Services' | 'Management' | 'Defense' | 'Medical' | 'Engineering' | 'State PSC' | 'Banking' | 'Other';
+  conductingBody: string;
+  targetExamDate: string; // YYYY-MM-DD
+  registrationStartDate?: string;
+  registrationEndDate?: string;
+  currentStage?: string;
+  officialWebsite?: string;
+  badgeColor?: string;
+  icon?: string;
+  description?: string;
+  pattern?: ExamPattern;
+  stages: ExamStage[];
+  subjects: ExamSubject[];
+  books: ExamBook[]; // Initially empty for new user
+  strategyNotes?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+

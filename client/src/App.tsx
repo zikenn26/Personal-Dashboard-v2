@@ -23,6 +23,7 @@ import {
   TaskStatus,
   QuoteItem,
   MainNavView,
+  ExamItem,
 } from './types';
 
 // Component Imports
@@ -42,6 +43,7 @@ import { QuickCaptureBar } from './components/QuickCaptureBar';
 import { BackupRestoreView } from './components/BackupRestoreView';
 import { GoalsView } from './components/GoalsView';
 import { QuotesManagerView } from './components/QuotesManagerView';
+import { ExamsSection } from './components/ExamsSection';
 import { AuthModal } from './components/AuthModal';
 import LandingPage from './components/LandingPage';
 import { Auth, getUserWorkspaceKey } from './utils/auth';
@@ -88,6 +90,7 @@ import {
   Star,
   Quote,
   Book,
+  GraduationCap,
   BookOpen,
   Target,
   Compass,
@@ -122,6 +125,7 @@ export default function App() {
   const [photos, setPhotos] = useState(Storage.getPhotos);
   const [resume, setResume] = useState<ResumeDocument>(Storage.getResume);
   const [quotes, setQuotes] = useState<QuoteItem[]>(Storage.getQuotes);
+  const [exams, setExams] = useState<ExamItem[]>(Storage.getExams);
 
   // 2. Navigation & Sidebar State
   const [activeView, setActiveView] = useState<MainNavView>('home');
@@ -230,6 +234,7 @@ export default function App() {
     setPhotos(Storage.getPhotos());
     setResume(Storage.getResume());
     setQuotes(Storage.getQuotes());
+    setExams(Storage.getExams());
     Sound.success(settings.soundEnabled);
     triggerConfetti();
   };
@@ -473,6 +478,12 @@ export default function App() {
     const updated = quotes.filter((q) => q.id !== id);
     setQuotes(updated);
     Storage.setQuotes(updated);
+  };
+
+  // Exams Handlers
+  const handleUpdateExams = (updatedExams: ExamItem[]) => {
+    setExams(updatedExams);
+    Storage.setExams(updatedExams);
   };
 
   // Task / Todo Handlers
@@ -941,6 +952,7 @@ export default function App() {
     { id: 'tasks', label: 'Tasks', icon: CheckSquare, count: todos.filter((t) => !t.completed).length, emoji: '☑️', group: 'plan' },
     { id: 'habits', label: 'Habits', icon: Flame, count: habits.length, emoji: '🔥', group: 'plan' },
     { id: 'goals', label: 'Goals', icon: Target, count: goals.filter((g) => g.status === 'active').length || undefined, emoji: '🎯', group: 'plan' },
+    { id: 'exams', label: 'Exams', icon: GraduationCap, count: exams.length, emoji: '🎓', group: 'plan' },
     { id: 'timeline', label: 'Life Map', icon: Compass, count: milestones.length, emoji: '🗺️', group: 'plan' },
 
     // WORK
@@ -1075,6 +1087,17 @@ export default function App() {
                     >
                       <Target className="w-4 h-4 text-emerald-600" />
                       <span>+ Goal</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAddMenuOpen(false);
+                        handleNavigate('exams');
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-[#37352F] dark:text-white hover:bg-indigo-50 dark:hover:bg-indigo-950/60 text-left cursor-pointer transition-colors"
+                    >
+                      <GraduationCap className="w-4 h-4 text-indigo-600" />
+                      <span>+ Exam Prep</span>
                     </button>
                     <button
                       type="button"
@@ -1691,6 +1714,15 @@ export default function App() {
                   onUpdateGoal={handleUpdateGoal}
                   onDeleteGoal={handleDeleteGoal}
                   onNavigate={handleNavigate}
+                  soundEnabled={settings.soundEnabled}
+                />
+              )}
+
+              {/* VIEW: Competitive Examinations & Syllabus Hub */}
+              {activeView === 'exams' && (
+                <ExamsSection
+                  exams={exams}
+                  onUpdateExams={handleUpdateExams}
                   soundEnabled={settings.soundEnabled}
                 />
               )}
