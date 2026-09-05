@@ -1,15 +1,49 @@
 import { ExamItem, ExamSubject, SyllabusTableColumn, SyllabusTableRow } from '../types';
 
 export const DEFAULT_SYLLABUS_COLUMNS: SyllabusTableColumn[] = [
-  { id: 'col-phase', label: 'Phase (1/2/3)', key: 'phase', width: 75, isCustom: false },
-  { id: 'col-subject', label: 'Paper / Subject', key: 'subject', width: 170, isCustom: false },
-  { id: 'col-topic', label: 'Syllabus Topic / Unit', key: 'topic', width: 320, isCustom: false },
-  { id: 'col-status', label: 'Status', key: 'status', width: 130, isCustom: false },
-  { id: 'col-times', label: 'Times Completed', key: 'timesCompleted', width: 120, type: 'number', isCustom: false },
-  { id: 'col-remarks', label: 'Remarks & Notes', key: 'remarks', width: 180, isCustom: false },
+  { id: 'col-subject', label: 'Paper / Subject', key: 'subject', width: 200, isCustom: false },
+  { id: 'col-topic', label: 'Syllabus Topic / Unit', key: 'topic', width: 380, isCustom: false },
+  { id: 'col-status', label: 'Status', key: 'status', width: 135, isCustom: false },
+  { id: 'col-times', label: 'Revisions', key: 'timesCompleted', width: 110, type: 'number', isCustom: false },
+  { id: 'col-remarks', label: 'Remarks & Notes', key: 'remarks', width: 200, isCustom: false },
 ];
 
-export function detectPhaseFromSubjectName(subjectName: string): string {
+export function normalizePhase(phase: any): 'Prelims' | 'Mains' | 'Interview' {
+  if (!phase) return 'Prelims';
+  const str = String(phase).trim().toLowerCase();
+  if (
+    str === '1' ||
+    str === 'prelims' ||
+    str.includes('prelim') ||
+    str.includes('phase 1') ||
+    str.includes('tier 1')
+  ) {
+    return 'Prelims';
+  }
+  if (
+    str === '2' ||
+    str === 'mains' ||
+    str.includes('main') ||
+    str.includes('phase 2') ||
+    str.includes('tier 2')
+  ) {
+    return 'Mains';
+  }
+  if (
+    str === '3' ||
+    str === 'interview' ||
+    str.includes('interview') ||
+    str.includes('personality') ||
+    str.includes('viva') ||
+    str.includes('phase 3') ||
+    str.includes('tier 3')
+  ) {
+    return 'Interview';
+  }
+  return 'Prelims';
+}
+
+export function detectPhaseFromSubjectName(subjectName: string): 'Prelims' | 'Mains' | 'Interview' {
   const lower = (subjectName || '').toLowerCase();
   if (
     lower.includes('prelim') ||
@@ -51,7 +85,13 @@ export function detectPhaseFromSubjectName(subjectName: string): string {
  */
 export function getOrInitializeSyllabusRows(exam: ExamItem): SyllabusTableRow[] {
   if (exam.syllabusTableRows && exam.syllabusTableRows.length > 0) {
-    return exam.syllabusTableRows;
+    return exam.syllabusTableRows.map((r) => ({
+      ...r,
+      phase: normalizePhase(r.phase),
+      status: r.status || 'Not Started',
+      timesCompleted: typeof r.timesCompleted === 'number' ? r.timesCompleted : 0,
+      customData: r.customData || {},
+    }));
   }
 
   const generatedRows: SyllabusTableRow[] = [];
@@ -138,24 +178,38 @@ export function getOrInitializeSyllabusRows(exam: ExamItem): SyllabusTableRow[] 
   return generatedRows;
 }
 
-export function exportSyllabusToCSV(rows: SyllabusTableRow[], columns: SyllabusTableColumn[], examName: string): void {
-  const headers = columns.map((col) => `"${col.label.replace(/"/g, '""')}"`);
+/**
+ * Export syllabus rows to CSV format including Phase as the leading column
+ */
+export function exportSyllabusToCSV(
+  rows: SyllabusTableRow[],
+  columns: SyllabusTableColumn[],
+  examName: string,
+  filterPhase?: 'Prelims' | 'Mains' | 'Interview'
+): void {
+  // Exclude legacy 'phase' column from inner loop to avoid duplication with leading Phase column
+  const contentColumns = columns.filter((col) => col.key !== 'phase');
+  const headers = ['"Phase"', ...contentColumns.map((col) => `"${col.label.replace(/"/g, '""')}"`)];
   const csvLines: string[] = [headers.join(',')];
 
-  for (const row of rows) {
-    const lineValues = columns.map((col) => {
-      let val = '';
-      if (col.key === 'phase') val = row.phase || '';
-      else if (col.key === 'subject') val = row.subject || '';
-      else if (col.key === 'topic') val = row.topic || '';
-      else if (col.key === 'status') val = row.status || '';
-      else if (col.key === 'timesCompleted') val = String(row.timesCompleted ?? 0);
-      else if (col.key === 'remarks') val = row.remarks || '';
-      else if (col.isCustom) {
-        val = (row.customData && row.customData[col.key]) || '';
-      }
-      return `"${String(val).replace(/"/g, '""')}"`;
-    });
+  const targetRows = filterPhase ? rows.filter((r) => r.phase === filterPhase) : rows;
+
+  for (const row of targetRows) {
+    const lineValues = [
+      `"${normalizePhase(row.phase)}"`,
+      ...contentColumns.map((col) => {
+        let val = '';
+        if (col.key === 'subject') val = row.subject || '';
+        else if (col.key === 'topic') val = row.topic || '';
+        else if (col.key === 'status') val = row.status || '';
+        else if (col.key === 'timesCompleted') val = String(row.timesCompleted ?? 0);
+        else if (col.key === 'remarks') val = row.remarks || '';
+        else if (col.isCustom) {
+          val = (row.customData && row.customData[col.key]) || '';
+        }
+        return `"${String(val).replace(/"/g, '""')}"`;
+      }),
+    ];
     csvLines.push(lineValues.join(','));
   }
 
@@ -163,9 +217,89 @@ export function exportSyllabusToCSV(rows: SyllabusTableRow[], columns: SyllabusT
   const url = URL.createObjectURL(csvBlob);
   const link = document.createElement('a');
   link.href = url;
-  link.setAttribute('download', `${examName.replace(/[^a-zA-Z0-9]/g, '_')}_Syllabus.csv`);
+  const suffix = filterPhase ? `_${filterPhase}` : '';
+  link.setAttribute('download', `${examName.replace(/[^a-zA-Z0-9]/g, '_')}_Syllabus${suffix}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 }
+
+/**
+ * Parse CSV content and import syllabus rows
+ */
+export function parseCSVToSyllabusRows(
+  csvText: string,
+  defaultPhase: 'Prelims' | 'Mains' | 'Interview' = 'Prelims'
+): SyllabusTableRow[] {
+  const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  if (lines.length < 2) return [];
+
+  // Parse header line
+  const parseCSVLine = (line: string): string[] => {
+    const result: string[] = [];
+    let cur = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (c === ',' && !inQuotes) {
+        result.push(cur.trim());
+        cur = '';
+      } else {
+        cur += c;
+      }
+    }
+    result.push(cur.trim());
+    return result;
+  };
+
+  const headerCells = parseCSVLine(lines[0]).map((h) => h.toLowerCase());
+  const phaseIdx = headerCells.findIndex((h) => h.includes('phase'));
+  const subjectIdx = headerCells.findIndex((h) => h.includes('subject') || h.includes('paper'));
+  const topicIdx = headerCells.findIndex((h) => h.includes('topic') || h.includes('unit') || h.includes('syllabus'));
+  const statusIdx = headerCells.findIndex((h) => h.includes('status'));
+  const timesIdx = headerCells.findIndex((h) => h.includes('revision') || h.includes('times') || h.includes('completed'));
+  const remarksIdx = headerCells.findIndex((h) => h.includes('remark') || h.includes('note'));
+
+  const rows: SyllabusTableRow[] = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const cells = parseCSVLine(lines[i]);
+    if (cells.length === 0 || cells.every((c) => !c)) continue;
+
+    const rawPhase = phaseIdx >= 0 && cells[phaseIdx] ? cells[phaseIdx] : defaultPhase;
+    const phase = normalizePhase(rawPhase);
+    const subject = subjectIdx >= 0 && cells[subjectIdx] ? cells[subjectIdx] : `${phase} General Studies`;
+    const topic = topicIdx >= 0 && cells[topicIdx] ? cells[topicIdx] : cells[0] || 'Topic';
+    let status: SyllabusTableRow['status'] = 'Not Started';
+    if (statusIdx >= 0 && cells[statusIdx]) {
+      const s = cells[statusIdx].toLowerCase();
+      if (s.includes('comp')) status = 'Completed';
+      else if (s.includes('prog')) status = 'In Progress';
+      else if (s.includes('rev')) status = 'Revision Needed';
+    }
+    const timesCompleted = timesIdx >= 0 && cells[timesIdx] ? parseInt(cells[timesIdx], 10) || 0 : 0;
+    const remarks = remarksIdx >= 0 && cells[remarksIdx] ? cells[remarksIdx] : '';
+
+    rows.push({
+      id: `row-import-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 4)}`,
+      phase,
+      subject,
+      topic,
+      status,
+      timesCompleted,
+      remarks,
+      customData: {},
+    });
+  }
+
+  return rows;
+}
+
