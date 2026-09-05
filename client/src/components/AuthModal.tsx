@@ -189,15 +189,50 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </div>
 
           {errorMessage && (
-            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{errorMessage}</span>
+            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p>{errorMessage}</p>
+                {mode === 'signin' && errorMessage.includes('Account not found') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('signup');
+                      setErrorMessage(null);
+                    }}
+                    className="mt-1.5 font-semibold text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>Switch to Create Account</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
           {successMessage && (
             <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs flex items-center gap-2">
               <span>{successMessage}</span>
+            </div>
+          )}
+
+          {mode === 'signin' && (
+            <div className="p-2.5 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/50 flex items-center justify-between text-xs text-neutral-600 dark:text-neutral-400">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                <span className="font-mono text-[11px]">gulshan@gmail.com</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail('gulshan@gmail.com');
+                  setPassword('12345678');
+                  setErrorMessage(null);
+                }}
+                className="px-2 py-1 rounded-md bg-white dark:bg-neutral-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-neutral-700 text-[11px] font-semibold shadow-2xs border border-indigo-100 dark:border-neutral-700 cursor-pointer transition-colors"
+              >
+                Autofill Test Login
+              </button>
             </div>
           )}
 

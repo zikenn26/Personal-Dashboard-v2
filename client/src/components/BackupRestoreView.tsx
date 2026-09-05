@@ -24,7 +24,7 @@ import { isSupabaseConfigured } from '../utils/supabase';
 
 interface BackupRestoreViewProps {
   onExportData: () => void;
-  onImportData: (jsonStr: string) => void;
+  onImportData: (jsonStr: string) => boolean | void;
   onResetData: () => void;
   soundEnabled: boolean;
 }
@@ -74,9 +74,14 @@ export const BackupRestoreView: React.FC<BackupRestoreViewProps> = ({
       if (content) {
         try {
           JSON.parse(content);
-          onImportData(content);
-          setImportStatus('success');
-          setStatusMsg(`Successfully imported ${file.name}`);
+          const res = onImportData(content);
+          if (res === false) {
+            setImportStatus('error');
+            setStatusMsg('Invalid backup data structure. Please select a valid backup file.');
+          } else {
+            setImportStatus('success');
+            setStatusMsg(`Successfully imported and restored ${file.name}`);
+          }
         } catch {
           setImportStatus('error');
           setStatusMsg('Invalid JSON format. Please select a valid backup file.');
@@ -90,10 +95,15 @@ export const BackupRestoreView: React.FC<BackupRestoreViewProps> = ({
     if (!importText.trim()) return;
     try {
       JSON.parse(importText);
-      onImportData(importText);
-      setImportStatus('success');
-      setStatusMsg('Data successfully imported from JSON text.');
-      setImportText('');
+      const res = onImportData(importText);
+      if (res === false) {
+        setImportStatus('error');
+        setStatusMsg('Invalid backup data structure. Please verify the copied string.');
+      } else {
+        setImportStatus('success');
+        setStatusMsg('Data successfully imported and restored from JSON text.');
+        setImportText('');
+      }
     } catch {
       setImportStatus('error');
       setStatusMsg('Invalid JSON structure. Please verify the copied string.');

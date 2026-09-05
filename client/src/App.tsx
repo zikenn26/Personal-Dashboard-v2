@@ -399,6 +399,10 @@ export default function App() {
 
   // Settings update handler
   const handleUpdateSettings = (newSettings: AppSettings) => {
+    // If master PIN changed, re-encrypt in-memory vault records with the new PIN
+    if (newSettings.masterPin !== settings.masterPin && vault.length > 0) {
+      void Storage.setVault(vault, newSettings.masterPin);
+    }
     setSettings(newSettings);
     Storage.setSettings(newSettings);
   };
@@ -1148,29 +1152,49 @@ export default function App() {
               )}
             </button>
 
-            {/* Unified account access: profile, settings, data tools, theme, and logout */}
+            {/* Profile Menu: Account settings & Sign out only */}
             <div className="relative">
               <button
                 type="button"
                 onClick={() => setIsAccountMenuOpen((open) => !open)}
                 className="w-7 h-7 rounded-lg overflow-hidden border border-[#EDECE9] dark:border-[#374151] cursor-pointer hover:ring-2 hover:ring-[#6366F1] transition-all shrink-0"
-                title={currentUser ? 'Account menu' : 'Sign in or create an account'}
-                aria-label={currentUser ? 'Account menu' : 'Sign in or create an account'}
+                title="Account menu"
+                aria-label="Account menu"
               >
                 <img src={profile.avatarUrl} alt="Account" className="w-full h-full object-cover" />
               </button>
               {isAccountMenuOpen && (
-                <div className="absolute right-0 top-9 z-50 w-52 rounded-2xl border border-[#EDECE9] dark:border-[#374151] bg-white dark:bg-[#1F2937] p-1.5 shadow-xl">
-                  {currentUser ? (
-                    <>
-                      <button type="button" onClick={() => { setIsAccountMenuOpen(false); setIsSettingsOpen(true); }} className="account-menu-item"><Settings className="w-3.5 h-3.5" /> <span>Account settings</span></button>
-                      <div className="my-1 border-t border-[#F3F4F6] dark:border-[#374151]" />
-                      <button type="button" onClick={() => { setIsAccountMenuOpen(false); handleSignOut(); }} className="account-menu-item text-rose-600 dark:text-rose-300">↪ <span>Sign out</span></button>
-                    </>
-                  ) : (
-                    <button type="button" onClick={() => { setIsAccountMenuOpen(false); setIsAuthModalOpen(true); }} className="account-menu-item text-purple-700 dark:text-purple-300"><LogIn className="w-3.5 h-3.5" /> <span>Sign in / Create account</span></button>
-                  )}
-                </div>
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setIsAccountMenuOpen(false)}
+                  />
+                  <div className="absolute right-0 top-9 z-50 w-52 rounded-2xl border border-[#EDECE9] dark:border-[#374151] bg-white dark:bg-[#1F2937] p-1.5 shadow-xl animate-in fade-in zoom-in-95">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAccountMenuOpen(false);
+                        setIsSettingsOpen(true);
+                      }}
+                      className="account-menu-item"
+                    >
+                      <Settings className="w-3.5 h-3.5" />
+                      <span>Account settings</span>
+                    </button>
+                    <div className="my-1 border-t border-[#F3F4F6] dark:border-[#374151]" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAccountMenuOpen(false);
+                        handleSignOut();
+                      }}
+                      className="account-menu-item text-rose-600 dark:text-rose-300"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Sign out</span>
+                    </button>
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -1735,6 +1759,7 @@ export default function App() {
                     onAddCredential={handleAddVaultSecret}
                     onDeleteCredential={handleDeleteVaultSecret}
                     soundEnabled={settings.soundEnabled}
+                    onOpenSettings={() => setIsSettingsOpen(true)}
                   />
                 </div>
               )}

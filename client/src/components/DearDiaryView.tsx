@@ -310,7 +310,8 @@ export const DearDiaryView: React.FC<DearDiaryViewProps> = ({
   // PIN Unlock Check
   const handleVerifyPinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (pinInput === masterPin || pinInput === '1234') {
+    const effectivePin = masterPin || '1234';
+    if (pinInput === effectivePin) {
       Sound.success(soundEnabled);
       if (unlockTargetId === 'global') {
         setIsGlobalVaultUnlocked(true);

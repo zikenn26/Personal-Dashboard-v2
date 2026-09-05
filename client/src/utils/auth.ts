@@ -1,5 +1,10 @@
 import { AuthUser } from '../types';
-import { getSupabaseClient, isSupabaseConfigured, setCustomWorkspaceIdentifier } from './supabase';
+import {
+  getSupabaseClient,
+  isSupabaseConfigured,
+  setCustomWorkspaceIdentifier,
+  setCustomWorkspaceEmail,
+} from './supabase';
 import { hashPassword, verifyPasswordHash } from './crypto';
 
 const AUTH_STORAGE_KEY = 'notion_os_auth_user_v1';
@@ -35,6 +40,55 @@ const saveLocalCredential = async (email: string, pass: string, user: AuthUser) 
   }
 };
 
+// Cross-device cloud credential sync via Supabase
+const saveCloudCredential = async (email: string, pass: string, user: AuthUser) => {
+  const client = getSupabaseClient();
+  if (!client || !isSupabaseConfigured()) return;
+  try {
+    const cleanEmail = email.toLowerCase().trim();
+    const accountIdentifier = `account_auth_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
+    const passHash = await hashPassword(pass);
+    await client.from('user_workspaces').upsert(
+      {
+        user_identifier: accountIdentifier,
+        user_email: cleanEmail,
+        workspace_data: {
+          account: {
+            user,
+            passHash,
+          },
+        },
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_identifier' }
+    );
+  } catch (err) {
+    console.warn('Cloud credential sync notice:', err);
+  }
+};
+
+const getCloudCredential = async (email: string): Promise<{ user: AuthUser; passHash: string } | null> => {
+  const client = getSupabaseClient();
+  if (!client || !isSupabaseConfigured()) return null;
+  try {
+    const cleanEmail = email.toLowerCase().trim();
+    const accountIdentifier = `account_auth_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
+    const { data, error } = await client
+      .from('user_workspaces')
+      .select('workspace_data')
+      .eq('user_identifier', accountIdentifier)
+      .limit(1)
+      .maybeSingle();
+
+    if (!error && data?.workspace_data?.account) {
+      return data.workspace_data.account;
+    }
+  } catch (err) {
+    console.warn('Cloud credential lookup notice:', err);
+  }
+  return null;
+};
+
 export const Auth = {
   /**
    * Get currently logged-in user from LocalStorage
@@ -46,6 +100,7 @@ export const Auth = {
         const user = JSON.parse(stored);
         if (user && user.email) {
           setCustomWorkspaceIdentifier(getUserWorkspaceKey(user));
+          setCustomWorkspaceEmail(user.email);
           return user;
         }
       }
@@ -63,6 +118,7 @@ export const Auth = {
       if (user) {
         localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
         setCustomWorkspaceIdentifier(getUserWorkspaceKey(user));
+        setCustomWorkspaceEmail(user.email);
         // Save into known accounts list
         const accounts = Auth.getKnownAccounts();
         const existingIdx = accounts.findIndex((a) => a.email.toLowerCase() === user.email.toLowerCase());
@@ -75,6 +131,7 @@ export const Auth = {
       } else {
         localStorage.removeItem(AUTH_STORAGE_KEY);
         setCustomWorkspaceIdentifier('user_guest');
+        setCustomWorkspaceEmail('gulshan@gmail.com');
       }
     } catch (e) {
       console.warn('Failed to set current auth user:', e);
@@ -144,7 +201,15 @@ export const Auth = {
 
     // 2. Check registered local accounts credentials
     const credentialsMap = getLocalCredentialsMap();
-    const storedRecord = credentialsMap[cleanEmail];
+    let storedRecord = credentialsMap[cleanEmail];
+
+    // 2b. If account not found in this device's localStorage, query Supabase cloud credentials
+    if (!storedRecord) {
+      const cloudRecord = await getCloudCredential(cleanEmail);
+      if (cloudRecord) {
+        storedRecord = { user: cloudRecord.user, pass: cloudRecord.passHash };
+      }
+    }
 
     if (storedRecord) {
       const storedPass = storedRecord.pass;
@@ -155,17 +220,36 @@ export const Auth = {
         return { success: false, message: 'Incorrect password. Please try again.' };
       }
       const user = { ...storedRecord.user, lastLoginAt: Date.now() };
-      if (!storedPass.trim().startsWith('{')) {
-        await saveLocalCredential(cleanEmail, cleanPass, user);
-      }
+      await saveLocalCredential(cleanEmail, cleanPass, user);
+      await saveCloudCredential(cleanEmail, cleanPass, user);
       Auth.setCurrentUser(user);
       return { success: true, user, message: 'Signed in successfully' };
     }
 
-    // 3. If account is not registered yet, require signup
+    // 3. Check built-in mock test account (gulshan@gmail.com / 12345678)
+    if (cleanEmail === 'gulshan@gmail.com') {
+      if (cleanPass === '12345678') {
+        const testUser: AuthUser = {
+          id: 'user_gulshan_mock',
+          email: 'gulshan@gmail.com',
+          name: 'Gulshan Kumar Nayak',
+          createdAt: Date.now(),
+          lastLoginAt: Date.now(),
+          provider: 'local',
+        };
+        Auth.setCurrentUser(testUser);
+        await saveLocalCredential(cleanEmail, cleanPass, testUser);
+        await saveCloudCredential(cleanEmail, cleanPass, testUser);
+        return { success: true, user: testUser, message: 'Signed in successfully with mock test account' };
+      } else {
+        return { success: false, message: 'Incorrect password for test account.' };
+      }
+    }
+
+    // 4. If account is not registered yet, require signup
     return {
       success: false,
-      message: 'Account not found. Please create an account by clicking "Sign Up" first.',
+      message: 'Account not found. Please create an account by clicking "Create Account" first.',
     };
   },
 
@@ -218,6 +302,7 @@ export const Auth = {
             provider: 'supabase',
           };
           await saveLocalCredential(cleanEmail, cleanPass, user);
+          await saveCloudCredential(cleanEmail, cleanPass, user);
           Auth.setCurrentUser(user);
           return { success: true, user, message: 'Account created successfully in Supabase Cloud!' };
         }
@@ -226,16 +311,17 @@ export const Auth = {
       }
     }
 
-    // 2. Local personalized account creation
+    // 2. Local & cloud synchronized account creation
     const user: AuthUser = {
       id: `usr_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`,
       email: cleanEmail,
       name: displayName,
       createdAt: Date.now(),
       lastLoginAt: Date.now(),
-      provider: 'local_demo',
+      provider: 'local',
     };
     await saveLocalCredential(cleanEmail, cleanPass, user);
+    await saveCloudCredential(cleanEmail, cleanPass, user);
     Auth.setCurrentUser(user);
     return { success: true, user, message: 'Account created successfully!' };
   },

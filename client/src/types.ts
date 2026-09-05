@@ -409,5 +409,5 @@ export interface AuthUser {
   avatarUrl?: string;
   createdAt: number;
   lastLoginAt: number;
-  provider: 'supabase' | 'local_demo';
+  provider: 'supabase' | 'local_demo' | 'local';
 }

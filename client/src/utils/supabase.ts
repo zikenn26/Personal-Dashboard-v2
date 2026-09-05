@@ -73,6 +73,7 @@ export interface CloudSyncResult {
 }
 
 let activeUserIdentifier = 'user_guest';
+let activeUserEmail = 'gulshan@gmail.com';
 
 export const setCustomWorkspaceIdentifier = (id: string) => {
   if (id && id.trim()) {
@@ -80,8 +81,18 @@ export const setCustomWorkspaceIdentifier = (id: string) => {
   }
 };
 
+export const setCustomWorkspaceEmail = (email: string) => {
+  if (email && email.trim() && !email.includes('hcl-software.com')) {
+    activeUserEmail = email.trim().toLowerCase();
+  }
+};
+
 export const getCustomWorkspaceIdentifier = (): string => {
   return activeUserIdentifier || 'user_guest';
+};
+
+export const getCustomWorkspaceEmail = (): string => {
+  return activeUserEmail || 'gulshan@gmail.com';
 };
 
 export const WORKSPACE_USER_IDENTIFIER = 'user_guest';
@@ -210,10 +221,20 @@ export const syncWorkspaceToSupabase = async (
       },
     };
 
+    // Thoroughly sanitize any legacy company email references
+    if (enrichedPayload.profile && enrichedPayload.profile.contactEmail?.includes('hcl-software.com')) {
+      enrichedPayload.profile.contactEmail = activeUserEmail || 'gulshan@gmail.com';
+    }
+
     const activeId = getCustomWorkspaceIdentifier();
+    let resolvedEmail = activeUserEmail || workspacePayload?.profile?.contactEmail || 'user@workspace.app';
+    if (resolvedEmail.includes('hcl-software.com')) {
+      resolvedEmail = 'gulshan@gmail.com';
+    }
+
     const payloadToSave = {
       user_identifier: activeId,
-      user_email: workspacePayload?.profile?.contactEmail || 'user@workspace.app',
+      user_email: resolvedEmail,
       workspace_data: enrichedPayload,
       updated_at: now,
     };

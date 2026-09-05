@@ -232,7 +232,7 @@ export const INITIAL_PROFILE: UserProfile = {
   bannerBg: 'linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 50%, #FDF4FF 100%)',
   staticCoverImage: STOCK_IMAGES.workspaceCover,
   coverImageEnabled: true,
-  contactEmail: 'gulshan.kumarnayak@hcl-software.com',
+  contactEmail: 'gulshan@gmail.com',
   phone: '+91 98765 43210',
   github: 'https://github.com/gulshankumar',
   linkedin: 'https://linkedin.com/in/gulshankumarnayak',
@@ -735,12 +735,17 @@ export const Storage = {
     if (!data.title || data.title === 'Personal Workspace & Life OS') {
       data.title = INITIAL_PROFILE.title;
     }
-    if (!data.contactEmail) {
+    if (!data.contactEmail || data.contactEmail.includes('hcl-software.com')) {
       data.contactEmail = INITIAL_PROFILE.contactEmail;
     }
     return data;
   },
-  setProfile: (profile: UserProfile) => saveToStorage(STORAGE_KEYS.PROFILE, profile),
+  setProfile: (profile: UserProfile) => {
+    if (profile.contactEmail && profile.contactEmail.includes('hcl-software.com')) {
+      profile.contactEmail = INITIAL_PROFILE.contactEmail;
+    }
+    return saveToStorage(STORAGE_KEYS.PROFILE, profile);
+  },
 
   getSettings: (): AppSettings => loadFromStorage(STORAGE_KEYS.SETTINGS, INITIAL_SETTINGS),
   setSettings: (settings: AppSettings) => saveToStorage(STORAGE_KEYS.SETTINGS, settings),
@@ -793,7 +798,16 @@ export const Storage = {
 
   importAllDataPayload: (data: any): boolean => {
     try {
-      if (!data || typeof data !== 'object') return false;
+      if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+      const knownKeys = [
+        'profile', 'todos', 'habits', 'goals', 'vaultEncrypted', 'vault',
+        'expenses', 'journal', 'media', 'achievements', 'doodles',
+        'timeline', 'projects', 'skills', 'settings', 'sections',
+        'photos', 'resume', 'quotes', 'version'
+      ];
+      const hasKnownKey = knownKeys.some((k) => k in data && data[k] !== undefined);
+      if (!hasKnownKey) return false;
+
       if (data.profile) Storage.setProfile(data.profile);
       if (data.todos) Storage.setTodos(data.todos);
       if (data.habits) Storage.setHabits(data.habits);
@@ -828,26 +842,7 @@ export const Storage = {
   importAllDataJSON: (jsonStr: string): boolean => {
     try {
       const data = JSON.parse(jsonStr);
-      if (data.profile) Storage.setProfile(data.profile);
-      if (data.todos) Storage.setTodos(data.todos);
-      if (data.habits) Storage.setHabits(data.habits);
-      if (data.goals) Storage.setGoals(data.goals);
-      if (data.vaultEncrypted) Storage.restoreEncryptedVault(data.vaultEncrypted);
-      else if (data.vault) Storage.restoreEncryptedVault(null);
-      if (data.expenses) Storage.setExpenses(data.expenses);
-      if (data.journal) Storage.setJournal(data.journal);
-      if (data.media) Storage.setMedia(data.media);
-      if (data.achievements) Storage.setAchievements(data.achievements);
-      if (data.doodles) Storage.setDoodles(data.doodles);
-      if (data.timeline) Storage.setTimeline(data.timeline);
-      if (data.projects) Storage.setProjects(data.projects);
-      if (data.skills) Storage.setSkills(data.skills);
-      if (data.settings) Storage.setSettings(data.settings);
-      if (data.sections) Storage.setSections(data.sections);
-      if (data.photos) Storage.setPhotos(data.photos);
-      if (data.resume) Storage.setResume(data.resume);
-      if (data.quotes) Storage.setQuotes(data.quotes);
-      return true;
+      return Storage.importAllDataPayload(data);
     } catch (err) {
       console.error('Failed to import JSON data:', err);
       return false;

@@ -101,7 +101,7 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
       'Dedicated Software Engineer with proven expertise in engineering performant web systems, intuitive interfaces, and distributed software architectures. Eager to solve complex challenges with clean code and modern tooling.'
   );
   const [formLocation, setFormLocation] = useState(profile.location || 'Noida / Bengaluru, India');
-  const [formEmail, setFormEmail] = useState(profile.contactEmail || 'gulshan.kumarnayak@hcl-software.com');
+  const [formEmail, setFormEmail] = useState(profile.contactEmail || 'gulshan@gmail.com');
   const [formPhone, setFormPhone] = useState(profile.phone || '+91 98765 43210');
   const [formLinkedin, setFormLinkedin] = useState(profile.linkedin || 'https://linkedin.com/in/gulshankumarnayak');
   const [formGithub, setFormGithub] = useState(profile.github || 'https://github.com/gulshankumar');
@@ -214,7 +214,7 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
 
     let md = `# ${profile.name || 'Gulshan Kumar Nayak'}\n`;
     md += `**${profile.handle ? profile.handle.replace('@', '') : 'Gulshan'}**\n\n`;
-    md += `📍 Location: ${profile.location || 'Noida / Bengaluru, India'} | ✉️ Email: ${profile.contactEmail || 'gulshan.kumarnayak@hcl-software.com'}\n`;
+    md += `📍 Location: ${profile.location || 'Noida / Bengaluru, India'} | ✉️ Email: ${profile.contactEmail || 'gulshan@gmail.com'}\n`;
     if (profile.phone) md += `📞 Phone: ${profile.phone} | `;
     if (profile.linkedin) md += `💼 LinkedIn: ${profile.linkedin} | `;
     if (profile.github) md += `🐙 GitHub: ${profile.github}\n\n`;
@@ -531,7 +531,7 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
     ? profile.handle.replace('@', '')
     : profile.title || 'Gulshan';
   const displayLocation = profile.location || 'Noida / Bengaluru, India';
-  const displayEmail = profile.contactEmail || 'gulshan.kumarnayak@hcl-software.com';
+  const displayEmail = profile.contactEmail || 'gulshan@gmail.com';
   const summaryText =
     profile.professionalSummary ||
     profile.bio ||

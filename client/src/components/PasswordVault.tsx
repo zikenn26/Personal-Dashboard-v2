@@ -13,6 +13,7 @@ import {
   Search,
   Trash2,
   ExternalLink,
+  Sparkles,
 } from 'lucide-react';
 import { VaultCredential } from '../types';
 import { Sound } from '../utils/audio';
@@ -23,6 +24,7 @@ interface PasswordVaultProps {
   onAddCredential: (cred: Omit<VaultCredential, 'id' | 'updatedAt'>) => void;
   onDeleteCredential: (id: string) => void;
   soundEnabled: boolean;
+  onOpenSettings?: () => void;
 }
 
 export const PasswordVault: React.FC<PasswordVaultProps> = ({
@@ -31,6 +33,7 @@ export const PasswordVault: React.FC<PasswordVaultProps> = ({
   onAddCredential,
   onDeleteCredential,
   soundEnabled,
+  onOpenSettings,
 }) => {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [pinInput, setPinInput] = useState('');
@@ -47,6 +50,30 @@ export const PasswordVault: React.FC<PasswordVaultProps> = ({
   const [newSecret, setNewSecret] = useState('');
   const [newCategory, setNewCategory] = useState<VaultCredential['category']>('API Keys');
   const [newNotes, setNewNotes] = useState('');
+
+  const generateSecurePassword = (length = 20) => {
+    Sound.click(soundEnabled);
+    const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=[]{}|';
+    const array = new Uint32Array(length);
+    crypto.getRandomValues(array);
+    let result = '';
+    for (let i = 0; i < length; i++) {
+      result += charset[array[i] % charset.length];
+    }
+    setNewSecret(result);
+  };
+
+  const calculateStrength = (val: string): VaultCredential['strength'] => {
+    if (!val || val.length < 8) return 'weak';
+    const hasUpper = /[A-Z]/.test(val);
+    const hasLower = /[a-z]/.test(val);
+    const hasNumber = /[0-9]/.test(val);
+    const hasSpecial = /[^A-Za-z0-9]/.test(val);
+    const poolScore = (hasUpper ? 1 : 0) + (hasLower ? 1 : 0) + (hasNumber ? 1 : 0) + (hasSpecial ? 1 : 0);
+    if (val.length >= 16 && poolScore >= 3) return 'strong';
+    if (val.length >= 10 && poolScore >= 2) return 'good';
+    return 'fair';
+  };
 
   const handleUnlock = (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,9 +112,7 @@ export const PasswordVault: React.FC<PasswordVaultProps> = ({
     if (!newService.trim() || !newSecret.trim()) return;
 
     Sound.success(soundEnabled);
-    let strength: VaultCredential['strength'] = 'good';
-    if (newSecret.length >= 16) strength = 'strong';
-    else if (newSecret.length < 8) strength = 'weak';
+    const strength = calculateStrength(newSecret);
 
     onAddCredential({
       service: newService.trim(),
@@ -177,6 +202,18 @@ export const PasswordVault: React.FC<PasswordVaultProps> = ({
             <p className="text-[11px] text-[#6B7280] dark:text-[#9CA3AF]">
               {masterPin ? 'Unlock with your vault PIN. Secrets are decrypted only in this browser session.' : 'Set a vault PIN in Account settings before storing or opening secrets.'}
             </p>
+            {!masterPin && onOpenSettings && (
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={onOpenSettings}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  <span>Configure Master PIN</span>
+                </button>
+              </div>
+            )}
           </div>
 
           <form onSubmit={handleUnlock} className="max-w-xs mx-auto space-y-2.5">
@@ -404,9 +441,20 @@ export const PasswordVault: React.FC<PasswordVaultProps> = ({
             </div>
 
             <div>
-              <label className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold block mb-1">
-                Password / Secret Token
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold">
+                  Password / Secret Token
+                </label>
+                <button
+                  type="button"
+                  onClick={() => generateSecurePassword(20)}
+                  className="text-[10px] font-semibold text-[#6366F1] dark:text-[#818CF8] hover:underline flex items-center gap-1 cursor-pointer"
+                  title="Generate cryptographically secure 20-character password"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  <span>Generate Strong</span>
+                </button>
+              </div>
               <input
                 type="text"
                 value={newSecret}
@@ -414,6 +462,24 @@ export const PasswordVault: React.FC<PasswordVaultProps> = ({
                 placeholder="Secret key string..."
                 className="w-full px-3 py-1.5 rounded-lg text-xs font-mono bg-[#F9FAFB] dark:bg-[#1F2937] border border-[#E5E7EB] dark:border-[#374151] text-[#111827] dark:text-[#F3F4F6] focus:outline-none focus:ring-1 focus:ring-[#6366F1]"
               />
+              {newSecret && (
+                <div className="mt-1 flex items-center justify-between text-[10px]">
+                  <span className="text-[#9CA3AF]">Strength:</span>
+                  <span
+                    className={`font-semibold capitalize ${
+                      calculateStrength(newSecret) === 'strong'
+                        ? 'text-emerald-500'
+                        : calculateStrength(newSecret) === 'good'
+                        ? 'text-blue-500'
+                        : calculateStrength(newSecret) === 'fair'
+                        ? 'text-amber-500'
+                        : 'text-rose-500'
+                    }`}
+                  >
+                    {calculateStrength(newSecret)}
+                  </span>
+                </div>
+              )}
             </div>
 
             <div>
