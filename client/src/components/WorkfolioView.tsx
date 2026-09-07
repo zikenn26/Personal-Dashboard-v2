@@ -92,20 +92,20 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
   const [showEduModal, setShowEduModal] = useState(false);
 
   // Profile Edit Modal State
-  const [formName, setFormName] = useState(profile.name || 'Gulshan Kumar Nayak');
-  const [formSubtitle, setFormSubtitle] = useState(profile.handle?.replace('@', '') || 'Gulshan');
-  const [formTitle, setFormTitle] = useState(profile.title || 'Software Engineer at HCL Software');
+  const [formName, setFormName] = useState(profile.name || '');
+  const [formSubtitle, setFormSubtitle] = useState(profile.handle?.replace('@', '') || '');
+  const [formTitle, setFormTitle] = useState(profile.title || '');
   const [formSummary, setFormSummary] = useState(
     profile.professionalSummary ||
       profile.bio ||
-      'Dedicated Software Engineer with proven expertise in engineering performant web systems, intuitive interfaces, and distributed software architectures. Eager to solve complex challenges with clean code and modern tooling.'
+      ''
   );
-  const [formLocation, setFormLocation] = useState(profile.location || 'Bengaluru, India');
+  const [formLocation, setFormLocation] = useState(profile.location || '');
   const [formEmail, setFormEmail] = useState(profile.contactEmail || '');
-  const [formPhone, setFormPhone] = useState(profile.phone || '+91 98765 43210');
-  const [formLinkedin, setFormLinkedin] = useState(profile.linkedin || 'https://linkedin.com/in/gulshankumarnayak');
-  const [formGithub, setFormGithub] = useState(profile.github || 'https://github.com/gulshankumar');
-  const [formWebsite, setFormWebsite] = useState(profile.website || 'https://gulshankumar.dev');
+  const [formPhone, setFormPhone] = useState(profile.phone || '');
+  const [formLinkedin, setFormLinkedin] = useState(profile.linkedin || '');
+  const [formGithub, setFormGithub] = useState(profile.github || '');
+  const [formWebsite, setFormWebsite] = useState(profile.website || '');
 
   // New Project State
   const [projTitle, setProjTitle] = useState('');
@@ -191,7 +191,7 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
         heightLeft -= pdfHeight;
       }
 
-      const cleanFileName = (profile.name || 'Gulshan_Kumar_Nayak')
+      const cleanFileName = (profile.name || 'User_Resume')
         .trim()
         .replace(/[^a-zA-Z0-9_-]/g, '_');
       pdf.save(`${cleanFileName}_Resume.pdf`);
@@ -654,16 +654,16 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
                 type="button"
                 onClick={() => {
                   Sound.click(soundEnabled);
-                  setFormName(profile.name || 'Gulshan Kumar Nayak');
-                  setFormSubtitle(profile.handle?.replace('@', '') || 'Gulshan');
-                  setFormTitle(profile.title || 'Software Engineer at HCL Software');
+                  setFormName(profile.name || '');
+                  setFormSubtitle(profile.handle?.replace('@', '') || '');
+                  setFormTitle(profile.title || '');
                   setFormSummary(summaryText);
                   setFormLocation(displayLocation);
                   setFormEmail(displayEmail);
-                  setFormPhone(profile.phone || '+91 98765 43210');
-                  setFormLinkedin(profile.linkedin || 'https://linkedin.com/in/gulshankumarnayak');
-                  setFormGithub(profile.github || 'https://github.com/gulshankumar');
-                  setFormWebsite(profile.website || 'https://gulshankumar.dev');
+                  setFormPhone(profile.phone || '');
+                  setFormLinkedin(profile.linkedin || '');
+                  setFormGithub(profile.github || '');
+                  setFormWebsite(profile.website || '');
                   setShowProfileModal(true);
                 }}
                 className="px-3.5 py-2 rounded-xl bg-white dark:bg-[#1F2937] border border-[#E5E7EB] dark:border-[#374151] hover:border-[#6366F1] text-xs font-semibold text-[#374151] dark:text-[#CBD5E1] transition-all flex items-center gap-1.5 cursor-pointer"
@@ -680,28 +680,36 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
               <div>
                 <div className="flex items-center gap-2">
                   <h1 className="workspace-heading font-black text-[#111827] dark:text-white tracking-tight">
-                    {profile.name || 'Gulshan Kumar Nayak'}
+                    {profile.name || 'Personal Workspace'}
                   </h1>
                   <span className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-[#6366F1] dark:text-[#818CF8] text-[10px] font-bold">
                     PRO
                   </span>
                 </div>
-                <p className="text-sm font-semibold text-[#374151] dark:text-[#CBD5E1] pt-0.5">
-                  {profile.title || 'Software Engineer at HCL Software'}
-                </p>
+                {profile.title && (
+                  <p className="text-sm font-semibold text-[#374151] dark:text-[#CBD5E1] pt-0.5">
+                    {profile.title}
+                  </p>
+                )}
               </div>
 
               {/* Company & Education Chips (LinkedIn style) */}
-              <div className="flex flex-col gap-1 text-xs text-[#4B5563] dark:text-[#9CA3AF]">
-                <div className="flex items-center gap-1.5 font-medium">
-                  <Building className="w-3.5 h-3.5 text-[#6366F1]" />
-                  <span>{profile.currentCompany || 'HCL Software'}</span>
+              {(profile.currentCompany || (profile.educationRecords && profile.educationRecords.length > 0)) && (
+                <div className="flex flex-col gap-1 text-xs text-[#4B5563] dark:text-[#9CA3AF]">
+                  {profile.currentCompany && (
+                    <div className="flex items-center gap-1.5 font-medium">
+                      <Building className="w-3.5 h-3.5 text-[#6366F1]" />
+                      <span>{profile.currentCompany}</span>
+                    </div>
+                  )}
+                  {profile.educationRecords && profile.educationRecords.length > 0 && (
+                    <div className="flex items-center gap-1.5 font-medium">
+                      <GraduationCap className="w-3.5 h-3.5 text-[#6366F1]" />
+                      <span>{profile.educationRecords[0].institution}</span>
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center gap-1.5 font-medium">
-                  <GraduationCap className="w-3.5 h-3.5 text-[#6366F1]" />
-                  <span>National Institute of Technology</span>
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Location & Contact strip */}

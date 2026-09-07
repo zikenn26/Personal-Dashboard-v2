@@ -58,6 +58,7 @@ import {
   subscribeToSyncStatus,
   getAutoSyncStatus,
   setCustomWorkspaceIdentifier,
+  setCustomWorkspaceEmail,
 } from './utils/supabase';
 
 import {
@@ -152,6 +153,7 @@ export default function App() {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [showQuickCapture, setShowQuickCapture] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(() => authRequest === 'signup' || authRequest === 'signin');
   const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup'>(() => authRequest === 'signup' ? 'signup' : 'signin');
@@ -167,6 +169,7 @@ export default function App() {
     setCurrentUser(user);
     setIsAuthModalOpen(false);
     setCustomWorkspaceIdentifier(getUserWorkspaceKey(user));
+    setCustomWorkspaceEmail(user.email);
     
     // Immediately hydrate state from the user-scoped Storage
     handleHydrateAllFromStorage();
@@ -192,7 +195,8 @@ export default function App() {
     Sound.click(settings.soundEnabled);
     await Auth.signOut();
     setCurrentUser(null);
-    setCustomWorkspaceIdentifier('default');
+    setCustomWorkspaceIdentifier('user_guest');
+    setCustomWorkspaceEmail('guest@workspace.local');
     handleHydrateAllFromStorage();
     setIsAuthModalOpen(false);
   };
@@ -975,22 +979,12 @@ export default function App() {
   const currentNav = navItems.find((n) => n.id === activeView) || navItems[0];
   const isSidebarExpanded = !isSidebarCollapsed;
 
-  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
-
   if (!currentUser) {
     return (
       <>
         <LandingPage
-          onSignIn={() => {
-            setAuthInitialMode('signin');
-            setIsAuthModalOpen(true);
-          }}
-          onSignUp={() => {
-            setAuthInitialMode('signup');
-            setIsAuthModalOpen(true);
-          }}
           onGetStarted={() => {
-            setAuthInitialMode('signup');
+            setAuthInitialMode('signin');
             setIsAuthModalOpen(true);
           }}
         />

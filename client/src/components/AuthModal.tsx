@@ -221,7 +221,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-3.5">
+          <form onSubmit={handleSubmit} autoComplete="on" className="space-y-3.5">
             {mode === 'signup' && (
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-2.5">
@@ -230,6 +230,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       First Name <span className="text-rose-500">*</span>
                     </label>
                     <input
+                      id="auth-first-name"
+                      name="given-name"
+                      autoComplete="given-name"
                       type="text"
                       required
                       value={firstName}
@@ -243,6 +246,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       Middle Name <span className="text-neutral-400 font-normal">(Optional)</span>
                     </label>
                     <input
+                      id="auth-middle-name"
+                      name="additional-name"
+                      autoComplete="additional-name"
                       type="text"
                       value={middleName}
                       onChange={(e) => setMiddleName(e.target.value)}
@@ -257,6 +263,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     Last Name <span className="text-rose-500">*</span>
                   </label>
                   <input
+                    id="auth-last-name"
+                    name="family-name"
+                    autoComplete="family-name"
                     type="text"
                     required
                     value={lastName}
@@ -275,6 +284,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <div className="relative">
                 <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
                 <input
+                  id="auth-email"
+                  name="username"
+                  autoComplete="username"
                   type="email"
                   required
                   value={email}
@@ -292,6 +304,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <div className="relative">
                 <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
                 <input
+                  id="auth-password"
+                  name="password"
+                  autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
                   type={showPassword ? 'text' : 'password'}
                   required
                   value={password}

@@ -248,10 +248,10 @@ export const PortfolioResumeSheet: React.FC<PortfolioResumeSheetProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
             <div>
               <h1 className="workspace-heading font-black text-[#111827] dark:text-white tracking-tight uppercase">
-                {profile.name || 'Gulshan Kumar Nayak'}
+                {profile.name || 'Your Name'}
               </h1>
               <p className="text-sm sm:text-base font-bold text-[#6366F1] dark:text-[#818CF8] mt-0.5">
-                {profile.title || 'Software Engineer at HCL Software'}
+                {profile.title || 'Professional Title'}
               </p>
             </div>
 

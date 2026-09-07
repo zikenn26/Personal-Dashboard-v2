@@ -19,7 +19,7 @@ export const getUserWorkspaceKey = (user: AuthUser | null): string => {
   return `user_${cleanEmail}`;
 };
 
-// Helper to store & retrieve credentials map securely
+// Helper to store & retrieve credentials map securely in local browser storage only
 const getLocalCredentialsMap = (): Record<string, { user: AuthUser; pass: string }> => {
   try {
     const raw = localStorage.getItem(USER_CREDENTIALS_KEY);
@@ -40,55 +40,6 @@ const saveLocalCredential = async (email: string, pass: string, user: AuthUser) 
   }
 };
 
-// Cross-device cloud credential sync via Supabase
-const saveCloudCredential = async (email: string, pass: string, user: AuthUser) => {
-  const client = getSupabaseClient();
-  if (!client || !isSupabaseConfigured()) return;
-  try {
-    const cleanEmail = email.toLowerCase().trim();
-    const accountIdentifier = `account_auth_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
-    const passHash = await hashPassword(pass);
-    await client.from('user_workspaces').upsert(
-      {
-        user_identifier: accountIdentifier,
-        user_email: cleanEmail,
-        workspace_data: {
-          account: {
-            user,
-            passHash,
-          },
-        },
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_identifier' }
-    );
-  } catch (err) {
-    console.warn('Cloud credential sync notice:', err);
-  }
-};
-
-const getCloudCredential = async (email: string): Promise<{ user: AuthUser; passHash: string } | null> => {
-  const client = getSupabaseClient();
-  if (!client || !isSupabaseConfigured()) return null;
-  try {
-    const cleanEmail = email.toLowerCase().trim();
-    const accountIdentifier = `account_auth_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
-    const { data, error } = await client
-      .from('user_workspaces')
-      .select('workspace_data')
-      .eq('user_identifier', accountIdentifier)
-      .limit(1)
-      .maybeSingle();
-
-    if (!error && data?.workspace_data?.account) {
-      return data.workspace_data.account;
-    }
-  } catch (err) {
-    console.warn('Cloud credential lookup notice:', err);
-  }
-  return null;
-};
-
 export const Auth = {
   /**
    * Get currently logged-in user from LocalStorage
@@ -99,7 +50,13 @@ export const Auth = {
       if (stored) {
         const user = JSON.parse(stored);
         // Purge any legacy mock test account session if found
-        if (user && user.id === 'user_gulshan_mock') {
+        if (
+          user &&
+          (user.id === 'user_gulshan_mock' ||
+            user.email?.toLowerCase().includes('gulshan') ||
+            user.email?.toLowerCase().includes('demo') ||
+            user.email?.toLowerCase().includes('test@example.com'))
+        ) {
           localStorage.removeItem(AUTH_STORAGE_KEY);
           return null;
         }
@@ -207,15 +164,7 @@ export const Auth = {
 
     // 2. Check registered local accounts credentials
     const credentialsMap = getLocalCredentialsMap();
-    let storedRecord = credentialsMap[cleanEmail];
-
-    // 2b. If account not found in this device's localStorage, query Supabase cloud credentials
-    if (!storedRecord) {
-      const cloudRecord = await getCloudCredential(cleanEmail);
-      if (cloudRecord) {
-        storedRecord = { user: cloudRecord.user, pass: cloudRecord.passHash };
-      }
-    }
+    const storedRecord = credentialsMap[cleanEmail];
 
     if (storedRecord) {
       const storedPass = storedRecord.pass;
@@ -227,7 +176,6 @@ export const Auth = {
       }
       const user = { ...storedRecord.user, lastLoginAt: Date.now() };
       await saveLocalCredential(cleanEmail, cleanPass, user);
-      await saveCloudCredential(cleanEmail, cleanPass, user);
       Auth.setCurrentUser(user);
       return { success: true, user, message: 'Signed in successfully' };
     }
@@ -288,7 +236,6 @@ export const Auth = {
             provider: 'supabase',
           };
           await saveLocalCredential(cleanEmail, cleanPass, user);
-          await saveCloudCredential(cleanEmail, cleanPass, user);
           Auth.setCurrentUser(user);
           return { success: true, user, message: 'Account created successfully in Supabase Cloud!' };
         }
@@ -297,7 +244,7 @@ export const Auth = {
       }
     }
 
-    // 2. Local & cloud synchronized account creation
+    // 2. Local-only registered account creation (isolated to this device)
     const user: AuthUser = {
       id: `usr_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`,
       email: cleanEmail,
@@ -307,7 +254,6 @@ export const Auth = {
       provider: 'local',
     };
     await saveLocalCredential(cleanEmail, cleanPass, user);
-    await saveCloudCredential(cleanEmail, cleanPass, user);
     Auth.setCurrentUser(user);
     return { success: true, user, message: 'Account created successfully!' };
   },

@@ -47,216 +47,52 @@ const STORAGE_KEYS = {
   EXAMS: 'notion_os_v5_my_exams',
 };
 
-export const INITIAL_EDUCATION_RECORDS: EducationRecord[] = [
-  {
-    id: 'edu-postgrad',
-    level: 'postgraduation',
-    levelTitle: "Postgraduation (Master's Degree)",
-    degree: 'Master of Technology / M.S. in Computer Science',
-    institution: 'University / Institute of Technology',
-    boardOrUniversity: 'State Technical University',
-    year: '2022 - 2024',
-    score: '8.8 CGPA / 85%',
-    scoreType: 'cgpa',
-    specialization: 'Software Systems & Distributed Computing',
-    location: 'India',
-    highlights: ['Specialized in Distributed Systems', 'Published Research Paper on Microservices', 'Dean’s Honor List'],
-    icon: '🎓',
-  },
-  {
-    id: 'edu-grad',
-    level: 'graduation',
-    levelTitle: "Graduation (Bachelor's Degree)",
-    degree: 'Bachelor of Technology (B.Tech) in Computer Science',
-    institution: 'Institute of Engineering & Technology',
-    boardOrUniversity: 'Autonomous University',
-    year: '2018 - 2022',
-    score: '8.6 CGPA / 82%',
-    scoreType: 'cgpa',
-    specialization: 'Computer Science & Engineering',
-    location: 'India',
-    highlights: ['Lead Capstone Project on AI & Web Platforms', 'Secretary of Computer Society', 'Hackathon Finalist'],
-    icon: '🏛️',
-  },
-  {
-    id: 'edu-inter',
-    level: 'intermediate',
-    levelTitle: 'Intermediate (+2 / Higher Secondary / Class 12th)',
-    degree: 'Senior Secondary Examination (Class 12th)',
-    institution: 'Higher Secondary School / Junior College',
-    boardOrUniversity: 'CBSE / State Board',
-    year: '2016 - 2018',
-    score: '89.4%',
-    scoreType: 'percentage',
-    specialization: 'Science (Physics, Chemistry, Mathematics & CS)',
-    location: 'India',
-    highlights: ['Distinction in Mathematics & Computer Science', 'School Science Exhibition Award'],
-    icon: '📐',
-  },
-  {
-    id: 'edu-matric',
-    level: 'matriculation',
-    levelTitle: 'Matriculation (Class 10th / Secondary School)',
-    degree: 'Secondary School Examination (Class 10th)',
-    institution: 'High School',
-    boardOrUniversity: 'CBSE / State Board',
-    year: '2016',
-    score: '91.2% / 9.6 CGPA',
-    scoreType: 'percentage',
-    specialization: 'General Subjects (Science, Math, Social Studies, English)',
-    location: 'India',
-    highlights: ['Top 5% in Board Examination', 'Captain of School Debate Team'],
-    icon: '🎒',
-  },
-];
+export const INITIAL_EDUCATION_RECORDS: EducationRecord[] = [];
 
-export const INITIAL_JOB_EXPERIENCES: JobExperience[] = [
-  {
-    id: 'job-1',
-    role: 'Software Engineer',
-    company: 'HCL Software',
-    employmentType: 'Full-time',
-    location: 'Noida / Bengaluru, India • Hybrid',
-    startDate: 'Jul 2022',
-    endDate: 'Present',
-    isCurrent: true,
-    description: 'Architecting scalable cloud web applications, modern interactive user experiences, and robust enterprise software solutions.',
-    keyAchievements: [
-      'Engineered high-performance React & TypeScript web applications with zero runtime UI latency',
-      'Implemented real-time state synchronization and client-side caching reducing API payloads by 40%',
-      'Collaborated closely with cross-functional product, UX design, and QA teams across agile sprint cycles',
-    ],
-    techStack: ['React', 'TypeScript', 'Tailwind CSS', 'Node.js', 'REST APIs', 'Git'],
-  },
-  {
-    id: 'job-2',
-    role: 'Frontend Developer Intern',
-    company: 'Tech Solutions Studio',
-    employmentType: 'Internship',
-    location: 'Remote, India',
-    startDate: 'Jan 2022',
-    endDate: 'Jun 2022',
-    isCurrent: false,
-    description: 'Developed responsive client-facing dashboards, accessible components, and performed performance optimizations.',
-    keyAchievements: [
-      'Built 15+ reusable UI components following design system guidelines',
-      'Improved Core Web Vitals score from 68 to 96 across key product landing surfaces',
-    ],
-    techStack: ['JavaScript', 'React', 'CSS Modules', 'Figma', 'Webpack'],
-  },
-];
+export const INITIAL_JOB_EXPERIENCES: JobExperience[] = [];
 
-export const INITIAL_HOBBIES: HobbyItem[] = [
-  {
-    id: 'hob-1',
-    title: 'Chess & Strategic Games',
-    category: 'Intellectual',
-    icon: '♟️',
-    description: 'Rapid and classical chess analysis, tactical puzzle solving, and competitive tournament play.',
-    passionLevel: 'Daily Passion',
-  },
-  {
-    id: 'hob-2',
-    title: 'Open Source Coding & Tinkering',
-    category: 'Tech & Gaming',
-    icon: '💻',
-    description: 'Contributing to developer tools, creating open-source UI templates, and exploring AI agent workflows.',
-    passionLevel: 'Weekend Passion',
-  },
-  {
-    id: 'hob-3',
-    title: 'Reading Non-Fiction & Tech Blogs',
-    category: 'Intellectual',
-    icon: '📚',
-    description: 'System design architectures, psychology of focus, biographies, and software craftsmanship.',
-    passionLevel: 'Daily Habit',
-  },
-  {
-    id: 'hob-4',
-    title: 'Fitness, Cycling & Trekking',
-    category: 'Sports & Fitness',
-    icon: '🚴',
-    description: 'Long weekend cycling trails, outdoor nature trails, and progressive strength workouts.',
-    passionLevel: 'Active Routine',
-  },
-  {
-    id: 'hob-5',
-    title: 'Photography & Visual Design',
-    category: 'Creative',
-    icon: '📷',
-    description: 'Urban architecture photography, typography exploration, and minimalist layout aesthetics.',
-    passionLevel: 'Creative Pursuit',
-  },
-];
+export const INITIAL_HOBBIES: HobbyItem[] = [];
 
-export const INITIAL_CERTIFICATIONS = [
-  {
-    id: 'cert-1',
-    name: 'Google Data Analytics Professional Certificate',
-    issuer: 'Google',
-    year: '2024',
-    link: 'https://coursera.org/verify/google-data-analytics',
-  },
-  {
-    id: 'cert-2',
-    name: 'AWS Certified Solutions Architect & Cloud Practitioner',
-    issuer: 'Amazon Web Services',
-    year: '2023',
-    link: 'https://aws.amazon.com/certification/',
-  },
-  {
-    id: 'cert-3',
-    name: 'Advanced Full-Stack Engineering (React & Node.js)',
-    issuer: 'Meta / Coursera',
-    year: '2023',
-    link: 'https://coursera.org',
-  },
-];
+export const INITIAL_CERTIFICATIONS: Array<{ id: string; name: string; issuer: string; year: string; link?: string }> = [];
 
-export const INITIAL_LANGUAGES = [
-  { id: 'lang-1', name: 'English', proficiency: 'Fluent / Professional' },
-  { id: 'lang-2', name: 'Hindi', proficiency: 'Native / Fluent' },
-  { id: 'lang-3', name: 'Spanish', proficiency: 'Basic / Learning' },
-];
+export const INITIAL_LANGUAGES: Array<{ id: string; name: string; proficiency: string }> = [];
 
-// Clean Base User Profile
+// Clean Base User Profile for any new user
 export const INITIAL_PROFILE: UserProfile = {
-  name: 'Gulshan Kumar Nayak',
-  caption: 'Software Engineer & Full-Stack Problem Solver',
-  handle: '@gulshan',
-  title: 'Software Engineer at HCL Software',
-  bio: 'Passionate software engineer focused on building robust, scalable applications, elegant user interfaces, and high-performance digital systems. Strong foundation in full-stack architecture, clean code principles, and problem-solving.',
-  location: 'Noida / Bengaluru, India',
-  statusText: 'Building impactful enterprise software',
-  statusEmoji: '🚀',
-  avatarUrl: STOCK_IMAGES.avatar,
-  avatarEnabled: true,
+  name: '',
+  caption: '',
+  handle: '',
+  title: '',
+  bio: '',
+  location: '',
+  statusText: '',
+  statusEmoji: '✨',
+  avatarUrl: '',
+  avatarEnabled: false,
   bannerType: 'gradient',
   bannerBg: 'linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 50%, #FDF4FF 100%)',
   staticCoverImage: STOCK_IMAGES.workspaceCover,
   coverImageEnabled: true,
   contactEmail: '',
-  phone: '+91 98765 43210',
-  github: 'https://github.com/gulshankumar',
-  linkedin: 'https://linkedin.com/in/gulshankumarnayak',
-  twitter: 'https://twitter.com/gulshan_dev',
-  website: 'https://gulshankumar.dev',
-  resumeAvailable: true,
+  phone: '',
+  github: '',
+  linkedin: '',
+  twitter: '',
+  website: '',
+  resumeAvailable: false,
   services: [],
   tools: [],
-  educationRecords: INITIAL_EDUCATION_RECORDS,
-  jobExperiences: INITIAL_JOB_EXPERIENCES,
-  hobbies: INITIAL_HOBBIES,
-  certifications: INITIAL_CERTIFICATIONS,
-  languages: INITIAL_LANGUAGES,
-  professionalSummary:
-    'Dedicated Software Engineer with proven expertise in engineering performant web systems, intuitive interfaces, and distributed software architectures. Eager to solve complex challenges with clean code and modern tooling.',
-  careerObjective:
-    'Enthusiastic and results-driven Software Engineer with strong proficiency in full-stack web engineering, scalable architectures, and modern cloud technologies. Seeking to drive product excellence, solve critical technical challenges, and build scalable high-impact solutions.',
-  availabilityStatus: 'Open to high-impact opportunities & collaboration',
-  yearsOfExperience: '3+ Years',
-  currentCompany: 'HCL Software',
-  currentDesignation: 'Software Engineer',
+  educationRecords: [],
+  jobExperiences: [],
+  hobbies: [],
+  certifications: [],
+  languages: [],
+  professionalSummary: '',
+  careerObjective: '',
+  availabilityStatus: 'Open to opportunities',
+  yearsOfExperience: '',
+  currentCompany: '',
+  currentDesignation: '',
 };
 
 // Empty Clean State Collections (No fake/mock data for new accounts)
@@ -634,10 +470,10 @@ export function saveToStorage<T>(baseKey: string, value: T): void {
 
 // Concrete Loaders & Getters
 export const Storage = {
-  getTodos: (): TodoItem[] => loadFromStorage(STORAGE_KEYS.TODOS, isDemoWorkspace() ? DEMO_TODOS : INITIAL_TODOS),
+  getTodos: (): TodoItem[] => loadFromStorage(STORAGE_KEYS.TODOS, INITIAL_TODOS),
   setTodos: (items: TodoItem[]) => saveToStorage(STORAGE_KEYS.TODOS, items),
 
-  getHabits: (): HabitItem[] => loadFromStorage(STORAGE_KEYS.HABITS, isDemoWorkspace() ? DEMO_HABITS : INITIAL_HABITS),
+  getHabits: (): HabitItem[] => loadFromStorage(STORAGE_KEYS.HABITS, INITIAL_HABITS),
   setHabits: (items: HabitItem[]) => saveToStorage(STORAGE_KEYS.HABITS, items),
 
   getGoals: (): GoalItem[] => loadFromStorage(STORAGE_KEYS.GOALS, INITIAL_GOALS),
@@ -691,10 +527,10 @@ export const Storage = {
     }
   },
 
-  getExpenses: (): ExpenseItem[] => loadFromStorage(STORAGE_KEYS.EXPENSES, isDemoWorkspace() ? DEMO_EXPENSES : INITIAL_EXPENSES),
+  getExpenses: (): ExpenseItem[] => loadFromStorage(STORAGE_KEYS.EXPENSES, INITIAL_EXPENSES),
   setExpenses: (items: ExpenseItem[]) => saveToStorage(STORAGE_KEYS.EXPENSES, items),
 
-  getJournal: (): JournalEntry[] => loadFromStorage(STORAGE_KEYS.JOURNAL, isDemoWorkspace() ? DEMO_JOURNAL : INITIAL_JOURNAL),
+  getJournal: (): JournalEntry[] => loadFromStorage(STORAGE_KEYS.JOURNAL, INITIAL_JOURNAL),
   setJournal: (items: JournalEntry[]) => saveToStorage(STORAGE_KEYS.JOURNAL, items),
 
   getMedia: (): MediaItem[] => loadFromStorage(STORAGE_KEYS.MEDIA, INITIAL_MEDIA),
@@ -706,47 +542,44 @@ export const Storage = {
   getDoodles: (): DoodleItem[] => loadFromStorage(STORAGE_KEYS.DOODLES, []),
   setDoodles: (items: DoodleItem[]) => saveToStorage(STORAGE_KEYS.DOODLES, items),
 
-  getTimeline: (): LifeMilestone[] => loadFromStorage(STORAGE_KEYS.TIMELINE, isDemoWorkspace() ? DEMO_TIMELINE : INITIAL_TIMELINE),
+  getTimeline: (): LifeMilestone[] => loadFromStorage(STORAGE_KEYS.TIMELINE, INITIAL_TIMELINE),
   setTimeline: (items: LifeMilestone[]) => saveToStorage(STORAGE_KEYS.TIMELINE, items),
 
-  getProjects: (): PortfolioProject[] => loadFromStorage(STORAGE_KEYS.PROJECTS, isDemoWorkspace() ? DEMO_PROJECTS : INITIAL_PROJECTS),
+  getProjects: (): PortfolioProject[] => loadFromStorage(STORAGE_KEYS.PROJECTS, INITIAL_PROJECTS),
   setProjects: (items: PortfolioProject[]) => saveToStorage(STORAGE_KEYS.PROJECTS, items),
 
-  getSkills: (): SkillCategory[] => loadFromStorage(STORAGE_KEYS.SKILLS, isDemoWorkspace() ? DEMO_SKILLS : INITIAL_SKILLS),
+  getSkills: (): SkillCategory[] => loadFromStorage(STORAGE_KEYS.SKILLS, INITIAL_SKILLS),
   setSkills: (items: SkillCategory[]) => saveToStorage(STORAGE_KEYS.SKILLS, items),
 
   getProfile: (): UserProfile => {
     const data = loadFromStorage(STORAGE_KEYS.PROFILE, INITIAL_PROFILE);
     if (!data.avatarUrl) {
-      data.avatarUrl = STOCK_IMAGES.avatar;
+      data.avatarUrl = '';
     }
-    if (!data.educationRecords || data.educationRecords.length === 0) {
-      data.educationRecords = INITIAL_EDUCATION_RECORDS;
+    if (!data.educationRecords) {
+      data.educationRecords = [];
     }
-    if (!data.jobExperiences || data.jobExperiences.length === 0) {
-      data.jobExperiences = INITIAL_JOB_EXPERIENCES;
+    if (!data.jobExperiences) {
+      data.jobExperiences = [];
     }
-    if (!data.hobbies || data.hobbies.length === 0) {
-      data.hobbies = INITIAL_HOBBIES;
+    if (!data.hobbies) {
+      data.hobbies = [];
     }
-    if (!data.professionalSummary) {
-      data.professionalSummary = INITIAL_PROFILE.professionalSummary;
+    if (!data.certifications) {
+      data.certifications = [];
     }
-    if (!data.name || data.name === 'Personal Workspace') {
-      data.name = INITIAL_PROFILE.name;
+    if (!data.languages) {
+      data.languages = [];
     }
-    if (!data.title || data.title === 'Personal Workspace & Life OS') {
-      data.title = INITIAL_PROFILE.title;
+    if (!data.services) {
+      data.services = [];
     }
-    if (!data.contactEmail || data.contactEmail.includes('hcl-software.com')) {
-      data.contactEmail = INITIAL_PROFILE.contactEmail;
+    if (!data.tools) {
+      data.tools = [];
     }
     return data;
   },
   setProfile: (profile: UserProfile) => {
-    if (profile.contactEmail && profile.contactEmail.includes('hcl-software.com')) {
-      profile.contactEmail = INITIAL_PROFILE.contactEmail;
-    }
     return saveToStorage(STORAGE_KEYS.PROFILE, profile);
   },
 
