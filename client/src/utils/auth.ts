@@ -98,6 +98,11 @@ export const Auth = {
       const stored = localStorage.getItem(AUTH_STORAGE_KEY);
       if (stored) {
         const user = JSON.parse(stored);
+        // Purge any legacy mock test account session if found
+        if (user && user.id === 'user_gulshan_mock') {
+          localStorage.removeItem(AUTH_STORAGE_KEY);
+          return null;
+        }
         if (user && user.email) {
           setCustomWorkspaceIdentifier(getUserWorkspaceKey(user));
           setCustomWorkspaceEmail(user.email);
@@ -131,7 +136,7 @@ export const Auth = {
       } else {
         localStorage.removeItem(AUTH_STORAGE_KEY);
         setCustomWorkspaceIdentifier('user_guest');
-        setCustomWorkspaceEmail('gulshan@gmail.com');
+        setCustomWorkspaceEmail('guest@workspace.local');
       }
     } catch (e) {
       console.warn('Failed to set current auth user:', e);
@@ -145,7 +150,8 @@ export const Auth = {
     try {
       const stored = localStorage.getItem(SAVED_USERS_KEY);
       if (stored) {
-        return JSON.parse(stored);
+        const list: AuthUser[] = JSON.parse(stored);
+        return list.filter((a) => a.id !== 'user_gulshan_mock');
       }
     } catch {
       // ignore
@@ -155,7 +161,7 @@ export const Auth = {
 
   /**
    * Sign In with Email & Password
-   * Strict password verification against Supabase Auth, mock test account, and stored user accounts
+   * Strict password verification against Supabase Auth and registered user accounts
    */
   signIn: async (
     email: string,
@@ -226,27 +232,7 @@ export const Auth = {
       return { success: true, user, message: 'Signed in successfully' };
     }
 
-    // 3. Check built-in mock test account (gulshan@gmail.com / 12345678)
-    if (cleanEmail === 'gulshan@gmail.com') {
-      if (cleanPass === '12345678') {
-        const testUser: AuthUser = {
-          id: 'user_gulshan_mock',
-          email: 'gulshan@gmail.com',
-          name: 'Gulshan Kumar Nayak',
-          createdAt: Date.now(),
-          lastLoginAt: Date.now(),
-          provider: 'local',
-        };
-        Auth.setCurrentUser(testUser);
-        await saveLocalCredential(cleanEmail, cleanPass, testUser);
-        await saveCloudCredential(cleanEmail, cleanPass, testUser);
-        return { success: true, user: testUser, message: 'Signed in successfully with mock test account' };
-      } else {
-        return { success: false, message: 'Incorrect password for test account.' };
-      }
-    }
-
-    // 4. If account is not registered yet, require signup
+    // 3. If account is not registered yet, require signup
     return {
       success: false,
       message: 'Account not found. Please create an account by clicking "Create Account" first.',

@@ -100,8 +100,8 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
       profile.bio ||
       'Dedicated Software Engineer with proven expertise in engineering performant web systems, intuitive interfaces, and distributed software architectures. Eager to solve complex challenges with clean code and modern tooling.'
   );
-  const [formLocation, setFormLocation] = useState(profile.location || 'Noida / Bengaluru, India');
-  const [formEmail, setFormEmail] = useState(profile.contactEmail || 'gulshan@gmail.com');
+  const [formLocation, setFormLocation] = useState(profile.location || 'Bengaluru, India');
+  const [formEmail, setFormEmail] = useState(profile.contactEmail || '');
   const [formPhone, setFormPhone] = useState(profile.phone || '+91 98765 43210');
   const [formLinkedin, setFormLinkedin] = useState(profile.linkedin || 'https://linkedin.com/in/gulshankumarnayak');
   const [formGithub, setFormGithub] = useState(profile.github || 'https://github.com/gulshankumar');
@@ -212,9 +212,9 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
   const handleCopyMarkdown = () => {
     Sound.click(soundEnabled);
 
-    let md = `# ${profile.name || 'Gulshan Kumar Nayak'}\n`;
-    md += `**${profile.handle ? profile.handle.replace('@', '') : 'Gulshan'}**\n\n`;
-    md += `📍 Location: ${profile.location || 'Noida / Bengaluru, India'} | ✉️ Email: ${profile.contactEmail || 'gulshan@gmail.com'}\n`;
+    let md = `# ${profile.name || 'Professional'}\n`;
+    md += `**${profile.handle ? profile.handle.replace('@', '') : 'Profile'}**\n\n`;
+    md += `📍 Location: ${profile.location || 'India'} | ✉️ Email: ${profile.contactEmail || ''}\n`;
     if (profile.phone) md += `📞 Phone: ${profile.phone} | `;
     if (profile.linkedin) md += `💼 LinkedIn: ${profile.linkedin} | `;
     if (profile.github) md += `🐙 GitHub: ${profile.github}\n\n`;
@@ -529,9 +529,9 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
   const displayName = profile.name || 'GULSHAN KUMAR NAYAK';
   const displaySubtitle = profile.handle
     ? profile.handle.replace('@', '')
-    : profile.title || 'Gulshan';
-  const displayLocation = profile.location || 'Noida / Bengaluru, India';
-  const displayEmail = profile.contactEmail || 'gulshan@gmail.com';
+    : profile.title || '';
+  const displayLocation = profile.location || 'India';
+  const displayEmail = profile.contactEmail || '';
   const summaryText =
     profile.professionalSummary ||
     profile.bio ||

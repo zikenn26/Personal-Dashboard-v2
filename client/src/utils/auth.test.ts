@@ -18,36 +18,35 @@ beforeAll(() => {
   }
 });
 
-describe('Authentication Engine & Mock Test Account', () => {
-  it('allows login with the mock test account gulshan@gmail.com and 12345678', async () => {
-    const res = await Auth.signIn('gulshan@gmail.com', '12345678');
-    expect(res.success).toBe(true);
-    expect(res.user).toBeDefined();
-    expect(res.user?.email).toBe('gulshan@gmail.com');
-    expect(res.user?.name).toBe('Gulshan Kumar Nayak');
-
-    const currentUser = Auth.getCurrentUser();
-    expect(currentUser?.email).toBe('gulshan@gmail.com');
-  });
-
-  it('rejects incorrect password for mock test account', async () => {
-    const res = await Auth.signIn('gulshan@gmail.com', 'wrongpassword');
-    expect(res.success).toBe(false);
-    expect(res.message).toContain('Incorrect password');
-  });
-
+describe('Authentication Engine & Persistence', () => {
   it('rejects unregistered accounts and prompts creation', async () => {
     const res = await Auth.signIn('nonexistent@example.com', '12345678');
     expect(res.success).toBe(false);
     expect(res.message).toContain('Account not found');
   });
 
-  it('creates and signs in new accounts via signUp', async () => {
+  it('creates and signs in new accounts via signUp with persistence', async () => {
     const signupRes = await Auth.signUp('newuser@example.com', 'securepass123', 'Test User');
     expect(signupRes.success).toBe(true);
     expect(signupRes.user?.email).toBe('newuser@example.com');
+    expect(signupRes.user?.name).toBe('Test User');
 
+    // Verify session is persisted
+    const currentUser = Auth.getCurrentUser();
+    expect(currentUser?.email).toBe('newuser@example.com');
+
+    // Verify sign in with correct password
     const signinRes = await Auth.signIn('newuser@example.com', 'securepass123');
     expect(signinRes.success).toBe(true);
+    expect(signinRes.user?.email).toBe('newuser@example.com');
+
+    // Verify sign in with wrong password
+    const wrongPassRes = await Auth.signIn('newuser@example.com', 'wrongpassword');
+    expect(wrongPassRes.success).toBe(false);
+    expect(wrongPassRes.message).toContain('Incorrect password');
+
+    // Verify sign out clears session
+    await Auth.signOut();
+    expect(Auth.getCurrentUser()).toBeNull();
   });
 });

@@ -55,6 +55,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setMode(initialMode);
       setErrorMessage(null);
       setSuccessMessage(null);
+      setEmail('');
+      setPassword('');
+      setFirstName('');
+      setMiddleName('');
+      setLastName('');
     }
   }, [isOpen, initialMode]);
 
@@ -213,26 +218,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           {successMessage && (
             <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs flex items-center gap-2">
               <span>{successMessage}</span>
-            </div>
-          )}
-
-          {mode === 'signin' && (
-            <div className="p-2.5 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/50 flex items-center justify-between text-xs text-neutral-600 dark:text-neutral-400">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
-                <span className="font-mono text-[11px]">gulshan@gmail.com</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setEmail('gulshan@gmail.com');
-                  setPassword('12345678');
-                  setErrorMessage(null);
-                }}
-                className="px-2 py-1 rounded-md bg-white dark:bg-neutral-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-neutral-700 text-[11px] font-semibold shadow-2xs border border-indigo-100 dark:border-neutral-700 cursor-pointer transition-colors"
-              >
-                Autofill Test Login
-              </button>
             </div>
           )}
 

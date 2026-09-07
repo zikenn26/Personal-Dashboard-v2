@@ -235,7 +235,7 @@ export const INITIAL_PROFILE: UserProfile = {
   bannerBg: 'linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 50%, #FDF4FF 100%)',
   staticCoverImage: STOCK_IMAGES.workspaceCover,
   coverImageEnabled: true,
-  contactEmail: 'gulshan@gmail.com',
+  contactEmail: '',
   phone: '+91 98765 43210',
   github: 'https://github.com/gulshankumar',
   linkedin: 'https://linkedin.com/in/gulshankumarnayak',

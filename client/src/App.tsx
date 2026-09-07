@@ -171,9 +171,10 @@ export default function App() {
     // Immediately hydrate state from the user-scoped Storage
     handleHydrateAllFromStorage();
 
-    // If user's name is customized, update profile state if not already set
-    if (user.name && user.name !== 'Gulshan Kumar Nayak' && profile.name === 'Gulshan Kumar Nayak') {
-      const updatedProfile = { ...Storage.getProfile(), name: user.name, contactEmail: user.email };
+    // If user's name is customized, update profile state
+    if (user.name) {
+      const current = Storage.getProfile();
+      const updatedProfile = { ...current, name: user.name, contactEmail: user.email };
       setProfile(updatedProfile);
       Storage.setProfile(updatedProfile);
     }
@@ -193,7 +194,7 @@ export default function App() {
     setCurrentUser(null);
     setCustomWorkspaceIdentifier('default');
     handleHydrateAllFromStorage();
-    setIsAuthModalOpen(true);
+    setIsAuthModalOpen(false);
   };
 
   // Subscribe to live sync status changes for the UI
@@ -979,7 +980,20 @@ export default function App() {
   if (!currentUser) {
     return (
       <>
-        <LandingPage onGetStarted={() => { setAuthInitialMode('signin'); setIsAuthModalOpen(true); }} />
+        <LandingPage
+          onSignIn={() => {
+            setAuthInitialMode('signin');
+            setIsAuthModalOpen(true);
+          }}
+          onSignUp={() => {
+            setAuthInitialMode('signup');
+            setIsAuthModalOpen(true);
+          }}
+          onGetStarted={() => {
+            setAuthInitialMode('signup');
+            setIsAuthModalOpen(true);
+          }}
+        />
         <AuthModal
           isOpen={isAuthModalOpen}
           onClose={() => setIsAuthModalOpen(false)}
