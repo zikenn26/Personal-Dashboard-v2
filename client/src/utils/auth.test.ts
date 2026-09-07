@@ -49,4 +49,27 @@ describe('Authentication Engine & Persistence', () => {
     await Auth.signOut();
     expect(Auth.getCurrentUser()).toBeNull();
   });
+
+  it('allows multi-device login without signing out other sessions', async () => {
+    // 1. Device 1 signs up
+    const res1 = await Auth.signUp('multidevice@example.com', 'PassDevice123', 'Multi Device User');
+    expect(res1.success).toBe(true);
+
+    const user1 = Auth.getCurrentUser();
+    expect(user1?.email).toBe('multidevice@example.com');
+
+    // 2. Simulate Device 2 with fresh session (not yet logged in locally)
+    // Clear the active session key (simulating second device browser)
+    localStorage.removeItem('notion_os_auth_user_v1');
+    expect(Auth.getCurrentUser()).toBeNull();
+
+    // 3. Device 2 logs in with the registered credentials
+    const loginRes2 = await Auth.signIn('multidevice@example.com', 'PassDevice123');
+    expect(loginRes2.success).toBe(true);
+    expect(loginRes2.user?.email).toBe('multidevice@example.com');
+
+    // Verify session is active on Device 2
+    const user2 = Auth.getCurrentUser();
+    expect(user2?.email).toBe('multidevice@example.com');
+  });
 });

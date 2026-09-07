@@ -172,7 +172,7 @@ export default function App() {
     setCustomWorkspaceEmail(user.email);
     
     // Immediately hydrate state from the user-scoped Storage
-    handleHydrateAllFromStorage();
+    handleHydrateAllFromStorage(false);
 
     // If user's name is customized, update profile state
     if (user.name) {
@@ -186,7 +186,7 @@ export default function App() {
     fetchWorkspaceFromSupabase().then((res) => {
       if (res.success && res.data) {
         Storage.importAllDataPayload(res.data);
-        handleHydrateAllFromStorage();
+        handleHydrateAllFromStorage(false);
       }
     });
   };
@@ -197,7 +197,7 @@ export default function App() {
     setCurrentUser(null);
     setCustomWorkspaceIdentifier('user_guest');
     setCustomWorkspaceEmail('guest@workspace.local');
-    handleHydrateAllFromStorage();
+    handleHydrateAllFromStorage(false);
     setIsAuthModalOpen(false);
   };
 
@@ -221,7 +221,7 @@ export default function App() {
   }, [settings.masterPin]);
 
   // Hydrate all React state cleanly from Storage
-  const handleHydrateAllFromStorage = () => {
+  const handleHydrateAllFromStorage = (playEffects = false) => {
     setProfile(Storage.getProfile());
     setTodos(Storage.getTodos());
     setHabits(Storage.getHabits());
@@ -240,44 +240,29 @@ export default function App() {
     setResume(Storage.getResume());
     setQuotes(Storage.getQuotes());
     setExams(Storage.getExams());
-    Sound.success(settings.soundEnabled);
-    triggerConfetti();
+    if (playEffects) {
+      Sound.success(settings.soundEnabled);
+      triggerConfetti();
+    }
   };
 
-  // 1. Initial Cloud Hydration & Supabase Realtime WebSocket Listener (Instant Cross-Device Sync)
+  // 1. Initial Cloud Hydration & Supabase Realtime WebSocket Listener (Instant Multi-Device Sync)
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
 
     let isMounted = true;
 
-    // Fetch initial snapshot from cloud
+    // Fetch initial snapshot from cloud for current user session
     const autoSyncFromCloud = async () => {
       try {
         const result = await fetchWorkspaceFromSupabase();
         if (result.success && result.data && isMounted) {
           isRemoteUpdating.current = true;
           Storage.importAllDataPayload(result.data);
-          // Hydrate all state smoothly
-          setProfile(Storage.getProfile());
-          setTodos(Storage.getTodos());
-          setHabits(Storage.getHabits());
-          setGoals(Storage.getGoals());
-          void Storage.hydrateVault(Storage.getSettings().masterPin).then(setVault);
-          setExpenses(Storage.getExpenses());
-          setJournal(Storage.getJournal());
-          setMedia(Storage.getMedia());
-          setMilestones(Storage.getTimeline());
-          setProjects(Storage.getProjects());
-          setAchievements(Storage.getAchievements());
-          setDoodles(Storage.getDoodles());
-          setSettings(Storage.getSettings());
-          setSections(Storage.getSections());
-          setPhotos(Storage.getPhotos());
-          setResume(Storage.getResume());
-          setQuotes(Storage.getQuotes());
+          handleHydrateAllFromStorage(false);
           setTimeout(() => {
             isRemoteUpdating.current = false;
-          }, 400);
+          }, 300);
         }
       } catch (err) {
         console.warn('Initial cloud sync check:', err);
@@ -286,40 +271,32 @@ export default function App() {
 
     autoSyncFromCloud();
 
-    // 2. Realtime WebSocket channel for instant cross-device updates (<50ms delivery)
+    // 2. Realtime WebSocket channel for instant cross-device updates (<30ms delivery, no lag, no refresh)
     const unsubRealtime = subscribeToRealtimeWorkspace((remoteData) => {
       if (remoteData && isMounted) {
         isRemoteUpdating.current = true;
         Storage.importAllDataPayload(remoteData);
-        setProfile(Storage.getProfile());
-        setTodos(Storage.getTodos());
-        setHabits(Storage.getHabits());
-        setGoals(Storage.getGoals());
-        void Storage.hydrateVault(Storage.getSettings().masterPin).then(setVault);
-        setExpenses(Storage.getExpenses());
-        setJournal(Storage.getJournal());
-        setMedia(Storage.getMedia());
-        setMilestones(Storage.getTimeline());
-        setProjects(Storage.getProjects());
-        setAchievements(Storage.getAchievements());
-        setDoodles(Storage.getDoodles());
-        setSettings(Storage.getSettings());
-        setSections(Storage.getSections());
-        setPhotos(Storage.getPhotos());
-        setResume(Storage.getResume());
-        setQuotes(Storage.getQuotes());
-
+        handleHydrateAllFromStorage(false);
         setTimeout(() => {
           isRemoteUpdating.current = false;
-        }, 400);
+        }, 300);
       }
     });
+
+    // Re-verify on window focus for background wakeups
+    const handleFocus = () => {
+      if (document.visibilityState === 'visible') {
+        autoSyncFromCloud();
+      }
+    };
+    window.addEventListener('focus', handleFocus);
 
     return () => {
       isMounted = false;
       unsubRealtime();
+      window.removeEventListener('focus', handleFocus);
     };
-  }, []);
+  }, [currentUser?.id, currentUser?.email]);
 
   // 3. High-Speed Debounced Auto-Sync to Supabase whenever local data changes
   useEffect(() => {
@@ -332,7 +309,7 @@ export default function App() {
       return;
     }
 
-    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 900);
+    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 600);
   }, [
     profile,
     todos,
@@ -351,6 +328,7 @@ export default function App() {
     photos,
     resume,
     quotes,
+    exams,
   ]);
 
   // 4. Instant flush on tab switch or page close

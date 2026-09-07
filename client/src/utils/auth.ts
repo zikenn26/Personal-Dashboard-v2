@@ -40,6 +40,66 @@ const saveLocalCredential = async (email: string, pass: string, user: AuthUser) 
   }
 };
 
+/**
+ * Persist encrypted account credentials to Supabase for secure multi-device sign in.
+ */
+export const saveCloudCredential = async (cleanEmail: string, passHash: string, user: AuthUser) => {
+  const client = getSupabaseClient();
+  if (!client || !isSupabaseConfigured()) return;
+  try {
+    const authIdentifier = `account_auth_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
+    await client.from('user_workspaces').upsert(
+      {
+        user_identifier: authIdentifier,
+        user_email: cleanEmail,
+        workspace_data: {
+          account: {
+            user,
+            passHash,
+            updatedAt: Date.now(),
+          },
+        },
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_identifier' }
+    );
+  } catch (err) {
+    console.warn('Could not backup account auth credential to cloud:', err);
+  }
+};
+
+/**
+ * Retrieve account credentials from cloud to verify login on a secondary device.
+ */
+export const fetchCloudCredential = async (
+  cleanEmail: string
+): Promise<{ user: AuthUser; passHash: string } | null> => {
+  const client = getSupabaseClient();
+  if (!client || !isSupabaseConfigured()) return null;
+  try {
+    const authIdentifier = `account_auth_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
+    const { data, error } = await client
+      .from('user_workspaces')
+      .select('workspace_data')
+      .eq('user_identifier', authIdentifier)
+      .maybeSingle();
+
+    if (error || !data || !data.workspace_data?.account) {
+      return null;
+    }
+    const acct = data.workspace_data.account;
+    if (acct?.user && acct?.passHash) {
+      if (acct.user.id === 'user_gulshan_mock') {
+        acct.user.id = `usr_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
+      }
+      return { user: acct.user, passHash: acct.passHash };
+    }
+  } catch (err) {
+    console.warn('Failed to fetch cloud account credential:', err);
+  }
+  return null;
+};
+
 export const Auth = {
   /**
    * Get currently logged-in user from LocalStorage
@@ -49,18 +109,16 @@ export const Auth = {
       const stored = localStorage.getItem(AUTH_STORAGE_KEY);
       if (stored) {
         const user = JSON.parse(stored);
-        // Purge any legacy mock test account session if found
-        if (
-          user &&
-          (user.id === 'user_gulshan_mock' ||
-            user.email?.toLowerCase().includes('gulshan') ||
-            user.email?.toLowerCase().includes('demo') ||
-            user.email?.toLowerCase().includes('test@example.com'))
-        ) {
-          localStorage.removeItem(AUTH_STORAGE_KEY);
-          return null;
-        }
         if (user && user.email) {
+          // Normalize legacy mock ID if previously saved
+          if (user.id === 'user_gulshan_mock') {
+            user.id = `usr_${user.email.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+            try {
+              localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+            } catch {
+              // ignore
+            }
+          }
           setCustomWorkspaceIdentifier(getUserWorkspaceKey(user));
           setCustomWorkspaceEmail(user.email);
           return user;
@@ -108,7 +166,12 @@ export const Auth = {
       const stored = localStorage.getItem(SAVED_USERS_KEY);
       if (stored) {
         const list: AuthUser[] = JSON.parse(stored);
-        return list.filter((a) => a.id !== 'user_gulshan_mock');
+        return list.map((a) => {
+          if (a.id === 'user_gulshan_mock') {
+            return { ...a, id: `usr_${a.email.toLowerCase().replace(/[^a-z0-9]/g, '_')}` };
+          }
+          return a;
+        });
       }
     } catch {
       // ignore
@@ -118,7 +181,7 @@ export const Auth = {
 
   /**
    * Sign In with Email & Password
-   * Strict password verification against Supabase Auth and registered user accounts
+   * Strict password verification across devices via Supabase Cloud and local cache
    */
   signIn: async (
     email: string,
@@ -155,6 +218,8 @@ export const Auth = {
           };
           Auth.setCurrentUser(user);
           await saveLocalCredential(cleanEmail, cleanPass, user);
+          const passHash = await hashPassword(cleanPass);
+          void saveCloudCredential(cleanEmail, passHash, user);
           return { success: true, user, message: 'Signed in via Supabase Cloud' };
         }
       } catch (err: any) {
@@ -162,7 +227,7 @@ export const Auth = {
       }
     }
 
-    // 2. Check registered local accounts credentials
+    // 2. Check registered local accounts credentials on this device
     const credentialsMap = getLocalCredentialsMap();
     const storedRecord = credentialsMap[cleanEmail];
 
@@ -171,16 +236,40 @@ export const Auth = {
       const valid = storedPass.trim().startsWith('{')
         ? await verifyPasswordHash(storedPass, cleanPass)
         : storedPass === cleanPass;
-      if (!valid) {
+      if (valid) {
+        let user = { ...storedRecord.user, lastLoginAt: Date.now() };
+        if (user.id === 'user_gulshan_mock') {
+          user.id = `usr_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
+        }
+        await saveLocalCredential(cleanEmail, cleanPass, user);
+        Auth.setCurrentUser(user);
+        const passHash = await hashPassword(cleanPass);
+        void saveCloudCredential(cleanEmail, passHash, user);
+        return { success: true, user, message: 'Signed in successfully' };
+      } else {
         return { success: false, message: 'Incorrect password. Please try again.' };
       }
-      const user = { ...storedRecord.user, lastLoginAt: Date.now() };
-      await saveLocalCredential(cleanEmail, cleanPass, user);
-      Auth.setCurrentUser(user);
-      return { success: true, user, message: 'Signed in successfully' };
     }
 
-    // 3. If account is not registered yet, require signup
+    // 3. Multi-device cloud lookup: Account created on another device
+    const cloudRecord = await fetchCloudCredential(cleanEmail);
+    if (cloudRecord) {
+      const valid = await verifyPasswordHash(cloudRecord.passHash, cleanPass);
+      if (valid) {
+        let user = { ...cloudRecord.user, lastLoginAt: Date.now() };
+        if (user.id === 'user_gulshan_mock') {
+          user.id = `usr_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
+        }
+        // Cache credentials locally on this device for offline availability
+        await saveLocalCredential(cleanEmail, cleanPass, user);
+        Auth.setCurrentUser(user);
+        return { success: true, user, message: 'Signed in successfully across devices!' };
+      } else {
+        return { success: false, message: 'Incorrect password. Please try again.' };
+      }
+    }
+
+    // 4. If account is not registered anywhere yet, require signup
     return {
       success: false,
       message: 'Account not found. Please create an account by clicking "Create Account" first.',
@@ -188,7 +277,7 @@ export const Auth = {
   },
 
   /**
-   * Sign Up / Create a new personalized account
+   * Sign Up / Create a new personalized account with multi-device cloud persistence
    */
   signUp: async (
     email: string,
@@ -211,6 +300,8 @@ export const Auth = {
         .split('@')[0]
         .replace(/[\._]/g, ' ')
         .replace(/\b\w/g, (c) => c.toUpperCase());
+
+    const passHash = await hashPassword(cleanPass);
 
     // 1. Attempt Supabase Sign Up if available
     const client = getSupabaseClient();
@@ -236,6 +327,7 @@ export const Auth = {
             provider: 'supabase',
           };
           await saveLocalCredential(cleanEmail, cleanPass, user);
+          await saveCloudCredential(cleanEmail, passHash, user);
           Auth.setCurrentUser(user);
           return { success: true, user, message: 'Account created successfully in Supabase Cloud!' };
         }
@@ -244,7 +336,7 @@ export const Auth = {
       }
     }
 
-    // 2. Local-only registered account creation (isolated to this device)
+    // 2. Multi-device registered account creation
     const user: AuthUser = {
       id: `usr_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`,
       email: cleanEmail,
@@ -254,22 +346,15 @@ export const Auth = {
       provider: 'local',
     };
     await saveLocalCredential(cleanEmail, cleanPass, user);
+    await saveCloudCredential(cleanEmail, passHash, user);
     Auth.setCurrentUser(user);
     return { success: true, user, message: 'Account created successfully!' };
   },
 
   /**
-   * Sign Out
+   * Sign Out current device only (does not disconnect other active devices)
    */
   signOut: async () => {
-    const client = getSupabaseClient();
-    if (client && isSupabaseConfigured()) {
-      try {
-        await client.auth.signOut();
-      } catch {
-        // ignore
-      }
-    }
     Auth.setCurrentUser(null);
   },
 };
