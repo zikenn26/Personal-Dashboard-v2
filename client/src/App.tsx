@@ -9,6 +9,7 @@ import {
   GoalItem,
   VaultCredential,
   ExpenseItem,
+  ExcelImportLog,
   JournalEntry,
   MediaItem,
   LifeMilestone,
@@ -110,13 +111,18 @@ import {
 } from 'lucide-react';
 
 export default function App() {
-  // 1. Core State loaded from localStorage
+  // Current logged in user (initialized first to ensure user-scoped storage keys are ready)
+  const authRequest = new URLSearchParams(window.location.search).get('auth');
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => Auth.getCurrentUser());
+
+  // 1. Core State loaded from user-scoped localStorage
   const [profile, setProfile] = useState<UserProfile>(Storage.getProfile);
   const [todos, setTodos] = useState<TodoItem[]>(Storage.getTodos);
   const [habits, setHabits] = useState<HabitItem[]>(Storage.getHabits);
   const [goals, setGoals] = useState<GoalItem[]>(Storage.getGoals);
   const [vault, setVault] = useState<VaultCredential[]>(Storage.getVault);
   const [expenses, setExpenses] = useState<ExpenseItem[]>(Storage.getExpenses);
+  const [excelImportLogs, setExcelImportLogs] = useState<ExcelImportLog[]>(Storage.getExcelImportLogs);
   const [journal, setJournal] = useState<JournalEntry[]>(Storage.getJournal);
   const [media, setMedia] = useState<MediaItem[]>(Storage.getMedia);
   const [milestones, setMilestones] = useState<LifeMilestone[]>(Storage.getTimeline);
@@ -152,7 +158,6 @@ export default function App() {
   };
 
   // Modals & Floating Bars
-  const authRequest = new URLSearchParams(window.location.search).get('auth');
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
@@ -161,12 +166,12 @@ export default function App() {
   const [showQuickCapture, setShowQuickCapture] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(() => authRequest === 'signup' || authRequest === 'signin');
   const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup'>(() => authRequest === 'signup' ? 'signup' : 'signin');
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => Auth.getCurrentUser());
 
   // High-Speed Realtime Cloud Sync State & Flags
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error' | 'idle'>(getAutoSyncStatus);
   const isInitialMount = useRef(true);
   const isRemoteUpdating = useRef(false);
+  const isCloudReady = useRef(false);
 
   // Handle successful login or account switch
   const handleAuthenticated = (user: AuthUser) => {
@@ -192,8 +197,15 @@ export default function App() {
     // Re-fetch user workspace data from Supabase if configured
     fetchWorkspaceFromSupabase().then((res) => {
       if (res.success && res.data) {
+        isRemoteUpdating.current = true;
         Storage.importAllDataPayload(res.data);
         handleHydrateAllFromStorage(false);
+        setTimeout(() => {
+          isRemoteUpdating.current = false;
+          isCloudReady.current = true;
+        }, 300);
+      } else {
+        isCloudReady.current = true;
       }
     });
   };
@@ -235,6 +247,7 @@ export default function App() {
     setGoals(Storage.getGoals());
     void Storage.hydrateVault(Storage.getSettings().masterPin).then(setVault);
     setExpenses(Storage.getExpenses());
+    setExcelImportLogs(Storage.getExcelImportLogs());
     setJournal(Storage.getJournal());
     setMedia(Storage.getMedia());
     setMilestones(Storage.getTimeline());
@@ -273,6 +286,10 @@ export default function App() {
         }
       } catch (err) {
         console.warn('Initial cloud sync check:', err);
+      } finally {
+        if (isMounted) {
+          isCloudReady.current = true;
+        }
       }
     };
 
@@ -326,6 +343,10 @@ export default function App() {
       isInitialMount.current = false;
       return;
     }
+    // Prevent unhydrated local device state from wiping cloud state
+    if (!isCloudReady.current) {
+      return;
+    }
     // If state change came from incoming Realtime websocket update, don't echo back
     if (isRemoteUpdating.current) {
       return;
@@ -339,6 +360,7 @@ export default function App() {
     goals,
     vault,
     expenses,
+    excelImportLogs,
     journal,
     media,
     milestones,
@@ -687,7 +709,10 @@ export default function App() {
     Storage.setExpenses(updated);
   };
 
-  const handleBatchAddExpenses = (newItems: Array<Omit<ExpenseItem, 'id'>>) => {
+  const handleBatchAddExpenses = (
+    newItems: Array<Omit<ExpenseItem, 'id'>>,
+    newLog?: ExcelImportLog
+  ) => {
     const created: ExpenseItem[] = newItems.map((item, idx) => ({
       id: `exp-${Date.now()}-${idx}`,
       ...item,
@@ -695,6 +720,30 @@ export default function App() {
     const updated = [...created, ...expenses];
     setExpenses(updated);
     Storage.setExpenses(updated);
+
+    let updatedLogs = excelImportLogs;
+    if (newLog) {
+      updatedLogs = [newLog, ...excelImportLogs.filter((l) => l.id !== newLog.id)];
+      setExcelImportLogs(updatedLogs);
+      Storage.setExcelImportLogs(updatedLogs);
+    }
+
+    // Force an immediate flush to Supabase cloud and WebSocket broadcast so other devices receive spendings instantly
+    flushAutoSyncImmediately({
+      ...Storage.getAllDataPayload(),
+      expenses: updated,
+      excelImportLogs: updatedLogs,
+    });
+  };
+
+  const handleDeleteImportLog = (logId: string) => {
+    const updatedLogs = excelImportLogs.filter((l) => l.id !== logId);
+    setExcelImportLogs(updatedLogs);
+    Storage.setExcelImportLogs(updatedLogs);
+    flushAutoSyncImmediately({
+      ...Storage.getAllDataPayload(),
+      excelImportLogs: updatedLogs,
+    });
   };
 
   const handleUpdateExpense = (id: string, updated: Partial<ExpenseItem>) => {
@@ -714,6 +763,10 @@ export default function App() {
     const updated = expenses.filter((e) => e.id !== id);
     setExpenses(updated);
     Storage.setExpenses(updated);
+    flushAutoSyncImmediately({
+      ...Storage.getAllDataPayload(),
+      expenses: updated,
+    });
   };
 
   const handleDeleteBatchExpenses = (ids: string[]) => {
@@ -722,12 +775,23 @@ export default function App() {
     const updated = expenses.filter((e) => !idSet.has(e.id));
     setExpenses(updated);
     Storage.setExpenses(updated);
+    flushAutoSyncImmediately({
+      ...Storage.getAllDataPayload(),
+      expenses: updated,
+    });
   };
 
   const handleClearAllExpenses = () => {
     Sound.click(settings.soundEnabled);
     setExpenses([]);
     Storage.setExpenses([]);
+    setExcelImportLogs([]);
+    Storage.setExcelImportLogs([]);
+    flushAutoSyncImmediately({
+      ...Storage.getAllDataPayload(),
+      expenses: [],
+      excelImportLogs: [],
+    });
   };
 
   // Vault Handlers
@@ -1877,12 +1941,14 @@ export default function App() {
               {(activeView === 'expenses' || activeView === 'subscriptions') && (
                 <ExpenseTracker
                   expenses={expenses}
+                  importLogs={excelImportLogs}
                   onAddExpense={handleAddExpense}
                   onUpdateExpense={handleUpdateExpense}
                   onBatchAddExpenses={handleBatchAddExpenses}
                   onToggleActive={handleToggleExpense}
                   onDeleteExpense={handleDeleteExpense}
                   onDeleteBatchExpenses={handleDeleteBatchExpenses}
+                  onDeleteImportLog={handleDeleteImportLog}
                   onClearAllExpenses={handleClearAllExpenses}
                   soundEnabled={settings.soundEnabled}
                 />

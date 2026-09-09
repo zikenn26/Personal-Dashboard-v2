@@ -145,8 +145,27 @@ export interface CloudSyncResult {
   data?: any;
 }
 
-let activeUserIdentifier = 'user_guest';
-let activeUserEmail = 'user@workspace.app';
+const getInitialActiveUser = (): { id: string; email: string } => {
+  if (typeof window === 'undefined') return { id: 'user_guest', email: 'user@workspace.app' };
+  try {
+    const raw = localStorage.getItem('notion_os_auth_user_v1');
+    if (raw) {
+      const user = JSON.parse(raw);
+      if (user && user.email) {
+        const cleanEmail = user.email.toLowerCase().replace(/[^a-z0-9]/g, '_');
+        return {
+          id: `user_${cleanEmail}`,
+          email: user.email.trim().toLowerCase(),
+        };
+      }
+    }
+  } catch {}
+  return { id: 'user_guest', email: 'user@workspace.app' };
+};
+
+const initialUser = getInitialActiveUser();
+let activeUserIdentifier = initialUser.id;
+let activeUserEmail = initialUser.email;
 
 export const setCustomWorkspaceIdentifier = (id: string) => {
   if (id && id.trim()) {
@@ -170,20 +189,30 @@ export const getCustomWorkspaceEmail = (): string => {
 
 export const WORKSPACE_USER_IDENTIFIER = 'user_guest';
 
-// Unique Device Session ID to prevent self-looping on Realtime echo
-export const DEVICE_SESSION_ID =
-  typeof window !== 'undefined'
-    ? window.sessionStorage?.getItem('lifeos_device_session_id') ||
-      (() => {
-        const id = 'dev_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
-        try {
-          window.sessionStorage?.setItem('lifeos_device_session_id', id);
-        } catch {
-          // ignore
-        }
-        return id;
-      })()
-    : 'server_env';
+// Get or generate a persistent hardware/browser device ID that stays identical across logins and restarts
+export const getPersistentDeviceId = (): string => {
+  if (typeof window === 'undefined') return 'server_env';
+  try {
+    let id = localStorage.getItem('lifeos_persistent_device_id');
+    if (!id) {
+      // Check legacy session storage first to maintain continuity
+      id =
+        window.sessionStorage?.getItem('lifeos_device_session_id') ||
+        'dev_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
+      localStorage.setItem('lifeos_persistent_device_id', id);
+    }
+    // Mirror to sessionStorage so all tabs on this device match
+    try {
+      window.sessionStorage?.setItem('lifeos_device_session_id', id);
+    } catch {}
+    return id;
+  } catch {
+    return 'dev_' + Math.random().toString(36).substring(2, 11);
+  }
+};
+
+// Unique Device Session ID that persists reliably across browser restarts and logins
+export const DEVICE_SESSION_ID = getPersistentDeviceId();
 
 let lastPushedTimestamp = 0;
 let autoSyncTimeout: any = null;

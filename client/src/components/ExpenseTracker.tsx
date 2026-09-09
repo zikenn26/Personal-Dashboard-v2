@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Plus,
   Trash2,
@@ -65,12 +65,14 @@ import { ExcelImportModal } from './ExcelImportModal';
 
 interface ExpenseTrackerProps {
   expenses: ExpenseItem[];
+  importLogs?: ExcelImportLog[];
   onAddExpense: (expense: Omit<ExpenseItem, 'id'>) => void;
   onUpdateExpense?: (id: string, updated: Partial<ExpenseItem>) => void;
-  onBatchAddExpenses?: (expenses: Array<Omit<ExpenseItem, 'id'>>) => void;
+  onBatchAddExpenses?: (expenses: Array<Omit<ExpenseItem, 'id'>>, log?: ExcelImportLog) => void;
   onToggleActive?: (id: string) => void;
   onDeleteExpense: (id: string) => void;
   onDeleteBatchExpenses?: (ids: string[]) => void;
+  onDeleteImportLog?: (logId: string) => void;
   onClearAllExpenses?: () => void;
   soundEnabled: boolean;
 }
@@ -205,12 +207,14 @@ export const getMatchingExpensesForSheet = (
 
 export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   expenses,
+  importLogs: propImportLogs,
   onAddExpense,
   onUpdateExpense,
   onBatchAddExpenses,
   onToggleActive,
   onDeleteExpense,
   onDeleteBatchExpenses,
+  onDeleteImportLog,
   onClearAllExpenses,
   soundEnabled,
 }) => {
@@ -224,6 +228,9 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
 
   // Track uploaded spreadsheet history logs and batch management
   const [importLogs, setImportLogs] = useState<ExcelImportLog[]>(() => {
+    if (propImportLogs && Array.isArray(propImportLogs)) {
+      return propImportLogs;
+    }
     // If the storage key explicitly exists in localStorage (even if empty []), use it directly
     const rawStored = localStorage.getItem(STORAGE_KEYS.EXCEL_IMPORT_LOGS);
     if (rawStored !== null) {
@@ -283,6 +290,18 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     }
     return synthLogs;
   });
+
+  // Keep spreadsheet import logs automatically synchronized across devices
+  useEffect(() => {
+    if (propImportLogs && Array.isArray(propImportLogs)) {
+      setImportLogs(propImportLogs);
+      return;
+    }
+    const current = Storage.getExcelImportLogs();
+    if (current && current.length > 0) {
+      setImportLogs(current);
+    }
+  }, [propImportLogs, expenses]);
 
   // Optional active filter to view spendings exclusively from a specific sheet
   const [selectedSheetFilter, setSelectedSheetFilter] = useState<string | null>(null);
@@ -354,16 +373,16 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     newExpenses: Array<Omit<ExpenseItem, 'id'>>,
     log: ExcelImportLog
   ) => {
-    if (onBatchAddExpenses) {
-      onBatchAddExpenses(newExpenses);
-    } else {
-      newExpenses.forEach((item) => onAddExpense(item));
-    }
-
     // Prepend new log to history
     const updatedLogs = [log, ...importLogs.filter((l) => l.id !== log.id)];
     setImportLogs(updatedLogs);
     Storage.setExcelImportLogs(updatedLogs);
+
+    if (onBatchAddExpenses) {
+      onBatchAddExpenses(newExpenses, log);
+    } else {
+      newExpenses.forEach((item) => onAddExpense(item));
+    }
 
     try {
       localStorage.setItem(
@@ -417,6 +436,10 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     const updatedLogs = importLogs.filter((l) => l.id !== log.id);
     setImportLogs(updatedLogs);
     Storage.setExcelImportLogs(updatedLogs);
+
+    if (onDeleteImportLog) {
+      onDeleteImportLog(log.id);
+    }
 
     // Clear active filter if filtering by this sheet
     if (

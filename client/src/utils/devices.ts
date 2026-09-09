@@ -78,6 +78,61 @@ const saveLocalDevices = (cleanEmail: string, devices: DeviceSession[]) => {
 };
 
 /**
+ * Deduplicate device sessions so that each physical device (identified by exact ID or OS + Browser + DeviceType)
+ * is displayed ONLY ONCE in the account settings device list.
+ */
+export const deduplicateDevices = (
+  devices: DeviceSession[],
+  currentDeviceId: string = DEVICE_SESSION_ID
+): DeviceSession[] => {
+  if (!Array.isArray(devices) || devices.length === 0) return [];
+
+  const deviceMap = new Map<string, DeviceSession>();
+
+  for (const d of devices) {
+    if (!d || !d.os || !d.browser) continue;
+
+    // Normalize device key by OS, Browser, and Device Type
+    const key = `${d.os.trim().toLowerCase()}___${d.browser.trim().toLowerCase()}___${d.deviceType || 'desktop'}`;
+
+    const existing = deviceMap.get(key);
+    if (!existing) {
+      deviceMap.set(key, { ...d });
+    } else {
+      // Prioritize keeping the current device ID if one of them matches
+      const isCurrentEntry = d.id === currentDeviceId || existing.id === currentDeviceId;
+      const idToKeep =
+        d.id === currentDeviceId
+          ? d.id
+          : existing.id === currentDeviceId
+          ? existing.id
+          : (d.lastActive || 0) >= (existing.lastActive || 0)
+          ? d.id
+          : existing.id;
+
+      deviceMap.set(key, {
+        ...existing,
+        id: idToKeep,
+        deviceName: d.deviceName || existing.deviceName,
+        os: existing.os,
+        browser: existing.browser,
+        deviceType: existing.deviceType || d.deviceType,
+        // Retain the latest activity
+        lastActive: Math.max(d.lastActive || 0, existing.lastActive || 0),
+        // Retain the earliest registration
+        createdAt: Math.min(d.createdAt || Date.now(), existing.createdAt || Date.now()),
+        isCurrent: isCurrentEntry,
+      });
+    }
+  }
+
+  return Array.from(deviceMap.values()).map((d) => ({
+    ...d,
+    isCurrent: d.id === currentDeviceId,
+  }));
+};
+
+/**
  * Register current device session in cloud & local database
  */
 export const registerCurrentDevice = async (email: string): Promise<DeviceSession[]> => {
@@ -103,18 +158,30 @@ export const registerCurrentDevice = async (email: string): Promise<DeviceSessio
   const cutoff = Date.now() - 45 * 24 * 60 * 60 * 1000;
   existingDevices = existingDevices.filter((d) => d.lastActive > cutoff);
 
-  // 3. Upsert current device
-  const existingIdx = existingDevices.findIndex((d) => d.id === DEVICE_SESSION_ID);
+  // 3. Upsert current device: match by exact persistent ID or exact device fingerprint (OS + Browser + Type)
+  const existingIdx = existingDevices.findIndex(
+    (d) =>
+      d.id === DEVICE_SESSION_ID ||
+      (d.os.trim().toLowerCase() === info.os.trim().toLowerCase() &&
+        d.browser.trim().toLowerCase() === info.browser.trim().toLowerCase() &&
+        d.deviceType === info.deviceType)
+  );
+
   if (existingIdx >= 0) {
     existingDevices[existingIdx] = {
       ...existingDevices[existingIdx],
       ...currentDevice,
+      id: DEVICE_SESSION_ID,
       createdAt: existingDevices[existingIdx].createdAt || currentDevice.createdAt,
       lastActive: Date.now(),
+      isCurrent: true,
     };
   } else {
     existingDevices.unshift(currentDevice);
   }
+
+  // 4. Deduplicate to guarantee exactly one entry per physical device
+  existingDevices = deduplicateDevices(existingDevices, DEVICE_SESSION_ID);
 
   // Save to local cache
   saveLocalDevices(cleanEmail, existingDevices);
@@ -166,7 +233,27 @@ export const fetchAccountDevices = async (email: string): Promise<DeviceSession[
         .maybeSingle();
 
       if (!error && data?.workspace_data?.devices && Array.isArray(data.workspace_data.devices)) {
-        const cloudDevices: DeviceSession[] = data.workspace_data.devices;
+        const rawCloudDevices: DeviceSession[] = data.workspace_data.devices;
+        const cloudDevices = deduplicateDevices(rawCloudDevices, DEVICE_SESSION_ID);
+
+        // If duplicate device entries were detected and pruned, persist the cleaned list back to Supabase
+        if (cloudDevices.length < rawCloudDevices.length) {
+          try {
+            await client.from('user_workspaces').upsert(
+              {
+                user_identifier: authIdentifier,
+                user_email: cleanEmail,
+                workspace_data: {
+                  devices: cloudDevices,
+                  updatedAt: Date.now(),
+                },
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: 'user_identifier' }
+            );
+          } catch {}
+        }
+
         saveLocalDevices(cleanEmail, cloudDevices);
         return cloudDevices
           .map((d) => ({ ...d, isCurrent: d.id === DEVICE_SESSION_ID }))
@@ -178,7 +265,8 @@ export const fetchAccountDevices = async (email: string): Promise<DeviceSession[
   }
 
   // Fallback to local cache with current device guaranteed
-  if (localList.length === 0) {
+  const deduplicatedLocal = deduplicateDevices(localList, DEVICE_SESSION_ID);
+  if (deduplicatedLocal.length === 0) {
     const info = getDeviceInfo();
     const fallbackCurrent: DeviceSession = {
       id: DEVICE_SESSION_ID,
@@ -194,7 +282,7 @@ export const fetchAccountDevices = async (email: string): Promise<DeviceSession[
     return [fallbackCurrent];
   }
 
-  return localList
+  return deduplicatedLocal
     .map((d) => ({ ...d, isCurrent: d.id === DEVICE_SESSION_ID }))
     .sort((a, b) => (b.isCurrent ? 1 : 0) - (a.isCurrent ? 1 : 0));
 };

@@ -63,6 +63,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [devices, setDevices] = useState<DeviceSession[]>([]);
   const [loadingDevices, setLoadingDevices] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [confirmRevokeId, setConfirmRevokeId] = useState<string | null>(null);
   const [deviceNotice, setDeviceNotice] = useState<string | null>(null);
 
   // Import / Export state
@@ -112,14 +113,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  const handleRevoke = async (device: DeviceSession) => {
-    const isSelf = device.isCurrent;
-    const confirmMessage = isSelf
-      ? 'Are you sure you want to log out of this current device? You will be returned to the sign-in screen.'
-      : `Are you sure you want to log out ${device.deviceName}? This device will be disconnected immediately.`;
-
-    if (!window.confirm(confirmMessage)) return;
-
+  const executeRevoke = async (device: DeviceSession) => {
+    setConfirmRevokeId(null);
     setRevokingId(device.id);
     Sound.click(settings.soundEnabled);
 
@@ -139,6 +134,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     } finally {
       setRevokingId(null);
     }
+  };
+
+  const handleRevokeClick = (device: DeviceSession) => {
+    setConfirmRevokeId(device.id);
   };
 
   const handleSavePin = (e: React.FormEvent) => {
@@ -352,20 +351,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
 
                     {/* Logout button for this device */}
-                    <button
-                      type="button"
-                      disabled={isRevoking}
-                      onClick={() => handleRevoke(device)}
-                      className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
-                        isSelf
-                          ? 'border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40'
-                          : 'bg-rose-600 hover:bg-rose-700 text-white shadow-2xs'
-                      }`}
-                      title={isSelf ? 'Sign out of this browser' : `Log out ${device.deviceName}`}
-                    >
-                      <LogOut className="w-3.5 h-3.5" />
-                      <span>{isRevoking ? 'Logging out...' : isSelf ? 'Sign out' : 'Log Out'}</span>
-                    </button>
+                    {confirmRevokeId === device.id ? (
+                      <div className="flex items-center gap-1.5 shrink-0 animate-in fade-in">
+                        <button
+                          type="button"
+                          onClick={() => setConfirmRevokeId(null)}
+                          className="px-2 py-1 rounded-md text-[11px] font-medium text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isRevoking}
+                          onClick={() => executeRevoke(device)}
+                          className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-2xs cursor-pointer flex items-center gap-1"
+                        >
+                          {isRevoking ? 'Logging out...' : 'Confirm'}
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={isRevoking}
+                        onClick={() => handleRevokeClick(device)}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                          isSelf
+                            ? 'border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40'
+                            : 'bg-rose-600 hover:bg-rose-700 text-white shadow-2xs'
+                        }`}
+                        title={isSelf ? 'Sign out of this browser' : `Log out ${device.deviceName}`}
+                      >
+                        <LogOut className="w-3.5 h-3.5" />
+                        <span>{isRevoking ? 'Logging out...' : isSelf ? 'Sign out' : 'Log Out'}</span>
+                      </button>
+                    )}
                   </div>
                 );
               })}

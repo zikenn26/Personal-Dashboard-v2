@@ -647,6 +647,7 @@ export const Storage = {
       goals: Storage.getGoals(),
       vaultEncrypted: Storage.getEncryptedVaultBackup(),
       expenses: Storage.getExpenses(),
+      excelImportLogs: Storage.getExcelImportLogs(),
       journal: Storage.getJournal(),
       media: Storage.getMedia(),
       achievements: Storage.getAchievements(),
@@ -668,7 +669,7 @@ export const Storage = {
       if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
       const knownKeys = [
         'profile', 'todos', 'habits', 'goals', 'vaultEncrypted', 'vault',
-        'expenses', 'journal', 'media', 'achievements', 'doodles',
+        'expenses', 'excelImportLogs', 'journal', 'media', 'achievements', 'doodles',
         'timeline', 'projects', 'skills', 'settings', 'sections',
         'photos', 'resume', 'quotes', 'exams', 'version'
       ];
@@ -681,7 +682,43 @@ export const Storage = {
       if (data.goals) Storage.setGoals(data.goals);
       if (data.vaultEncrypted) Storage.restoreEncryptedVault(data.vaultEncrypted);
       else if (data.vault) Storage.restoreEncryptedVault(null);
-      if (data.expenses) Storage.setExpenses(data.expenses);
+
+      // Smart merge and safe hydration for cross-device spending synchronization
+      if (Array.isArray(data.expenses)) {
+        if (data.expenses.length > 0) {
+          const currentExpenses = Storage.getExpenses();
+          const expMap = new Map<string, ExpenseItem>();
+          // Index existing expenses
+          currentExpenses.forEach((e) => expMap.set(e.id, e));
+          // Apply incoming expenses (overwrite or insert)
+          data.expenses.forEach((e: ExpenseItem) => expMap.set(e.id, e));
+          Storage.setExpenses(Array.from(expMap.values()));
+        } else {
+          // If remote is empty, only set if local has no user-imported transactions
+          const currentExpenses = Storage.getExpenses();
+          const hasUserExpenses = currentExpenses.some((e) => e.sourceFile || e.importBatchId || !e.id.startsWith('exp-init'));
+          if (!hasUserExpenses) {
+            Storage.setExpenses([]);
+          }
+        }
+      }
+
+      // Sync spreadsheet upload logs across all devices
+      if (Array.isArray(data.excelImportLogs)) {
+        if (data.excelImportLogs.length > 0) {
+          const currentLogs = Storage.getExcelImportLogs();
+          const logMap = new Map<string, ExcelImportLog>();
+          currentLogs.forEach((l) => logMap.set(l.id, l));
+          data.excelImportLogs.forEach((l: ExcelImportLog) => logMap.set(l.id, l));
+          Storage.setExcelImportLogs(Array.from(logMap.values()));
+        } else {
+          const currentLogs = Storage.getExcelImportLogs();
+          if (currentLogs.length === 0) {
+            Storage.setExcelImportLogs([]);
+          }
+        }
+      }
+
       if (data.journal) Storage.setJournal(data.journal);
       if (data.media) Storage.setMedia(data.media);
       if (data.achievements) Storage.setAchievements(data.achievements);
