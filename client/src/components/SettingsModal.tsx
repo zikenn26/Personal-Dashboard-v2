@@ -1,10 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Settings,
-  Moon,
-  Sun,
-  Volume2,
-  VolumeX,
   Download,
   Upload,
   RotateCcw,
@@ -18,14 +14,12 @@ import {
   Tablet,
   LogOut,
   RefreshCw,
-  Plus,
 } from 'lucide-react';
 import { AppSettings, AuthUser, DeviceSession } from '../types';
 import { Sound } from '../utils/audio';
 import {
   fetchAccountDevices,
   revokeDeviceSession,
-  simulateSecondaryDevice,
 } from '../utils/devices';
 
 interface SettingsModalProps {
@@ -144,18 +138,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       console.warn('Failed to revoke device session:', err);
     } finally {
       setRevokingId(null);
-    }
-  };
-
-  const handleSimulateDevice = async () => {
-    Sound.click(settings.soundEnabled);
-    try {
-      const updated = await simulateSecondaryDevice(activeEmail);
-      setDevices(updated);
-      setDeviceNotice('Secondary device simulated. You can test remote logout below!');
-      setTimeout(() => setDeviceNotice(null), 3500);
-    } catch (err) {
-      console.warn('Simulation notice:', err);
     }
   };
 
@@ -387,74 +369,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 );
               })}
-
-              {/* Helper to simulate another device for testing if only 1 device is listed */}
-              <div className="flex items-center justify-between pt-1">
-                <p className="text-[10px] text-gray-400">
-                  Open in another browser tab or phone to see multi-device synchronization live.
-                </p>
-                <button
-                  type="button"
-                  onClick={handleSimulateDevice}
-                  className="text-[11px] text-[#6366F1] dark:text-[#818CF8] hover:underline font-semibold flex items-center gap-1 cursor-pointer shrink-0"
-                >
-                  <Plus className="w-3 h-3" />
-                  <span>Simulate 2nd Device</span>
-                </button>
-              </div>
             </div>
           </div>
 
-          {/* SECTION 3: PREFERENCES (Theme & Sound) */}
-          <div className="space-y-3 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">
-            <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold block">
-              Preferences
-            </span>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {/* Theme Card */}
-              <div
-                onClick={() => {
-                  Sound.toggle(settings.soundEnabled);
-                  onUpdateSettings({ ...settings, darkMode: !settings.darkMode });
-                }}
-                className="p-3 rounded-xl border border-[#E5E7EB] dark:border-[#1F2937] bg-[#F9FAFB] dark:bg-[#1F2937]/50 flex items-center justify-between cursor-pointer hover:border-[#D1D5DB] dark:hover:border-[#374151] transition-colors"
-              >
-                <div className="flex items-center gap-2.5">
-                  {settings.darkMode ? <Moon className="w-4 h-4 text-purple-400" /> : <Sun className="w-4 h-4 text-amber-500" />}
-                  <div>
-                    <p className="text-xs font-bold text-[#111827] dark:text-white">Workspace Theme</p>
-                    <p className="text-[10px] text-[#6B7280] dark:text-[#9CA3AF]">{settings.darkMode ? 'Dark Theme' : 'Clean Light'}</p>
-                  </div>
-                </div>
-                <div className={`w-8 h-4 rounded-full p-0.5 transition-colors ${settings.darkMode ? 'bg-[#6366F1]' : 'bg-[#D1D5DB]'}`}>
-                  <div className={`w-3 h-3 rounded-full bg-white transition-transform ${settings.darkMode ? 'translate-x-4' : 'translate-x-0'}`} />
-                </div>
-              </div>
-
-              {/* Audio Feedback Card */}
-              <div
-                onClick={() => {
-                  Sound.click(!settings.soundEnabled);
-                  onUpdateSettings({ ...settings, soundEnabled: !settings.soundEnabled });
-                }}
-                className="p-3 rounded-xl border border-[#E5E7EB] dark:border-[#1F2937] bg-[#F9FAFB] dark:bg-[#1F2937]/50 flex items-center justify-between cursor-pointer hover:border-[#D1D5DB] dark:hover:border-[#374151] transition-colors"
-              >
-                <div className="flex items-center gap-2.5">
-                  {settings.soundEnabled ? <Volume2 className="w-4 h-4 text-[#6366F1] dark:text-[#818CF8]" /> : <VolumeX className="w-4 h-4 text-[#9CA3AF]" />}
-                  <div>
-                    <p className="text-xs font-bold text-[#111827] dark:text-white">Tactile Web Audio</p>
-                    <p className="text-[10px] text-[#6B7280] dark:text-[#9CA3AF]">{settings.soundEnabled ? 'Sound Enabled' : 'Muted'}</p>
-                  </div>
-                </div>
-                <div className={`w-8 h-4 rounded-full p-0.5 transition-colors ${settings.soundEnabled ? 'bg-[#6366F1]' : 'bg-[#D1D5DB]'}`}>
-                  <div className={`w-3 h-3 rounded-full bg-white transition-transform ${settings.soundEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* SECTION 4: VAULT PIN */}
+          {/* SECTION: VAULT PIN */}
           <div className="space-y-3 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">
             <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold block">
               Security &amp; Vault PIN

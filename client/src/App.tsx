@@ -1013,8 +1013,8 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#FBFBFA] dark:bg-[#111827] text-[#37352F] dark:text-[#F3F4F6] selection:bg-[#EEF2FF] selection:text-[#6366F1] dark:selection:bg-[#1E1B4B] dark:selection:text-[#818CF8] transition-colors duration-200 font-sans flex flex-col items-center">
-      <div className="w-full min-h-screen bg-white dark:bg-[#111827] flex flex-col">
+    <div className="h-screen w-full bg-[#FBFBFA] dark:bg-[#111827] text-[#37352F] dark:text-[#F3F4F6] selection:bg-[#EEF2FF] selection:text-[#6366F1] dark:selection:bg-[#1E1B4B] dark:selection:text-[#818CF8] transition-colors duration-200 font-sans flex flex-col overflow-hidden">
+      <div className="w-full h-full bg-white dark:bg-[#111827] flex flex-col overflow-hidden">
         {/* ===================================================================== */}
         {/* 1. TOP GLOBAL NAVIGATION HEADER */}
         {/* ===================================================================== */}
@@ -1196,20 +1196,6 @@ export default function App() {
               )}
             </button>
 
-            {/* Change Password Icon Button (Top right corner icon button) */}
-            <button
-              type="button"
-              onClick={() => {
-                Sound.click(settings.soundEnabled);
-                setIsChangePasswordOpen(true);
-              }}
-              className="p-1.5 text-[#787774] dark:text-[#9CA3AF] hover:text-[#6366F1] dark:hover:text-[#818CF8] hover:bg-[#F7F7F5] dark:hover:bg-[#1F2937] rounded-xl border border-[#EDECE9] dark:border-[#374151] transition-colors cursor-pointer"
-              title="Change Password"
-              aria-label="Change Password"
-            >
-              <KeyRound className="w-3.5 h-3.5" />
-            </button>
-
             {/* Profile Menu: Account settings, Change Password & Sign out */}
             <div className="relative">
               <button
@@ -1332,10 +1318,10 @@ export default function App() {
         {/* ===================================================================== */}
         {/* 2. WORKSPACE BODY: STRUCTURED HIERARCHICAL SIDEBAR + MAIN VIEW */}
         {/* ===================================================================== */}
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex overflow-hidden min-h-0">
           {/* Desktop Left Sidebar: Pinned Home/Today at top, categorized nav, Collapse button at bottom */}
           <aside
-            className={`hidden md:flex bg-[#F7F7F5] dark:bg-[#111827] border-r border-[#EDECE9] dark:border-[#1F2937] flex-col justify-between shrink-0 select-none transition-all duration-200 ease-in-out z-20 overflow-y-auto overflow-x-hidden ${
+            className={`hidden md:flex h-full bg-[#F7F7F5] dark:bg-[#111827] border-r border-[#EDECE9] dark:border-[#1F2937] flex-col justify-between shrink-0 select-none transition-all duration-200 ease-in-out z-20 overflow-y-auto overflow-x-hidden ${
               !isSidebarCollapsed ? 'w-60 p-3.5' : 'w-16 p-2 items-center'
             }`}
           >
@@ -1690,21 +1676,22 @@ export default function App() {
           )}
 
           {/* Main Document Canvas View */}
-          <main className="flex-1 overflow-y-auto workspace-canvas bg-white dark:bg-[#111827] p-1 sm:p-2 lg:p-3">
-            <div className="max-w-5xl mx-auto space-y-1">
+          <main className="flex-1 h-full overflow-y-auto min-h-0 workspace-canvas bg-white dark:bg-[#111827] p-2 sm:p-4 lg:p-6">
+            <div className="max-w-5xl mx-auto space-y-4 pb-12">
               {/* Universal Return to Dashboard Shortcut for all sub-views */}
               {activeView !== 'home' && (
-                <div className="flex items-center justify-between pb-0 border-b border-[#F3F4F6] dark:border-[#1F2937]">
+                <div className="flex items-center justify-between px-3.5 py-2.5 mb-3 rounded-xl bg-[#F7F7F5] dark:bg-[#1F2937] border border-[#EDECE9] dark:border-[#374151] shadow-2xs">
                   <button
                     type="button"
                     onClick={() => handleNavigate('home')}
-                    className="flex items-center gap-1.5 text-xs text-[#6366F1] dark:text-[#818CF8] hover:underline font-semibold cursor-pointer group"
+                    className="flex items-center gap-2 text-xs text-[#6366F1] dark:text-[#818CF8] hover:text-[#4F46E5] dark:hover:text-[#A5B4FC] font-semibold cursor-pointer group transition-colors"
                   >
-                    <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
+                    <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
                     <span>Return to Home / Today</span>
                   </button>
-                  <span className="text-[10px] font-mono text-[#9CA3AF]">
-                    {currentNav.emoji} {currentNav.label}
+                  <span className="flex items-center gap-1.5 text-xs font-medium text-[#787774] dark:text-[#9CA3AF]">
+                    <span className="text-sm">{currentNav.emoji}</span>
+                    <span className="font-semibold text-[#37352F] dark:text-white">{currentNav.label}</span>
                   </span>
                 </div>
               )}
