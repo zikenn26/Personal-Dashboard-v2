@@ -47,6 +47,8 @@ import { GoalsView } from './components/GoalsView';
 import { QuotesManagerView } from './components/QuotesManagerView';
 import { ExamsSection } from './components/ExamsSection';
 import { AuthModal } from './components/AuthModal';
+import { AvatarPickerModal } from './components/AvatarPickerModal';
+import { STOCK_IMAGES } from './assets/stockImages';
 import LandingPage from './components/LandingPage';
 import { Auth, getUserWorkspaceKey } from './utils/auth';
 import { registerCurrentDevice } from './utils/devices';
@@ -108,6 +110,7 @@ import {
   LogOut,
   UserCheck,
   KeyRound,
+  Camera,
 } from 'lucide-react';
 
 export default function App() {
@@ -162,6 +165,7 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const [isGlobalAvatarPickerOpen, setIsGlobalAvatarPickerOpen] = useState(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [showQuickCapture, setShowQuickCapture] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(() => authRequest === 'signup' || authRequest === 'signin');
@@ -186,10 +190,20 @@ export default function App() {
     // Immediately hydrate state from the user-scoped Storage
     handleHydrateAllFromStorage(false);
 
-    // If user's name is customized, update profile state
-    if (user.name) {
-      const current = Storage.getProfile();
-      const updatedProfile = { ...current, name: user.name, contactEmail: user.email };
+    // If user's name or avatar is customized on account, update profile state
+    const current = Storage.getProfile();
+    let updatedProfile = { ...current };
+    let hasProfileChanges = false;
+    if (user.name && user.name !== current.name) {
+      updatedProfile.name = user.name;
+      updatedProfile.contactEmail = user.email;
+      hasProfileChanges = true;
+    }
+    if (user.avatarUrl && (!current.avatarUrl || current.avatarUrl === STOCK_IMAGES.avatar || user.avatarUrl !== current.avatarUrl)) {
+      updatedProfile.avatarUrl = user.avatarUrl;
+      hasProfileChanges = true;
+    }
+    if (hasProfileChanges) {
       setProfile(updatedProfile);
       Storage.setProfile(updatedProfile);
     }
@@ -463,6 +477,16 @@ export default function App() {
   const handleUpdateProfile = (updated: UserProfile) => {
     setProfile(updated);
     Storage.setProfile(updated);
+
+    // If avatar was updated, keep currentUser and account credentials in sync
+    if (updated.avatarUrl && updated.avatarUrl !== currentUser?.avatarUrl) {
+      void Auth.updateCurrentUserAvatar(updated.avatarUrl).then((updatedUser) => {
+        if (updatedUser) setCurrentUser(updatedUser);
+      });
+    }
+
+    // Immediately flush auto-sync to Supabase Cloud so all peer devices receive the update in real time (<30ms)
+    void flushAutoSyncImmediately(Storage.getAllDataPayload());
   };
 
   const handleUpdateUserName = async (newName: string) => {
@@ -1284,7 +1308,15 @@ export default function App() {
                 aria-label="Account menu"
               >
                 {profile.avatarUrl ? (
-                  <img src={profile.avatarUrl} alt="Account" className="w-full h-full object-cover" />
+                  <img
+                    src={profile.avatarUrl}
+                    alt="Account"
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).src = STOCK_IMAGES.avatar;
+                    }}
+                  />
                 ) : (
                   <span>{(profile.name || currentUser?.name || 'U').charAt(0).toUpperCase()}</span>
                 )}
@@ -1305,6 +1337,19 @@ export default function App() {
                         {currentUser?.email || profile.contactEmail || 'user@workspace.local'}
                       </p>
                     </div>
+
+                    {/* Change Profile Picture */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAccountMenuOpen(false);
+                        setIsGlobalAvatarPickerOpen(true);
+                      }}
+                      className="account-menu-item flex items-center gap-2 w-full text-left font-medium text-[#111827] dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg p-2 transition-colors cursor-pointer text-xs"
+                    >
+                      <Camera className="w-3.5 h-3.5 text-[#6366F1] dark:text-[#818CF8]" />
+                      <span>Change profile picture</span>
+                    </button>
 
                     {/* Change Password inside the icon button menu */}
                     <button
@@ -2029,6 +2074,8 @@ export default function App() {
         currentUser={currentUser}
         userName={profile.name}
         onUpdateUserName={handleUpdateUserName}
+        avatarUrl={profile.avatarUrl}
+        onOpenAvatarPicker={() => setIsGlobalAvatarPickerOpen(true)}
         onSignOut={handleSignOut}
         onOpenChangePassword={() => setIsChangePasswordOpen(true)}
       />
@@ -2047,6 +2094,21 @@ export default function App() {
         onClose={() => setIsAuthModalOpen(false)}
         onAuthenticated={handleAuthenticated}
         currentUser={currentUser}
+      />
+
+      {/* Global Profile Photo / Avatar Picker Modal */}
+      <AvatarPickerModal
+        isOpen={isGlobalAvatarPickerOpen}
+        onClose={() => setIsGlobalAvatarPickerOpen(false)}
+        currentAvatarUrl={profile.avatarUrl}
+        onSelectAvatar={(newUrl) => {
+          handleUpdateProfile({
+            ...profile,
+            avatarUrl: newUrl,
+          });
+        }}
+        soundEnabled={settings.soundEnabled}
+        userId={currentUser?.email || profile.contactEmail}
       />
     </div>
   );

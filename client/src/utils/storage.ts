@@ -676,7 +676,21 @@ export const Storage = {
       const hasKnownKey = knownKeys.some((k) => k in data && data[k] !== undefined);
       if (!hasKnownKey) return false;
 
-      if (data.profile) Storage.setProfile(data.profile);
+      if (data.profile) {
+        const currentProfile = Storage.getProfile();
+        const incomingAvatar = data.profile.avatarUrl;
+        const currentAvatar = currentProfile.avatarUrl;
+        const mergedProfile = {
+          ...currentProfile,
+          ...data.profile,
+        };
+        if (incomingAvatar) {
+          mergedProfile.avatarUrl = incomingAvatar;
+        } else if (currentAvatar && currentAvatar !== STOCK_IMAGES.avatar) {
+          mergedProfile.avatarUrl = currentAvatar;
+        }
+        Storage.setProfile(mergedProfile);
+      }
       if (data.todos) Storage.setTodos(data.todos);
       if (data.habits) Storage.setHabits(data.habits);
       if (data.goals) Storage.setGoals(data.goals);

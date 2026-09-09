@@ -14,9 +14,11 @@ import {
   Tablet,
   LogOut,
   RefreshCw,
+  Camera,
 } from 'lucide-react';
 import { AppSettings, AuthUser, DeviceSession } from '../types';
 import { Sound } from '../utils/audio';
+import { STOCK_IMAGES } from '../assets/stockImages';
 import {
   fetchAccountDevices,
   revokeDeviceSession,
@@ -33,6 +35,8 @@ interface SettingsModalProps {
   currentUser?: AuthUser | null;
   userName?: string;
   onUpdateUserName?: (newName: string) => void;
+  avatarUrl?: string;
+  onOpenAvatarPicker?: () => void;
   onSignOut?: () => void;
   onOpenChangePassword?: () => void;
 }
@@ -48,6 +52,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   currentUser,
   userName = '',
   onUpdateUserName,
+  avatarUrl,
+  onOpenAvatarPicker,
   onSignOut,
   onOpenChangePassword,
 }) => {
@@ -234,6 +240,57 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
 
             <div className="p-3.5 rounded-xl border border-[#E5E7EB] dark:border-[#1F2937] bg-[#F9FAFB] dark:bg-[#1F2937]/40 space-y-3">
+              {/* Profile Photo Preview & Change Action */}
+              <div className="flex items-center gap-3.5 pb-3 border-b border-[#E5E7EB] dark:border-[#1F2937]">
+                <div className="relative group">
+                  <div className="w-12 h-12 rounded-2xl overflow-hidden border border-[#E5E7EB] dark:border-[#374151] bg-white dark:bg-[#111827] p-0.5 shadow-2xs flex items-center justify-center">
+                    {avatarUrl ? (
+                      <img
+                        src={avatarUrl}
+                        alt="Profile"
+                        className="w-full h-full object-cover rounded-xl"
+                        referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).src = STOCK_IMAGES.avatar;
+                        }}
+                      />
+                    ) : (
+                      <User className="w-6 h-6 text-[#6366F1]" />
+                    )}
+                  </div>
+                  {onOpenAvatarPicker && (
+                    <button
+                      type="button"
+                      onClick={onOpenAvatarPicker}
+                      className="absolute -bottom-1 -right-1 p-1 rounded-full bg-[#6366F1] text-white shadow-xs hover:bg-[#4F46E5] transition-colors cursor-pointer"
+                      title="Change Photo"
+                    >
+                      <Camera className="w-2.5 h-2.5" />
+                    </button>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-[#111827] dark:text-white">
+                      Profile Picture
+                    </span>
+                    {onOpenAvatarPicker && (
+                      <button
+                        type="button"
+                        onClick={onOpenAvatarPicker}
+                        className="px-2.5 py-1 rounded-lg text-xs font-semibold text-[#6366F1] dark:text-[#818CF8] bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-colors flex items-center gap-1 cursor-pointer"
+                      >
+                        <Camera className="w-3 h-3" />
+                        <span>Change Photo</span>
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-[#6B7280] dark:text-[#9CA3AF]">
+                    Synchronized across all your logged-in devices in real time
+                  </p>
+                </div>
+              </div>
+
               <form onSubmit={handleSaveName} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
                 <div className="relative flex-1">
                   <User className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />

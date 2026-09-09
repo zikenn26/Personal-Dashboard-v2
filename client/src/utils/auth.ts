@@ -471,6 +471,68 @@ export const Auth = {
   },
 
   /**
+   * Update User Avatar URL across local session, saved accounts, and Supabase cloud credentials
+   */
+  updateCurrentUserAvatar: async (avatarUrl: string): Promise<AuthUser | null> => {
+    const user = Auth.getCurrentUser();
+    if (!user) return null;
+
+    const updatedUser: AuthUser = {
+      ...user,
+      avatarUrl,
+    };
+
+    Auth.setCurrentUser(updatedUser);
+
+    // Update in local credentials map
+    const credentialsMap = getLocalCredentialsMap();
+    if (credentialsMap[user.email.toLowerCase()]) {
+      credentialsMap[user.email.toLowerCase()].user = updatedUser;
+      try {
+        localStorage.setItem(USER_CREDENTIALS_KEY, JSON.stringify(credentialsMap));
+      } catch {
+        // ignore
+      }
+    }
+
+    // Update in saved users list
+    try {
+      const stored = localStorage.getItem(SAVED_USERS_KEY);
+      if (stored) {
+        const list: AuthUser[] = JSON.parse(stored);
+        const updatedList = list.map((u) => (u.email.toLowerCase() === user.email.toLowerCase() ? updatedUser : u));
+        localStorage.setItem(SAVED_USERS_KEY, JSON.stringify(updatedList));
+      }
+    } catch {
+      // ignore
+    }
+
+    // Update Supabase auth user_metadata if available
+    const client = getSupabaseClient();
+    if (client && isSupabaseConfigured() && user.provider === 'supabase') {
+      try {
+        await client.auth.updateUser({
+          data: { avatar_url: avatarUrl },
+        });
+      } catch (err) {
+        console.warn('Supabase updateUser avatar notice:', err);
+      }
+    }
+
+    // Update in Supabase cloud credential
+    try {
+      const cloudRecord = await fetchCloudCredential(user.email);
+      if (cloudRecord) {
+        await saveCloudCredential(user.email, cloudRecord.passHash, updatedUser);
+      }
+    } catch {
+      // ignore
+    }
+
+    return updatedUser;
+  },
+
+  /**
    * Sign Out current device only (does not disconnect other active devices)
    */
   signOut: async () => {

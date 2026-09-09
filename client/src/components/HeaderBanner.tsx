@@ -15,9 +15,12 @@ import {
   CheckCircle2,
   Zap,
   TrendingUp,
+  Camera,
 } from 'lucide-react';
 import { UserProfile, TodoItem, HabitItem, ExpenseItem, LifeMilestone } from '../types';
 import { Sound } from '../utils/audio';
+import { STOCK_IMAGES } from '../assets/stockImages';
+import { AvatarPickerModal } from './AvatarPickerModal';
 
 interface HeaderBannerProps {
   profile: UserProfile;
@@ -59,6 +62,7 @@ export const HeaderBanner: React.FC<HeaderBannerProps> = ({
   const [quoteIndex, setQuoteIndex] = useState(0);
   const [copiedQuote, setCopiedQuote] = useState(false);
   const [isEditingBio, setIsEditingBio] = useState(false);
+  const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
   const [bioInput, setBioInput] = useState(profile.bio);
   const [statusInput, setStatusInput] = useState(profile.statusText);
   const [showBannerPicker, setShowBannerPicker] = useState(false);
@@ -172,23 +176,40 @@ export const HeaderBanner: React.FC<HeaderBannerProps> = ({
           {/* Avatar and Identity */}
           <div className="flex flex-col sm:flex-row items-start sm:items-end gap-5">
             <div className="relative group">
-              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl border border-[#E5E7EB] dark:border-[#374151] bg-white dark:bg-[#111827] p-1 overflow-hidden shadow-sm flex items-center justify-center">
+              <button
+                type="button"
+                id="btn-header-avatar"
+                onClick={() => {
+                  Sound.click(soundEnabled);
+                  setIsAvatarPickerOpen(true);
+                }}
+                className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl border border-[#E5E7EB] dark:border-[#374151] bg-white dark:bg-[#111827] p-1 overflow-hidden shadow-sm flex items-center justify-center relative cursor-pointer group focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
+                title="Click to change profile picture"
+              >
                 {profile.avatarUrl ? (
                   <img
                     src={profile.avatarUrl}
                     alt={profile.name}
-                    className="w-full h-full object-cover rounded-xl"
+                    className="w-full h-full object-cover rounded-xl transition-transform duration-200 group-hover:scale-105"
                     referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).src = STOCK_IMAGES.avatar;
+                    }}
                   />
                 ) : (
                   <div className="w-full h-full rounded-xl bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 font-bold text-2xl flex items-center justify-center">
                     {(profile.name || 'U').charAt(0).toUpperCase()}
                   </div>
                 )}
-              </div>
+                {/* Hover Camera Overlay Badge */}
+                <div className="absolute inset-1 rounded-xl bg-black/55 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white transition-opacity duration-150 backdrop-blur-2xs">
+                  <Camera className="w-5 h-5 mb-0.5" />
+                  <span className="text-[10px] font-bold tracking-tight">Edit</span>
+                </div>
+              </button>
               {/* Online Pulse Status */}
               <div
-                className="absolute bottom-1 right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-white dark:border-[#111827] flex items-center justify-center shadow-2xs"
+                className="absolute bottom-1 right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-white dark:border-[#111827] flex items-center justify-center shadow-2xs pointer-events-none"
                 title="Active Now"
               >
                 <span className="w-1 h-1 rounded-full bg-white animate-pulse" />
@@ -227,6 +248,18 @@ export const HeaderBanner: React.FC<HeaderBannerProps> = ({
 
           {/* Social & Contact Bar */}
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              id="btn-edit-profile-avatar"
+              onClick={() => {
+                Sound.click(soundEnabled);
+                setIsAvatarPickerOpen(true);
+              }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#F9FAFB] hover:bg-[#F3F4F6] dark:bg-[#1F2937] dark:hover:bg-[#374151] text-[#374151] dark:text-[#E5E7EB] transition-colors flex items-center gap-1.5 border border-[#E5E7EB] dark:border-[#374151] cursor-pointer"
+              title="Change Profile Photo"
+            >
+              <Camera className="w-3.5 h-3.5 text-[#6366F1]" />
+              <span>Change Photo</span>
+            </button>
             <a
               href={`mailto:${profile.contactEmail}`}
               className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#F9FAFB] hover:bg-[#F3F4F6] dark:bg-[#1F2937] dark:hover:bg-[#374151] text-[#374151] dark:text-[#E5E7EB] transition-colors flex items-center gap-1.5 border border-[#E5E7EB] dark:border-[#374151]"
@@ -401,6 +434,20 @@ export const HeaderBanner: React.FC<HeaderBannerProps> = ({
           </div>
         </div>
       </div>
+
+      <AvatarPickerModal
+        isOpen={isAvatarPickerOpen}
+        currentAvatarUrl={profile.avatarUrl}
+        onSelectAvatar={(newUrl) => {
+          onUpdateProfile({
+            ...profile,
+            avatarUrl: newUrl,
+          });
+        }}
+        onClose={() => setIsAvatarPickerOpen(false)}
+        soundEnabled={soundEnabled}
+        userId={profile.contactEmail}
+      />
     </header>
   );
 };
