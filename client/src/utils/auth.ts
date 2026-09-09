@@ -352,6 +352,125 @@ export const Auth = {
   },
 
   /**
+   * Change Password with strict current password validation and multi-device cloud persistence
+   */
+  changePassword: async (
+    currentPass: string,
+    newPass: string
+  ): Promise<{ success: boolean; message: string }> => {
+    const user = Auth.getCurrentUser();
+    if (!user) {
+      return { success: false, message: 'No active account session found. Please sign in.' };
+    }
+    const cleanEmail = user.email.trim().toLowerCase();
+    const cleanCurrent = currentPass.trim();
+    const cleanNew = newPass.trim();
+
+    if (!cleanCurrent) {
+      return { success: false, message: 'Please enter your current password.' };
+    }
+    if (!cleanNew || cleanNew.length < 6) {
+      return { success: false, message: 'New password must be at least 6 characters long.' };
+    }
+    if (cleanNew === cleanCurrent) {
+      return { success: false, message: 'New password cannot be identical to current password.' };
+    }
+
+    // 1. Verify current password against local credentials
+    const credentialsMap = getLocalCredentialsMap();
+    const storedRecord = credentialsMap[cleanEmail];
+    let isCurrentValid = false;
+
+    if (storedRecord && storedRecord.pass) {
+      const storedPass = storedRecord.pass;
+      isCurrentValid = storedPass.trim().startsWith('{')
+        ? await verifyPasswordHash(storedPass, cleanCurrent)
+        : storedPass === cleanCurrent;
+    }
+
+    // 2. If not verified locally, verify against cloud credentials
+    if (!isCurrentValid) {
+      const cloudRecord = await fetchCloudCredential(cleanEmail);
+      if (cloudRecord && cloudRecord.passHash) {
+        isCurrentValid = await verifyPasswordHash(cloudRecord.passHash, cleanCurrent);
+      }
+    }
+
+    if (!isCurrentValid) {
+      return { success: false, message: 'Current password is incorrect. Please check and try again.' };
+    }
+
+    // 3. Update password in Supabase Auth if applicable
+    const client = getSupabaseClient();
+    if (client && isSupabaseConfigured() && user.provider === 'supabase') {
+      try {
+        await client.auth.updateUser({ password: cleanNew });
+      } catch (err) {
+        console.warn('Supabase updateUser password notice:', err);
+      }
+    }
+
+    // 4. Hash new password with PBKDF2/AES-GCM and persist to local and cloud storage
+    const newPassHash = await hashPassword(cleanNew);
+    await saveLocalCredential(cleanEmail, cleanNew, user);
+    await saveCloudCredential(cleanEmail, newPassHash, user);
+
+    return { success: true, message: 'Password updated successfully!' };
+  },
+
+  /**
+   * Update User Display Name across local session, saved accounts list, and cloud credentials
+   */
+  updateCurrentUserName: async (newName: string): Promise<AuthUser | null> => {
+    const user = Auth.getCurrentUser();
+    if (!user) return null;
+    const cleanName = newName.trim();
+    if (!cleanName) return user;
+
+    const updatedUser: AuthUser = {
+      ...user,
+      name: cleanName,
+    };
+
+    Auth.setCurrentUser(updatedUser);
+
+    // Update in local credentials map
+    const credentialsMap = getLocalCredentialsMap();
+    if (credentialsMap[user.email.toLowerCase()]) {
+      credentialsMap[user.email.toLowerCase()].user = updatedUser;
+      try {
+        localStorage.setItem(USER_CREDENTIALS_KEY, JSON.stringify(credentialsMap));
+      } catch {
+        // ignore
+      }
+    }
+
+    // Update in saved users list
+    try {
+      const stored = localStorage.getItem(SAVED_USERS_KEY);
+      if (stored) {
+        const list: AuthUser[] = JSON.parse(stored);
+        const updatedList = list.map((u) => (u.email.toLowerCase() === user.email.toLowerCase() ? updatedUser : u));
+        localStorage.setItem(SAVED_USERS_KEY, JSON.stringify(updatedList));
+      }
+    } catch {
+      // ignore
+    }
+
+    // Update in Supabase cloud credential
+    try {
+      const cloudRecord = await fetchCloudCredential(user.email);
+      if (cloudRecord) {
+        await saveCloudCredential(user.email, cloudRecord.passHash, updatedUser);
+      }
+    } catch {
+      // ignore
+    }
+
+    return updatedUser;
+  },
+
+  /**
    * Sign Out current device only (does not disconnect other active devices)
    */
   signOut: async () => {

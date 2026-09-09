@@ -413,6 +413,17 @@ export interface AuthUser {
   provider: 'supabase' | 'local_demo' | 'local';
 }
 
+export interface DeviceSession {
+  id: string;
+  deviceName: string;
+  browser: string;
+  os: string;
+  deviceType: 'desktop' | 'mobile' | 'tablet';
+  lastActive: number;
+  createdAt: number;
+  isCurrent?: boolean;
+}
+
 export type ExamStageStatus = 'upcoming' | 'ongoing' | 'completed';
 
 export interface ExamStage {

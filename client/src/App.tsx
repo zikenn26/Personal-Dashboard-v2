@@ -39,6 +39,7 @@ import { AchievementsWall } from './components/AchievementsWall';
 import { LifeTimeline } from './components/LifeTimeline';
 import { CommandPalette } from './components/CommandPalette';
 import { SettingsModal } from './components/SettingsModal';
+import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { QuickCaptureBar } from './components/QuickCaptureBar';
 import { BackupRestoreView } from './components/BackupRestoreView';
 import { GoalsView } from './components/GoalsView';
@@ -47,6 +48,7 @@ import { ExamsSection } from './components/ExamsSection';
 import { AuthModal } from './components/AuthModal';
 import LandingPage from './components/LandingPage';
 import { Auth, getUserWorkspaceKey } from './utils/auth';
+import { registerCurrentDevice } from './utils/devices';
 import { AuthUser } from './types';
 import {
   isSupabaseConfigured,
@@ -104,6 +106,7 @@ import {
   LogIn,
   LogOut,
   UserCheck,
+  KeyRound,
 } from 'lucide-react';
 
 export default function App() {
@@ -152,6 +155,7 @@ export default function App() {
   const authRequest = new URLSearchParams(window.location.search).get('auth');
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [showQuickCapture, setShowQuickCapture] = useState(false);
@@ -171,6 +175,9 @@ export default function App() {
     setCustomWorkspaceIdentifier(getUserWorkspaceKey(user));
     setCustomWorkspaceEmail(user.email);
     
+    // Register active device session in cloud & storage
+    registerCurrentDevice(user.email);
+
     // Immediately hydrate state from the user-scoped Storage
     handleHydrateAllFromStorage(false);
 
@@ -271,17 +278,32 @@ export default function App() {
 
     autoSyncFromCloud();
 
+    // Register active device session for this account
+    if (currentUser?.email) {
+      registerCurrentDevice(currentUser.email);
+    }
+
     // 2. Realtime WebSocket channel for instant cross-device updates (<30ms delivery, no lag, no refresh)
-    const unsubRealtime = subscribeToRealtimeWorkspace((remoteData) => {
-      if (remoteData && isMounted) {
-        isRemoteUpdating.current = true;
-        Storage.importAllDataPayload(remoteData);
-        handleHydrateAllFromStorage(false);
-        setTimeout(() => {
-          isRemoteUpdating.current = false;
-        }, 300);
+    const unsubRealtime = subscribeToRealtimeWorkspace(
+      (remoteData) => {
+        if (remoteData && isMounted) {
+          isRemoteUpdating.current = true;
+          Storage.importAllDataPayload(remoteData);
+          handleHydrateAllFromStorage(false);
+          setTimeout(() => {
+            isRemoteUpdating.current = false;
+          }, 300);
+        }
+      },
+      // Callback triggered when this device session is revoked from another device
+      () => {
+        if (isMounted) {
+          Sound.error(settings.soundEnabled);
+          alert('This device session was logged out from your account settings.');
+          handleSignOut();
+        }
       }
-    });
+    );
 
     // Re-verify on window focus for background wakeups
     const handleFocus = () => {
@@ -419,6 +441,19 @@ export default function App() {
   const handleUpdateProfile = (updated: UserProfile) => {
     setProfile(updated);
     Storage.setProfile(updated);
+  };
+
+  const handleUpdateUserName = async (newName: string) => {
+    const clean = newName.trim();
+    if (!clean) return;
+    const updatedProfile = { ...profile, name: clean };
+    setProfile(updatedProfile);
+    Storage.setProfile(updatedProfile);
+
+    const updatedUser = await Auth.updateCurrentUserName(clean);
+    if (updatedUser) {
+      setCurrentUser(updatedUser);
+    }
   };
 
   // Sections Handlers
@@ -1161,7 +1196,21 @@ export default function App() {
               )}
             </button>
 
-            {/* Profile Menu: Account settings & Sign out only */}
+            {/* Change Password Icon Button (Top right corner icon button) */}
+            <button
+              type="button"
+              onClick={() => {
+                Sound.click(settings.soundEnabled);
+                setIsChangePasswordOpen(true);
+              }}
+              className="p-1.5 text-[#787774] dark:text-[#9CA3AF] hover:text-[#6366F1] dark:hover:text-[#818CF8] hover:bg-[#F7F7F5] dark:hover:bg-[#1F2937] rounded-xl border border-[#EDECE9] dark:border-[#374151] transition-colors cursor-pointer"
+              title="Change Password"
+              aria-label="Change Password"
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Profile Menu: Account settings, Change Password & Sign out */}
             <div className="relative">
               <button
                 type="button"
@@ -1178,26 +1227,51 @@ export default function App() {
                     className="fixed inset-0 z-40"
                     onClick={() => setIsAccountMenuOpen(false)}
                   />
-                  <div className="absolute right-0 top-9 z-50 w-52 rounded-2xl border border-[#EDECE9] dark:border-[#374151] bg-white dark:bg-[#1F2937] p-1.5 shadow-xl animate-in fade-in zoom-in-95">
+                  <div className="absolute right-0 top-9 z-50 w-56 rounded-2xl border border-[#EDECE9] dark:border-[#374151] bg-white dark:bg-[#1F2937] p-1.5 shadow-xl animate-in fade-in zoom-in-95">
+                    {/* User display name & email */}
+                    <div className="px-2.5 py-2 mb-1 rounded-xl bg-gray-50 dark:bg-[#111827] border border-gray-100 dark:border-gray-800">
+                      <p className="text-xs font-bold text-[#111827] dark:text-white truncate">
+                        {profile.name || currentUser?.name || 'Workspace User'}
+                      </p>
+                      <p className="text-[10px] text-[#6B7280] dark:text-[#9CA3AF] truncate">
+                        {currentUser?.email || profile.contactEmail || 'user@workspace.local'}
+                      </p>
+                    </div>
+
+                    {/* Change Password inside the icon button menu */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAccountMenuOpen(false);
+                        setIsChangePasswordOpen(true);
+                      }}
+                      className="account-menu-item flex items-center gap-2 w-full text-left font-medium text-[#111827] dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg p-2 transition-colors cursor-pointer text-xs"
+                    >
+                      <KeyRound className="w-3.5 h-3.5 text-[#6366F1] dark:text-[#818CF8]" />
+                      <span>Change Password</span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => {
                         setIsAccountMenuOpen(false);
                         setIsSettingsOpen(true);
                       }}
-                      className="account-menu-item"
+                      className="account-menu-item flex items-center gap-2 w-full text-left font-medium text-[#111827] dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg p-2 transition-colors cursor-pointer text-xs"
                     >
                       <Settings className="w-3.5 h-3.5" />
                       <span>Account settings</span>
                     </button>
+
                     <div className="my-1 border-t border-[#F3F4F6] dark:border-[#374151]" />
+
                     <button
                       type="button"
                       onClick={() => {
                         setIsAccountMenuOpen(false);
                         handleSignOut();
                       }}
-                      className="account-menu-item text-rose-600 dark:text-rose-300"
+                      className="account-menu-item flex items-center gap-2 w-full text-left font-medium text-rose-600 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg p-2 transition-colors cursor-pointer text-xs"
                     >
                       <LogOut className="w-3.5 h-3.5" />
                       <span>Sign out</span>
@@ -1868,7 +1942,7 @@ export default function App() {
         onResetData={handleResetData}
       />
 
-      {/* Settings & Storage Backup Modal */}
+      {/* Settings, Multi-Device Sessions & Name Modal */}
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
@@ -1877,6 +1951,19 @@ export default function App() {
         onExportData={handleExportData}
         onImportData={handleImportData}
         onResetData={handleResetData}
+        currentUser={currentUser}
+        userName={profile.name}
+        onUpdateUserName={handleUpdateUserName}
+        onSignOut={handleSignOut}
+        onOpenChangePassword={() => setIsChangePasswordOpen(true)}
+      />
+
+      {/* Change Password Modal */}
+      <ChangePasswordModal
+        isOpen={isChangePasswordOpen}
+        onClose={() => setIsChangePasswordOpen(false)}
+        userEmail={currentUser?.email || profile.contactEmail}
+        soundEnabled={settings.soundEnabled}
       />
 
       {/* Global User Authentication & Personalized Workspace Modal */}

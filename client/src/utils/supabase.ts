@@ -440,7 +440,8 @@ export const flushAutoSyncImmediately = async (payload: any) => {
  * Supports both instant broadcast events (<30ms) and postgres database updates.
  */
 export const subscribeToRealtimeWorkspace = (
-  onRemoteChange: (data: any, timestamp: string) => void
+  onRemoteChange: (data: any, timestamp: string) => void,
+  onDeviceRevoked?: () => void
 ): (() => void) => {
   const client = getSupabaseClient();
   if (!client) {
@@ -485,6 +486,23 @@ export const subscribeToRealtimeWorkspace = (
             notifyStatus('synced');
           } catch (e) {
             console.warn('Realtime broadcast payload error:', e);
+          }
+        }
+      )
+      // 2. Remote device revocation/logout broadcast listener
+      .on(
+        'broadcast',
+        { event: 'device_logout_command' },
+        (res: any) => {
+          try {
+            const payload = res?.payload;
+            if (payload && payload.targetDeviceId === DEVICE_SESSION_ID) {
+              if (onDeviceRevoked) {
+                onDeviceRevoked();
+              }
+            }
+          } catch (e) {
+            console.warn('Realtime device logout error:', e);
           }
         }
       )

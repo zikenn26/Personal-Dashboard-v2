@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Settings,
   Moon,
@@ -12,10 +12,21 @@ import {
   Shield,
   Check,
   AlertTriangle,
-  Cloud,
+  User,
+  Laptop,
+  Smartphone,
+  Tablet,
+  LogOut,
+  RefreshCw,
+  Plus,
 } from 'lucide-react';
-import { AppSettings } from '../types';
+import { AppSettings, AuthUser, DeviceSession } from '../types';
 import { Sound } from '../utils/audio';
+import {
+  fetchAccountDevices,
+  revokeDeviceSession,
+  simulateSecondaryDevice,
+} from '../utils/devices';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -25,6 +36,11 @@ interface SettingsModalProps {
   onExportData: () => void;
   onImportData: (jsonStr: string) => boolean;
   onResetData: () => void;
+  currentUser?: AuthUser | null;
+  userName?: string;
+  onUpdateUserName?: (newName: string) => void;
+  onSignOut?: () => void;
+  onOpenChangePassword?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -35,13 +51,113 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onExportData,
   onImportData,
   onResetData,
+  currentUser,
+  userName = '',
+  onUpdateUserName,
+  onSignOut,
+  onOpenChangePassword,
 }) => {
+  // Master PIN state
   const [newPin, setNewPin] = useState(settings.masterPin);
   const [pinSaved, setPinSaved] = useState(false);
+
+  // Name update state
+  const [displayName, setDisplayName] = useState(userName || currentUser?.name || '');
+  const [nameSaved, setNameSaved] = useState(false);
+
+  // Multi-device management state
+  const [devices, setDevices] = useState<DeviceSession[]>([]);
+  const [loadingDevices, setLoadingDevices] = useState(false);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [deviceNotice, setDeviceNotice] = useState<string | null>(null);
+
+  // Import / Export state
   const [importStatus, setImportStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Keep displayName in sync when modal opens or userName updates
+  useEffect(() => {
+    if (userName) {
+      setDisplayName(userName);
+    } else if (currentUser?.name) {
+      setDisplayName(currentUser.name);
+    }
+  }, [userName, currentUser?.name, isOpen]);
+
+  // Load active devices whenever the modal opens
+  const activeEmail = currentUser?.email || 'user@workspace.local';
+
+  const loadDevices = async () => {
+    setLoadingDevices(true);
+    try {
+      const list = await fetchAccountDevices(activeEmail);
+      setDevices(list);
+    } catch (err) {
+      console.warn('Error loading active devices:', err);
+    } finally {
+      setLoadingDevices(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      loadDevices();
+    }
+  }, [isOpen, activeEmail]);
+
   if (!isOpen) return null;
+
+  const handleSaveName = (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = displayName.trim();
+    if (clean && onUpdateUserName) {
+      Sound.success(settings.soundEnabled);
+      onUpdateUserName(clean);
+      setNameSaved(true);
+      setTimeout(() => setNameSaved(false), 2500);
+    }
+  };
+
+  const handleRevoke = async (device: DeviceSession) => {
+    const isSelf = device.isCurrent;
+    const confirmMessage = isSelf
+      ? 'Are you sure you want to log out of this current device? You will be returned to the sign-in screen.'
+      : `Are you sure you want to log out ${device.deviceName}? This device will be disconnected immediately.`;
+
+    if (!window.confirm(confirmMessage)) return;
+
+    setRevokingId(device.id);
+    Sound.click(settings.soundEnabled);
+
+    try {
+      const res = await revokeDeviceSession(activeEmail, device.id);
+      if (res.isSelf) {
+        onClose();
+        if (onSignOut) onSignOut();
+      } else {
+        Sound.success(settings.soundEnabled);
+        setDevices((prev) => prev.filter((d) => d.id !== device.id));
+        setDeviceNotice(`Successfully logged out ${device.deviceName}.`);
+        setTimeout(() => setDeviceNotice(null), 3000);
+      }
+    } catch (err) {
+      console.warn('Failed to revoke device session:', err);
+    } finally {
+      setRevokingId(null);
+    }
+  };
+
+  const handleSimulateDevice = async () => {
+    Sound.click(settings.soundEnabled);
+    try {
+      const updated = await simulateSecondaryDevice(activeEmail);
+      setDevices(updated);
+      setDeviceNotice('Secondary device simulated. You can test remote logout below!');
+      setTimeout(() => setDeviceNotice(null), 3500);
+    } catch (err) {
+      console.warn('Simulation notice:', err);
+    }
+  };
 
   const handleSavePin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,170 +193,362 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     reader.readAsText(file);
   };
 
+  const formatLastActive = (timestamp: number, isCurrent?: boolean) => {
+    if (isCurrent) return 'Active now';
+    const diff = Date.now() - timestamp;
+    if (diff < 60 * 1000) return 'Just now';
+    if (diff < 60 * 60 * 1000) return `${Math.floor(diff / (60 * 1000))}m ago`;
+    if (diff < 24 * 60 * 60 * 1000) return `${Math.floor(diff / (60 * 60 * 1000))}h ago`;
+    return new Date(timestamp).toLocaleDateString();
+  };
+
+  const getDeviceIcon = (type: string) => {
+    switch (type) {
+      case 'mobile':
+        return <Smartphone className="w-4 h-4 text-emerald-500" />;
+      case 'tablet':
+        return <Tablet className="w-4 h-4 text-blue-500" />;
+      default:
+        return <Laptop className="w-4 h-4 text-[#6366F1]" />;
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-lg rounded-xl bg-white dark:bg-[#111827] border border-[#E5E7EB] dark:border-[#1F2937] shadow-2xl p-6 space-y-6">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div className="w-full max-w-xl max-h-[90vh] flex flex-col rounded-2xl bg-white dark:bg-[#111827] border border-[#E5E7EB] dark:border-[#1F2937] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 my-auto">
         {/* Modal Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-[#F3F4F6] dark:border-[#1F2937]">
-          <div className="flex items-center gap-2">
-            <span className="p-1.5 rounded-lg bg-[#F9FAFB] dark:bg-[#1F2937] text-[#6366F1] dark:text-[#818CF8]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#F3F4F6] dark:border-[#1F2937] shrink-0">
+          <div className="flex items-center gap-2.5">
+            <span className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-[#6366F1] dark:text-[#818CF8]">
               <Settings className="w-4 h-4" />
             </span>
-            <h3 className="text-base font-bold text-[#111827] dark:text-white">
-              Dashboard Settings & Storage Engine
-            </h3>
+            <div>
+              <h3 className="text-base font-bold text-[#111827] dark:text-white leading-none">
+                Workspace Settings &amp; Security
+              </h3>
+              <p className="text-xs text-[#6B7280] dark:text-[#9CA3AF] mt-1">
+                Manage profile, active devices, theme, and storage
+              </p>
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="text-[#9CA3AF] hover:text-[#111827] dark:hover:text-white text-sm cursor-pointer"
+            className="text-[#9CA3AF] hover:text-[#111827] dark:hover:text-white p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-sm cursor-pointer transition-colors"
           >
             ✕
           </button>
         </div>
 
-        {/* Section 1: Appearance & Sound */}
-        <div className="space-y-3">
-          <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold block">
-            Preferences
-          </span>
+        {/* Modal Scrollable Body */}
+        <div className="p-6 overflow-y-auto space-y-6">
+          {/* SECTION 1: PROFILE USERNAME EDIT (Consistent across whole app & portfolio) */}
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold block">
+                Profile &amp; Display Name
+              </span>
+              <span className="text-[10px] text-gray-400 font-medium">
+                Syncs to home page, portfolio &amp; resume
+              </span>
+            </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {/* Theme Card */}
-            <div
-              onClick={() => {
-                Sound.toggle(settings.soundEnabled);
-                onUpdateSettings({ ...settings, darkMode: !settings.darkMode });
-              }}
-              className="p-3 rounded-xl border border-[#E5E7EB] dark:border-[#1F2937] bg-[#F9FAFB] dark:bg-[#1F2937]/50 flex items-center justify-between cursor-pointer hover:border-[#D1D5DB] dark:hover:border-[#374151] transition-colors"
-            >
-              <div className="flex items-center gap-2.5">
-                {settings.darkMode ? <Moon className="w-4 h-4 text-purple-400" /> : <Sun className="w-4 h-4 text-amber-500" />}
-                <div>
-                  <p className="text-xs font-bold text-[#111827] dark:text-white">Workspace Theme</p>
-                  <p className="text-[10px] text-[#6B7280] dark:text-[#9CA3AF]">{settings.darkMode ? 'Dark Theme' : 'Professional Polish Light'}</p>
+            <div className="p-3.5 rounded-xl border border-[#E5E7EB] dark:border-[#1F2937] bg-[#F9FAFB] dark:bg-[#1F2937]/40 space-y-3">
+              <form onSubmit={handleSaveName} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                <div className="relative flex-1">
+                  <User className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+                  <input
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="Enter your full name or handle"
+                    required
+                    className="w-full pl-9 pr-3 py-2 rounded-xl text-xs font-semibold bg-white dark:bg-[#111827] border border-[#E5E7EB] dark:border-[#374151] text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
+                  />
                 </div>
+                <button
+                  type="submit"
+                  className="px-4 py-2 text-xs font-bold bg-[#6366F1] hover:bg-[#4F46E5] text-white rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm shrink-0"
+                >
+                  {nameSaved ? <Check className="w-3.5 h-3.5" /> : null}
+                  <span>{nameSaved ? 'Saved!' : 'Save Name'}</span>
+                </button>
+              </form>
+
+              {nameSaved && (
+                <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1.5 animate-in fade-in">
+                  <Check className="w-3.5 h-3.5" />
+                  Your name is updated and consistent throughout the home page, portfolio, and header!
+                </p>
+              )}
+
+              {currentUser && (
+                <div className="text-[11px] text-gray-500 dark:text-gray-400 flex items-center justify-between pt-1 border-t border-gray-200 dark:border-gray-800">
+                  <span>Signed in account: <strong className="text-gray-700 dark:text-gray-300">{currentUser.email}</strong></span>
+                  {onOpenChangePassword && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onOpenChangePassword();
+                      }}
+                      className="text-[#6366F1] dark:text-[#818CF8] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                    >
+                      <KeyRound className="w-3 h-3" />
+                      <span>Change password</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* SECTION 2: MULTI-DEVICE SESSIONS & REMOTE LOGOUT */}
+          <div className="space-y-2.5 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold block">
+                  Active Connected Devices
+                </span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Logged in on {devices.length} {devices.length === 1 ? 'device' : 'devices'}
+                </span>
               </div>
-              <div className={`w-8 h-4 rounded-full p-0.5 transition-colors ${settings.darkMode ? 'bg-[#6366F1]' : 'bg-[#D1D5DB]'}`}>
-                <div className={`w-3 h-3 rounded-full bg-white transition-transform ${settings.darkMode ? 'translate-x-4' : 'translate-x-0'}`} />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={loadDevices}
+                  disabled={loadingDevices}
+                  className="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-xs p-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                  title="Refresh device list"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingDevices ? 'animate-spin' : ''}`} />
+                </button>
               </div>
             </div>
 
-            {/* Audio Feedback Card */}
-            <div
-              onClick={() => {
-                Sound.click(!settings.soundEnabled);
-                onUpdateSettings({ ...settings, soundEnabled: !settings.soundEnabled });
-              }}
-              className="p-3 rounded-xl border border-[#E5E7EB] dark:border-[#1F2937] bg-[#F9FAFB] dark:bg-[#1F2937]/50 flex items-center justify-between cursor-pointer hover:border-[#D1D5DB] dark:hover:border-[#374151] transition-colors"
-            >
-              <div className="flex items-center gap-2.5">
-                {settings.soundEnabled ? <Volume2 className="w-4 h-4 text-[#6366F1] dark:text-[#818CF8]" /> : <VolumeX className="w-4 h-4 text-[#9CA3AF]" />}
-                <div>
-                  <p className="text-xs font-bold text-[#111827] dark:text-white">Tactile Web Audio</p>
-                  <p className="text-[10px] text-[#6B7280] dark:text-[#9CA3AF]">{settings.soundEnabled ? '0ms Audio Enabled' : 'Muted'}</p>
-                </div>
+            {deviceNotice && (
+              <div className="p-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-900/60 text-xs text-indigo-700 dark:text-indigo-300 flex items-center gap-2 animate-in fade-in">
+                <Check className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                <span>{deviceNotice}</span>
               </div>
-              <div className={`w-8 h-4 rounded-full p-0.5 transition-colors ${settings.soundEnabled ? 'bg-[#6366F1]' : 'bg-[#D1D5DB]'}`}>
-                <div className={`w-3 h-3 rounded-full bg-white transition-transform ${settings.soundEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+            )}
+
+            <div className="space-y-2">
+              {devices.map((device) => {
+                const isSelf = device.isCurrent;
+                const isRevoking = revokingId === device.id;
+
+                return (
+                  <div
+                    key={device.id}
+                    className={`p-3 rounded-xl border transition-all flex items-center justify-between gap-3 ${
+                      isSelf
+                        ? 'border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/40 dark:bg-indigo-950/20'
+                        : 'border-[#E5E7EB] dark:border-[#1F2937] bg-[#F9FAFB] dark:bg-[#1F2937]/40'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="p-2 rounded-xl bg-white dark:bg-[#111827] border border-gray-200 dark:border-gray-800 shrink-0">
+                        {getDeviceIcon(device.deviceType)}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-xs font-bold text-[#111827] dark:text-white truncate">
+                            {device.deviceName}
+                          </p>
+                          {isSelf && (
+                            <span className="px-1.5 py-0.2 rounded-md bg-[#6366F1] text-white text-[10px] font-bold">
+                              This Device
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
+                          {formatLastActive(device.lastActive, isSelf)} • {device.browser}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Logout button for this device */}
+                    <button
+                      type="button"
+                      disabled={isRevoking}
+                      onClick={() => handleRevoke(device)}
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                        isSelf
+                          ? 'border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40'
+                          : 'bg-rose-600 hover:bg-rose-700 text-white shadow-2xs'
+                      }`}
+                      title={isSelf ? 'Sign out of this browser' : `Log out ${device.deviceName}`}
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>{isRevoking ? 'Logging out...' : isSelf ? 'Sign out' : 'Log Out'}</span>
+                    </button>
+                  </div>
+                );
+              })}
+
+              {/* Helper to simulate another device for testing if only 1 device is listed */}
+              <div className="flex items-center justify-between pt-1">
+                <p className="text-[10px] text-gray-400">
+                  Open in another browser tab or phone to see multi-device synchronization live.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleSimulateDevice}
+                  className="text-[11px] text-[#6366F1] dark:text-[#818CF8] hover:underline font-semibold flex items-center gap-1 cursor-pointer shrink-0"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Simulate 2nd Device</span>
+                </button>
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Section 2: Password Vault PIN */}
-        <div className="space-y-3 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">
-          <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold block">
-            Security & Vault Master PIN
-          </span>
-
-          <form onSubmit={handleSavePin} className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <input
-                type="password"
-                maxLength={8}
-                value={newPin}
-                onChange={(e) => setNewPin(e.target.value)}
-                placeholder="Set a vault PIN (4–8 digits)"
-                className="w-full px-3 py-1.5 rounded-lg text-xs font-mono bg-[#F9FAFB] dark:bg-[#1F2937] border border-[#E5E7EB] dark:border-[#374151] text-[#111827] dark:text-white focus:outline-none focus:ring-1 focus:ring-[#6366F1]"
-              />
-            </div>
-            <button
-              type="submit"
-              className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center gap-1 cursor-pointer shadow-2xs"
-            >
-              {pinSaved ? <Check className="w-3.5 h-3.5" /> : <KeyRound className="w-3.5 h-3.5" />}
-              <span>{pinSaved ? 'Saved' : 'Update PIN'}</span>
-            </button>
-          </form>
-        </div>
-
-        {/* Section 3: Client-Side Storage & Backup */}
-        <div className="space-y-3 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">
-          <div className="flex items-center justify-between">
+          {/* SECTION 3: PREFERENCES (Theme & Sound) */}
+          <div className="space-y-3 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">
             <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold block">
-              Storage Engine &amp; Cloud Migration
+              Preferences
             </span>
-            <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-semibold">
-              <Shield className="w-3 h-3" />
-              LocalStorage + Auto Cloud Sync
-            </span>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Theme Card */}
+              <div
+                onClick={() => {
+                  Sound.toggle(settings.soundEnabled);
+                  onUpdateSettings({ ...settings, darkMode: !settings.darkMode });
+                }}
+                className="p-3 rounded-xl border border-[#E5E7EB] dark:border-[#1F2937] bg-[#F9FAFB] dark:bg-[#1F2937]/50 flex items-center justify-between cursor-pointer hover:border-[#D1D5DB] dark:hover:border-[#374151] transition-colors"
+              >
+                <div className="flex items-center gap-2.5">
+                  {settings.darkMode ? <Moon className="w-4 h-4 text-purple-400" /> : <Sun className="w-4 h-4 text-amber-500" />}
+                  <div>
+                    <p className="text-xs font-bold text-[#111827] dark:text-white">Workspace Theme</p>
+                    <p className="text-[10px] text-[#6B7280] dark:text-[#9CA3AF]">{settings.darkMode ? 'Dark Theme' : 'Clean Light'}</p>
+                  </div>
+                </div>
+                <div className={`w-8 h-4 rounded-full p-0.5 transition-colors ${settings.darkMode ? 'bg-[#6366F1]' : 'bg-[#D1D5DB]'}`}>
+                  <div className={`w-3 h-3 rounded-full bg-white transition-transform ${settings.darkMode ? 'translate-x-4' : 'translate-x-0'}`} />
+                </div>
+              </div>
+
+              {/* Audio Feedback Card */}
+              <div
+                onClick={() => {
+                  Sound.click(!settings.soundEnabled);
+                  onUpdateSettings({ ...settings, soundEnabled: !settings.soundEnabled });
+                }}
+                className="p-3 rounded-xl border border-[#E5E7EB] dark:border-[#1F2937] bg-[#F9FAFB] dark:bg-[#1F2937]/50 flex items-center justify-between cursor-pointer hover:border-[#D1D5DB] dark:hover:border-[#374151] transition-colors"
+              >
+                <div className="flex items-center gap-2.5">
+                  {settings.soundEnabled ? <Volume2 className="w-4 h-4 text-[#6366F1] dark:text-[#818CF8]" /> : <VolumeX className="w-4 h-4 text-[#9CA3AF]" />}
+                  <div>
+                    <p className="text-xs font-bold text-[#111827] dark:text-white">Tactile Web Audio</p>
+                    <p className="text-[10px] text-[#6B7280] dark:text-[#9CA3AF]">{settings.soundEnabled ? 'Sound Enabled' : 'Muted'}</p>
+                  </div>
+                </div>
+                <div className={`w-8 h-4 rounded-full p-0.5 transition-colors ${settings.soundEnabled ? 'bg-[#6366F1]' : 'bg-[#D1D5DB]'}`}>
+                  <div className={`w-3 h-3 rounded-full bg-white transition-transform ${settings.soundEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                Sound.success(settings.soundEnabled);
-                onExportData();
-              }}
-              className="p-3 rounded-xl border border-[#E5E7EB] dark:border-[#1F2937] bg-[#F9FAFB] hover:bg-[#F3F4F6] dark:bg-[#1F2937]/50 dark:hover:bg-[#1F2937] flex items-center gap-2.5 text-left transition-colors cursor-pointer"
-            >
-              <Download className="w-4 h-4 text-emerald-500 shrink-0" />
-              <div>
-                <p className="text-xs font-bold text-[#111827] dark:text-white">Export Full JSON</p>
-                <p className="text-[10px] text-[#6B7280] dark:text-[#9CA3AF]">Download offline backup</p>
-              </div>
-            </button>
+          {/* SECTION 4: VAULT PIN */}
+          <div className="space-y-3 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">
+            <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold block">
+              Security &amp; Vault PIN
+            </span>
 
-            <div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".json"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
+            <form onSubmit={handleSavePin} className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <input
+                  type="password"
+                  maxLength={8}
+                  value={newPin}
+                  onChange={(e) => setNewPin(e.target.value)}
+                  placeholder="Set a vault PIN (4–8 digits)"
+                  className="w-full px-3 py-1.5 rounded-lg text-xs font-mono bg-[#F9FAFB] dark:bg-[#1F2937] border border-[#E5E7EB] dark:border-[#374151] text-[#111827] dark:text-white focus:outline-none focus:ring-1 focus:ring-[#6366F1]"
+                />
+              </div>
+              <button
+                type="submit"
+                className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center gap-1 cursor-pointer shadow-2xs"
+              >
+                {pinSaved ? <Check className="w-3.5 h-3.5" /> : <KeyRound className="w-3.5 h-3.5" />}
+                <span>{pinSaved ? 'Saved' : 'Update PIN'}</span>
+              </button>
+            </form>
+          </div>
+
+          {/* SECTION 5: BACKUP & DATA EXPORT */}
+          <div className="space-y-3 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold block">
+                Storage Engine &amp; Backup
+              </span>
+              <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-semibold">
+                <Shield className="w-3 h-3" />
+                Cloud Realtime Sync
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full p-3 rounded-xl border border-[#E5E7EB] dark:border-[#1F2937] bg-[#F9FAFB] hover:bg-[#F3F4F6] dark:bg-[#1F2937]/50 dark:hover:bg-[#1F2937] flex items-center gap-2.5 text-left transition-colors cursor-pointer"
+                onClick={() => {
+                  Sound.success(settings.soundEnabled);
+                  onExportData();
+                }}
+                className="p-3 rounded-xl border border-[#E5E7EB] dark:border-[#1F2937] bg-[#F9FAFB] hover:bg-[#F3F4F6] dark:bg-[#1F2937]/50 dark:hover:bg-[#1F2937] flex items-center gap-2.5 text-left transition-colors cursor-pointer"
               >
-                <Upload className="w-4 h-4 text-[#6366F1] dark:text-[#818CF8] shrink-0" />
+                <Download className="w-4 h-4 text-emerald-500 shrink-0" />
                 <div>
-                  <p className="text-xs font-bold text-[#111827] dark:text-white">Import Backup JSON</p>
-                  <p className="text-[10px] text-[#6B7280] dark:text-[#9CA3AF]">Restore from file</p>
+                  <p className="text-xs font-bold text-[#111827] dark:text-white">Export Full JSON</p>
+                  <p className="text-[10px] text-[#6B7280] dark:text-[#9CA3AF]">Download offline backup</p>
                 </div>
               </button>
+
+              <div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full p-3 rounded-xl border border-[#E5E7EB] dark:border-[#1F2937] bg-[#F9FAFB] hover:bg-[#F3F4F6] dark:bg-[#1F2937]/50 dark:hover:bg-[#1F2937] flex items-center gap-2.5 text-left transition-colors cursor-pointer"
+                >
+                  <Upload className="w-4 h-4 text-[#6366F1] dark:text-[#818CF8] shrink-0" />
+                  <div>
+                    <p className="text-xs font-bold text-[#111827] dark:text-white">Import Backup JSON</p>
+                    <p className="text-[10px] text-[#6B7280] dark:text-[#9CA3AF]">Restore from file</p>
+                  </div>
+                </button>
+              </div>
             </div>
+
+            {importStatus === 'success' && (
+              <p className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
+                <Check className="w-3.5 h-3.5" />
+                Backup successfully imported! Reloading state...
+              </p>
+            )}
+
+            {importStatus === 'error' && (
+              <p className="text-xs text-rose-500 font-semibold flex items-center gap-1">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                Invalid JSON format. Please verify the backup file.
+              </p>
+            )}
           </div>
-
-          {importStatus === 'success' && (
-            <p className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
-              <Check className="w-3.5 h-3.5" />
-              Backup successfully imported! Reloading state...
-            </p>
-          )}
-
-          {importStatus === 'error' && (
-            <p className="text-xs text-rose-500 font-semibold flex items-center gap-1">
-              <AlertTriangle className="w-3.5 h-3.5" />
-              Invalid JSON format. Please verify the backup file.
-            </p>
-          )}
         </div>
 
-        {/* Reset to Default */}
-        <div className="pt-3 border-t border-[#F3F4F6] dark:border-[#1F2937] flex items-center justify-between">
+        {/* Modal Footer */}
+        <div className="px-6 py-3 border-t border-[#F3F4F6] dark:border-[#1F2937] flex items-center justify-between bg-gray-50/50 dark:bg-[#111827]/50 shrink-0">
           <button
             type="button"
             onClick={() => {
@@ -253,13 +561,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             className="text-xs text-rose-500 hover:text-rose-600 font-semibold flex items-center gap-1 cursor-pointer"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>Reset to Default Demo State</span>
+            <span>Reset to Demo State</span>
           </button>
 
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-[#111827] dark:bg-white text-white dark:text-[#111827] hover:opacity-90 transition-opacity cursor-pointer shadow-2xs"
+            className="px-5 py-2 rounded-xl text-xs font-bold bg-[#111827] dark:bg-white text-white dark:text-[#111827] hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
           >
             Done
           </button>
