@@ -359,9 +359,11 @@ export const DoodleCanvas: React.FC<DoodleCanvasProps> = ({
             {doodles.map((doodle) => (
               <div
                 key={doodle.id}
-                className="relative group shrink-0 w-20 h-14 rounded-lg overflow-hidden border border-[#E5E7EB] dark:border-[#374151] bg-white"
+                className="relative group shrink-0 w-20 h-14 rounded-lg overflow-hidden border border-[#E5E7EB] dark:border-[#374151] bg-white flex items-center justify-center"
               >
-                <img src={doodle.dataUrl} alt={doodle.title} className="w-full h-full object-contain" />
+                {doodle.dataUrl ? (
+                  <img src={doodle.dataUrl} alt={doodle.title} className="w-full h-full object-contain" />
+                ) : null}
                 <button
                   onClick={() => {
                     Sound.click(soundEnabled);

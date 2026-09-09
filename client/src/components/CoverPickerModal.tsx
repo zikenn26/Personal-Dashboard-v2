@@ -245,12 +245,14 @@ export const CoverPickerModal: React.FC<CoverPickerModalProps> = ({
                       : 'border-[#EDECE9] dark:border-[#374151] hover:border-[#6366F1]'
                   }`}
                 >
-                  <img
-                    src={cover.url}
-                    alt={cover.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    referrerPolicy="no-referrer"
-                  />
+                  {cover.url ? (
+                    <img
+                      src={cover.url}
+                      alt={cover.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : null}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent pointer-events-none" />
 
                   {/* Tag */}

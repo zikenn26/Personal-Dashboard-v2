@@ -144,13 +144,15 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
         <div className="p-5 space-y-5 overflow-y-auto flex-1">
           {/* Current Avatar Preview & Quick Upload */}
           <div className="flex items-center gap-4 p-4 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B]/60 border border-[#E2E8F0] dark:border-[#334155]">
-            <div className="relative w-16 h-16 rounded-full overflow-hidden border-2 border-[#6366F1] shadow-sm shrink-0">
-              <img
-                src={currentAvatarUrl || STOCK_IMAGES.avatar}
-                alt="Profile Preview"
-                className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
-              />
+            <div className="relative w-16 h-16 rounded-full overflow-hidden border-2 border-[#6366F1] shadow-sm shrink-0 flex items-center justify-center bg-purple-50 dark:bg-purple-950/40">
+              {(currentAvatarUrl || STOCK_IMAGES.avatar) ? (
+                <img
+                  src={currentAvatarUrl || STOCK_IMAGES.avatar}
+                  alt="Profile Preview"
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              ) : null}
             </div>
             <div className="flex-1 space-y-1">
               <h4 className="text-xs font-bold text-[#111827] dark:text-white">
@@ -204,12 +206,14 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
                     }`}
                   >
                     <div className="relative w-12 h-12 rounded-full overflow-hidden border border-[#E5E7EB] dark:border-[#374151]">
-                      <img
-                        src={preset.url}
-                        alt={preset.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                        referrerPolicy="no-referrer"
-                      />
+                      {preset.url ? (
+                        <img
+                          src={preset.url}
+                          alt={preset.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : null}
                       {isSelected && (
                         <div className="absolute inset-0 bg-[#6366F1]/40 flex items-center justify-center">
                           <Check className="w-4 h-4 text-white" />

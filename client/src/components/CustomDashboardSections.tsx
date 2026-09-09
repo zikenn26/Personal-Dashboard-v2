@@ -507,8 +507,12 @@ export const CustomDashboardSections: React.FC<CustomDashboardSectionsProps> = (
                             <div className="space-y-1.5">
                               <div className="rounded-xl overflow-hidden border border-[#E5E7EB] dark:border-[#374151] max-h-56 bg-slate-950">
                                 <img
-                                  src={block.properties?.url || 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1000&auto=format&fit=crop&q=80'}
-                                  alt={block.content}
+                                  src={
+                                    (block.properties?.url && block.properties.url.trim() !== '')
+                                      ? block.properties.url
+                                      : 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1000&auto=format&fit=crop&q=80'
+                                  }
+                                  alt={block.content || 'Image'}
                                   className="w-full h-full object-cover max-h-56"
                                 />
                               </div>

@@ -716,6 +716,20 @@ export default function App() {
     Storage.setExpenses(updated);
   };
 
+  const handleDeleteBatchExpenses = (ids: string[]) => {
+    Sound.click(settings.soundEnabled);
+    const idSet = new Set(ids);
+    const updated = expenses.filter((e) => !idSet.has(e.id));
+    setExpenses(updated);
+    Storage.setExpenses(updated);
+  };
+
+  const handleClearAllExpenses = () => {
+    Sound.click(settings.soundEnabled);
+    setExpenses([]);
+    Storage.setExpenses([]);
+  };
+
   // Vault Handlers
   const handleAddVaultSecret = (item: Omit<VaultCredential, 'id'>) => {
     const newCred: VaultCredential = {
@@ -1201,11 +1215,15 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setIsAccountMenuOpen((open) => !open)}
-                className="w-7 h-7 rounded-lg overflow-hidden border border-[#EDECE9] dark:border-[#374151] cursor-pointer hover:ring-2 hover:ring-[#6366F1] transition-all shrink-0"
+                className="w-7 h-7 rounded-lg overflow-hidden border border-[#EDECE9] dark:border-[#374151] cursor-pointer hover:ring-2 hover:ring-[#6366F1] transition-all shrink-0 bg-purple-50 dark:bg-purple-950/40 flex items-center justify-center text-xs font-bold text-purple-600 dark:text-purple-300"
                 title="Account menu"
                 aria-label="Account menu"
               >
-                <img src={profile.avatarUrl} alt="Account" className="w-full h-full object-cover" />
+                {profile.avatarUrl ? (
+                  <img src={profile.avatarUrl} alt="Account" className="w-full h-full object-cover" />
+                ) : (
+                  <span>{(profile.name || currentUser?.name || 'U').charAt(0).toUpperCase()}</span>
+                )}
               </button>
               {isAccountMenuOpen && (
                 <>
@@ -1680,19 +1698,21 @@ export default function App() {
             <div className="max-w-5xl mx-auto space-y-4 pb-12">
               {/* Universal Return to Dashboard Shortcut for all sub-views */}
               {activeView !== 'home' && (
-                <div className="flex items-center justify-between px-3.5 py-2.5 mb-3 rounded-xl bg-[#F7F7F5] dark:bg-[#1F2937] border border-[#EDECE9] dark:border-[#374151] shadow-2xs">
-                  <button
-                    type="button"
-                    onClick={() => handleNavigate('home')}
-                    className="flex items-center gap-2 text-xs text-[#6366F1] dark:text-[#818CF8] hover:text-[#4F46E5] dark:hover:text-[#A5B4FC] font-semibold cursor-pointer group transition-colors"
-                  >
-                    <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
-                    <span>Return to Home / Today</span>
-                  </button>
-                  <span className="flex items-center gap-1.5 text-xs font-medium text-[#787774] dark:text-[#9CA3AF]">
-                    <span className="text-sm">{currentNav.emoji}</span>
-                    <span className="font-semibold text-[#37352F] dark:text-white">{currentNav.label}</span>
-                  </span>
+                <div className="pt-2 pb-1.5">
+                  <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-[#F7F7F5] dark:bg-[#1F2937] border border-[#EDECE9] dark:border-[#374151] shadow-2xs">
+                    <button
+                      type="button"
+                      onClick={() => handleNavigate('home')}
+                      className="flex items-center gap-2.5 text-xs text-[#6366F1] dark:text-[#818CF8] hover:text-[#4F46E5] dark:hover:text-[#A5B4FC] font-semibold cursor-pointer group transition-colors"
+                    >
+                      <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
+                      <span>Return to Home / Today</span>
+                    </button>
+                    <span className="flex items-center gap-2 text-xs font-medium text-[#787774] dark:text-[#9CA3AF]">
+                      <span className="text-sm">{currentNav.emoji}</span>
+                      <span className="font-semibold text-[#37352F] dark:text-white">{currentNav.label}</span>
+                    </span>
+                  </div>
                 </div>
               )}
 
@@ -1862,6 +1882,8 @@ export default function App() {
                   onBatchAddExpenses={handleBatchAddExpenses}
                   onToggleActive={handleToggleExpense}
                   onDeleteExpense={handleDeleteExpense}
+                  onDeleteBatchExpenses={handleDeleteBatchExpenses}
+                  onClearAllExpenses={handleClearAllExpenses}
                   soundEnabled={settings.soundEnabled}
                 />
               )}

@@ -88,6 +88,8 @@ export interface ExpenseItem {
   notes?: string;
   billingCycle?: ExpenseBillingCycle;
   active?: boolean;
+  sourceFile?: string;
+  importBatchId?: string;
 }
 
 export type DiaryTheme = 'parchment' | 'lined' | 'plain' | 'dotted' | 'grid' | 'midnight' | 'lavender';

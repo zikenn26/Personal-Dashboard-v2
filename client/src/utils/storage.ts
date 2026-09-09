@@ -67,7 +67,7 @@ export const INITIAL_PROFILE: UserProfile = {
   location: '',
   statusText: '',
   statusEmoji: '✨',
-  avatarUrl: '',
+  avatarUrl: STOCK_IMAGES.avatar,
   avatarEnabled: false,
   bannerType: 'gradient',
   bannerBg: 'linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 50%, #FDF4FF 100%)',
@@ -554,7 +554,7 @@ export const Storage = {
   getProfile: (): UserProfile => {
     const data = loadFromStorage(STORAGE_KEYS.PROFILE, INITIAL_PROFILE);
     if (!data.avatarUrl) {
-      data.avatarUrl = '';
+      data.avatarUrl = STOCK_IMAGES.avatar;
     }
     if (!data.educationRecords) {
       data.educationRecords = [];

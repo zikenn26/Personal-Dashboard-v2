@@ -415,16 +415,18 @@ export const MediaGallery: React.FC<MediaGalleryProps> = ({
               />
               <div className="flex gap-1.5 mt-1.5">
                 {SAMPLE_COVERS.map((url, i) => (
-                  <img
-                    key={i}
-                    src={url}
-                    alt={`Preset ${i}`}
-                    onClick={() => setNewCoverUrl(url)}
-                    className={`w-8 h-8 rounded object-cover cursor-pointer border ${
-                      newCoverUrl === url ? 'border-[#6366F1] ring-1 ring-[#6366F1]' : 'border-transparent opacity-70 hover:opacity-100'
-                    }`}
-                    referrerPolicy="no-referrer"
-                  />
+                  url ? (
+                    <img
+                      key={i}
+                      src={url}
+                      alt={`Preset ${i}`}
+                      onClick={() => setNewCoverUrl(url)}
+                      className={`w-8 h-8 rounded object-cover cursor-pointer border ${
+                        newCoverUrl === url ? 'border-[#6366F1] ring-1 ring-[#6366F1]' : 'border-transparent opacity-70 hover:opacity-100'
+                      }`}
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : null
                 ))}
               </div>
             </div>

@@ -173,12 +173,18 @@ export const HeaderBanner: React.FC<HeaderBannerProps> = ({
           <div className="flex flex-col sm:flex-row items-start sm:items-end gap-5">
             <div className="relative group">
               <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl border border-[#E5E7EB] dark:border-[#374151] bg-white dark:bg-[#111827] p-1 overflow-hidden shadow-sm flex items-center justify-center">
-                <img
-                  src={profile.avatarUrl}
-                  alt={profile.name}
-                  className="w-full h-full object-cover rounded-xl"
-                  referrerPolicy="no-referrer"
-                />
+                {profile.avatarUrl ? (
+                  <img
+                    src={profile.avatarUrl}
+                    alt={profile.name}
+                    className="w-full h-full object-cover rounded-xl"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="w-full h-full rounded-xl bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 font-bold text-2xl flex items-center justify-center">
+                    {(profile.name || 'U').charAt(0).toUpperCase()}
+                  </div>
+                )}
               </div>
               {/* Online Pulse Status */}
               <div

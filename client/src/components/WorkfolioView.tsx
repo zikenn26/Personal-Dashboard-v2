@@ -549,12 +549,14 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
       >
         {/* Cover / Background Banner */}
         <div className="relative h-44 sm:h-56 w-full bg-slate-800 overflow-hidden group">
-          <img
-            src={coverSrc}
-            alt="LinkedIn Cover Background"
-            className="w-full h-full object-cover group-hover:scale-[1.01] transition-transform duration-500"
-            referrerPolicy="no-referrer"
-          />
+          {coverSrc ? (
+            <img
+              src={coverSrc}
+              alt="LinkedIn Cover Background"
+              className="w-full h-full object-cover group-hover:scale-[1.01] transition-transform duration-500"
+              referrerPolicy="no-referrer"
+            />
+          ) : null}
           <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 pointer-events-none" />
 
           {/* Cover Action Button */}
@@ -578,13 +580,19 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
           {/* Avatar + Quick Edit Badge */}
           <div className="flex flex-col sm:flex-row sm:items-end justify-between -mt-16 sm:-mt-20 gap-4 mb-4">
             <div className="relative group self-start">
-              <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-full border-4 border-white dark:border-[#111827] shadow-xl overflow-hidden bg-white dark:bg-[#1F2937] relative">
-                <img
-                  src={avatarSrc}
-                  alt={profile.name}
-                  className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
-                />
+              <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-full border-4 border-white dark:border-[#111827] shadow-xl overflow-hidden bg-white dark:bg-[#1F2937] relative flex items-center justify-center">
+                {avatarSrc ? (
+                  <img
+                    src={avatarSrc}
+                    alt={profile.name}
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-4xl font-bold text-purple-600 bg-purple-50 dark:bg-purple-950/40">
+                    {(profile.name || 'U').charAt(0).toUpperCase()}
+                  </div>
+                )}
               </div>
 
               {/* Camera Icon Overlay on Avatar */}

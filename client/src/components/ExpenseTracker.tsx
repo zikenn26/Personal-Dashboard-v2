@@ -32,6 +32,10 @@ import {
   Clock,
   RotateCcw,
   SlidersHorizontal,
+  ChevronLeft,
+  ChevronRight,
+  FileSpreadsheet,
+  Upload,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -47,6 +51,7 @@ import {
 import { ExpenseItem, ExpenseCategory, PaymentMethod, ExpenseBillingCycle } from '../types';
 import { Sound } from '../utils/audio';
 import { triggerConfetti } from '../utils/confetti';
+import { ExcelImportModal } from './ExcelImportModal';
 
 interface ExpenseTrackerProps {
   expenses: ExpenseItem[];
@@ -55,6 +60,8 @@ interface ExpenseTrackerProps {
   onBatchAddExpenses?: (expenses: Array<Omit<ExpenseItem, 'id'>>) => void;
   onToggleActive?: (id: string) => void;
   onDeleteExpense: (id: string) => void;
+  onDeleteBatchExpenses?: (ids: string[]) => void;
+  onClearAllExpenses?: () => void;
   soundEnabled: boolean;
 }
 
@@ -140,6 +147,21 @@ export const EXPENSE_CATEGORIES: ExpenseCategoryDef[] = [
   },
 ];
 
+export const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
 export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   expenses,
   onAddExpense,
@@ -147,10 +169,137 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   onBatchAddExpenses,
   onToggleActive,
   onDeleteExpense,
+  onDeleteBatchExpenses,
+  onClearAllExpenses,
   soundEnabled,
 }) => {
   // Navigation & Filter States
-  const [selectedMonth, setSelectedMonth] = useState<string>('August 2026');
+  const now = new Date();
+  const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
+  const [selectedMonthIndex, setSelectedMonthIndex] = useState<number>(now.getMonth());
+  const [isMonthPickerOpen, setIsMonthPickerOpen] = useState<boolean>(false);
+  const [showImportModal, setShowImportModal] = useState<boolean>(false);
+  const [categoryScope, setCategoryScope] = useState<'month' | 'all'>('month');
+
+  // Track uploaded spreadsheet metadata for testing and batch clear
+  const [uploadedSheetMeta, setUploadedSheetMeta] = useState<{
+    fileName: string;
+    batchId: string;
+    count: number;
+    totalAmount: number;
+  } | null>(() => {
+    try {
+      const saved = localStorage.getItem('last_uploaded_expense_sheet');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const selectedMonthLabel = `${MONTH_NAMES[selectedMonthIndex]} ${selectedYear}`;
+  const selectedMonthPrefix = `${selectedYear}-${String(selectedMonthIndex + 1).padStart(2, '0')}`;
+
+  const handlePrevMonth = () => {
+    Sound.click(soundEnabled);
+    if (selectedMonthIndex === 0) {
+      setSelectedMonthIndex(11);
+      setSelectedYear((prev) => prev - 1);
+    } else {
+      setSelectedMonthIndex((prev) => prev - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    Sound.click(soundEnabled);
+    if (selectedMonthIndex === 11) {
+      setSelectedMonthIndex(0);
+      setSelectedYear((prev) => prev + 1);
+    } else {
+      setSelectedMonthIndex((prev) => prev + 1);
+    }
+  };
+
+  const handleSetCurrentMonth = () => {
+    Sound.click(soundEnabled);
+    const curr = new Date();
+    setSelectedYear(curr.getFullYear());
+    setSelectedMonthIndex(curr.getMonth());
+    setIsMonthPickerOpen(false);
+  };
+
+  const handleImportSuccess = (
+    newExpenses: Array<Omit<ExpenseItem, 'id'>>,
+    meta: { fileName: string; batchId: string; count: number; totalAmount: number }
+  ) => {
+    if (onBatchAddExpenses) {
+      onBatchAddExpenses(newExpenses);
+    } else {
+      newExpenses.forEach((item) => onAddExpense(item));
+    }
+    setUploadedSheetMeta(meta);
+    try {
+      localStorage.setItem('last_uploaded_expense_sheet', JSON.stringify(meta));
+    } catch {}
+    triggerConfetti();
+  };
+
+  const handleDeleteUploadedSheet = () => {
+    if (!uploadedSheetMeta) {
+      const anyImported = expenses.filter((e) => !!e.importBatchId || !!e.sourceFile);
+      if (anyImported.length === 0) return;
+      const confirmDelete = window.confirm(
+        `Are you sure you want to delete all ${anyImported.length} imported spreadsheet expenses? This will clear them from memory.`
+      );
+      if (!confirmDelete) return;
+      Sound.click(soundEnabled);
+      if (onDeleteBatchExpenses) {
+        onDeleteBatchExpenses(anyImported.map((e) => e.id));
+      } else {
+        anyImported.forEach((e) => onDeleteExpense(e.id));
+      }
+      return;
+    }
+
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete all ${uploadedSheetMeta.count} expenses imported from "${uploadedSheetMeta.fileName}"? This will clear them from memory.`
+    );
+    if (!confirmDelete) return;
+
+    Sound.click(soundEnabled);
+    const matchingExpenses = expenses.filter(
+      (e) => e.importBatchId === uploadedSheetMeta.batchId || e.sourceFile === uploadedSheetMeta.fileName
+    );
+    const matchingIds = matchingExpenses.map((e) => e.id);
+
+    if (onDeleteBatchExpenses && matchingIds.length > 0) {
+      onDeleteBatchExpenses(matchingIds);
+    } else {
+      matchingIds.forEach((id) => onDeleteExpense(id));
+    }
+
+    setUploadedSheetMeta(null);
+    try {
+      localStorage.removeItem('last_uploaded_expense_sheet');
+    } catch {}
+  };
+
+  const handleClearAllConfirm = () => {
+    const confirmClear = window.confirm(
+      'Are you sure you want to delete ALL expenses? This will completely clear all spending transactions from memory.'
+    );
+    if (!confirmClear) return;
+
+    if (onClearAllExpenses) {
+      onClearAllExpenses();
+    } else {
+      expenses.forEach((e) => onDeleteExpense(e.id));
+    }
+    setUploadedSheetMeta(null);
+    try {
+      localStorage.removeItem('last_uploaded_expense_sheet');
+    } catch {}
+  };
+
   const [activeFilter, setActiveFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -278,8 +427,6 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   const stats = useMemo(() => {
     const todayStr = new Date().toISOString().split('T')[0];
     const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
 
     // Sum for Today
     const todayTotal = expenses
@@ -296,13 +443,23 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       })
       .reduce((sum, e) => sum + (e.amount || 0), 0);
 
-    // Sum for This Month
-    const monthTotal = expenses
-      .filter((e) => {
-        const d = new Date(e.date);
-        return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-      })
+    // Sum for Selected Month
+    const selectedPrefix = `${selectedYear}-${String(selectedMonthIndex + 1).padStart(2, '0')}`;
+    const monthExpenses = expenses.filter((e) => (e.date || '').startsWith(selectedPrefix));
+    const monthTotal = monthExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+
+    // Previous Month Comparison (for accurate % trend)
+    const prevMonthIndex = selectedMonthIndex === 0 ? 11 : selectedMonthIndex - 1;
+    const prevYear = selectedMonthIndex === 0 ? selectedYear - 1 : selectedYear;
+    const prevPrefix = `${prevYear}-${String(prevMonthIndex + 1).padStart(2, '0')}`;
+    const prevMonthTotal = expenses
+      .filter((e) => (e.date || '').startsWith(prevPrefix))
       .reduce((sum, e) => sum + (e.amount || 0), 0);
+
+    let monthDiffPercent = 0;
+    if (prevMonthTotal > 0) {
+      monthDiffPercent = Math.round(((monthTotal - prevMonthTotal) / prevMonthTotal) * 100);
+    }
 
     // Total of Active Subscriptions / month
     const recurringTotal = expenses
@@ -315,22 +472,35 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
 
     return {
       monthDisplay: monthTotal,
+      monthCount: monthExpenses.length,
+      prevMonthTotal,
+      monthDiffPercent,
       weekDisplay: weekTotal,
       todayDisplay: todayTotal,
       recurringDisplay: recurringTotal,
       hasRealData: expenses.length > 0,
     };
-  }, [expenses]);
+  }, [expenses, selectedYear, selectedMonthIndex]);
 
-  // Category Breakdown Data
+  // Category Breakdown Data (supports filtering by selected month or all time)
   const categoryBreakdown = useMemo(() => {
     if (expenses.length === 0) {
       return [];
     }
 
+    const selectedPrefix = `${selectedYear}-${String(selectedMonthIndex + 1).padStart(2, '0')}`;
+    let sourceExpenses = expenses;
+
+    if (categoryScope === 'month') {
+      const filtered = expenses.filter((e) => (e.date || '').startsWith(selectedPrefix));
+      if (filtered.length > 0) {
+        sourceExpenses = filtered;
+      }
+    }
+
     const catMap: Record<string, number> = {};
     let total = 0;
-    expenses.forEach((e) => {
+    sourceExpenses.forEach((e) => {
       const cat = e.category || 'Others';
       catMap[cat] = (catMap[cat] || 0) + e.amount;
       total += e.amount;
@@ -351,7 +521,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
         };
       })
       .sort((a, b) => b.amount - a.amount);
-  }, [expenses]);
+  }, [expenses, selectedYear, selectedMonthIndex, categoryScope]);
 
   // Monthly Spending Trend Data
   const trendData = useMemo(() => {
@@ -359,19 +529,25 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       return [];
     }
 
-    // Group actual expenses by day
+    const selectedPrefix = `${selectedYear}-${String(selectedMonthIndex + 1).padStart(2, '0')}`;
+    const monthExpenses = expenses.filter((e) => (e.date || '').startsWith(selectedPrefix));
+    const source = monthExpenses.length > 0 ? monthExpenses : expenses.slice(0, 20);
+
+    // Group actual expenses by date
     const days: Record<string, number> = {};
-    expenses.slice(0, 15).forEach((e) => {
-      const d = e.date ? e.date.substring(5) : 'Recent';
+    source.forEach((e) => {
+      const d = e.date ? (e.date.length > 5 ? e.date.substring(5) : e.date) : 'Recent';
       days[d] = (days[d] || 0) + e.amount;
     });
 
-    return Object.entries(days).map(([date, amount]) => ({
-      date,
-      amount,
-      label: date,
-    }));
-  }, [expenses]);
+    return Object.entries(days)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, amount]) => ({
+        date,
+        amount,
+        label: date,
+      }));
+  }, [expenses, selectedYear, selectedMonthIndex]);
 
   // Subscriptions list
   const subscriptions = useMemo(() => {
@@ -457,12 +633,16 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayStr = yesterday.toISOString().split('T')[0];
 
+    const selectedPrefix = `${selectedYear}-${String(selectedMonthIndex + 1).padStart(2, '0')}`;
+
     if (activeFilter === 'today') {
       list = list.filter((e) => e.date === todayStr);
     } else if (activeFilter === 'week') {
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(new Date().getDate() - 7);
       list = list.filter((e) => new Date(e.date) >= sevenDaysAgo);
+    } else if (activeFilter === 'month') {
+      list = list.filter((e) => (e.date || '').startsWith(selectedPrefix));
     }
 
     // Group real transactions
@@ -488,7 +668,12 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       Earlier: groups.Earlier,
       isEmpty: list.length === 0,
     };
-  }, [expenses, searchQuery, selectedCategoryFilter, activeFilter]);
+  }, [expenses, searchQuery, selectedCategoryFilter, activeFilter, selectedYear, selectedMonthIndex]);
+
+  // Count of imported items in database
+  const importedCount = useMemo(() => {
+    return expenses.filter((e) => !!e.importBatchId || !!e.sourceFile).length;
+  }, [expenses]);
 
   const getCategoryBadge = (category: string) => {
     const cat = EXPENSE_CATEGORIES.find((c) => c.name.toLowerCase() === category.toLowerCase());
@@ -516,18 +701,149 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 self-start sm:self-auto">
-          {/* Month Selector Button */}
-          <div className="relative group">
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          {/* Working Month & Year Navigator */}
+          <div className="relative flex items-center bg-white dark:bg-[#1A202C] rounded-full border border-[#E5E7EB] dark:border-[#2D3748] shadow-2xs p-0.5">
+            {/* Prev Month */}
             <button
               type="button"
-              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-[#E5E7EB] dark:border-[#2D3748] bg-white dark:bg-[#1A202C] text-xs font-semibold text-[#37352F] dark:text-white hover:bg-gray-50 dark:hover:bg-[#2D3748] shadow-2xs transition-all cursor-pointer"
+              onClick={handlePrevMonth}
+              className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-[#2D3748] text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors cursor-pointer"
+              title="Previous Month"
+              aria-label="Previous Month"
             >
-              <Calendar className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-              <span>{selectedMonth}</span>
-              <ChevronDown className="w-3 h-3 text-gray-400" />
+              <ChevronLeft className="w-3.5 h-3.5" />
             </button>
+
+            {/* Selected Month / Year Dropdown Trigger */}
+            <button
+              type="button"
+              onClick={() => {
+                Sound.click(soundEnabled);
+                setIsMonthPickerOpen((prev) => !prev);
+              }}
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 text-xs font-bold text-[#37352F] dark:text-white hover:text-purple-600 dark:hover:text-purple-400 transition-colors cursor-pointer"
+              title="Click to jump to another month or year"
+            >
+              <Calendar className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
+              <span>{selectedMonthLabel}</span>
+              <ChevronDown
+                className={`w-3 h-3 text-gray-400 transition-transform ${
+                  isMonthPickerOpen ? 'rotate-180 text-purple-600' : ''
+                }`}
+              />
+            </button>
+
+            {/* Next Month */}
+            <button
+              type="button"
+              onClick={handleNextMonth}
+              className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-[#2D3748] text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors cursor-pointer"
+              title="Next Month"
+              aria-label="Next Month"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Interactive Month & Year Picker Popover */}
+            {isMonthPickerOpen && (
+              <div
+                className="absolute top-full left-0 mt-2 z-50 w-64 p-3 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-2xl animate-in fade-in slide-in-from-top-2"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Year Selection Row */}
+                <div className="flex items-center justify-between pb-2 mb-2 border-b border-gray-100 dark:border-gray-800">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      Sound.click(soundEnabled);
+                      setSelectedYear((prev) => prev - 1);
+                    }}
+                    className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 hover:text-gray-900 dark:hover:text-white cursor-pointer"
+                    title="Previous Year"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="text-sm font-black text-[#111827] dark:text-white">
+                    {selectedYear}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      Sound.click(soundEnabled);
+                      setSelectedYear((prev) => prev + 1);
+                    }}
+                    className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 hover:text-gray-900 dark:hover:text-white cursor-pointer"
+                    title="Next Year"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* 12 Months Grid */}
+                <div className="grid grid-cols-3 gap-1.5 mb-2.5">
+                  {MONTH_NAMES.map((mName, idx) => {
+                    const isSelected = selectedMonthIndex === idx;
+                    const isRealCurrent =
+                      new Date().getMonth() === idx && new Date().getFullYear() === selectedYear;
+                    return (
+                      <button
+                        key={mName}
+                        type="button"
+                        onClick={() => {
+                          Sound.click(soundEnabled);
+                          setSelectedMonthIndex(idx);
+                          setIsMonthPickerOpen(false);
+                        }}
+                        className={`py-1.5 px-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-purple-600 text-white shadow-xs'
+                            : isRealCurrent
+                            ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                            : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#2D3748]'
+                        }`}
+                      >
+                        {mName.substring(0, 3)}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Bottom Quick Jump Action */}
+                <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-800 text-xs">
+                  <button
+                    type="button"
+                    onClick={handleSetCurrentMonth}
+                    className="text-purple-600 dark:text-purple-400 font-bold hover:underline cursor-pointer"
+                  >
+                    Jump to Today
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsMonthPickerOpen(false)}
+                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer font-medium"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
+
+          {/* Upload Excel Button */}
+          <button
+            type="button"
+            id="btn-upload-excel"
+            onClick={() => {
+              Sound.click(soundEnabled);
+              setShowImportModal(true);
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+            title="Upload and extract expenses from Excel (.xlsx, .xls) or CSV"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>Upload Excel</span>
+          </button>
 
           {/* Reset / Filter Refresh Button */}
           <button
@@ -558,21 +874,78 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       </div>
 
       {/* ========================================================================= */}
+      {/* 1.5. UPLOADED SPREADSHEET TESTING & MEMORY MANAGEMENT BANNER */}
+      {/* ========================================================================= */}
+      {(uploadedSheetMeta || importedCount > 0) && (
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0">
+              <FileSpreadsheet className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold text-emerald-950 dark:text-emerald-100">
+                  {uploadedSheetMeta?.fileName
+                    ? `Sheet: ${uploadedSheetMeta.fileName}`
+                    : 'Imported Spreadsheet'}
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-200/90 dark:bg-emerald-800 text-[10px] font-black text-emerald-900 dark:text-emerald-100">
+                  {importedCount} extracted transactions
+                </span>
+                {uploadedSheetMeta?.totalAmount ? (
+                  <span className="text-[11px] font-extrabold text-emerald-800 dark:text-emerald-300">
+                    ({formatCurrency(uploadedSheetMeta.totalAmount)})
+                  </span>
+                ) : null}
+              </div>
+              <p className="text-[11px] text-emerald-800 dark:text-emerald-300 mt-0.5">
+                Reflected smartly into your spending stats, charts, and transaction log. Delete anytime below to clear test memory.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 flex-wrap">
+            <button
+              type="button"
+              id="btn-delete-uploaded-sheet"
+              onClick={handleDeleteUploadedSheet}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-98 text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
+              title="Clear all transactions from this uploaded spreadsheet from memory"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete Uploaded Sheet</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleClearAllConfirm}
+              className="px-3 py-1.5 rounded-xl bg-white dark:bg-[#1A202C] border border-rose-300 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-700 dark:text-rose-400 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+              title="Wipe entire spending database for fresh testing"
+            >
+              Clear All Data
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
       {/* 2. TOP SUMMARY ROW (4 Compact Cards) */}
       {/* ========================================================================= */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {/* Card 1: THIS MONTH */}
+        {/* Card 1: SELECTED MONTH */}
         <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-xs flex items-start justify-between relative overflow-hidden group hover:border-purple-300 dark:hover:border-purple-800 transition-all">
           <div className="space-y-1">
             <span className="text-[11px] font-bold tracking-wider uppercase text-[#787774] dark:text-[#9CA3AF]">
-              This Month
+              {selectedMonthLabel}
             </span>
             <div className="text-lg sm:text-xl font-black text-[#37352F] dark:text-white tracking-tight">
               {formatCurrency(stats.monthDisplay)}
             </div>
             <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 pt-0.5">
               <ArrowUpRight className="w-3 h-3" />
-              <span>12% vs last month</span>
+              <span>
+                {stats.monthCount} items • {stats.monthDiffPercent >= 0 ? `+${stats.monthDiffPercent}%` : `${stats.monthDiffPercent}%`} vs prev mo
+              </span>
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 flex items-center justify-center text-lg shrink-0">
@@ -688,7 +1061,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                     ? 'Today'
                     : filterKey === 'week'
                     ? 'This Week'
-                    : 'This Month'}
+                    : `${MONTH_NAMES[selectedMonthIndex]}`}
                 </button>
               ))}
 
@@ -954,19 +1327,47 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
 
           {/* B. SPENDING BY CATEGORY CARD (Donut Chart + List Breakdown) */}
           <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-xs space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
                 <h2 className="text-base sm:text-lg font-bold text-[#37352F] dark:text-white">
                   Spending by Category
                 </h2>
                 <p className="text-xs text-[#787774] dark:text-[#9CA3AF]">
-                  Category distribution for the current cycle
+                  Category distribution for {categoryScope === 'month' ? selectedMonthLabel : 'all recorded expenses'}
                 </p>
               </div>
 
-              <span className="text-xs font-semibold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/60 px-2.5 py-1 rounded-full border border-purple-200 dark:border-purple-800">
-                This Month ▾
-              </span>
+              {/* Scope Switcher: Selected Month vs All Time */}
+              <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 p-0.5 rounded-xl text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => {
+                    Sound.click(soundEnabled);
+                    setCategoryScope('month');
+                  }}
+                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                    categoryScope === 'month'
+                      ? 'bg-white dark:bg-[#1A202C] text-purple-600 dark:text-purple-400 shadow-2xs font-bold'
+                      : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  {MONTH_NAMES[selectedMonthIndex]}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    Sound.click(soundEnabled);
+                    setCategoryScope('all');
+                  }}
+                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                    categoryScope === 'all'
+                      ? 'bg-white dark:bg-[#1A202C] text-purple-600 dark:text-purple-400 shadow-2xs font-bold'
+                      : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  All Time
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center pt-2">
@@ -1005,7 +1406,11 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                 {/* Inner Donut Center Text */}
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                   <span className="text-base sm:text-lg font-extrabold text-[#37352F] dark:text-white tracking-tight">
-                    {formatCurrency(stats.monthDisplay)}
+                    {formatCurrency(
+                      categoryScope === 'month'
+                        ? stats.monthDisplay
+                        : expenses.reduce((sum, e) => sum + e.amount, 0)
+                    )}
                   </span>
                   <span className="text-[10px] font-semibold text-[#787774] dark:text-[#9CA3AF] uppercase">
                     Total
@@ -1062,7 +1467,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
               </div>
 
               <span className="text-xs font-semibold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/60 px-2.5 py-1 rounded-full border border-purple-200 dark:border-purple-800">
-                This Month ▾
+                {selectedMonthLabel}
               </span>
             </div>
 
@@ -1525,6 +1930,14 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
           </div>
         </div>
       )}
+
+      {/* Excel / Spreadsheet Import Modal */}
+      <ExcelImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImportSuccess={handleImportSuccess}
+        soundEnabled={soundEnabled}
+      />
     </div>
   );
 };
