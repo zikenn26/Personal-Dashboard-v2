@@ -4,6 +4,7 @@ import {
   parseExpensesFromExcel,
   parseSmartDate,
   parseSmartAmount,
+  deduplicateExpenses,
 } from './excelExpenseParser';
 
 describe('Excel Expense Parser Engine', () => {
@@ -60,5 +61,108 @@ describe('Excel Expense Parser Engine', () => {
     expect(errorSpy).not.toHaveBeenCalled();
 
     errorSpy.mockRestore();
+  });
+
+  it('smartly detects and ignores redundant duplicates, importing only new extra spendings', () => {
+    // Existing spendings in the app (e.g. uploaded earlier before 12 PM)
+    const existingExpenses = [
+      {
+        id: 'exp-1',
+        name: 'Lunch at Bistro',
+        amount: 450,
+        category: 'Food & Dining',
+        date: '2026-09-08',
+        notes: 'Time: 12:00',
+      },
+      {
+        id: 'exp-2',
+        name: 'Metro card recharge',
+        amount: 200,
+        category: 'Transport',
+        date: '2026-09-08',
+        notes: 'Time: 09:30',
+      },
+    ];
+
+    // New incoming sheet containing morning transactions PLUS afternoon extra spendings
+    const incomingFromSheet = [
+      {
+        name: 'Lunch at Bistro',
+        amount: 450,
+        category: 'Food & Dining',
+        date: '2026-09-08',
+        notes: 'Time: 12:00',
+      },
+      {
+        name: 'Metro card recharge',
+        amount: 200,
+        category: 'Transport',
+        date: '2026-09-08',
+        notes: 'Time: 09:30',
+      },
+      // New extra transaction added in the afternoon!
+      {
+        name: 'Evening Snacks & Tea',
+        amount: 150,
+        category: 'Snacks & Coffee',
+        date: '2026-09-08',
+        notes: 'Time: 17:15',
+      },
+      // Previous month transaction
+      {
+        name: 'August Book Purchase',
+        amount: 350,
+        category: 'Education',
+        date: '2026-08-28',
+      },
+    ];
+
+    const dedup = deduplicateExpenses(incomingFromSheet, existingExpenses);
+
+    // 2 duplicates skipped (Lunch 450 + Metro 200)
+    expect(dedup.duplicateCount).toBe(2);
+    expect(dedup.duplicateTotalAmount).toBe(650);
+
+    // 2 new extra expenses imported (Evening snacks + August books)
+    expect(dedup.newCount).toBe(2);
+    expect(dedup.newTotalAmount).toBe(500);
+    expect(dedup.newExpenses.map((e) => e.name)).toEqual([
+      'Evening Snacks & Tea',
+      'August Book Purchase',
+    ]);
+  });
+
+  it('handles multiple identical purchases on the same day via pool matching', () => {
+    // Existing has 1 coffee of 50
+    const existing = [
+      {
+        id: 'exp-1',
+        name: 'Chai Point Coffee',
+        amount: 50,
+        category: 'Snacks & Coffee',
+        date: '2026-09-08',
+      },
+    ];
+
+    // Incoming sheet now has 2 coffees of 50 on that day
+    const incoming = [
+      {
+        name: 'Chai Point Coffee',
+        amount: 50,
+        category: 'Snacks & Coffee',
+        date: '2026-09-08',
+      },
+      {
+        name: 'Chai Point Coffee',
+        amount: 50,
+        category: 'Snacks & Coffee',
+        date: '2026-09-08',
+      },
+    ];
+
+    const dedup = deduplicateExpenses(incoming, existing);
+    expect(dedup.duplicateCount).toBe(1);
+    expect(dedup.newCount).toBe(1);
+    expect(dedup.newExpenses[0].amount).toBe(50);
   });
 });

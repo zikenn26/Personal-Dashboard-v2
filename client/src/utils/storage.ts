@@ -4,6 +4,7 @@ import {
   GoalItem,
   VaultCredential,
   ExpenseItem,
+  ExcelImportLog,
   JournalEntry,
   MediaItem,
   AchievementItem,
@@ -25,7 +26,7 @@ import { STOCK_IMAGES } from '../assets/stockImages';
 import { decryptJson, encryptJson, isEncryptedPayload, EncryptedPayload } from './crypto';
 import { INITIAL_USER_EXAMS } from '../data/defaultExams';
 
-const STORAGE_KEYS = {
+export const STORAGE_KEYS = {
   TODOS: 'notion_os_v4_todos',
   HABITS: 'notion_os_v4_habits',
   GOALS: 'notion_os_v4_goals',
@@ -45,6 +46,7 @@ const STORAGE_KEYS = {
   RESUME: 'notion_os_v4_resume',
   QUOTES: 'notion_os_v4_quotes',
   EXAMS: 'notion_os_v5_my_exams',
+  EXCEL_IMPORT_LOGS: 'notion_os_v4_excel_import_logs',
 };
 
 export const INITIAL_EDUCATION_RECORDS: EducationRecord[] = [];
@@ -529,6 +531,24 @@ export const Storage = {
 
   getExpenses: (): ExpenseItem[] => loadFromStorage(STORAGE_KEYS.EXPENSES, INITIAL_EXPENSES),
   setExpenses: (items: ExpenseItem[]) => saveToStorage(STORAGE_KEYS.EXPENSES, items),
+
+  getExcelImportLogs: (): ExcelImportLog[] => {
+    const logs = loadFromStorage<ExcelImportLog[]>(STORAGE_KEYS.EXCEL_IMPORT_LOGS, []);
+    return Array.isArray(logs) ? logs : [];
+  },
+  setExcelImportLogs: (logs: ExcelImportLog[]) => saveToStorage(STORAGE_KEYS.EXCEL_IMPORT_LOGS, logs),
+  addExcelImportLog: (log: ExcelImportLog) => {
+    const logs = Storage.getExcelImportLogs();
+    const updated = [log, ...logs.filter((l) => l.id !== log.id)];
+    Storage.setExcelImportLogs(updated);
+    return updated;
+  },
+  deleteExcelImportLog: (id: string) => {
+    const logs = Storage.getExcelImportLogs();
+    const updated = logs.filter((l) => l.id !== id);
+    Storage.setExcelImportLogs(updated);
+    return updated;
+  },
 
   getJournal: (): JournalEntry[] => loadFromStorage(STORAGE_KEYS.JOURNAL, INITIAL_JOURNAL),
   setJournal: (items: JournalEntry[]) => saveToStorage(STORAGE_KEYS.JOURNAL, items),

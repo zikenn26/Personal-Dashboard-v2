@@ -480,3 +480,160 @@ export async function parseExpensesFromExcel(
     dateRange: minDate && maxDate ? { min: minDate, max: maxDate } : null,
   };
 }
+
+/**
+ * Normalizes text for lenient yet accurate financial comparison
+ */
+export function normalizeForComparison(str: string): string {
+  return (str || '')
+    .toLowerCase()
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/[^\w\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Extracts optional time stamp string from expense notes (e.g. "Time: 14:30")
+ */
+export function extractTimeFromNotes(notes?: string): string | null {
+  if (!notes) return null;
+  const match = notes.match(/Time:\s*([0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?)/i);
+  return match ? match[1] : null;
+}
+
+export interface DuplicateMatchInfo {
+  item: Omit<ExpenseItem, 'id'>;
+  reason: string;
+  matchedWith: {
+    date: string;
+    name: string;
+    amount: number;
+    category: string;
+    notes?: string;
+  };
+}
+
+export interface DeduplicationResult {
+  newExpenses: Array<Omit<ExpenseItem, 'id'>>;
+  duplicateExpenses: DuplicateMatchInfo[];
+  totalParsed: number;
+  newCount: number;
+  duplicateCount: number;
+  newTotalAmount: number;
+  duplicateTotalAmount: number;
+}
+
+/**
+ * Smart Deduplication Engine:
+ * Compares incoming parsed Excel expenses against existing spending transactions.
+ * Automatically detects exact duplicates, partial re-uploads (e.g. Morning vs Afternoon),
+ * and multi-month sheet overlaps, while safely preserving genuine recurring purchases
+ * using a multiset / pool-consumption model.
+ */
+export function deduplicateExpenses(
+  incomingExpenses: Array<Omit<ExpenseItem, 'id'>>,
+  existingExpenses: Array<ExpenseItem>
+): DeduplicationResult {
+  // Pool of existing expenses with matched consumption flags
+  const pool = existingExpenses.map((e) => ({
+    expense: e,
+    matched: false,
+  }));
+
+  const newExpenses: Array<Omit<ExpenseItem, 'id'>> = [];
+  const duplicateExpenses: DuplicateMatchInfo[] = [];
+
+  for (const incoming of incomingExpenses) {
+    const incDate = (incoming.date || '').trim();
+    const incAmount = Math.round(Number(incoming.amount) * 100) / 100;
+    const incNameNorm = normalizeForComparison(incoming.name);
+    const incCatNorm = normalizeForComparison(incoming.category);
+    const incTime = extractTimeFromNotes(incoming.notes);
+
+    // Pass 1: Strict match on Date, Amount, Name, Category, and Time (if present)
+    let matchIdx = pool.findIndex((p) => {
+      if (p.matched) return false;
+      const ex = p.expense;
+      if (ex.date !== incDate) return false;
+      if (Math.abs(ex.amount - incAmount) >= 0.01) return false;
+
+      const exNameNorm = normalizeForComparison(ex.name);
+      const exCatNorm = normalizeForComparison(ex.category);
+      const exTime = extractTimeFromNotes(ex.notes);
+
+      // If both have specific times logged and they don't match, they are distinct transactions
+      if (incTime && exTime && incTime !== exTime) {
+        return false;
+      }
+
+      const nameMatch = incNameNorm === exNameNorm;
+      const catMatch = !incCatNorm || !exCatNorm || incCatNorm === exCatNorm;
+
+      return nameMatch && catMatch;
+    });
+
+    // Pass 2: Fuzzy/Substring Name Match for transactions on the same day with same amount & category
+    if (matchIdx === -1) {
+      matchIdx = pool.findIndex((p) => {
+        if (p.matched) return false;
+        const ex = p.expense;
+        if (ex.date !== incDate) return false;
+        if (Math.abs(ex.amount - incAmount) >= 0.01) return false;
+
+        const exNameNorm = normalizeForComparison(ex.name);
+        const exCatNorm = normalizeForComparison(ex.category);
+        const exTime = extractTimeFromNotes(ex.notes);
+
+        if (incTime && exTime && incTime !== exTime) {
+          return false;
+        }
+
+        const catMatch = !incCatNorm || !exCatNorm || incCatNorm === exCatNorm;
+        if (!catMatch) return false;
+
+        // Substring name match (e.g. "Lunch at Bistro" vs "Lunch", or "Swiggy order" vs "Swiggy")
+        const subMatch =
+          incNameNorm.length >= 3 &&
+          exNameNorm.length >= 3 &&
+          (incNameNorm.includes(exNameNorm) || exNameNorm.includes(incNameNorm));
+
+        return subMatch;
+      });
+    }
+
+    if (matchIdx !== -1) {
+      // Recognized as a duplicate! Mark this existing item as consumed
+      const matchedEx = pool[matchIdx].expense;
+      pool[matchIdx].matched = true;
+      duplicateExpenses.push({
+        item: incoming,
+        reason: `Matched existing ₹${matchedEx.amount} on ${matchedEx.date} (${matchedEx.name})`,
+        matchedWith: {
+          date: matchedEx.date,
+          name: matchedEx.name,
+          amount: matchedEx.amount,
+          category: matchedEx.category,
+          notes: matchedEx.notes,
+        },
+      });
+    } else {
+      // Genuine new extra spending!
+      newExpenses.push(incoming);
+    }
+  }
+
+  const newTotalAmount = newExpenses.reduce((sum, e) => sum + e.amount, 0);
+  const duplicateTotalAmount = duplicateExpenses.reduce((sum, d) => sum + d.item.amount, 0);
+
+  return {
+    newExpenses,
+    duplicateExpenses,
+    totalParsed: incomingExpenses.length,
+    newCount: newExpenses.length,
+    duplicateCount: duplicateExpenses.length,
+    newTotalAmount: Math.round(newTotalAmount),
+    duplicateTotalAmount: Math.round(duplicateTotalAmount),
+  };
+}
+

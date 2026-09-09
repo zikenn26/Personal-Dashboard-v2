@@ -92,6 +92,18 @@ export interface ExpenseItem {
   importBatchId?: string;
 }
 
+export interface ExcelImportLog {
+  id: string; // batch ID, e.g. "batch_1725838900000"
+  fileName: string;
+  uploadDate: string; // ISO timestamp
+  addedCount: number; // Number of new spending transactions imported
+  skippedCount: number; // Number of duplicate/redundant rows skipped
+  totalRowsInSheet: number;
+  totalAmountAdded: number;
+  dateRange?: { min: string; max: string } | null;
+  status: 'active' | 'deleted';
+}
+
 export type DiaryTheme = 'parchment' | 'lined' | 'plain' | 'dotted' | 'grid' | 'midnight' | 'lavender';
 
 export interface JournalEntry {
