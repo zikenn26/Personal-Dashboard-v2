@@ -231,7 +231,7 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
 
   return (
     <div
-      className={`p-4.5 sm:p-5 rounded-2xl bg-[#F7F7F5] dark:bg-[#1E293B] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col ${className}`}
+      className={`p-4.5 sm:p-5 rounded-2xl bg-[#F7F7F5] dark:bg-[#1E293B] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col h-full ${className}`}
     >
       {/* Top Bar: Title matching other grid tiles & Action Controls */}
       <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-[#EDECE9] dark:border-[#334155]/60 mb-2.5 shrink-0">
@@ -393,8 +393,8 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
         </button>
       </div>
 
-      {/* Tabular Schedule View - Natural height so no content is cropped */}
-      <div className="rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#0F172A] overflow-hidden max-h-[680px] overflow-y-auto">
+      {/* Tabular Schedule View - Ample height and flexible stretching */}
+      <div className="rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#0F172A] overflow-hidden flex-1 min-h-[340px] max-h-[740px] overflow-y-auto">
         <table className="w-full border-collapse text-left text-xs">
           <thead className="sticky top-0 z-10">
             <tr className="border-b border-[#E2E8F0] dark:border-[#334155] bg-[#F7F6F3] dark:bg-[#1E293B] text-[#787774] dark:text-[#94A3B8]">

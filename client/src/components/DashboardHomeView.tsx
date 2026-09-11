@@ -18,7 +18,7 @@ import { triggerConfetti } from '../utils/confetti';
 import { INITIAL_QUOTES, INITIAL_SCHEDULE, Storage, DEFAULT_HOME_GRID_ORDER, DEFAULT_HOME_COLUMNS } from '../utils/storage';
 import { IndianCalendarWidget } from './IndianCalendarWidget';
 import { DynamicScheduleCard } from './DynamicScheduleCard';
-import { CommandCenterGrid } from './CommandCenterGrid';
+import { CommandCenterGrid, GridLayoutPreset } from './CommandCenterGrid';
 import {
   CheckCircle2,
   Circle,
@@ -302,15 +302,19 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
   const [columns, setColumns] = useState<[string[], string[], string[]]>(() => {
     return Storage.getHomeGridColumns();
   });
+  const [layoutPreset, setLayoutPreset] = useState<GridLayoutPreset>(() => {
+    return Storage.getHomeGridLayoutPreset();
+  });
   const [isCustomizingGrid, setIsCustomizingGrid] = useState(false);
 
   const isDefaultOrder = useMemo(() => {
     return (
+      layoutPreset === 'executive' &&
       JSON.stringify(columns[0]) === JSON.stringify(DEFAULT_HOME_COLUMNS[0]) &&
       JSON.stringify(columns[1]) === JSON.stringify(DEFAULT_HOME_COLUMNS[1]) &&
       JSON.stringify(columns[2]) === JSON.stringify(DEFAULT_HOME_COLUMNS[2])
     );
-  }, [columns]);
+  }, [columns, layoutPreset]);
 
   const handleResetGridLayout = () => {
     Sound.click(soundEnabled);
@@ -321,11 +325,18 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
     ];
     setColumns(resetCols);
     Storage.setHomeGridColumns(resetCols);
+    setLayoutPreset('executive');
+    Storage.setHomeGridLayoutPreset('executive');
   };
 
   const handleColumnsChange = (newCols: [string[], string[], string[]]) => {
     setColumns(newCols);
     Storage.setHomeGridColumns(newCols);
+  };
+
+  const handleLayoutPresetChange = (preset: GridLayoutPreset) => {
+    setLayoutPreset(preset);
+    Storage.setHomeGridLayoutPreset(preset);
   };
 
   // Metric Computations
@@ -633,11 +644,13 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
       </div>
 
       {/* ========================================================================= */}
-      {/* 2. MAIN COMMAND CENTER GRID (macOS / iOS Dynamic Auto-Adjusting Grid with Drag & Drop) */}
+      {/* 2. MAIN COMMAND CENTER GRID (Dynamic CSS Grid Template-Areas with Gap-Minimization) */}
       {/* ========================================================================= */}
       <CommandCenterGrid
         columns={columns}
         onColumnsChange={handleColumnsChange}
+        layoutPreset={layoutPreset}
+        onLayoutPresetChange={handleLayoutPresetChange}
         isCustomizingGrid={isCustomizingGrid}
         isDefaultOrder={isDefaultOrder}
         setIsCustomizingGrid={setIsCustomizingGrid}

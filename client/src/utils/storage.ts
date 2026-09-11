@@ -763,6 +763,13 @@ export const Storage = {
     Storage.setHomeGridColumns([col0, col1, col2]);
   },
 
+  getHomeGridLayoutPreset: (): 'executive' | 'schedule-hero' | 'calendar-hero' | 'custom' => {
+    return loadFromStorage<any>('notion_os_v4_home_grid_preset', 'executive');
+  },
+  setHomeGridLayoutPreset: (preset: 'executive' | 'schedule-hero' | 'calendar-hero' | 'custom') => {
+    saveToStorage('notion_os_v4_home_grid_preset', preset);
+  },
+
   getAllDataPayload: () => {
     return {
       version: '4.0.0',
