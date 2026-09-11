@@ -15,10 +15,10 @@ import {
 } from '../types';
 import { Sound } from '../utils/audio';
 import { triggerConfetti } from '../utils/confetti';
-import { INITIAL_QUOTES, INITIAL_SCHEDULE, Storage, DEFAULT_HOME_GRID_ORDER, DEFAULT_HOME_COLUMNS } from '../utils/storage';
+import { INITIAL_QUOTES, INITIAL_SCHEDULE, Storage, DEFAULT_HOME_GRID_ORDER } from '../utils/storage';
 import { IndianCalendarWidget } from './IndianCalendarWidget';
 import { DynamicScheduleCard } from './DynamicScheduleCard';
-import { CommandCenterGrid, GridLayoutPreset } from './CommandCenterGrid';
+import { CommandCenterGrid } from './CommandCenterGrid';
 import {
   CheckCircle2,
   Circle,
@@ -298,45 +298,70 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
     Sound.success(soundEnabled);
   };
 
-  // Drag-and-Drop Home Grid Columns State (3-column responsive smart-packing grid)
-  const [columns, setColumns] = useState<[string[], string[], string[]]>(() => {
-    return Storage.getHomeGridColumns();
+  // Drag-and-Drop Home Grid Order State (macOS / iOS style responsive dynamic auto-adjusting grid)
+  const [gridOrder, setGridOrder] = useState<string[]>(() => {
+    const saved = Storage.getHomeGridOrder();
+    const combined = [...saved];
+    DEFAULT_HOME_GRID_ORDER.forEach((id) => {
+      if (!combined.includes(id)) {
+        combined.push(id);
+      }
+    });
+    return combined;
   });
-  const [layoutPreset, setLayoutPreset] = useState<GridLayoutPreset>(() => {
-    return Storage.getHomeGridLayoutPreset();
-  });
+  const [draggedWidgetId, setDraggedWidgetId] = useState<string | null>(null);
+  const [dragOverWidgetId, setDragOverWidgetId] = useState<string | null>(null);
   const [isCustomizingGrid, setIsCustomizingGrid] = useState(false);
 
   const isDefaultOrder = useMemo(() => {
-    return (
-      layoutPreset === 'executive' &&
-      JSON.stringify(columns[0]) === JSON.stringify(DEFAULT_HOME_COLUMNS[0]) &&
-      JSON.stringify(columns[1]) === JSON.stringify(DEFAULT_HOME_COLUMNS[1]) &&
-      JSON.stringify(columns[2]) === JSON.stringify(DEFAULT_HOME_COLUMNS[2])
-    );
-  }, [columns, layoutPreset]);
+    if (gridOrder.length !== DEFAULT_HOME_GRID_ORDER.length) return false;
+    return gridOrder.every((id, i) => id === DEFAULT_HOME_GRID_ORDER[i]);
+  }, [gridOrder]);
+
+  const handleDropWidget = (sourceId: string | null, targetId: string) => {
+    if (!sourceId || sourceId === targetId) {
+      setDraggedWidgetId(null);
+      setDragOverWidgetId(null);
+      return;
+    }
+    const oldIndex = gridOrder.indexOf(sourceId);
+    const newIndex = gridOrder.indexOf(targetId);
+    if (oldIndex === -1 || newIndex === -1) {
+      setDraggedWidgetId(null);
+      setDragOverWidgetId(null);
+      return;
+    }
+
+    const updated = [...gridOrder];
+    const [removed] = updated.splice(oldIndex, 1);
+    updated.splice(newIndex, 0, removed);
+
+    setGridOrder(updated);
+    Storage.setHomeGridOrder(updated);
+    setDraggedWidgetId(null);
+    setDragOverWidgetId(null);
+    Sound.success(soundEnabled);
+  };
+
+  const handleMoveWidget = (id: string, offset: number) => {
+    const oldIndex = gridOrder.indexOf(id);
+    if (oldIndex === -1) return;
+    const newIndex = oldIndex + offset;
+    if (newIndex < 0 || newIndex >= gridOrder.length) return;
+
+    const updated = [...gridOrder];
+    const [removed] = updated.splice(oldIndex, 1);
+    updated.splice(newIndex, 0, removed);
+
+    setGridOrder(updated);
+    Storage.setHomeGridOrder(updated);
+    Sound.click(soundEnabled);
+  };
 
   const handleResetGridLayout = () => {
     Sound.click(soundEnabled);
-    const resetCols: [string[], string[], string[]] = [
-      [...DEFAULT_HOME_COLUMNS[0]],
-      [...DEFAULT_HOME_COLUMNS[1]],
-      [...DEFAULT_HOME_COLUMNS[2]],
-    ];
-    setColumns(resetCols);
-    Storage.setHomeGridColumns(resetCols);
-    setLayoutPreset('executive');
-    Storage.setHomeGridLayoutPreset('executive');
-  };
-
-  const handleColumnsChange = (newCols: [string[], string[], string[]]) => {
-    setColumns(newCols);
-    Storage.setHomeGridColumns(newCols);
-  };
-
-  const handleLayoutPresetChange = (preset: GridLayoutPreset) => {
-    setLayoutPreset(preset);
-    Storage.setHomeGridLayoutPreset(preset);
+    setGridOrder([...DEFAULT_HOME_GRID_ORDER]);
+    Storage.setHomeGridOrder([...DEFAULT_HOME_GRID_ORDER]);
   };
 
   // Metric Computations
@@ -644,16 +669,19 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
       </div>
 
       {/* ========================================================================= */}
-      {/* 2. MAIN COMMAND CENTER GRID (Dynamic CSS Grid Template-Areas with Gap-Minimization) */}
+      {/* 2. MAIN COMMAND CENTER GRID (macOS / iOS Dynamic Auto-Adjusting Grid with Drag & Drop) */}
       {/* ========================================================================= */}
       <CommandCenterGrid
-        columns={columns}
-        onColumnsChange={handleColumnsChange}
-        layoutPreset={layoutPreset}
-        onLayoutPresetChange={handleLayoutPresetChange}
+        gridOrder={gridOrder}
+        draggedWidgetId={draggedWidgetId}
+        dragOverWidgetId={dragOverWidgetId}
         isCustomizingGrid={isCustomizingGrid}
         isDefaultOrder={isDefaultOrder}
+        setDraggedWidgetId={setDraggedWidgetId}
+        setDragOverWidgetId={setDragOverWidgetId}
         setIsCustomizingGrid={setIsCustomizingGrid}
+        handleDropWidget={handleDropWidget}
+        handleMoveWidget={handleMoveWidget}
         handleResetGridLayout={handleResetGridLayout}
         todos={todos}
         onAddTodo={onAddTodo}

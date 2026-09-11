@@ -57,16 +57,10 @@ export const STORAGE_KEYS = {
 
 export const DEFAULT_HOME_GRID_ORDER: string[] = [
   'calendar',
-  'schedule',
-  'expenses',
-  'habits',
   'tasks',
-];
-
-export const DEFAULT_HOME_COLUMNS: [string[], string[], string[]] = [
-  ['calendar'],
-  ['schedule'],
-  ['expenses', 'habits', 'tasks'],
+  'habits',
+  'expenses',
+  'schedule',
 ];
 
 export const DEFAULT_SCHEDULE_ACTIVITIES: ScheduleActivity[] = [
@@ -712,63 +706,20 @@ export const Storage = {
   },
   setSchedule: (schedule: WeeklyScheduleData) => saveToStorage(STORAGE_KEYS.SCHEDULE, schedule),
 
-  getHomeGridColumns: (): [string[], string[], string[]] => {
-    const raw = loadFromStorage<any>(STORAGE_KEYS.HOME_GRID_ORDER, null);
-    const validWidgets = new Set(['calendar', 'schedule', 'expenses', 'habits', 'tasks']);
-
-    if (Array.isArray(raw) && raw.length === 3 && Array.isArray(raw[0]) && Array.isArray(raw[1]) && Array.isArray(raw[2])) {
-      const col0 = raw[0].filter((w: string) => validWidgets.has(w));
-      const col1 = raw[1].filter((w: string) => validWidgets.has(w));
-      const col2 = raw[2].filter((w: string) => validWidgets.has(w));
-
-      const present = new Set([...col0, ...col1, ...col2]);
-      validWidgets.forEach((w) => {
-        if (!present.has(w)) {
-          col2.push(w);
-        }
-      });
-      return [col0, col1, col2];
-    }
-
-    // If stored as flat array from prior version, smartly distribute
-    if (Array.isArray(raw) && raw.length > 0 && typeof raw[0] === 'string') {
-      const flatItems = raw.filter((w: string) => validWidgets.has(w));
-      validWidgets.forEach((w) => {
-        if (!flatItems.includes(w)) flatItems.push(w);
-      });
-      const col0: string[] = flatItems.includes('calendar') ? ['calendar'] : [];
-      const col1: string[] = flatItems.includes('schedule') ? ['schedule'] : [];
-      const col2: string[] = flatItems.filter((w) => w !== 'calendar' && w !== 'schedule');
-      return [col0, col1, col2];
-    }
-
-    return [
-      [...DEFAULT_HOME_COLUMNS[0]],
-      [...DEFAULT_HOME_COLUMNS[1]],
-      [...DEFAULT_HOME_COLUMNS[2]],
-    ];
-  },
-  setHomeGridColumns: (columns: [string[], string[], string[]]) => {
-    saveToStorage(STORAGE_KEYS.HOME_GRID_ORDER, columns);
-  },
-
   getHomeGridOrder: (): string[] => {
-    const columns = Storage.getHomeGridColumns();
-    return [...columns[0], ...columns[1], ...columns[2]];
+    const loaded = loadFromStorage<string[] | null>(STORAGE_KEYS.HOME_GRID_ORDER, null);
+    if (!Array.isArray(loaded) || loaded.length === 0) {
+      return [...DEFAULT_HOME_GRID_ORDER];
+    }
+    // Filter to ensure all valid keys are present
+    const validKeys = new Set(DEFAULT_HOME_GRID_ORDER);
+    const filtered = loaded.filter((k) => validKeys.has(k));
+    DEFAULT_HOME_GRID_ORDER.forEach((k) => {
+      if (!filtered.includes(k)) filtered.push(k);
+    });
+    return filtered;
   },
-  setHomeGridOrder: (order: string[]) => {
-    const col0: string[] = order.includes('calendar') ? ['calendar'] : [];
-    const col1: string[] = order.includes('schedule') ? ['schedule'] : [];
-    const col2: string[] = order.filter((w) => w !== 'calendar' && w !== 'schedule');
-    Storage.setHomeGridColumns([col0, col1, col2]);
-  },
-
-  getHomeGridLayoutPreset: (): 'executive' | 'schedule-hero' | 'calendar-hero' | 'custom' => {
-    return loadFromStorage<any>('notion_os_v4_home_grid_preset', 'executive');
-  },
-  setHomeGridLayoutPreset: (preset: 'executive' | 'schedule-hero' | 'calendar-hero' | 'custom') => {
-    saveToStorage('notion_os_v4_home_grid_preset', preset);
-  },
+  setHomeGridOrder: (order: string[]) => saveToStorage(STORAGE_KEYS.HOME_GRID_ORDER, order),
 
   getAllDataPayload: () => {
     return {
