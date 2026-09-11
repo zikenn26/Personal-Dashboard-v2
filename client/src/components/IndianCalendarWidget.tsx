@@ -98,6 +98,8 @@ interface IndianCalendarWidgetProps {
   onToggleTodo?: (id: string) => void;
   onNavigate?: (view: any, filter?: string) => void;
   soundEnabled: boolean;
+  dragHandle?: React.ReactNode;
+  className?: string;
 }
 
 export const IndianCalendarWidget: React.FC<IndianCalendarWidgetProps> = ({
@@ -106,6 +108,8 @@ export const IndianCalendarWidget: React.FC<IndianCalendarWidgetProps> = ({
   onToggleTodo,
   onNavigate,
   soundEnabled,
+  dragHandle,
+  className = '',
 }) => {
   const today = useMemo(() => new Date(), []);
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
@@ -393,10 +397,11 @@ export const IndianCalendarWidget: React.FC<IndianCalendarWidgetProps> = ({
   };
 
   return (
-    <div className="p-5 rounded-2xl bg-white dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] shadow-2xs space-y-4">
+    <div className={`p-5 rounded-2xl bg-[#F7F7F5] dark:bg-[#1E293B] border border-[#E5E5E2] dark:border-[#334155] shadow-xs space-y-4 ${className}`}>
       {/* Header with Title, Month Nav, View Tabs */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
+          {dragHandle}
           <div className="w-7 h-7 rounded-xl bg-orange-50 dark:bg-orange-950/60 border border-orange-200/60 dark:border-orange-900/40 flex items-center justify-center text-orange-600 dark:text-orange-400 shrink-0">
             <CalendarIcon className="w-3.5 h-3.5" />
           </div>

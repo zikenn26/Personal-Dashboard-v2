@@ -7,6 +7,7 @@ import {
 import { Sound } from '../utils/audio';
 import { DEFAULT_SCHEDULE_ACTIVITIES } from '../utils/storage';
 import {
+  Clock,
   Edit3,
   Check,
   Plus,
@@ -22,6 +23,8 @@ interface DynamicScheduleCardProps {
   schedule: WeeklyScheduleData;
   onUpdateSchedule: (updated: WeeklyScheduleData) => void;
   soundEnabled: boolean;
+  dragHandle?: React.ReactNode;
+  className?: string;
 }
 
 export const DAY_KEYS: DayOfWeek[] = [
@@ -85,12 +88,40 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
   schedule,
   onUpdateSchedule,
   soundEnabled,
+  dragHandle,
+  className = '',
 }) => {
   const todayKey = useMemo(() => getTodayKey(), []);
   const [selectedDay, setSelectedDay] = useState<DayOfWeek>(todayKey);
   const [isEditing, setIsEditing] = useState(false);
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
   const [copyNotification, setCopyNotification] = useState<string | null>(null);
+
+  // Compute dates for each day of the current week (e.g. Fri, 11 Sep)
+  const weekDates = useMemo(() => {
+    const now = new Date();
+    // Monday is 0, Sunday is 6
+    const currentDayOfWeek = (now.getDay() + 6) % 7;
+    const dates: Record<
+      DayOfWeek,
+      { dayNum: number; monthShort: string; shortDate: string; fullDateStr: string }
+    > = {} as any;
+
+    DAY_KEYS.forEach((key, idx) => {
+      const d = new Date(now);
+      d.setDate(now.getDate() - currentDayOfWeek + idx);
+      const dayNum = d.getDate();
+      const monthShort = d.toLocaleDateString('en-US', { month: 'short' });
+      dates[key] = {
+        dayNum,
+        monthShort,
+        shortDate: `${dayNum} ${monthShort}`, // e.g. "11 Sep"
+        fullDateStr: `${DAY_METADATA[key].label}, ${dayNum} ${monthShort}`, // e.g. "Friday, 11 Sep"
+      };
+    });
+
+    return dates;
+  }, []);
 
   // Derive current day's active activities
   const currentActivities: ScheduleActivity[] = useMemo(() => {
@@ -199,14 +230,25 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
   };
 
   return (
-    <div className="p-5 rounded-2xl bg-white dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] shadow-2xs space-y-4">
-      {/* Top Bar: Reference Header Badge & Action Controls */}
+    <div
+      className={`p-5 rounded-2xl bg-[#F7F7F5] dark:bg-[#1E293B] border border-[#E5E5E2] dark:border-[#334155] shadow-xs space-y-4 ${className}`}
+    >
+      {/* Top Bar: Title matching other grid tiles & Action Controls */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        {/* Header Badge as seen in reference image */}
+        {/* Title matching other grid tiles with dynamic date */}
         <div className="flex items-center gap-2">
-          <div className="inline-block bg-[#F1F1EF] dark:bg-[#334155]/70 px-3 py-1 rounded text-xs sm:text-sm font-bold tracking-widest uppercase text-[#37352F] dark:text-[#E2E8F0] select-none">
-            SCHEDULE
+          {dragHandle}
+          <div className="w-7 h-7 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-900/40 flex items-center justify-center text-[#6366F1] dark:text-[#818CF8] shrink-0">
+            <Clock className="w-3.5 h-3.5" />
           </div>
+          <div>
+            <h2 className="text-xs uppercase font-bold text-[#37352F] dark:text-white tracking-wider">
+              Schedule
+            </h2>
+          </div>
+          <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-md bg-white dark:bg-[#0F172A] text-[#64748B] dark:text-[#94A3B8] border border-[#E2E8F0] dark:border-[#334155]/60">
+            {weekDates[selectedDay]?.fullDateStr || DAY_METADATA[selectedDay].label}
+          </span>
           {copyNotification && (
             <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium animate-in fade-in">
               {copyNotification}
@@ -222,7 +264,7 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
                 type="button"
                 onClick={handleSortByTime}
                 title="Sort activities chronologically by time"
-                className="p-1.5 text-gray-500 hover:text-gray-800 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-xs cursor-pointer transition-colors flex items-center gap-1"
+                className="p-1.5 text-gray-500 hover:text-gray-800 dark:hover:text-white hover:bg-white dark:hover:bg-gray-800 rounded-lg text-xs cursor-pointer transition-colors flex items-center gap-1 border border-transparent hover:border-gray-200 dark:hover:border-[#334155]"
               >
                 <ArrowUpDown className="w-3.5 h-3.5" />
                 <span className="text-[11px] hidden sm:inline">Sort</span>
@@ -231,7 +273,7 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
                 type="button"
                 onClick={handleCopyToAllDays}
                 title="Copy current schedule to all days"
-                className="p-1.5 text-gray-500 hover:text-gray-800 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-xs cursor-pointer transition-colors flex items-center gap-1"
+                className="p-1.5 text-gray-500 hover:text-gray-800 dark:hover:text-white hover:bg-white dark:hover:bg-gray-800 rounded-lg text-xs cursor-pointer transition-colors flex items-center gap-1 border border-transparent hover:border-gray-200 dark:hover:border-[#334155]"
               >
                 <Copy className="w-3.5 h-3.5" />
                 <span className="text-[11px] hidden sm:inline">Copy to all</span>
@@ -240,7 +282,7 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
                 type="button"
                 onClick={handleResetToDefault}
                 title="Reset to default routine"
-                className="p-1.5 text-gray-500 hover:text-gray-800 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-xs cursor-pointer transition-colors flex items-center gap-1"
+                className="p-1.5 text-gray-500 hover:text-gray-800 dark:hover:text-white hover:bg-white dark:hover:bg-gray-800 rounded-lg text-xs cursor-pointer transition-colors flex items-center gap-1 border border-transparent hover:border-gray-200 dark:hover:border-[#334155]"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span className="text-[11px] hidden sm:inline">Reset</span>
@@ -252,7 +294,7 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
             type="button"
             onClick={handleAddRow}
             title="Add new activity row"
-            className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-gray-100 dark:bg-[#0F172A] hover:bg-gray-200 dark:hover:bg-[#334155] text-[#37352F] dark:text-[#E2E8F0] border border-gray-200 dark:border-[#334155] cursor-pointer transition-colors flex items-center gap-1"
+            className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-white dark:bg-[#0F172A] hover:bg-gray-50 dark:hover:bg-[#334155] text-[#37352F] dark:text-[#E2E8F0] border border-[#E2E8F0] dark:border-[#334155] cursor-pointer transition-colors flex items-center gap-1 shadow-2xs"
           >
             <Plus className="w-3.5 h-3.5 text-[#6366F1]" />
             <span>Add row</span>
@@ -265,9 +307,9 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
               setIsEditing(!isEditing);
               setEditingRowId(null);
             }}
-            className={`px-3 py-1 text-xs font-semibold rounded-lg border cursor-pointer transition-all flex items-center gap-1.5 ${
+            className={`px-3 py-1 text-xs font-semibold rounded-lg border cursor-pointer transition-all flex items-center gap-1.5 shadow-2xs ${
               isEditing
-                ? 'bg-[#6366F1] text-white border-[#6366F1] shadow-2xs'
+                ? 'bg-[#6366F1] text-white border-[#6366F1]'
                 : 'bg-white dark:bg-[#0F172A] border-[#E2E8F0] dark:border-[#334155] text-[#37352F] dark:text-[#E2E8F0] hover:border-[#6366F1]'
             }`}
           >
@@ -286,13 +328,13 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
         </div>
       </div>
 
-      {/* Subtle Day Navigation */}
-      <div className="flex items-center justify-between gap-1 bg-[#F8FAFC] dark:bg-[#0F172A] p-1 rounded-xl border border-[#E2E8F0] dark:border-[#334155]/60">
+      {/* Subtle Day Navigation with Short Date-Month on Each Day */}
+      <div className="flex items-center justify-between gap-1 bg-white dark:bg-[#0F172A] p-1 rounded-xl border border-[#E2E8F0] dark:border-[#334155]/60 shadow-2xs">
         <button
           type="button"
           onClick={handlePrevDay}
           title="Previous day"
-          className="p-1 text-gray-500 hover:text-gray-800 dark:hover:text-white hover:bg-white dark:hover:bg-[#1E293B] rounded-lg transition-colors cursor-pointer shrink-0"
+          className="p-1.5 text-gray-500 hover:text-gray-800 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors cursor-pointer shrink-0"
         >
           <ChevronLeft className="w-3.5 h-3.5" />
         </button>
@@ -302,6 +344,7 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
             const isSelected = selectedDay === key;
             const isToday = todayKey === key;
             const meta = DAY_METADATA[key];
+            const dateInfo = weekDates[key];
 
             return (
               <button
@@ -311,18 +354,28 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
                   Sound.click(soundEnabled);
                   setSelectedDay(key);
                 }}
-                className={`relative px-2 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer text-center flex-1 min-w-[32px] ${
+                className={`relative px-1.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer text-center flex-1 min-w-[42px] ${
                   isSelected
                     ? 'bg-[#37352F] dark:bg-white text-white dark:text-[#0F172A] shadow-2xs font-bold'
-                    : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-white hover:bg-white/70 dark:hover:bg-[#1E293B]/70'
+                    : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-white hover:bg-gray-100/70 dark:hover:bg-[#1E293B]/70'
                 }`}
               >
-                <span>{meta.short}</span>
+                <div className="flex flex-col items-center justify-center leading-tight">
+                  <span className="text-[11px] font-bold">{meta.short}</span>
+                  <span
+                    className={`text-[9px] font-mono ${
+                      isSelected ? 'opacity-90 text-white dark:text-[#0F172A]' : 'text-gray-400 dark:text-gray-500'
+                    }`}
+                  >
+                    {dateInfo?.shortDate}
+                  </span>
+                </div>
                 {isToday && (
                   <span
-                    className={`absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full ${
-                      isSelected ? 'bg-indigo-400 dark:bg-indigo-600' : 'bg-indigo-500'
+                    className={`absolute -top-0.5 right-1 w-1.5 h-1.5 rounded-full ${
+                      isSelected ? 'bg-indigo-300 dark:bg-indigo-600' : 'bg-indigo-500'
                     }`}
+                    title="Today"
                   />
                 )}
               </button>
@@ -334,7 +387,7 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
           type="button"
           onClick={handleNextDay}
           title="Next day"
-          className="p-1 text-gray-500 hover:text-gray-800 dark:hover:text-white hover:bg-white dark:hover:bg-[#1E293B] rounded-lg transition-colors cursor-pointer shrink-0"
+          className="p-1.5 text-gray-500 hover:text-gray-800 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors cursor-pointer shrink-0"
         >
           <ChevronRight className="w-3.5 h-3.5" />
         </button>

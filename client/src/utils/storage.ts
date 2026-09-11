@@ -51,8 +51,17 @@ export const STORAGE_KEYS = {
   QUOTES: 'notion_os_v4_quotes',
   EXAMS: 'notion_os_v5_my_exams',
   SCHEDULE: 'notion_os_v4_schedule',
+  HOME_GRID_ORDER: 'notion_os_v4_home_grid_order',
   EXCEL_IMPORT_LOGS: 'notion_os_v4_excel_import_logs',
 };
+
+export const DEFAULT_HOME_GRID_ORDER: string[] = [
+  'calendar',
+  'tasks',
+  'habits',
+  'expenses',
+  'schedule',
+];
 
 export const DEFAULT_SCHEDULE_ACTIVITIES: ScheduleActivity[] = [
   { id: 'sch-1', time: '7:00 AM', title: 'wake up' },
@@ -696,6 +705,21 @@ export const Storage = {
     };
   },
   setSchedule: (schedule: WeeklyScheduleData) => saveToStorage(STORAGE_KEYS.SCHEDULE, schedule),
+
+  getHomeGridOrder: (): string[] => {
+    const loaded = loadFromStorage<string[] | null>(STORAGE_KEYS.HOME_GRID_ORDER, null);
+    if (!Array.isArray(loaded) || loaded.length === 0) {
+      return [...DEFAULT_HOME_GRID_ORDER];
+    }
+    // Filter to ensure all valid keys are present
+    const validKeys = new Set(DEFAULT_HOME_GRID_ORDER);
+    const filtered = loaded.filter((k) => validKeys.has(k));
+    DEFAULT_HOME_GRID_ORDER.forEach((k) => {
+      if (!filtered.includes(k)) filtered.push(k);
+    });
+    return filtered;
+  },
+  setHomeGridOrder: (order: string[]) => saveToStorage(STORAGE_KEYS.HOME_GRID_ORDER, order),
 
   getAllDataPayload: () => {
     return {

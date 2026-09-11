@@ -15,9 +15,10 @@ import {
 } from '../types';
 import { Sound } from '../utils/audio';
 import { triggerConfetti } from '../utils/confetti';
-import { INITIAL_QUOTES, INITIAL_SCHEDULE } from '../utils/storage';
+import { INITIAL_QUOTES, INITIAL_SCHEDULE, Storage, DEFAULT_HOME_GRID_ORDER } from '../utils/storage';
 import { IndianCalendarWidget } from './IndianCalendarWidget';
 import { DynamicScheduleCard } from './DynamicScheduleCard';
+import { CommandCenterGrid } from './CommandCenterGrid';
 import {
   CheckCircle2,
   Circle,
@@ -44,6 +45,9 @@ import {
   Sun,
   Layers,
   Send,
+  GripVertical,
+  RotateCcw,
+  LayoutGrid,
 } from 'lucide-react';
 
 interface SlidePhoto {
@@ -292,6 +296,72 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
     setQuickExpenseAmount('');
     setShowQuickExpenseModal(false);
     Sound.success(soundEnabled);
+  };
+
+  // Drag-and-Drop Home Grid Order State (macOS / iOS style responsive dynamic auto-adjusting grid)
+  const [gridOrder, setGridOrder] = useState<string[]>(() => {
+    const saved = Storage.getHomeGridOrder();
+    const combined = [...saved];
+    DEFAULT_HOME_GRID_ORDER.forEach((id) => {
+      if (!combined.includes(id)) {
+        combined.push(id);
+      }
+    });
+    return combined;
+  });
+  const [draggedWidgetId, setDraggedWidgetId] = useState<string | null>(null);
+  const [dragOverWidgetId, setDragOverWidgetId] = useState<string | null>(null);
+  const [isCustomizingGrid, setIsCustomizingGrid] = useState(false);
+
+  const isDefaultOrder = useMemo(() => {
+    if (gridOrder.length !== DEFAULT_HOME_GRID_ORDER.length) return false;
+    return gridOrder.every((id, i) => id === DEFAULT_HOME_GRID_ORDER[i]);
+  }, [gridOrder]);
+
+  const handleDropWidget = (sourceId: string | null, targetId: string) => {
+    if (!sourceId || sourceId === targetId) {
+      setDraggedWidgetId(null);
+      setDragOverWidgetId(null);
+      return;
+    }
+    const oldIndex = gridOrder.indexOf(sourceId);
+    const newIndex = gridOrder.indexOf(targetId);
+    if (oldIndex === -1 || newIndex === -1) {
+      setDraggedWidgetId(null);
+      setDragOverWidgetId(null);
+      return;
+    }
+
+    const updated = [...gridOrder];
+    const [removed] = updated.splice(oldIndex, 1);
+    updated.splice(newIndex, 0, removed);
+
+    setGridOrder(updated);
+    Storage.setHomeGridOrder(updated);
+    setDraggedWidgetId(null);
+    setDragOverWidgetId(null);
+    Sound.success(soundEnabled);
+  };
+
+  const handleMoveWidget = (id: string, offset: number) => {
+    const oldIndex = gridOrder.indexOf(id);
+    if (oldIndex === -1) return;
+    const newIndex = oldIndex + offset;
+    if (newIndex < 0 || newIndex >= gridOrder.length) return;
+
+    const updated = [...gridOrder];
+    const [removed] = updated.splice(oldIndex, 1);
+    updated.splice(newIndex, 0, removed);
+
+    setGridOrder(updated);
+    Storage.setHomeGridOrder(updated);
+    Sound.click(soundEnabled);
+  };
+
+  const handleResetGridLayout = () => {
+    Sound.click(soundEnabled);
+    setGridOrder([...DEFAULT_HOME_GRID_ORDER]);
+    Storage.setHomeGridOrder([...DEFAULT_HOME_GRID_ORDER]);
   };
 
   // Metric Computations
@@ -599,366 +669,44 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
       </div>
 
       {/* ========================================================================= */}
-      {/* 2. MAIN COMMAND CENTER GRID (3 Columns: Indian Calendar, Tasks & Spending, Habits & Quick Capture) */}
+      {/* 2. MAIN COMMAND CENTER GRID (macOS / iOS Dynamic Auto-Adjusting Grid with Drag & Drop) */}
       {/* ========================================================================= */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        {/* ================= COLUMN 1: INDIAN CALENDAR & EVENT TRACKER (Organized & Decluttered) ================= */}
-        <div className="space-y-6">
-          <IndianCalendarWidget
-            todos={todos}
-            onAddTodo={onAddTodo}
-            onToggleTodo={onToggleTodo}
-            onNavigate={onNavigate}
-            soundEnabled={soundEnabled}
-          />
-        </div>
-
-        {/* ================= COLUMN 2: TASKS & SPENDING SNAPSHOT ================= */}
-        <div className="space-y-6">
-          {/* Card: Today's Tasks (Keeps completed tasks with strike-through instead of disappearing) */}
-          <div className="p-5 rounded-2xl bg-white dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] shadow-2xs space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <CheckSquare className="w-4 h-4 text-emerald-500" />
-                <h2 className="text-xs uppercase font-bold text-[#37352F] dark:text-white tracking-wider">
-                  Today&apos;s Tasks
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  Sound.click(soundEnabled);
-                  onNavigate('tasks');
-                }}
-                className="text-xs text-[#6366F1] dark:text-[#818CF8] hover:underline font-semibold cursor-pointer"
-              >
-                View all
-              </button>
-            </div>
-
-            {/* Task list with strike-through for completed items */}
-            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
-              {todos.length === 0 ? (
-                <div className="p-6 text-center bg-[#F8FAFC] dark:bg-[#0F172A] rounded-xl border border-dashed border-[#E2E8F0] dark:border-[#334155]">
-                  <CheckCircle2 className="w-6 h-6 text-emerald-500 mx-auto mb-1 opacity-80" />
-                  <p className="text-xs font-semibold text-[#37352F] dark:text-white">No tasks created yet</p>
-                  <p className="text-[11px] text-[#787774] dark:text-[#9CA3AF] mt-0.5">
-                    Add a task below to plan your day.
-                  </p>
-                </div>
-              ) : (
-                todos.slice(0, 5).map((task) => (
-                  <div
-                    key={task.id}
-                    className={`flex items-center justify-between p-2.5 rounded-xl border transition-all group ${
-                      task.completed
-                        ? 'bg-gray-50/70 dark:bg-[#0F172A]/50 border-gray-200/60 dark:border-gray-800/60 opacity-60'
-                        : 'bg-[#F8FAFC] dark:bg-[#0F172A] border-[#E2E8F0] dark:border-[#334155] hover:border-[#CBD5E1]'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          Sound.click(soundEnabled);
-                          onToggleTodo(task.id);
-                        }}
-                        className={`transition-colors cursor-pointer shrink-0 ${
-                          task.completed
-                            ? 'text-emerald-500 hover:text-emerald-600'
-                            : 'text-[#9CA3AF] hover:text-emerald-600'
-                        }`}
-                        title={task.completed ? 'Mark incomplete' : 'Mark complete'}
-                      >
-                        {task.completed ? (
-                          <CheckCircle2 className="w-4 h-4 text-emerald-500 fill-emerald-100 dark:fill-emerald-950" />
-                        ) : (
-                          <Circle className="w-4 h-4" />
-                        )}
-                      </button>
-                      <span
-                        className={`text-xs truncate ${
-                          task.completed
-                            ? 'line-through text-gray-400 dark:text-gray-500 font-normal'
-                            : 'text-[#37352F] dark:text-white font-medium'
-                        }`}
-                      >
-                        {task.title}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span
-                        className={`text-[10px] px-1.5 py-0.5 rounded-md font-semibold ${
-                          task.completed
-                            ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500'
-                            : task.priority === 'urgent' || task.priority === 'high'
-                            ? 'bg-red-50 dark:bg-red-950/60 text-red-600 dark:text-red-400'
-                            : task.priority === 'medium'
-                            ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400'
-                            : 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400'
-                        }`}
-                      >
-                        {task.priority === 'urgent' ? 'Urgent' : task.priority === 'high' ? 'High' : task.priority === 'medium' ? 'Medium' : 'Low'}
-                      </span>
-                      <span className="text-[10px] text-[#94A3B8] font-mono hidden sm:inline">
-                        {formatTaskDueDate(task.dueDate)}
-                      </span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            {/* Quick Add Task Field */}
-            {showQuickTaskInput ? (
-              <form onSubmit={handleCreateQuickTask} className="flex gap-2 pt-1">
-                <input
-                  type="text"
-                  required
-                  placeholder="Task title..."
-                  value={quickTaskTitle}
-                  onChange={(e) => setQuickTaskTitle(e.target.value)}
-                  className="flex-1 px-3 py-1.5 bg-[#F8FAFC] dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#334155] rounded-xl text-xs text-[#37352F] dark:text-white focus:outline-hidden focus:border-[#6366F1]"
-                  autoFocus
-                />
-                <button
-                  type="submit"
-                  className="px-3 py-1.5 bg-[#6366F1] text-white rounded-xl text-xs font-semibold cursor-pointer"
-                >
-                  Add
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowQuickTaskInput(false)}
-                  className="px-2 py-1.5 text-gray-400 hover:text-gray-600 text-xs cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </form>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setShowQuickTaskInput(true)}
-                className="w-full py-2 flex items-center justify-center gap-1.5 text-xs font-semibold text-[#6366F1] hover:bg-[#EEF2FF] dark:hover:bg-[#1E1B4B] rounded-xl transition-all cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Task</span>
-              </button>
-            )}
-          </div>
-
-          {/* Card: Spending Snapshot */}
-          <div className="p-5 rounded-2xl bg-white dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] shadow-2xs space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <CreditCard className="w-4 h-4 text-purple-500" />
-                <h2 className="text-xs uppercase font-bold text-[#37352F] dark:text-white tracking-wider">
-                  Spending Snapshot
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  Sound.click(soundEnabled);
-                  onNavigate('expenses');
-                }}
-                className="text-xs text-[#6366F1] dark:text-[#818CF8] hover:underline font-semibold cursor-pointer"
-              >
-                View all
-              </button>
-            </div>
-
-            <div className="flex items-baseline justify-between">
-              <div>
-                <span className="text-lg sm:text-xl font-extrabold text-[#37352F] dark:text-white">
-                  ₹{spendingStats.weekly.toLocaleString()}
-                </span>
-                <span className="text-xs text-[#787774] dark:text-[#9CA3AF] ml-2 font-medium">
-                  {spendingStats.hasExpenses ? 'This week' : 'No expenses logged'}
-                </span>
-              </div>
-              {spendingStats.hasExpenses ? (
-                <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-0.5 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-lg">
-                  <CreditCard className="w-3 h-3" />
-                  <span>{expenses.length} logged</span>
-                </span>
-              ) : (
-                <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-lg">
-                  Clean sheet
-                </span>
-              )}
-            </div>
-
-            {/* 7-Day Visualizer Bar Chart */}
-            <div className="grid grid-cols-7 gap-1.5 pt-2 items-end h-16">
-              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, i) => {
-                const isToday = i === todayIndex;
-                const daySpend = spendingStats.dayTotals[i];
-                const pct = spendingStats.dayPercentages[i];
-                return (
-                  <div key={day} className="flex flex-col items-center gap-1" title={`${day}: ₹${daySpend}`}>
-                    <div className="w-full bg-gray-100 dark:bg-gray-800/80 rounded-sm h-12 flex items-end relative overflow-hidden">
-                      <div
-                        style={{ height: `${pct > 0 ? pct : 6}%` }}
-                        className={`w-full rounded-sm transition-all duration-300 ${
-                          pct === 0
-                            ? 'bg-gray-300/40 dark:bg-gray-700/40'
-                            : isToday
-                            ? 'bg-[#6366F1]'
-                            : 'bg-indigo-300 dark:bg-indigo-600'
-                        }`}
-                      />
-                    </div>
-                    <span
-                      className={`text-[9px] font-mono ${
-                        isToday ? 'font-bold text-[#6366F1]' : 'text-[#94A3B8]'
-                      }`}
-                    >
-                      {day}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Category Breakdown list */}
-            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-[#EDECE9]/70 dark:border-[#334155]/60 text-center">
-              <div className="p-1.5 rounded-lg bg-[#F8FAFC] dark:bg-[#0F172A]">
-                <p className="text-[10px] text-[#787774] dark:text-[#9CA3AF]">Food</p>
-                <p className="text-xs font-bold text-[#37352F] dark:text-white">₹{spendingStats.food.toLocaleString()}</p>
-              </div>
-              <div className="p-1.5 rounded-lg bg-[#F8FAFC] dark:bg-[#0F172A]">
-                <p className="text-[10px] text-[#787774] dark:text-[#9CA3AF]">Transport</p>
-                <p className="text-xs font-bold text-[#37352F] dark:text-white">₹{spendingStats.transport.toLocaleString()}</p>
-              </div>
-              <div className="p-1.5 rounded-lg bg-[#F8FAFC] dark:bg-[#0F172A]">
-                <p className="text-[10px] text-[#787774] dark:text-[#9CA3AF]">Subscriptions</p>
-                <p className="text-xs font-bold text-[#37352F] dark:text-white">₹{spendingStats.subs.toLocaleString()}</p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setShowQuickExpenseModal(true)}
-              className="w-full py-2 flex items-center justify-center gap-1.5 text-xs font-semibold text-[#6366F1] hover:bg-[#EEF2FF] dark:hover:bg-[#1E1B4B] rounded-xl transition-all cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add Expense</span>
-            </button>
-          </div>
-        </div>
-
-        {/* ================= COLUMN 3: HABITS & QUICK CAPTURE ================= */}
-        <div className="space-y-6">
-          {/* Card: Today's Habits */}
-          <div className="p-5 rounded-2xl bg-white dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] shadow-2xs space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Flame className="w-4 h-4 text-amber-500" />
-                <h2 className="text-xs uppercase font-bold text-[#37352F] dark:text-white tracking-wider">
-                  Today&apos;s Habits
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  Sound.click(soundEnabled);
-                  onNavigate('habits');
-                }}
-                className="text-xs text-[#6366F1] dark:text-[#818CF8] hover:underline font-semibold cursor-pointer"
-              >
-                View all
-              </button>
-            </div>
-
-            <div className="space-y-2.5">
-              {habits.length === 0 ? (
-                <div className="p-6 text-center bg-[#F8FAFC] dark:bg-[#0F172A] rounded-xl border border-dashed border-[#E2E8F0] dark:border-[#334155]">
-                  <Flame className="w-6 h-6 text-amber-500 mx-auto mb-1 opacity-80" />
-                  <p className="text-xs font-semibold text-[#37352F] dark:text-white">Build daily momentum</p>
-                  <p className="text-[11px] text-[#787774] dark:text-[#9CA3AF] mt-0.5">
-                    Track small rituals that compound over time.
-                  </p>
-                </div>
-              ) : (
-                habits.slice(0, 5).map((habit) => {
-                  const isDone = habit.completedDays[todayIndex];
-                  return (
-                    <div
-                      key={habit.id}
-                      onClick={() => onToggleHabitDay(habit.id, todayIndex)}
-                      className="flex items-center justify-between p-2.5 rounded-xl bg-[#F8FAFC] dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#334155] hover:border-[#6366F1] cursor-pointer transition-all"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <span className="text-sm">{habit.icon || '⚡'}</span>
-                        <span className="text-xs font-semibold text-[#37352F] dark:text-white">
-                          {habit.title}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        className="cursor-pointer"
-                        title={isDone ? 'Completed today' : 'Mark done'}
-                      >
-                        {isDone ? (
-                          <CheckCircle2 className="w-5 h-5 text-emerald-500 fill-emerald-100 dark:fill-emerald-950" />
-                        ) : (
-                          <Circle className="w-5 h-5 text-gray-300 dark:text-gray-600 hover:text-emerald-500" />
-                        )}
-                      </button>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            {/* Quick Add Habit Field */}
-            {showQuickHabitInput ? (
-              <form onSubmit={handleCreateQuickHabit} className="flex gap-2 pt-1">
-                <input
-                  type="text"
-                  required
-                  placeholder="Habit title (e.g. Deep Reading)..."
-                  value={quickHabitTitle}
-                  onChange={(e) => setQuickHabitTitle(e.target.value)}
-                  className="flex-1 px-3 py-1.5 bg-[#F8FAFC] dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#334155] rounded-xl text-xs text-[#37352F] dark:text-white focus:outline-hidden focus:border-[#6366F1]"
-                  autoFocus
-                />
-                <button
-                  type="submit"
-                  className="px-3 py-1.5 bg-[#6366F1] text-white rounded-xl text-xs font-semibold cursor-pointer"
-                >
-                  Add
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowQuickHabitInput(false)}
-                  className="px-2 py-1.5 text-gray-400 hover:text-gray-600 text-xs cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </form>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setShowQuickHabitInput(true)}
-                className="w-full py-2 flex items-center justify-center gap-1.5 text-xs font-semibold text-[#6366F1] hover:bg-[#EEF2FF] dark:hover:bg-[#1E1B4B] rounded-xl transition-all cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Habit</span>
-              </button>
-            )}
-          </div>
-
-          {/* Dynamic Schedule Timeline Card */}
-          <DynamicScheduleCard
-            schedule={schedule}
-            onUpdateSchedule={onUpdateSchedule || (() => {})}
-            soundEnabled={soundEnabled}
-          />
-        </div>
-      </div>
+      <CommandCenterGrid
+        gridOrder={gridOrder}
+        draggedWidgetId={draggedWidgetId}
+        dragOverWidgetId={dragOverWidgetId}
+        isCustomizingGrid={isCustomizingGrid}
+        isDefaultOrder={isDefaultOrder}
+        setDraggedWidgetId={setDraggedWidgetId}
+        setDragOverWidgetId={setDragOverWidgetId}
+        setIsCustomizingGrid={setIsCustomizingGrid}
+        handleDropWidget={handleDropWidget}
+        handleMoveWidget={handleMoveWidget}
+        handleResetGridLayout={handleResetGridLayout}
+        todos={todos}
+        onAddTodo={onAddTodo}
+        onToggleTodo={onToggleTodo}
+        onNavigate={onNavigate}
+        habits={habits}
+        todayIndex={todayIndex}
+        onToggleHabitDay={onToggleHabitDay}
+        showQuickHabitInput={showQuickHabitInput}
+        setShowQuickHabitInput={setShowQuickHabitInput}
+        quickHabitTitle={quickHabitTitle}
+        setQuickHabitTitle={setQuickHabitTitle}
+        handleCreateQuickHabit={handleCreateQuickHabit}
+        quickTaskTitle={quickTaskTitle}
+        setQuickTaskTitle={setQuickTaskTitle}
+        showQuickTaskInput={showQuickTaskInput}
+        setShowQuickTaskInput={setShowQuickTaskInput}
+        handleCreateQuickTask={handleCreateQuickTask}
+        spendingStats={spendingStats}
+        expenses={expenses}
+        setShowQuickExpenseModal={setShowQuickExpenseModal}
+        schedule={schedule}
+        onUpdateSchedule={onUpdateSchedule}
+        soundEnabled={soundEnabled}
+      />
 
       {/* Quick Add Expense Modal */}
       {showQuickExpenseModal && (
