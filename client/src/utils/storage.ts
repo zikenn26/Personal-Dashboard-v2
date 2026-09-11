@@ -21,6 +21,10 @@ import {
   JobExperience,
   HobbyItem,
   ExamItem,
+  WeeklyScheduleData,
+  ScheduleActivity,
+  DayOfWeek,
+  DayScheduleOverride,
 } from '../types';
 import { STOCK_IMAGES } from '../assets/stockImages';
 import { decryptJson, encryptJson, isEncryptedPayload, EncryptedPayload } from './crypto';
@@ -46,7 +50,37 @@ export const STORAGE_KEYS = {
   RESUME: 'notion_os_v4_resume',
   QUOTES: 'notion_os_v4_quotes',
   EXAMS: 'notion_os_v5_my_exams',
+  SCHEDULE: 'notion_os_v4_schedule',
   EXCEL_IMPORT_LOGS: 'notion_os_v4_excel_import_logs',
+};
+
+export const DEFAULT_SCHEDULE_ACTIVITIES: ScheduleActivity[] = [
+  { id: 'sch-1', time: '7:00 AM', title: 'wake up' },
+  { id: 'sch-2', time: '8:00 AM', title: 'breakfast' },
+  { id: 'sch-3', time: '9:00 AM', title: 'study' },
+  { id: 'sch-4', time: '12:00 PM', title: 'lunch' },
+  { id: 'sch-5', time: '3:00 PM', title: 'gym' },
+  { id: 'sch-6', time: '5:00 PM', title: 'shower time' },
+  { id: 'sch-7', time: '6:00 PM', title: 'chill time' },
+  { id: 'sch-8', time: '7:00 PM', title: 'dinner' },
+  { id: 'sch-9', time: '9:00 PM', title: 'movie time' },
+  { id: 'sch-10', time: '10:00 PM', title: 'tomorrow plan' },
+  { id: 'sch-11', time: '11:00 PM', title: 'bed time' },
+];
+
+export const INITIAL_SCHEDULE: WeeklyScheduleData = {
+  version: '2.0',
+  weekdayTemplate: [...DEFAULT_SCHEDULE_ACTIVITIES],
+  weekendTemplate: [...DEFAULT_SCHEDULE_ACTIVITIES],
+  days: {
+    monday: { isCustomized: false, activities: [], inheritedFrom: 'weekday' },
+    tuesday: { isCustomized: false, activities: [], inheritedFrom: 'weekday' },
+    wednesday: { isCustomized: false, activities: [], inheritedFrom: 'weekday' },
+    thursday: { isCustomized: false, activities: [], inheritedFrom: 'weekday' },
+    friday: { isCustomized: false, activities: [], inheritedFrom: 'weekday' },
+    saturday: { isCustomized: false, activities: [], inheritedFrom: 'weekend' },
+    sunday: { isCustomized: false, activities: [], inheritedFrom: 'weekend' },
+  },
 };
 
 export const INITIAL_EDUCATION_RECORDS: EducationRecord[] = [];
@@ -637,6 +671,32 @@ export const Storage = {
   },
   setExams: (exams: ExamItem[]) => saveToStorage(STORAGE_KEYS.EXAMS, exams),
 
+  getSchedule: (): WeeklyScheduleData => {
+    const loaded = loadFromStorage<WeeklyScheduleData | null>(STORAGE_KEYS.SCHEDULE, null);
+    if (!loaded || typeof loaded !== 'object' || loaded.version !== '2.0') {
+      return INITIAL_SCHEDULE;
+    }
+    return {
+      version: '2.0',
+      weekdayTemplate: Array.isArray(loaded.weekdayTemplate) && loaded.weekdayTemplate.length > 0
+        ? loaded.weekdayTemplate
+        : INITIAL_SCHEDULE.weekdayTemplate,
+      weekendTemplate: Array.isArray(loaded.weekendTemplate) && loaded.weekendTemplate.length > 0
+        ? loaded.weekendTemplate
+        : INITIAL_SCHEDULE.weekendTemplate,
+      days: {
+        monday: loaded.days?.monday || INITIAL_SCHEDULE.days.monday,
+        tuesday: loaded.days?.tuesday || INITIAL_SCHEDULE.days.tuesday,
+        wednesday: loaded.days?.wednesday || INITIAL_SCHEDULE.days.wednesday,
+        thursday: loaded.days?.thursday || INITIAL_SCHEDULE.days.thursday,
+        friday: loaded.days?.friday || INITIAL_SCHEDULE.days.friday,
+        saturday: loaded.days?.saturday || INITIAL_SCHEDULE.days.saturday,
+        sunday: loaded.days?.sunday || INITIAL_SCHEDULE.days.sunday,
+      },
+    };
+  },
+  setSchedule: (schedule: WeeklyScheduleData) => saveToStorage(STORAGE_KEYS.SCHEDULE, schedule),
+
   getAllDataPayload: () => {
     return {
       version: '4.0.0',
@@ -661,6 +721,7 @@ export const Storage = {
       resume: Storage.getResume(),
       quotes: Storage.getQuotes(),
       exams: Storage.getExams(),
+      schedule: Storage.getSchedule(),
     };
   },
 
@@ -671,7 +732,7 @@ export const Storage = {
         'profile', 'todos', 'habits', 'goals', 'vaultEncrypted', 'vault',
         'expenses', 'excelImportLogs', 'journal', 'media', 'achievements', 'doodles',
         'timeline', 'projects', 'skills', 'settings', 'sections',
-        'photos', 'resume', 'quotes', 'exams', 'version'
+        'photos', 'resume', 'quotes', 'exams', 'schedule', 'version'
       ];
       const hasKnownKey = knownKeys.some((k) => k in data && data[k] !== undefined);
       if (!hasKnownKey) return false;
@@ -746,6 +807,7 @@ export const Storage = {
       if (data.resume) Storage.setResume(data.resume);
       if (data.quotes) Storage.setQuotes(data.quotes);
       if (data.exams) Storage.setExams(data.exams);
+      if (data.schedule) Storage.setSchedule(data.schedule);
       return true;
     } catch (err) {
       console.error('Failed to import payload:', err);
@@ -789,5 +851,6 @@ export const Storage = {
     Storage.setResume(INITIAL_RESUME);
     Storage.setQuotes(INITIAL_QUOTES);
     Storage.setExams(INITIAL_USER_EXAMS);
+    Storage.setSchedule(INITIAL_SCHEDULE);
   },
 };

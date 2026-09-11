@@ -548,3 +548,28 @@ export interface ExamItem {
   updatedAt: number;
 }
 
+export type DayOfWeek = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
+
+export interface ScheduleActivity {
+  id: string;
+  time: string; // e.g. "07:00", "08:30", "13:00", "20:00"
+  title: string;
+  category?: 'routine' | 'work' | 'health' | 'study' | 'leisure' | 'personal' | string;
+  notes?: string;
+  color?: string;
+  completedDates?: string[]; // Array of YYYY-MM-DD completion dates
+}
+
+export interface DayScheduleOverride {
+  isCustomized: boolean;
+  activities: ScheduleActivity[];
+  inheritedFrom?: string;
+}
+
+export interface WeeklyScheduleData {
+  version: string;
+  weekdayTemplate: ScheduleActivity[];
+  weekendTemplate: ScheduleActivity[];
+  days: Record<DayOfWeek, DayScheduleOverride>;
+}
+

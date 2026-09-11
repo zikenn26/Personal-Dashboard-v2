@@ -25,6 +25,7 @@ import {
   QuoteItem,
   MainNavView,
   ExamItem,
+  WeeklyScheduleData,
 } from './types';
 
 // Component Imports
@@ -139,6 +140,7 @@ export default function App() {
   const [resume, setResume] = useState<ResumeDocument>(Storage.getResume);
   const [quotes, setQuotes] = useState<QuoteItem[]>(Storage.getQuotes);
   const [exams, setExams] = useState<ExamItem[]>(Storage.getExams);
+  const [schedule, setSchedule] = useState<WeeklyScheduleData>(Storage.getSchedule);
 
   // 2. Navigation & Sidebar State
   const [activeView, setActiveView] = useState<MainNavView>('home');
@@ -274,6 +276,7 @@ export default function App() {
     setResume(Storage.getResume());
     setQuotes(Storage.getQuotes());
     setExams(Storage.getExams());
+    setSchedule(Storage.getSchedule());
     if (playEffects) {
       Sound.success(settings.soundEnabled);
       triggerConfetti();
@@ -387,6 +390,7 @@ export default function App() {
     resume,
     quotes,
     exams,
+    schedule,
   ]);
 
   // 4. Instant flush on tab switch or page close
@@ -1010,6 +1014,8 @@ export default function App() {
       setPhotos(Storage.getPhotos());
       setResume(Storage.getResume());
       setQuotes(Storage.getQuotes());
+      setExams(Storage.getExams());
+      setSchedule(Storage.getSchedule());
       Sound.success(settings.soundEnabled);
       triggerConfetti();
     }
@@ -1035,6 +1041,13 @@ export default function App() {
     setPhotos(Storage.getPhotos());
     setResume(Storage.getResume());
     setQuotes(Storage.getQuotes());
+    setExams(Storage.getExams());
+    setSchedule(Storage.getSchedule());
+  };
+
+  const handleUpdateSchedule = (updatedSchedule: WeeklyScheduleData) => {
+    setSchedule(updatedSchedule);
+    Storage.setSchedule(updatedSchedule);
   };
 
   // Direct Unified Navigation Router
@@ -1848,6 +1861,8 @@ export default function App() {
                   onAddExpense={handleAddExpense}
                   onAddHabit={handleAddHabit}
                   onToggleHabitDay={handleToggleHabitDay}
+                  schedule={schedule}
+                  onUpdateSchedule={handleUpdateSchedule}
                   soundEnabled={settings.soundEnabled}
                 />
               )}

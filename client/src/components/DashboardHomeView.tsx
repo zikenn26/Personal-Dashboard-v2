@@ -11,11 +11,13 @@ import {
   LifeMilestone,
   ExpenseItem,
   MediaItem,
+  WeeklyScheduleData,
 } from '../types';
 import { Sound } from '../utils/audio';
 import { triggerConfetti } from '../utils/confetti';
-import { INITIAL_QUOTES } from '../utils/storage';
+import { INITIAL_QUOTES, INITIAL_SCHEDULE } from '../utils/storage';
 import { IndianCalendarWidget } from './IndianCalendarWidget';
+import { DynamicScheduleCard } from './DynamicScheduleCard';
 import {
   CheckCircle2,
   Circle,
@@ -73,6 +75,8 @@ interface DashboardHomeViewProps {
   onAddTodo?: (title: string, priority: Priority, category: string, dueDate?: string, status?: TaskStatus) => void;
   onAddExpense?: (item: Omit<ExpenseItem, 'id'>) => void;
   onAddHabit?: (title: string, category: string, icon: string, color: string) => void;
+  schedule?: WeeklyScheduleData;
+  onUpdateSchedule?: (schedule: WeeklyScheduleData) => void;
   soundEnabled: boolean;
 }
 
@@ -96,6 +100,7 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
   milestones = [],
   expenses = [],
   media = [],
+  schedule = INITIAL_SCHEDULE,
   onAddQuote,
   onNavigate,
   onToggleTodo,
@@ -103,6 +108,7 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
   onAddTodo,
   onAddExpense,
   onAddHabit,
+  onUpdateSchedule,
   soundEnabled,
 }) => {
   // Current Day of Week Index (0 = Monday, 6 = Sunday)
@@ -945,69 +951,12 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
             )}
           </div>
 
-          {/* Card: Quick Capture 2x2 Action Cards */}
-          <div className="p-5 rounded-2xl bg-white dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] shadow-2xs space-y-4">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-[#6366F1]" />
-              <h2 className="text-xs uppercase font-bold text-[#37352F] dark:text-white tracking-wider">
-                Quick Capture
-              </h2>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              {/* + New Task */}
-              <button
-                type="button"
-                onClick={() => {
-                  Sound.click(soundEnabled);
-                  onNavigate('tasks');
-                }}
-                className="p-3.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#334155] hover:border-[#6366F1] dark:hover:border-[#6366F1] hover:bg-white dark:hover:bg-[#1E293B] shadow-2xs cursor-pointer transition-all flex flex-col items-center justify-center text-center gap-1.5 group"
-              >
-                <Plus className="w-5 h-5 text-[#6366F1] group-hover:scale-110 transition-transform" />
-                <span className="text-xs font-bold text-[#37352F] dark:text-white">New Task</span>
-              </button>
-
-              {/* + Note */}
-              <button
-                type="button"
-                onClick={() => {
-                  Sound.click(soundEnabled);
-                  onNavigate('docs');
-                }}
-                className="p-3.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#334155] hover:border-emerald-500 dark:hover:border-emerald-500 hover:bg-white dark:hover:bg-[#1E293B] shadow-2xs cursor-pointer transition-all flex flex-col items-center justify-center text-center gap-1.5 group"
-              >
-                <Plus className="w-5 h-5 text-emerald-500 group-hover:scale-110 transition-transform" />
-                <span className="text-xs font-bold text-[#37352F] dark:text-white">Note</span>
-              </button>
-
-              {/* + Expense */}
-              <button
-                type="button"
-                onClick={() => {
-                  Sound.click(soundEnabled);
-                  setShowQuickExpenseModal(true);
-                }}
-                className="p-3.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#334155] hover:border-amber-500 dark:hover:border-amber-500 hover:bg-white dark:hover:bg-[#1E293B] shadow-2xs cursor-pointer transition-all flex flex-col items-center justify-center text-center gap-1.5 group"
-              >
-                <Plus className="w-5 h-5 text-amber-500 group-hover:scale-110 transition-transform" />
-                <span className="text-xs font-bold text-[#37352F] dark:text-white">Expense</span>
-              </button>
-
-              {/* + New Habit */}
-              <button
-                type="button"
-                onClick={() => {
-                  Sound.click(soundEnabled);
-                  setShowQuickHabitInput(true);
-                }}
-                className="p-3.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#334155] hover:border-blue-500 dark:hover:border-blue-500 hover:bg-white dark:hover:bg-[#1E293B] shadow-2xs cursor-pointer transition-all flex flex-col items-center justify-center text-center gap-1.5 group"
-              >
-                <Plus className="w-5 h-5 text-blue-500 group-hover:scale-110 transition-transform" />
-                <span className="text-xs font-bold text-[#37352F] dark:text-white">New Habit</span>
-              </button>
-            </div>
-          </div>
+          {/* Dynamic Schedule Timeline Card */}
+          <DynamicScheduleCard
+            schedule={schedule}
+            onUpdateSchedule={onUpdateSchedule || (() => {})}
+            soundEnabled={soundEnabled}
+          />
         </div>
       </div>
 
