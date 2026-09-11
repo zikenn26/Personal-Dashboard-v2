@@ -18,7 +18,7 @@ import { triggerConfetti } from '../utils/confetti';
 import { INITIAL_QUOTES, INITIAL_SCHEDULE, Storage, DEFAULT_HOME_GRID_ORDER, DEFAULT_HOME_COLUMNS } from '../utils/storage';
 import { IndianCalendarWidget } from './IndianCalendarWidget';
 import { DynamicScheduleCard } from './DynamicScheduleCard';
-import { CommandCenterGrid, GridLayoutPreset } from './CommandCenterGrid';
+import { CommandCenterGrid } from './CommandCenterGrid';
 import {
   CheckCircle2,
   Circle,
@@ -302,7 +302,6 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
   const [columns, setColumns] = useState<[string[], string[], string[]]>(() => {
     return Storage.getHomeGridColumns();
   });
-  const [isCustomizingGrid, setIsCustomizingGrid] = useState(false);
 
   const isDefaultOrder = useMemo(() => {
     return (
@@ -638,9 +637,7 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
       <CommandCenterGrid
         columns={columns}
         onColumnsChange={handleColumnsChange}
-        isCustomizingGrid={isCustomizingGrid}
         isDefaultOrder={isDefaultOrder}
-        setIsCustomizingGrid={setIsCustomizingGrid}
         handleResetGridLayout={handleResetGridLayout}
         todos={todos}
         onAddTodo={onAddTodo}

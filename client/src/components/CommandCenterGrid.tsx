@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
   TodoItem,
   HabitItem,
@@ -27,17 +27,20 @@ import {
   ChevronDown,
 } from 'lucide-react';
 
-export type GridLayoutPreset = 'executive' | 'schedule-hero' | 'calendar-hero' | 'custom';
+export interface DropIndicator {
+  colIdx: number;
+  rowIdx: number;
+  position: 'top' | 'bottom';
+}
 
 export interface CommandCenterGridProps {
   columns?: [string[], string[], string[]];
   onColumnsChange?: (cols: [string[], string[], string[]]) => void;
-  layoutPreset?: GridLayoutPreset;
-  onLayoutPresetChange?: (preset: GridLayoutPreset) => void;
-  gridOrder?: string[];
-  isCustomizingGrid: boolean;
-  isDefaultOrder: boolean;
-  setIsCustomizingGrid: (val: boolean | ((prev: boolean) => boolean)) => void;
+  layoutPreset?: any;
+  onLayoutPresetChange?: any;
+  isCustomizingGrid?: boolean;
+  isDefaultOrder?: boolean;
+  setIsCustomizingGrid?: (val: any) => void;
   handleResetGridLayout: () => void;
   todos: TodoItem[];
   onAddTodo?: (title: string, priority: Priority, category: string, dueDate?: string, status?: TaskStatus) => void;
@@ -75,9 +78,6 @@ export interface CommandCenterGridProps {
 export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
   columns: propColumns,
   onColumnsChange,
-  isCustomizingGrid,
-  isDefaultOrder,
-  setIsCustomizingGrid,
   handleResetGridLayout,
   todos,
   onAddTodo,
@@ -106,7 +106,7 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState<number>(1200);
 
-  // ResizeObserver for responsive layout adaptations
+  // ResizeObserver for exact responsive breakpoints
   useEffect(() => {
     if (!containerRef.current) return;
     const ro = new ResizeObserver((entries) => {
@@ -121,6 +121,7 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
   }, []);
 
   // Standard 3-column data model
+  // Default matches screenshot: Col 0: Calendar + Habits, Col 1: Tasks + Expenses, Col 2: Schedule
   const columns: [string[], string[], string[]] = useMemo(() => {
     const valid = new Set(['calendar', 'schedule', 'expenses', 'habits', 'tasks']);
     if (propColumns && propColumns.length === 3) {
@@ -129,228 +130,285 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
       const col2 = propColumns[2].filter((w) => valid.has(w));
       const present = new Set([...col0, ...col1, ...col2]);
       valid.forEach((w) => {
-        if (!present.has(w)) col2.push(w);
+        if (!present.has(w)) col1.push(w);
       });
       return [col0, col1, col2];
     }
     return [
-      ['calendar'],
+      ['calendar', 'habits'],
+      ['tasks', 'expenses'],
       ['schedule'],
-      ['expenses', 'habits', 'tasks'],
     ];
   }, [propColumns]);
 
-  // Drag-and-drop state
+  // Robust Drag and Drop State
   const [draggedWidgetId, setDraggedWidgetId] = useState<string | null>(null);
-  const [dragOverWidgetId, setDragOverWidgetId] = useState<string | null>(null);
+  const [dropIndicator, setDropIndicator] = useState<DropIndicator | null>(null);
   const [dragOverColIdx, setDragOverColIdx] = useState<number | null>(null);
 
-  const findWidgetPosition = (id: string): { colIdx: number; rowIdx: number } | null => {
-    for (let c = 0; c < columns.length; c++) {
-      const r = columns[c].indexOf(id);
-      if (r !== -1) return { colIdx: c, rowIdx: r };
-    }
-    return null;
+  const cleanupDrag = useCallback(() => {
+    setDraggedWidgetId(null);
+    setDropIndicator(null);
+    setDragOverColIdx(null);
+  }, []);
+
+  const findWidgetPosition = useCallback(
+    (id: string): { colIdx: number; rowIdx: number } | null => {
+      for (let c = 0; c < columns.length; c++) {
+        const r = columns[c].indexOf(id);
+        if (r !== -1) return { colIdx: c, rowIdx: r };
+      }
+      return null;
+    },
+    [columns]
+  );
+
+  // Drag start handler: Delay setting draggedWidgetId to next frame
+  // This ensures the browser takes a crisp, sharp drag image BEFORE styling changes
+  const handleDragStart = (e: React.DragEvent, widgetId: string) => {
+    e.stopPropagation();
+    e.dataTransfer.setData('text/plain', widgetId);
+    e.dataTransfer.effectAllowed = 'move';
+
+    // Delay state change so the drag ghost screenshot is rendered at 100% crisp opacity
+    setTimeout(() => {
+      setDraggedWidgetId(widgetId);
+    }, 0);
+
+    Sound.click(soundEnabled);
   };
 
-  // Drop on another widget to swap or insert
-  const handleDropOnWidget = (sourceId: string | null, targetId: string) => {
-    if (!sourceId || sourceId === targetId) {
-      setDraggedWidgetId(null);
-      setDragOverWidgetId(null);
-      setDragOverColIdx(null);
-      return;
-    }
-    const sourcePos = findWidgetPosition(sourceId);
-    const targetPos = findWidgetPosition(targetId);
-    if (!sourcePos || !targetPos) {
-      setDraggedWidgetId(null);
-      setDragOverWidgetId(null);
-      setDragOverColIdx(null);
+  const handleDragEnd = () => {
+    cleanupDrag();
+  };
+
+  // Card hover calculation: precise top or bottom placement
+  const handleCardDragOver = (
+    e: React.DragEvent,
+    colIdx: number,
+    rowIdx: number,
+    targetWidgetId: string
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+
+    if (!draggedWidgetId || draggedWidgetId === targetWidgetId) {
+      setDropIndicator(null);
       return;
     }
 
-    const newCols: [string[], string[], string[]] = [
+    const rect = e.currentTarget.getBoundingClientRect();
+    const relY = e.clientY - rect.top;
+    const isBottom = relY > rect.height / 2;
+    const position = isBottom ? 'bottom' : 'top';
+
+    if (
+      !dropIndicator ||
+      dropIndicator.colIdx !== colIdx ||
+      dropIndicator.rowIdx !== rowIdx ||
+      dropIndicator.position !== position
+    ) {
+      setDropIndicator({ colIdx, rowIdx, position });
+      setDragOverColIdx(colIdx);
+    }
+  };
+
+  // Column empty bottom drop zone
+  const handleColumnBottomDragOver = (e: React.DragEvent, colIdx: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+
+    if (!draggedWidgetId) return;
+
+    const colLen = columns[colIdx].length;
+    const lastRowIdx = Math.max(0, colLen - 1);
+
+    if (
+      !dropIndicator ||
+      dropIndicator.colIdx !== colIdx ||
+      dropIndicator.rowIdx !== lastRowIdx ||
+      dropIndicator.position !== 'bottom'
+    ) {
+      setDropIndicator({
+        colIdx,
+        rowIdx: lastRowIdx,
+        position: 'bottom',
+      });
+      setDragOverColIdx(colIdx);
+    }
+  };
+
+  // Unified Drop Execution
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!draggedWidgetId || !dropIndicator) {
+      cleanupDrag();
+      return;
+    }
+
+    const sourcePos = findWidgetPosition(draggedWidgetId);
+    if (!sourcePos) {
+      cleanupDrag();
+      return;
+    }
+
+    const nextCols: [string[], string[], string[]] = [
       [...columns[0]],
       [...columns[1]],
       [...columns[2]],
     ];
 
-    // Remove source widget
-    newCols[sourcePos.colIdx].splice(sourcePos.rowIdx, 1);
+    // 1. Remove dragged widget from old column
+    nextCols[sourcePos.colIdx].splice(sourcePos.rowIdx, 1);
 
-    // Insert target
-    const newTargetRow = newCols[targetPos.colIdx].indexOf(targetId);
-    if (newTargetRow !== -1) {
-      newCols[targetPos.colIdx].splice(newTargetRow, 0, sourceId);
-    } else {
-      newCols[targetPos.colIdx].push(sourceId);
+    // 2. Determine exact target index
+    let targetIndex = dropIndicator.rowIdx;
+
+    // If moving within same column and source was before target, offset index by -1
+    if (sourcePos.colIdx === dropIndicator.colIdx && sourcePos.rowIdx < dropIndicator.rowIdx) {
+      targetIndex -= 1;
     }
+
+    if (dropIndicator.position === 'bottom') {
+      targetIndex += 1;
+    }
+
+    // Clamp index safely
+    const safeIndex = Math.max(0, Math.min(targetIndex, nextCols[dropIndicator.colIdx].length));
+    nextCols[dropIndicator.colIdx].splice(safeIndex, 0, draggedWidgetId);
 
     if (onColumnsChange) {
-      onColumnsChange(newCols);
+      onColumnsChange(nextCols);
     }
-    setDraggedWidgetId(null);
-    setDragOverWidgetId(null);
-    setDragOverColIdx(null);
     Sound.success(soundEnabled);
+    cleanupDrag();
   };
 
-  // Drop on column zone
-  const handleDropOnColumn = (sourceId: string | null, colIdx: number) => {
-    if (!sourceId) return;
-    const sourcePos = findWidgetPosition(sourceId);
-    if (!sourcePos) return;
-
-    if (sourcePos.colIdx === colIdx && columns[colIdx].length === 1) {
-      setDraggedWidgetId(null);
-      setDragOverColIdx(null);
-      return;
-    }
-
-    const newCols: [string[], string[], string[]] = [
-      [...columns[0]],
-      [...columns[1]],
-      [...columns[2]],
-    ];
-
-    newCols[sourcePos.colIdx].splice(sourcePos.rowIdx, 1);
-    newCols[colIdx].push(sourceId);
-
-    if (onColumnsChange) {
-      onColumnsChange(newCols);
-    }
-    setDraggedWidgetId(null);
-    setDragOverColIdx(null);
-    Sound.success(soundEnabled);
-  };
-
-  // Directional button move across columns
+  // Quick arrow movement: column shift
   const handleMoveWidgetColumn = (widgetId: string, colDelta: number) => {
     const pos = findWidgetPosition(widgetId);
     if (!pos) return;
     const targetCol = pos.colIdx + colDelta;
     if (targetCol < 0 || targetCol > 2) return;
 
-    const newCols: [string[], string[], string[]] = [
+    const nextCols: [string[], string[], string[]] = [
       [...columns[0]],
       [...columns[1]],
       [...columns[2]],
     ];
 
-    newCols[pos.colIdx].splice(pos.rowIdx, 1);
-    newCols[targetCol].push(widgetId);
+    nextCols[pos.colIdx].splice(pos.rowIdx, 1);
+    nextCols[targetCol].push(widgetId);
 
     if (onColumnsChange) {
-      onColumnsChange(newCols);
+      onColumnsChange(nextCols);
     }
     Sound.click(soundEnabled);
   };
 
-  // Directional button move vertically within column
+  // Quick arrow movement: vertical within column
   const handleMoveWidgetVertical = (widgetId: string, rowDelta: number) => {
     const pos = findWidgetPosition(widgetId);
     if (!pos) return;
     const targetRow = pos.rowIdx + rowDelta;
     if (targetRow < 0 || targetRow >= columns[pos.colIdx].length) return;
 
-    const newCols: [string[], string[], string[]] = [
+    const nextCols: [string[], string[], string[]] = [
       [...columns[0]],
       [...columns[1]],
       [...columns[2]],
     ];
 
-    const [removed] = newCols[pos.colIdx].splice(pos.rowIdx, 1);
-    newCols[pos.colIdx].splice(targetRow, 0, removed);
+    const [removed] = nextCols[pos.colIdx].splice(pos.rowIdx, 1);
+    nextCols[pos.colIdx].splice(targetRow, 0, removed);
 
     if (onColumnsChange) {
-      onColumnsChange(newCols);
+      onColumnsChange(nextCols);
     }
     Sound.click(soundEnabled);
   };
 
-  // Render drag handle and arrow controls
+  // Drag handle & quick arrow controls for tile headers
   const renderDragHandle = (widgetId: string, colIdx: number, rowIdx: number, colLength: number) => {
     return (
       <div className="flex items-center gap-1 shrink-0">
         <div
           draggable
-          onDragStart={(e) => {
-            e.stopPropagation();
-            e.dataTransfer.setData('text/plain', widgetId);
-            setDraggedWidgetId(widgetId);
-            Sound.click(soundEnabled);
-          }}
+          onDragStart={(e) => handleDragStart(e, widgetId)}
+          onDragEnd={handleDragEnd}
           className="p-1 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200/50 dark:hover:bg-gray-700/50 cursor-grab active:cursor-grabbing transition-colors select-none"
           title="Drag to rearrange tile"
         >
           <GripVertical className="w-3.5 h-3.5" />
         </div>
 
-        {isCustomizingGrid && (
-          <div className="flex items-center gap-0.5 bg-white dark:bg-[#0F172A] rounded-lg border border-gray-200 dark:border-gray-700 p-0.5 shadow-2xs">
-            {/* Move to Left Column */}
-            <button
-              type="button"
-              disabled={colIdx === 0}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleMoveWidgetColumn(widgetId, -1);
-              }}
-              className="p-1 text-gray-500 hover:text-[#6366F1] disabled:opacity-20 disabled:cursor-not-allowed rounded cursor-pointer"
-              title="Move to left column"
-            >
-              <ChevronLeft className="w-3 h-3" />
-            </button>
+        {/* Quick Column Shift Controls (hover-revealed) */}
+        <div className="opacity-0 group-hover/tile:opacity-100 transition-opacity flex items-center gap-0.5 bg-white dark:bg-[#0F172A] rounded-lg border border-gray-200 dark:border-gray-700 p-0.5 shadow-2xs">
+          <button
+            type="button"
+            disabled={colIdx === 0}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleMoveWidgetColumn(widgetId, -1);
+            }}
+            className="p-0.5 text-gray-500 hover:text-[#6366F1] disabled:opacity-20 disabled:cursor-not-allowed rounded cursor-pointer"
+            title="Move to left column"
+          >
+            <ChevronLeft className="w-3 h-3" />
+          </button>
 
-            {/* Move Up in Column */}
-            <button
-              type="button"
-              disabled={rowIdx === 0}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleMoveWidgetVertical(widgetId, -1);
-              }}
-              className="p-1 text-gray-500 hover:text-[#6366F1] disabled:opacity-20 disabled:cursor-not-allowed rounded cursor-pointer"
-              title="Move up"
-            >
-              <ChevronUp className="w-3 h-3" />
-            </button>
+          {colLength > 1 && (
+            <>
+              <button
+                type="button"
+                disabled={rowIdx === 0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleMoveWidgetVertical(widgetId, -1);
+                }}
+                className="p-0.5 text-gray-500 hover:text-[#6366F1] disabled:opacity-20 disabled:cursor-not-allowed rounded cursor-pointer"
+                title="Move up"
+              >
+                <ChevronUp className="w-3 h-3" />
+              </button>
 
-            {/* Move Down in Column */}
-            <button
-              type="button"
-              disabled={rowIdx >= colLength - 1}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleMoveWidgetVertical(widgetId, 1);
-              }}
-              className="p-1 text-gray-500 hover:text-[#6366F1] disabled:opacity-20 disabled:cursor-not-allowed rounded cursor-pointer"
-              title="Move down"
-            >
-              <ChevronDown className="w-3 h-3" />
-            </button>
+              <button
+                type="button"
+                disabled={rowIdx >= colLength - 1}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleMoveWidgetVertical(widgetId, 1);
+                }}
+                className="p-0.5 text-gray-500 hover:text-[#6366F1] disabled:opacity-20 disabled:cursor-not-allowed rounded cursor-pointer"
+                title="Move down"
+              >
+                <ChevronDown className="w-3 h-3" />
+              </button>
+            </>
+          )}
 
-            {/* Move to Right Column */}
-            <button
-              type="button"
-              disabled={colIdx === 2}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleMoveWidgetColumn(widgetId, 1);
-              }}
-              className="p-1 text-gray-500 hover:text-[#6366F1] disabled:opacity-20 disabled:cursor-not-allowed rounded cursor-pointer"
-              title="Move to right column"
-            >
-              <ChevronRight className="w-3 h-3" />
-            </button>
-          </div>
-        )}
+          <button
+            type="button"
+            disabled={colIdx === 2}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleMoveWidgetColumn(widgetId, 1);
+            }}
+            className="p-0.5 text-gray-500 hover:text-[#6366F1] disabled:opacity-20 disabled:cursor-not-allowed rounded cursor-pointer"
+            title="Move to right column"
+          >
+            <ChevronRight className="w-3 h-3" />
+          </button>
+        </div>
       </div>
     );
   };
 
-  // Render individual widget card content
+  // Render widget content
   const renderWidgetContent = (
     widgetId: string,
     colIdx: number,
@@ -745,7 +803,7 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
     return null;
   };
 
-  // Compute active columns for responsive viewports
+  // Responsive column adaptation
   const isMobile = containerWidth < 640;
   const isTablet = containerWidth >= 640 && containerWidth < 1024;
 
@@ -758,21 +816,17 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
 
     if (isTablet) {
       // 2 balanced columns:
-      // Col A: calendar + tasks
-      // Col B: schedule + expenses + habits
+      // Col 0: calendar + habits
+      // Col 1: tasks + expenses + schedule
       const colA: string[] = [];
       const colB: string[] = [];
       const flat = [...columns[0], ...columns[1], ...columns[2]];
 
       flat.forEach((id) => {
-        if (id === 'calendar') {
+        if (id === 'calendar' || id === 'habits') {
           colA.push(id);
-        } else if (id === 'schedule') {
-          colB.push(id);
-        } else if (id === 'expenses' || id === 'habits') {
-          colB.push(id);
         } else {
-          colA.push(id);
+          colB.push(id);
         }
       });
       return [
@@ -781,7 +835,7 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
       ];
     }
 
-    // Desktop: 3 separate columns
+    // Desktop: 3 columns matching screenshot
     return [
       { colIndex: 0, items: columns[0] },
       { colIndex: 1, items: columns[1] },
@@ -790,51 +844,36 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
   }, [isMobile, isTablet, columns]);
 
   return (
-    <div className="space-y-4" ref={containerRef}>
-      {/* Top Header & Reorder Controls */}
+    <div className="space-y-4 select-none" ref={containerRef}>
+      {/* Top Header Bar with Reset Layout only (matching screenshot) */}
       <div className="flex items-center justify-between gap-3 flex-wrap px-1">
         <div className="flex items-center gap-2 text-xs font-semibold text-[#787774] dark:text-[#9CA3AF]">
           <LayoutGrid className="w-4 h-4 text-[#6366F1]" />
-          <span className="text-[#37352F] dark:text-white font-bold uppercase tracking-wider text-xs">
+          <span className="text-[#37352F] dark:text-white font-bold tracking-tight text-sm">
             Dashboard
+          </span>
+          <span className="text-gray-300 dark:text-gray-600 hidden sm:inline">•</span>
+          <span className="text-xs font-normal text-[#787774] dark:text-[#9CA3AF] hidden sm:inline">
+            Drag any card to rearrange layout
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
-          {!isDefaultOrder && (
-            <button
-              type="button"
-              onClick={() => {
-                Sound.click(soundEnabled);
-                handleResetGridLayout();
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white bg-[#F1F1EF] dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl transition-colors cursor-pointer shadow-2xs"
-              title="Reset to default layout"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reset Layout</span>
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() => {
-              Sound.click(soundEnabled);
-              setIsCustomizingGrid((prev) => !prev);
-            }}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl transition-all cursor-pointer border shadow-2xs ${
-              isCustomizingGrid
-                ? 'bg-[#6366F1] text-white border-[#6366F1]'
-                : 'bg-[#F7F7F5] dark:bg-[#1E293B] text-gray-700 dark:text-gray-200 border-[#E5E5E2] dark:border-[#334155] hover:border-gray-400'
-            }`}
-          >
-            <GripVertical className="w-3.5 h-3.5" />
-            <span>{isCustomizingGrid ? 'Done Reordering' : 'Rearrange Tiles'}</span>
-          </button>
-        </div>
+        {/* Reset Layout button */}
+        <button
+          type="button"
+          onClick={() => {
+            Sound.click(soundEnabled);
+            handleResetGridLayout();
+          }}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 hover:text-gray-900 dark:hover:text-white bg-white dark:bg-[#1E293B] hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-all cursor-pointer border border-[#E5E5E2] dark:border-[#334155] shadow-xs"
+          title="Reset to default 3-column layout"
+        >
+          <RotateCcw className="w-3.5 h-3.5 text-[#6366F1]" />
+          <span>Reset Layout</span>
+        </button>
       </div>
 
-      {/* Smart Responsive Multi-Column Packing Grid */}
+      {/* Responsive Multi-Column Packing Grid */}
       <div
         className={`w-full grid gap-5 items-start transition-all duration-200 ${
           isMobile
@@ -847,81 +886,73 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
         {displayColumns.map(({ colIndex, items }) => (
           <div
             key={colIndex}
-            className="flex flex-col gap-5 min-w-0"
+            className="flex flex-col gap-5 min-w-0 relative"
             onDragOver={(e) => {
               e.preventDefault();
               if (dragOverColIdx !== colIndex) setDragOverColIdx(colIndex);
             }}
-            onDragLeave={() => {
-              if (dragOverColIdx === colIndex) setDragOverColIdx(null);
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              handleDropOnColumn(draggedWidgetId, colIndex);
-            }}
+            onDrop={handleDrop}
           >
             {items.map((widgetId, rowIdx) => {
               const pos = findWidgetPosition(widgetId) || { colIdx: colIndex, rowIdx };
               const colLength = items.length;
+              const isCurrentlyDragged = draggedWidgetId === widgetId;
+
+              // Determine if this card has a drop indicator on top or bottom
+              const showTopIndicator =
+                dropIndicator &&
+                dropIndicator.colIdx === colIndex &&
+                dropIndicator.rowIdx === rowIdx &&
+                dropIndicator.position === 'top';
+
+              const showBottomIndicator =
+                dropIndicator &&
+                dropIndicator.colIdx === colIndex &&
+                dropIndicator.rowIdx === rowIdx &&
+                dropIndicator.position === 'bottom';
 
               return (
-                <div
-                  key={widgetId}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (dragOverWidgetId !== widgetId) {
-                      setDragOverWidgetId(widgetId);
-                    }
-                  }}
-                  onDragLeave={() => {
-                    if (dragOverWidgetId === widgetId) {
-                      setDragOverWidgetId(null);
-                    }
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    handleDropOnWidget(draggedWidgetId, widgetId);
-                  }}
-                  className={`w-full transition-all duration-200 ${
-                    draggedWidgetId === widgetId ? 'opacity-40 scale-[0.98]' : ''
-                  } ${
-                    dragOverWidgetId === widgetId
-                      ? 'ring-2 ring-[#6366F1] dark:ring-[#818CF8] ring-offset-2 dark:ring-offset-[#0F172A] rounded-2xl scale-[1.01]'
-                      : ''
-                  }`}
-                >
-                  {renderWidgetContent(widgetId, pos.colIdx, pos.rowIdx, colLength)}
+                <div key={widgetId} className="w-full flex flex-col gap-2">
+                  {/* Top Drop Indicator Line */}
+                  {showTopIndicator && (
+                    <div className="h-1.5 bg-[#6366F1] dark:bg-[#818CF8] rounded-full mx-2 shadow-md ring-2 ring-indigo-300 dark:ring-indigo-700 animate-pulse transition-all" />
+                  )}
+
+                  {/* Widget Container */}
+                  <div
+                    onDragOver={(e) => handleCardDragOver(e, colIndex, rowIdx, widgetId)}
+                    onDrop={handleDrop}
+                    className={`w-full transition-all duration-150 relative group/tile ${
+                      isCurrentlyDragged
+                        ? 'opacity-40 border-2 border-dashed border-[#6366F1] bg-indigo-50/20 dark:bg-indigo-950/20 rounded-2xl'
+                        : ''
+                    }`}
+                  >
+                    {renderWidgetContent(widgetId, pos.colIdx, pos.rowIdx, colLength)}
+                  </div>
+
+                  {/* Bottom Drop Indicator Line */}
+                  {showBottomIndicator && (
+                    <div className="h-1.5 bg-[#6366F1] dark:bg-[#818CF8] rounded-full mx-2 shadow-md ring-2 ring-indigo-300 dark:ring-indigo-700 animate-pulse transition-all" />
+                  )}
                 </div>
               );
             })}
 
-            {/* Column Drop Target when in Reordering mode */}
-            {isCustomizingGrid && !isMobile && (
-              <div
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  if (dragOverColIdx !== colIndex) setDragOverColIdx(colIndex);
-                }}
-                onDragLeave={() => {
-                  if (dragOverColIdx === colIndex) setDragOverColIdx(null);
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  handleDropOnColumn(draggedWidgetId, colIndex);
-                }}
-                className={`rounded-2xl border-2 border-dashed py-3.5 px-4 text-center transition-all ${
-                  dragOverColIdx === colIndex
-                    ? 'border-[#6366F1] bg-indigo-50/50 dark:bg-indigo-950/40 text-[#6366F1] scale-[1.01]'
-                    : 'border-gray-200/80 dark:border-gray-800 text-gray-400 dark:text-gray-500 hover:border-gray-300'
-                }`}
-              >
-                <p className="text-[11px] font-semibold">
-                  Drop tile here to add to Column {colIndex + 1}
-                </p>
-              </div>
-            )}
+            {/* Empty space at the bottom of column as a drop target */}
+            <div
+              onDragOver={(e) => handleColumnBottomDragOver(e, colIndex)}
+              onDrop={handleDrop}
+              className={`w-full transition-all duration-200 rounded-xl ${
+                draggedWidgetId
+                  ? 'min-h-[44px] border border-dashed border-gray-200 dark:border-gray-800 flex items-center justify-center text-[10px] text-gray-400 hover:border-indigo-400 hover:bg-indigo-50/30 dark:hover:bg-indigo-950/20'
+                  : 'h-2'
+              }`}
+            >
+              {draggedWidgetId && (
+                <span>Drop here to place at bottom of column</span>
+              )}
+            </div>
           </div>
         ))}
       </div>

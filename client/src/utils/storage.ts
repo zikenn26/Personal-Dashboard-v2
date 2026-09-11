@@ -64,9 +64,9 @@ export const DEFAULT_HOME_GRID_ORDER: string[] = [
 ];
 
 export const DEFAULT_HOME_COLUMNS: [string[], string[], string[]] = [
-  ['calendar'],
+  ['calendar', 'habits'],
+  ['tasks', 'expenses'],
   ['schedule'],
-  ['expenses', 'habits', 'tasks'],
 ];
 
 export const DEFAULT_SCHEDULE_ACTIVITIES: ScheduleActivity[] = [
