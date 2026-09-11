@@ -231,7 +231,7 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
 
   return (
     <div
-      className={`p-4.5 sm:p-5 rounded-2xl bg-[#F7F7F5] dark:bg-[#1E293B] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col h-full ${className}`}
+      className={`p-4.5 sm:p-5 rounded-2xl bg-[#F7F7F5] dark:bg-[#1E293B] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col ${className}`}
     >
       {/* Top Bar: Title matching other grid tiles & Action Controls */}
       <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-[#EDECE9] dark:border-[#334155]/60 mb-2.5 shrink-0">
@@ -393,12 +393,12 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
         </button>
       </div>
 
-      {/* Tabular Schedule View - Ample height and flexible stretching */}
-      <div className="rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#0F172A] overflow-hidden flex-1 min-h-[340px] max-h-[740px] overflow-y-auto">
+      {/* Tabular Schedule View - Naturally sized, content-driven, no cropping */}
+      <div className="rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#0F172A] overflow-hidden">
         <table className="w-full border-collapse text-left text-xs">
           <thead className="sticky top-0 z-10">
             <tr className="border-b border-[#E2E8F0] dark:border-[#334155] bg-[#F7F6F3] dark:bg-[#1E293B] text-[#787774] dark:text-[#94A3B8]">
-              <th className="py-2.5 px-3.5 font-bold uppercase tracking-wider w-[110px] sm:w-[130px] border-r border-[#E2E8F0] dark:border-[#334155] whitespace-nowrap">
+              <th className="py-2.5 px-3.5 font-bold uppercase tracking-wider w-[105px] sm:w-[125px] border-r border-[#E2E8F0] dark:border-[#334155] whitespace-nowrap">
                 TIME
               </th>
               <th className="py-2.5 px-3.5 font-bold uppercase tracking-wider">
@@ -448,7 +448,7 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
                     }`}
                   >
                     {/* TIME Column */}
-                    <td className="py-2.5 px-3.5 border-r border-[#E2E8F0] dark:border-[#334155] align-middle font-medium text-[#37352F] dark:text-[#E2E8F0]">
+                    <td className="py-2.5 px-3.5 border-r border-[#E2E8F0] dark:border-[#334155] align-middle font-medium text-[#37352F] dark:text-[#E2E8F0] w-[105px] sm:w-[125px] shrink-0">
                       {isThisRowEditing ? (
                         <input
                           type="text"
@@ -458,7 +458,7 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
                           className="w-full px-2 py-1 bg-white dark:bg-[#0F172A] border border-[#CBD5E1] dark:border-[#475569] rounded text-xs font-semibold text-[#37352F] dark:text-white focus:outline-hidden focus:border-[#6366F1]"
                         />
                       ) : (
-                        <span className="font-semibold text-xs tracking-wide select-none whitespace-nowrap">
+                        <span className="font-semibold text-xs tracking-wide select-none whitespace-nowrap block">
                           {act.time}
                         </span>
                       )}
@@ -489,7 +489,7 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
                                 e.stopPropagation();
                                 setEditingRowId(null);
                               }}
-                              className="p-1 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded transition-colors cursor-pointer"
+                              className="p-1 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded transition-colors cursor-pointer shrink-0"
                               title="Save inline edit"
                             >
                               <Check className="w-3.5 h-3.5" />
@@ -497,8 +497,8 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
                           )}
                         </div>
                       ) : (
-                        <div className="flex items-center justify-between">
-                          <span className="text-[#37352F] dark:text-[#CBD5E1]">
+                        <div className="flex items-center justify-between gap-2 min-w-0">
+                          <span className="text-[#37352F] dark:text-[#CBD5E1] text-xs font-normal leading-relaxed break-words min-w-0">
                             {act.title}
                           </span>
                           <button
@@ -507,7 +507,7 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
                               e.stopPropagation();
                               setEditingRowId(act.id);
                             }}
-                            className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded transition-opacity cursor-pointer"
+                            className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded transition-opacity cursor-pointer shrink-0"
                             title="Edit row"
                           >
                             <Edit3 className="w-3 h-3" />
