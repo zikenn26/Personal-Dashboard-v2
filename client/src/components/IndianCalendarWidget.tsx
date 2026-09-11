@@ -397,23 +397,23 @@ export const IndianCalendarWidget: React.FC<IndianCalendarWidgetProps> = ({
   };
 
   return (
-    <div className={`p-5 rounded-2xl bg-[#F7F7F5] dark:bg-[#1E293B] border border-[#E5E5E2] dark:border-[#334155] shadow-xs space-y-4 ${className}`}>
+    <div className={`p-4.5 rounded-2xl bg-[#F7F7F5] dark:bg-[#1E293B] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col h-full overflow-hidden ${className}`}>
       {/* Header with Title, Month Nav, View Tabs */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2 pb-2 border-b border-[#EDECE9] dark:border-[#334155]/60 mb-2 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
           {dragHandle}
           <div className="w-7 h-7 rounded-xl bg-orange-50 dark:bg-orange-950/60 border border-orange-200/60 dark:border-orange-900/40 flex items-center justify-center text-orange-600 dark:text-orange-400 shrink-0">
             <CalendarIcon className="w-3.5 h-3.5" />
           </div>
-          <div>
-            <h2 className="text-xs uppercase font-bold text-[#37352F] dark:text-white tracking-wider">
+          <div className="min-w-0">
+            <h2 className="text-xs uppercase font-bold text-[#37352F] dark:text-white tracking-wider truncate">
               Calendar
             </h2>
           </div>
         </div>
 
         {/* Tab switch: Calendar vs Holiday List */}
-        <div className="flex items-center gap-1 bg-[#F1F5F9] dark:bg-[#0F172A] p-0.5 rounded-lg border border-[#E2E8F0] dark:border-[#334155]">
+        <div className="flex items-center gap-1 bg-[#F1F5F9] dark:bg-[#0F172A] p-0.5 rounded-lg border border-[#E2E8F0] dark:border-[#334155] shrink-0">
           <button
             type="button"
             onClick={() => setActiveTab('calendar')}
@@ -440,32 +440,32 @@ export const IndianCalendarWidget: React.FC<IndianCalendarWidgetProps> = ({
       </div>
 
       {activeTab === 'calendar' ? (
-        <>
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
           {/* Month Header & Controls */}
-          <div className="flex items-center justify-between pt-1">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-bold text-[#37352F] dark:text-white">
+          <div className="flex items-center justify-between pb-1.5 shrink-0">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs sm:text-sm font-bold text-[#37352F] dark:text-white">
                 {monthName} {currentYear}
               </span>
               {(currentMonth !== today.getMonth() || currentYear !== today.getFullYear()) && (
                 <button
                   type="button"
                   onClick={handleJumpToToday}
-                  className="text-[10px] px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-[#6366F1] dark:text-[#818CF8] font-bold hover:bg-indigo-100 cursor-pointer"
+                  className="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-[#6366F1] dark:text-[#818CF8] font-bold hover:bg-indigo-100 cursor-pointer"
                 >
                   Today
                 </button>
               )}
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5">
               <button
                 type="button"
                 onClick={handlePrevMonth}
                 title="Previous Month"
                 className="p-1 rounded-lg hover:bg-[#F1F5F9] dark:hover:bg-[#0F172A] text-[#64748B] cursor-pointer"
               >
-                <ChevronLeft className="w-4 h-4" />
+                <ChevronLeft className="w-3.5 h-3.5" />
               </button>
               <button
                 type="button"
@@ -473,13 +473,13 @@ export const IndianCalendarWidget: React.FC<IndianCalendarWidgetProps> = ({
                 title="Next Month"
                 className="p-1 rounded-lg hover:bg-[#F1F5F9] dark:hover:bg-[#0F172A] text-[#64748B] cursor-pointer"
               >
-                <ChevronRight className="w-4 h-4" />
+                <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
 
           {/* Calendar Day-of-Week Headers (Monday to Sunday) */}
-          <div className="grid grid-cols-7 text-center text-[10px] font-bold text-[#94A3B8] dark:text-[#64748B] tracking-wider py-1.5 border-b border-[#EDECE9]/70 dark:border-[#334155]/60">
+          <div className="grid grid-cols-7 text-center text-[10px] font-bold text-[#94A3B8] dark:text-[#64748B] tracking-wider py-1 border-b border-[#EDECE9]/70 dark:border-[#334155]/60 shrink-0">
             <span>Mo</span>
             <span>Tu</span>
             <span>We</span>
@@ -489,8 +489,10 @@ export const IndianCalendarWidget: React.FC<IndianCalendarWidgetProps> = ({
             <span className="text-red-500 font-extrabold" title="Sunday (Weekend Holiday)">Su</span>
           </div>
 
-          {/* Calendar Grid */}
-          <div className="grid grid-cols-7 gap-1 pt-1.5">
+          {/* Scrollable Month Grid + Selected Date Inspector */}
+          <div className="flex-1 min-h-0 overflow-y-auto pr-0.5 space-y-2 pt-1">
+            {/* Calendar Grid */}
+            <div className="grid grid-cols-7 gap-1">
             {calendarDays.map((cell, idx) => {
               const isSelected = cell.dateStr === selectedDateStr;
               const hasHoliday = cell.holidays.length > 0;
@@ -671,16 +673,17 @@ export const IndianCalendarWidget: React.FC<IndianCalendarWidgetProps> = ({
                 )}
             </div>
           )}
-        </>
+          </div>
+        </div>
       ) : (
         /* Upcoming Indian Festivals & Events View */
-        <div className="space-y-2 pt-1">
-          <div className="flex items-center justify-between text-xs text-[#787774] dark:text-[#9CA3AF] pb-1">
-            <span className="font-semibold">Upcoming in {monthName} &amp; Next</span>
-            <span className="text-[10px] font-mono">2026 Calendar</span>
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden space-y-1.5 pt-0.5">
+          <div className="flex items-center justify-between text-xs text-[#787774] dark:text-[#9CA3AF] pb-1 shrink-0">
+            <span className="font-semibold text-[11px]">Upcoming in {monthName} &amp; Next</span>
+            <span className="text-[9px] font-mono">2026 Calendar</span>
           </div>
 
-          <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+          <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-1.5">
             {upcomingHolidaysAndEvents.map((item) => (
               <div
                 key={item.id}
@@ -688,20 +691,20 @@ export const IndianCalendarWidget: React.FC<IndianCalendarWidgetProps> = ({
                   setSelectedDateStr(item.dateStr);
                   setActiveTab('calendar');
                 }}
-                className="flex items-center justify-between p-2.5 rounded-xl bg-[#F8FAFC] dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#334155] hover:border-[#6366F1] cursor-pointer transition-all"
+                className="flex items-center justify-between p-2 rounded-xl bg-[#F8FAFC] dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#334155] hover:border-[#6366F1] cursor-pointer transition-all"
               >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="text-base shrink-0">{item.emoji}</span>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm shrink-0">{item.emoji}</span>
                   <div className="min-w-0">
-                    <p className="text-xs font-bold text-[#37352F] dark:text-white truncate">
+                    <p className="text-[11px] font-bold text-[#37352F] dark:text-white truncate">
                       {item.title}
                     </p>
-                    <p className="text-[10px] text-[#787774] dark:text-[#9CA3AF]">
+                    <p className="text-[9.5px] text-[#787774] dark:text-[#9CA3AF]">
                       {item.type === 'birthday' ? 'Birthday 🎂' : item.isNational ? '🇮🇳 National Holiday' : 'Festival'}
                     </p>
                   </div>
                 </div>
-                <span className="text-[11px] font-mono font-bold text-[#6366F1] dark:text-[#818CF8] shrink-0 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-md">
+                <span className="text-[10px] font-mono font-bold text-[#6366F1] dark:text-[#818CF8] shrink-0 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded-md">
                   {item.formattedDate}
                 </span>
               </div>

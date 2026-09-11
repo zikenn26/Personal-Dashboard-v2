@@ -231,22 +231,22 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
 
   return (
     <div
-      className={`p-5 rounded-2xl bg-[#F7F7F5] dark:bg-[#1E293B] border border-[#E5E5E2] dark:border-[#334155] shadow-xs space-y-4 ${className}`}
+      className={`p-4.5 rounded-2xl bg-[#F7F7F5] dark:bg-[#1E293B] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col h-full overflow-hidden ${className}`}
     >
       {/* Top Bar: Title matching other grid tiles & Action Controls */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+      <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-[#EDECE9] dark:border-[#334155]/60 mb-2.5 shrink-0">
         {/* Title matching other grid tiles with dynamic date */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           {dragHandle}
           <div className="w-7 h-7 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-900/40 flex items-center justify-center text-[#6366F1] dark:text-[#818CF8] shrink-0">
             <Clock className="w-3.5 h-3.5" />
           </div>
-          <div>
-            <h2 className="text-xs uppercase font-bold text-[#37352F] dark:text-white tracking-wider">
+          <div className="min-w-0">
+            <h2 className="text-xs uppercase font-bold text-[#37352F] dark:text-white tracking-wider truncate">
               Schedule
             </h2>
           </div>
-          <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-md bg-white dark:bg-[#0F172A] text-[#64748B] dark:text-[#94A3B8] border border-[#E2E8F0] dark:border-[#334155]/60">
+          <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-md bg-white dark:bg-[#0F172A] text-[#64748B] dark:text-[#94A3B8] border border-[#E2E8F0] dark:border-[#334155]/60 hidden sm:inline truncate">
             {weekDates[selectedDay]?.fullDateStr || DAY_METADATA[selectedDay].label}
           </span>
           {copyNotification && (
@@ -257,7 +257,7 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1 shrink-0">
           {isEditing && (
             <>
               <button
@@ -267,7 +267,7 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
                 className="p-1.5 text-gray-500 hover:text-gray-800 dark:hover:text-white hover:bg-white dark:hover:bg-gray-800 rounded-lg text-xs cursor-pointer transition-colors flex items-center gap-1 border border-transparent hover:border-gray-200 dark:hover:border-[#334155]"
               >
                 <ArrowUpDown className="w-3.5 h-3.5" />
-                <span className="text-[11px] hidden sm:inline">Sort</span>
+                <span className="text-[11px] hidden md:inline">Sort</span>
               </button>
               <button
                 type="button"
@@ -276,7 +276,7 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
                 className="p-1.5 text-gray-500 hover:text-gray-800 dark:hover:text-white hover:bg-white dark:hover:bg-gray-800 rounded-lg text-xs cursor-pointer transition-colors flex items-center gap-1 border border-transparent hover:border-gray-200 dark:hover:border-[#334155]"
               >
                 <Copy className="w-3.5 h-3.5" />
-                <span className="text-[11px] hidden sm:inline">Copy to all</span>
+                <span className="text-[11px] hidden md:inline">Copy</span>
               </button>
               <button
                 type="button"
@@ -285,7 +285,7 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
                 className="p-1.5 text-gray-500 hover:text-gray-800 dark:hover:text-white hover:bg-white dark:hover:bg-gray-800 rounded-lg text-xs cursor-pointer transition-colors flex items-center gap-1 border border-transparent hover:border-gray-200 dark:hover:border-[#334155]"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span className="text-[11px] hidden sm:inline">Reset</span>
+                <span className="text-[11px] hidden md:inline">Reset</span>
               </button>
             </>
           )}
@@ -294,10 +294,10 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
             type="button"
             onClick={handleAddRow}
             title="Add new activity row"
-            className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-white dark:bg-[#0F172A] hover:bg-gray-50 dark:hover:bg-[#334155] text-[#37352F] dark:text-[#E2E8F0] border border-[#E2E8F0] dark:border-[#334155] cursor-pointer transition-colors flex items-center gap-1 shadow-2xs"
+            className="px-2 py-1 text-xs font-semibold rounded-lg bg-white dark:bg-[#0F172A] hover:bg-gray-50 dark:hover:bg-[#334155] text-[#37352F] dark:text-[#E2E8F0] border border-[#E2E8F0] dark:border-[#334155] cursor-pointer transition-colors flex items-center gap-1 shadow-2xs"
           >
             <Plus className="w-3.5 h-3.5 text-[#6366F1]" />
-            <span>Add row</span>
+            <span className="text-[11px]">Add</span>
           </button>
 
           <button
@@ -307,7 +307,7 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
               setIsEditing(!isEditing);
               setEditingRowId(null);
             }}
-            className={`px-3 py-1 text-xs font-semibold rounded-lg border cursor-pointer transition-all flex items-center gap-1.5 shadow-2xs ${
+            className={`px-2.5 py-1 text-xs font-semibold rounded-lg border cursor-pointer transition-all flex items-center gap-1 shadow-2xs ${
               isEditing
                 ? 'bg-[#6366F1] text-white border-[#6366F1]'
                 : 'bg-white dark:bg-[#0F172A] border-[#E2E8F0] dark:border-[#334155] text-[#37352F] dark:text-[#E2E8F0] hover:border-[#6366F1]'
@@ -316,12 +316,12 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
             {isEditing ? (
               <>
                 <Check className="w-3.5 h-3.5" />
-                <span>Done</span>
+                <span className="text-[11px]">Done</span>
               </>
             ) : (
               <>
                 <Edit3 className="w-3.5 h-3.5" />
-                <span>Edit</span>
+                <span className="text-[11px]">Edit</span>
               </>
             )}
           </button>
@@ -329,17 +329,17 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
       </div>
 
       {/* Subtle Day Navigation with Short Date-Month on Each Day */}
-      <div className="flex items-center justify-between gap-1 bg-white dark:bg-[#0F172A] p-1 rounded-xl border border-[#E2E8F0] dark:border-[#334155]/60 shadow-2xs">
+      <div className="flex items-center justify-between gap-1 bg-white dark:bg-[#0F172A] p-1 rounded-xl border border-[#E2E8F0] dark:border-[#334155]/60 shadow-2xs mb-2 shrink-0">
         <button
           type="button"
           onClick={handlePrevDay}
           title="Previous day"
-          className="p-1.5 text-gray-500 hover:text-gray-800 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors cursor-pointer shrink-0"
+          className="p-1 text-gray-500 hover:text-gray-800 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors cursor-pointer shrink-0"
         >
           <ChevronLeft className="w-3.5 h-3.5" />
         </button>
 
-        <div className="flex items-center gap-1 overflow-x-auto py-0.5 px-0.5 justify-between flex-1 scrollbar-none">
+        <div className="flex items-center gap-0.5 overflow-x-auto py-0.5 px-0.5 justify-between flex-1 scrollbar-none">
           {DAY_KEYS.map((key) => {
             const isSelected = selectedDay === key;
             const isToday = todayKey === key;
@@ -354,16 +354,16 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
                   Sound.click(soundEnabled);
                   setSelectedDay(key);
                 }}
-                className={`relative px-1.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer text-center flex-1 min-w-[42px] ${
+                className={`relative px-1 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer text-center flex-1 min-w-[38px] ${
                   isSelected
                     ? 'bg-[#37352F] dark:bg-white text-white dark:text-[#0F172A] shadow-2xs font-bold'
                     : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-white hover:bg-gray-100/70 dark:hover:bg-[#1E293B]/70'
                 }`}
               >
                 <div className="flex flex-col items-center justify-center leading-tight">
-                  <span className="text-[11px] font-bold">{meta.short}</span>
+                  <span className="text-[10px] font-bold">{meta.short}</span>
                   <span
-                    className={`text-[9px] font-mono ${
+                    className={`text-[8.5px] font-mono ${
                       isSelected ? 'opacity-90 text-white dark:text-[#0F172A]' : 'text-gray-400 dark:text-gray-500'
                     }`}
                   >
@@ -372,7 +372,7 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
                 </div>
                 {isToday && (
                   <span
-                    className={`absolute -top-0.5 right-1 w-1.5 h-1.5 rounded-full ${
+                    className={`absolute -top-0.5 right-0.5 w-1.5 h-1.5 rounded-full ${
                       isSelected ? 'bg-indigo-300 dark:bg-indigo-600' : 'bg-indigo-500'
                     }`}
                     title="Today"
@@ -387,25 +387,25 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
           type="button"
           onClick={handleNextDay}
           title="Next day"
-          className="p-1.5 text-gray-500 hover:text-gray-800 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors cursor-pointer shrink-0"
+          className="p-1 text-gray-500 hover:text-gray-800 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors cursor-pointer shrink-0"
         >
           <ChevronRight className="w-3.5 h-3.5" />
         </button>
       </div>
 
-      {/* Tabular Schedule View (Matching the Screenshot) */}
-      <div className="overflow-hidden rounded-lg border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#0F172A]">
+      {/* Tabular Schedule View - Scrollable within uniform height */}
+      <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#0F172A]">
         <table className="w-full border-collapse text-left text-xs">
-          <thead>
-            <tr className="border-b border-[#E2E8F0] dark:border-[#334155] bg-[#F7F6F3]/80 dark:bg-[#1E293B]/80 text-[#787774] dark:text-[#94A3B8]">
-              <th className="py-2.5 px-4 font-bold uppercase tracking-wider w-[125px] sm:w-[150px] border-r border-[#E2E8F0] dark:border-[#334155]">
+          <thead className="sticky top-0 z-10">
+            <tr className="border-b border-[#E2E8F0] dark:border-[#334155] bg-[#F7F6F3] dark:bg-[#1E293B] text-[#787774] dark:text-[#94A3B8]">
+              <th className="py-2 px-3 font-bold uppercase tracking-wider w-[105px] sm:w-[125px] border-r border-[#E2E8F0] dark:border-[#334155]">
                 TIME
               </th>
-              <th className="py-2.5 px-4 font-bold uppercase tracking-wider">
+              <th className="py-2 px-3 font-bold uppercase tracking-wider">
                 ACTIVITY
               </th>
               {isEditing && (
-                <th className="py-2.5 px-2 font-bold uppercase tracking-wider w-10 text-center">
+                <th className="py-2 px-2 font-bold uppercase tracking-wider w-8 text-center">
                   
                 </th>
               )}
