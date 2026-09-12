@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
+  Sparkle,
   Sparkles,
   Send,
   Loader2,
@@ -7,7 +8,6 @@ import {
   Maximize2,
   CheckCircle2,
   CornerDownLeft,
-  Bot,
   User,
   ShieldCheck,
   Zap,
@@ -34,9 +34,11 @@ import { Storage } from '../utils/storage';
 
 interface AISecretaryWidgetProps {
   dragHandle?: React.ReactNode;
-  onNavigate?: (view: any) => void;
+  onNavigate?: (view: any, tabOrFilter?: string) => void;
   className?: string;
   isExpandedView?: boolean;
+  isPopup?: boolean;
+  onClosePopup?: () => void;
 }
 
 const STORAGE_KEY = 'ai_secretary_chat_history_v1';
@@ -53,6 +55,8 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
   onNavigate,
   className = '',
   isExpandedView = false,
+  isPopup = false,
+  onClosePopup,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     try {
@@ -74,7 +78,7 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
         id: 'welcome',
         role: 'assistant',
         content:
-          'Hello! I am your AI Executive Secretary powered by Groq. I can autonomously fetch your live tasks, habits, spending, goals, and journal, or directly execute actions for you. How can I assist today?',
+          'Hello! I am your Personalized Jarvis AI. How can I assist you today?',
         timestamp: Date.now(),
       },
     ];
@@ -199,45 +203,40 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
 
   return (
     <div
-      className={`rounded-2xl bg-[#F7F7F5] dark:bg-[#1E293B] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col w-full ${
-        isExpandedView ? 'h-[calc(100vh-140px)] min-h-[500px]' : 'min-h-[360px] max-h-[480px]'
-      } ${className}`}
+      className={
+        isPopup
+          ? `h-full flex flex-col w-full bg-white dark:bg-[#1E293B] ${className}`
+          : `rounded-2xl bg-[#F7F7F5] dark:bg-[#1E293B] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col w-full ${
+              isExpandedView ? 'h-[calc(100vh-140px)] min-h-[500px]' : 'min-h-[360px] max-h-[480px]'
+            } ${className}`
+      }
     >
       {/* Widget Header */}
-      <div className="p-4 sm:px-5 pb-3 border-b border-[#EDECE9] dark:border-[#334155]/60 flex items-center justify-between gap-2 shrink-0">
-        <div className="flex items-center gap-2.5">
+      <div className="p-3.5 sm:px-4 pb-3 border-b border-[#EDECE9] dark:border-[#334155]/60 flex items-center justify-between gap-2 shrink-0 bg-[#FAF9F6] dark:bg-[#1E293B]">
+        <div className="flex items-center gap-2.5 min-w-0">
           {dragHandle}
           <div className="w-7 h-7 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-900/40 flex items-center justify-center text-[#6366F1] dark:text-[#818CF8] shrink-0">
-            <Sparkles className="w-3.5 h-3.5" />
+            <Sparkle className="w-3.5 h-3.5 fill-indigo-500/20" />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[#37352F] dark:text-white">
-                AI Secretary
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[#37352F] dark:text-white truncate">
+                Personalized Jarvis AI
               </h3>
-              <span
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-100/70 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300"
-                title={`Active model: ${activeModel}`}
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                {activeModel.includes('70b') ? 'Llama 3.3 70B' : activeModel.includes('8b') ? 'Llama 3.1 8B' : 'Groq AI'}
-              </span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" title="Jarvis AI Online" />
             </div>
-            <p className="text-[11px] text-[#787774] dark:text-gray-400">
-              Autonomous context fetch & actions
-            </p>
           </div>
         </div>
 
         {/* Top Right Controls */}
-        <div className="flex items-center gap-1 text-gray-500 dark:text-gray-400">
+        <div className="flex items-center gap-1 text-gray-500 dark:text-gray-400 shrink-0">
           <button
             type="button"
             onClick={() => {
               setGroqKeyInput(Storage.getGroqApiKey() || '');
               setIsKeyModalOpen(!isKeyModalOpen);
             }}
-            title="Configure Groq API Key"
+            title="Configure API Key"
             className={`p-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1 text-xs ${
               isKeyModalOpen
                 ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300'
@@ -255,7 +254,20 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
-          {!isExpandedView && onNavigate && (
+          {isPopup && onNavigate && (
+            <button
+              type="button"
+              onClick={() => {
+                if (onClosePopup) onClosePopup();
+                onNavigate('assistant');
+              }}
+              title="Expand to Full View"
+              className="p-1.5 rounded-lg hover:bg-gray-200/60 dark:hover:bg-gray-800 transition-colors cursor-pointer text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {!isExpandedView && !isPopup && onNavigate && (
             <button
               type="button"
               onClick={() => onNavigate('assistant')}
@@ -263,6 +275,16 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
               className="p-1.5 rounded-lg hover:bg-gray-200/60 dark:hover:bg-gray-800 transition-colors cursor-pointer text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400"
             >
               <Maximize2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {isPopup && onClosePopup && (
+            <button
+              type="button"
+              onClick={onClosePopup}
+              title="Close Jarvis AI"
+              className="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950/60 transition-colors cursor-pointer text-gray-400 hover:text-rose-600 dark:hover:text-rose-400"
+            >
+              <X className="w-4 h-4" />
             </button>
           )}
         </div>
@@ -397,7 +419,7 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
             >
               {!isUser && (
                 <div className="w-6 h-6 rounded-lg bg-[#6366F1] text-white flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
-                  <Bot className="w-3.5 h-3.5" />
+                  <Sparkle className="w-3.5 h-3.5 fill-white/20" />
                 </div>
               )}
 
@@ -488,7 +510,7 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
         {isLoading && (
           <div className="flex gap-2.5 justify-start">
             <div className="w-6 h-6 rounded-lg bg-[#6366F1] text-white flex items-center justify-center shrink-0 mt-0.5 animate-pulse">
-              <Bot className="w-3.5 h-3.5" />
+              <Sparkle className="w-3.5 h-3.5 fill-white/20" />
             </div>
             <div className="bg-white dark:bg-[#0F172A] border border-[#E5E5E2] dark:border-[#334155] rounded-xl rounded-bl-xs px-3.5 py-2.5 flex items-center gap-2 shadow-2xs">
               <Loader2 className="w-3.5 h-3.5 animate-spin text-[#6366F1] dark:text-[#818CF8]" />
@@ -533,7 +555,7 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
             value={inputPrompt}
             onChange={(e) => setInputPrompt(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Instruct secretary (e.g., 'Add task...', 'Analyze spending')..."
+            placeholder="Ask Jarvis anything (e.g., 'Add task...', 'Analyze spending')..."
             disabled={isLoading}
             className="flex-1 bg-transparent px-2.5 py-1.5 text-xs text-[#111827] dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-hidden disabled:opacity-50"
           />

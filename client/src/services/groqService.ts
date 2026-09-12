@@ -38,14 +38,14 @@ export interface GroqSecretaryResponse {
 
 const GROQ_DIRECT_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_PROXY_URL = '/api/groq/chat/completions';
-export const DEFAULT_GROQ_MODEL = 'llama-3.3-70b-versatile';
+export const DEFAULT_GROQ_MODEL = 'openai/gpt-oss-120b';
 export const GROQ_MODEL = DEFAULT_GROQ_MODEL;
 
 export const SUPPORTED_GROQ_MODELS = [
-  { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B Versatile (Recommended, Powerful Tool Calling)' },
-  { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B Instant (Ultra-Fast, High Rate Limits)' },
-  { id: 'mistral-saba-24b', label: 'Mistral Saba 24B (Multilingual, High Speed)' },
-  { id: 'qwen-2.5-32b', label: 'Qwen 2.5 32B (Analytical, Advanced Reasoning)' },
+  { id: 'openai/gpt-oss-120b', label: 'GPT OSS 120B (Recommended, Reasoning & Tools)' },
+  { id: 'openai/gpt-oss-20b', label: 'GPT OSS 20B (Ultra-Fast & Low Latency)' },
+  { id: 'qwen/qwen3.8-27b', label: 'Qwen 3.8 27B (Analytical & Reasoning)' },
+  { id: 'qwen/qwen3.6-27b', label: 'Qwen 3.6 27B (Fast & Concise)' },
 ] as const;
 
 export const DEPRECATED_GROQ_MODELS = [
@@ -56,13 +56,17 @@ export const DEPRECATED_GROQ_MODELS = [
   'gemma2-9b-it',
   'llama-3.2-11b-vision-preview',
   'llama-3.2-90b-vision-preview',
-];
-
-export const CANDIDATE_GROQ_MODELS = [
   'llama-3.3-70b-versatile',
   'llama-3.1-8b-instant',
   'mistral-saba-24b',
   'qwen-2.5-32b',
+];
+
+export const CANDIDATE_GROQ_MODELS = [
+  'openai/gpt-oss-120b',
+  'openai/gpt-oss-20b',
+  'qwen/qwen3.8-27b',
+  'qwen/qwen3.6-27b',
 ];
 
 export function getActiveGroqModel(): string {
@@ -84,12 +88,15 @@ async function postGroqChat(apiKey: string, payload: any): Promise<Response> {
       },
       body: JSON.stringify(payload),
     });
-    // If the proxy responded from Groq (any status other than 502/504 gateway failure), return it directly.
-    if (proxyRes.status !== 502 && proxyRes.status !== 504) {
+    // If the proxy responded successfully (2xx) or was a direct auth refusal (401/403), return it directly.
+    // If it returned 405 (Method Not Allowed), 404, 502, 504, or proxy router failure, immediately fallback to direct.
+    if (proxyRes.ok || proxyRes.status === 401 || proxyRes.status === 403) {
       return proxyRes;
     }
-  } catch {
+    console.warn(`Groq proxy responded with status ${proxyRes.status}. Falling back to direct API...`);
+  } catch (proxyErr) {
     // Local proxy not reachable, fallback to direct
+    console.warn('Local Groq proxy unreachable, trying direct Groq API...', proxyErr);
   }
 
   return fetch(GROQ_DIRECT_URL, {
@@ -2302,8 +2309,8 @@ export async function executeSecretaryTool(
   }
 }
 
-const SYSTEM_PROMPT = `You are the Executive AI Secretary embedded directly in the user's Personal Dashboard & Life OS.
-You are professional, concise, proactive, and accurate.
+const SYSTEM_PROMPT = `You are Personalized Jarvis AI embedded directly in the user's Personal Dashboard & Life OS.
+You are professional, concise, proactive, friendly, and accurate.
 
 CRITICAL RULES & GUARDRAILS:
 1. LAZY CONTEXT FETCHING: You do NOT possess pre-loaded user data in memory. You MUST autonomously call the schema-based 'fetch_*' tools (e.g. fetch_tasks, fetch_habits, fetch_expenses, fetch_goals, fetch_journal, fetch_media, fetch_schedule) to retrieve live state whenever the user asks about their day, asks for an analysis, or inquires about any aspect of their life or tasks.
@@ -2311,7 +2318,7 @@ CRITICAL RULES & GUARDRAILS:
 3. PARAMETER FORMAT: When invoking tools, omit optional arguments that are not specified or pass null if allowed by the schema.
 4. SECURITY & VAULT: Vault passwords are confidential and encrypted. You only receive metadata (service name, username, strength). Never ask the user for their vault master PIN or raw passwords.
 5. TEXT-ONLY INTERFACE: Keep responses readable, succinct, and beautifully formatted with markdown (bullet points, bold highlights).
-6. CLARITY: After executing tool actions, briefly summarize what was completed in a friendly, professional executive tone.
+6. CLARITY: After executing tool actions, briefly summarize what was completed in a friendly, proactive tone.
 7. DATE-SPECIFIC EXPENSE QUERIES: When the user asks about spending on a specific date (e.g. "How much did I spend on 9 sept 2026", "spending on 2026-09-09", "what did I buy yesterday"), invoke fetch_expenses with the date argument (e.g. date: "9 sept 2026"). The tool automatically pre-calculates the exact totalSpent across all matching transactions. State the exact total amount in ₹ and list the individual matching items.
 8. DELETION & DATA REMOVAL:
    - When the user asks to delete, remove, or clear spendings/expenses (e.g. "delete shipping", "delete chocolate", "delete shipping, shopping expense, and chocolate", "delete spending 500", "remove coffee expense", "delete last spending", "delete these 3 expenses", "clear all spendings", "delete 50 rs"):
@@ -2481,11 +2488,13 @@ export async function sendSecretaryMessage(
           const errorMsg = parsedError.error?.message || `HTTP ${res.status}`;
           lastGroqError = errorMsg;
 
-          // If model was not found or rate limited or token limit exceeded, try next candidate model
+          // If model was not found, or method not allowed (405), or rate limited, or token limit exceeded, try next candidate model
           if (
             res.status === 404 ||
+            res.status === 405 ||
             res.status === 429 ||
             res.status === 413 ||
+            res.status >= 500 ||
             errorCode === 'model_not_found' ||
             errorCode === 'rate_limit_exceeded' ||
             errorMsg.includes('does not exist') ||
@@ -2706,20 +2715,22 @@ export async function sendSecretaryMessage(
     }
   }
 
-  // If all candidate models failed, report the Groq error clearly
+  // If all candidate models failed, report the error clearly
   let friendlyError: string;
-  if (lastGroqError.includes('decommissioned') || lastGroqError.includes('mixtral') || lastGroqError.includes('llama3-')) {
-    friendlyError = `⚠️ **Groq Model Updated**: An older model was decommissioned by Groq. The assistant has automatically migrated to **Llama 3.3 70B Versatile** (\`llama-3.3-70b-versatile\`) and **Llama 3.1 8B Instant**. Please try sending your message again.`;
+  if (lastGroqError.includes('405') || lastGroqError.includes('Method Not Allowed')) {
+    friendlyError = `⚠️ **Jarvis AI**: Direct connection re-routed. Please retry your request with Jarvis AI.`;
+  } else if (lastGroqError.includes('decommissioned') || lastGroqError.includes('mixtral') || lastGroqError.includes('llama3-') || lastGroqError.includes('model_not_found')) {
+    friendlyError = `⚠️ **Jarvis AI Updated**: Switched to high-performance model **GPT OSS 120B**. Please send your message again.`;
   } else if (
     lastGroqError.includes('rate_limit') ||
     lastGroqError.includes('tokens per minute') ||
     lastGroqError.includes('Rate limit')
   ) {
-    friendlyError = `⚠️ **Groq Rate Limit**: ${lastGroqError}. Please wait a few seconds and try again, or switch to \`llama-3.1-8b-instant\` for higher rate limits.`;
+    friendlyError = `⚠️ **Jarvis AI Rate Limit**: ${lastGroqError}. Please wait a few seconds and try again.`;
   } else if (lastGroqError) {
-    friendlyError = `⚠️ **Groq AI Error**: ${lastGroqError}`;
+    friendlyError = `⚠️ **Jarvis AI Error**: ${lastGroqError}`;
   } else {
-    friendlyError = '⚠️ Unable to connect to Groq AI. Please check your network connection or verify your Groq API key in Settings.';
+    friendlyError = '⚠️ Unable to connect to Jarvis AI. Please check your network connection or verify your Groq API key in Settings.';
   }
 
   const finalErrorMsg: ChatMessage = {

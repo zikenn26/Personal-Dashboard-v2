@@ -49,6 +49,7 @@ import {
   RotateCcw,
   LayoutGrid,
   Bot,
+  Sparkle,
 } from 'lucide-react';
 
 interface SlidePhoto {
@@ -83,6 +84,7 @@ interface DashboardHomeViewProps {
   schedule?: WeeklyScheduleData;
   onUpdateSchedule?: (schedule: WeeklyScheduleData) => void;
   soundEnabled: boolean;
+  onOpenJarvisPopup?: () => void;
 }
 
 const DEFAULT_QUOTES = INITIAL_QUOTES;
@@ -115,6 +117,7 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
   onAddHabit,
   onUpdateSchedule,
   soundEnabled,
+  onOpenJarvisPopup,
 }) => {
   // Current Day of Week Index (0 = Monday, 6 = Sunday)
   const todayIndex = useMemo(() => {
@@ -448,13 +451,17 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
                 id="main-page-ai-bot-btn"
                 onClick={() => {
                   Sound.click(soundEnabled);
-                  onNavigate('assistant');
+                  if (onOpenJarvisPopup) {
+                    onOpenJarvisPopup();
+                  } else {
+                    onNavigate('assistant');
+                  }
                 }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all hover:scale-105 active:scale-95 cursor-pointer ml-1 sm:ml-2 group"
-                title="Launch Executive AI Assistant (LLM Bot)"
+                title="Chat with Personalized Jarvis AI"
               >
-                <Bot className="w-3.5 h-3.5 text-indigo-100 group-hover:rotate-6 transition-transform" />
-                <span>AI Assistant</span>
+                <Sparkle className="w-3.5 h-3.5 text-indigo-100 fill-indigo-100/30 group-hover:rotate-12 transition-transform" />
+                <span>Jarvis AI</span>
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
               </button>
             </h1>

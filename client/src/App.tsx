@@ -45,6 +45,7 @@ import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { QuickCaptureBar } from './components/QuickCaptureBar';
 import { BackupRestoreView } from './components/BackupRestoreView';
 import { AIAssistantView } from './components/AIAssistantView';
+import { AISecretaryWidget } from './components/AISecretaryWidget';
 import { GoalsView } from './components/GoalsView';
 import { QuotesManagerView } from './components/QuotesManagerView';
 import { ExamsSection } from './components/ExamsSection';
@@ -114,6 +115,7 @@ import {
   KeyRound,
   Camera,
   Bot,
+  Sparkle,
   RotateCcw,
   Trash2,
 } from 'lucide-react';
@@ -167,6 +169,7 @@ export default function App() {
   };
 
   // Modals & Floating Bars
+  const [isJarvisPopupOpen, setIsJarvisPopupOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
@@ -1237,7 +1240,7 @@ export default function App() {
   const navItems: NavItem[] = [
     // Top Level
     { id: 'home', label: 'Home / Today', icon: Home, count: undefined, emoji: '🏠', group: 'top' },
-    { id: 'assistant', label: 'AI Assistant', icon: Sparkles, count: undefined, emoji: '✨', group: 'top' },
+    { id: 'assistant', label: 'Jarvis AI', icon: Sparkle, count: undefined, emoji: '✨', group: 'top' },
 
     // PLAN
     { id: 'tasks', label: 'Tasks', icon: CheckSquare, count: todos.filter((t) => !t.completed).length, emoji: '☑️', group: 'plan' },
@@ -1332,23 +1335,23 @@ export default function App() {
                 <span className="truncate">{currentNav.label}</span>
               </div>
 
-              {/* Quick AI Bot Access Button */}
+              {/* Quick Jarvis AI Access Button */}
               <button
                 type="button"
                 id="navbar-ai-bot-btn"
                 onClick={() => {
                   Sound.click(settings.soundEnabled);
-                  handleNavigate('assistant');
+                  setIsJarvisPopupOpen(true);
                 }}
                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  activeView === 'assistant'
+                  isJarvisPopupOpen || activeView === 'assistant'
                     ? 'bg-indigo-600 text-white shadow-2xs'
                     : 'bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/60'
                 }`}
-                title="Open AI Secretary & Assistant"
+                title="Chat with Personalized Jarvis AI"
               >
-                <Bot className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
-                <span className="hidden md:inline">AI Bot</span>
+                <Sparkle className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400 fill-indigo-500/20" />
+                <span className="hidden md:inline">Jarvis AI</span>
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
               </button>
             </div>
@@ -2042,10 +2045,11 @@ export default function App() {
                   schedule={schedule}
                   onUpdateSchedule={handleUpdateSchedule}
                   soundEnabled={settings.soundEnabled}
+                  onOpenJarvisPopup={() => setIsJarvisPopupOpen(true)}
                 />
               )}
 
-              {/* VIEW: Executive AI Secretary & Assistant */}
+              {/* VIEW: Personalized Jarvis AI */}
               {activeView === 'assistant' && (
                 <AIAssistantView onNavigate={handleNavigate} />
               )}
@@ -2308,6 +2312,25 @@ export default function App() {
         soundEnabled={settings.soundEnabled}
         userId={currentUser?.email || profile.contactEmail}
       />
+
+      {/* Floating Bottom-Right Popup: Personalized Jarvis AI */}
+      {isJarvisPopupOpen && (
+        <aside
+          id="jarvis-ai-popup"
+          role="dialog"
+          aria-label="Personalized Jarvis AI Chat"
+          className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 w-[calc(100vw-2rem)] sm:w-[440px] md:w-[460px] h-[580px] max-h-[82vh] rounded-2xl shadow-2xl border border-[#E5E5E2] dark:border-[#334155] overflow-hidden bg-white dark:bg-[#1E293B] flex flex-col animate-in fade-in slide-in-from-bottom-5 duration-200"
+        >
+          <AISecretaryWidget
+            isPopup={true}
+            onClosePopup={() => setIsJarvisPopupOpen(false)}
+            onNavigate={(view, tabOrFilter) => {
+              setIsJarvisPopupOpen(false);
+              handleNavigate(view, tabOrFilter);
+            }}
+          />
+        </aside>
+      )}
 
       {/* Floating Toast Notification with Undo for Deleted Expense */}
       {expenseUndoToast && (
