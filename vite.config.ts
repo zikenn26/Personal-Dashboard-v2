@@ -17,6 +17,11 @@ export default defineConfig({
   },
   envDir: path.resolve(import.meta.dirname),
   root: path.resolve(import.meta.dirname, "client"),
+  define: {
+    "import.meta.env.VITE_GROQ_API_KEY": JSON.stringify(
+      process.env.VITE_GROQ_API_KEY || process.env.GROQ_API_KEY || ""
+    ),
+  },
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
@@ -32,6 +37,9 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path.replace(/^\/api\/groq/, ""),
+        headers: {
+          Authorization: `Bearer ${process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY || ""}`,
+        },
       },
       "/api/supabase": {
         target: process.env.VITE_SUPABASE_URL || "https://amlegmbvqzbhqqqbrvjx.supabase.co",

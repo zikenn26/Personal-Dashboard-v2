@@ -44,7 +44,15 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const filtered = parsed.filter(
+            (m) => !m.content?.includes('Groq API Key Required')
+          );
+          if (filtered.length > 0) return filtered;
+        }
+      }
     } catch {
       // ignore
     }
