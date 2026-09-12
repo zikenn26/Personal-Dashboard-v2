@@ -114,6 +114,8 @@ import {
   KeyRound,
   Camera,
   Bot,
+  RotateCcw,
+  Trash2,
 } from 'lucide-react';
 
 export default function App() {
@@ -174,6 +176,22 @@ export default function App() {
   const [showQuickCapture, setShowQuickCapture] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(() => authRequest === 'signup' || authRequest === 'signin');
   const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup'>(() => authRequest === 'signup' ? 'signup' : 'signin');
+
+  // Floating Undo Toast for Deleted Expense
+  const [expenseUndoToast, setExpenseUndoToast] = useState<{
+    item: ExpenseItem;
+    index: number;
+  } | null>(null);
+  const expenseUndoTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Cleanup undo timer on unmount
+  useEffect(() => {
+    return () => {
+      if (expenseUndoTimerRef.current) {
+        clearTimeout(expenseUndoTimerRef.current);
+      }
+    };
+  }, []);
 
   // High-Speed Realtime Cloud Sync State & Flags
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error' | 'idle'>(getAutoSyncStatus);
@@ -806,6 +824,16 @@ export default function App() {
   };
 
   const handleDeleteExpense = (id: string) => {
+    const itemToDelete = expenses.find((e) => e.id === id);
+    if (!itemToDelete) return;
+
+    const itemLabel = `"${itemToDelete.name}" (₹${Number(itemToDelete.amount).toLocaleString()})`;
+    const confirmed = window.confirm(`Are you sure you want to delete ${itemLabel}?`);
+    if (!confirmed) {
+      return;
+    }
+
+    const itemIndex = expenses.findIndex((e) => e.id === id);
     const updated = expenses.filter((e) => e.id !== id);
     setExpenses(updated);
     Storage.setExpenses(updated);
@@ -813,6 +841,46 @@ export default function App() {
       ...Storage.getAllDataPayload(),
       expenses: updated,
     });
+
+    // Clear previous timer and trigger Undo Toast
+    if (expenseUndoTimerRef.current) {
+      clearTimeout(expenseUndoTimerRef.current);
+    }
+    setExpenseUndoToast({
+      item: itemToDelete,
+      index: itemIndex >= 0 ? itemIndex : 0,
+    });
+    expenseUndoTimerRef.current = setTimeout(() => {
+      setExpenseUndoToast(null);
+    }, 6000);
+  };
+
+  const handleUndoDeleteExpense = () => {
+    if (!expenseUndoToast) return;
+    const { item, index } = expenseUndoToast;
+
+    // Guard against duplicate insertion
+    if (expenses.some((e) => e.id === item.id)) {
+      setExpenseUndoToast(null);
+      return;
+    }
+
+    const nextExpenses = [...expenses];
+    const insertAt = Math.min(Math.max(0, index), nextExpenses.length);
+    nextExpenses.splice(insertAt, 0, item);
+
+    setExpenses(nextExpenses);
+    Storage.setExpenses(nextExpenses);
+    flushAutoSyncImmediately({
+      ...Storage.getAllDataPayload(),
+      expenses: nextExpenses,
+    });
+    Sound.complete(settings.soundEnabled);
+
+    if (expenseUndoTimerRef.current) {
+      clearTimeout(expenseUndoTimerRef.current);
+    }
+    setExpenseUndoToast(null);
   };
 
   const handleDeleteBatchExpenses = (ids: string[]) => {
@@ -2169,6 +2237,50 @@ export default function App() {
         soundEnabled={settings.soundEnabled}
         userId={currentUser?.email || profile.contactEmail}
       />
+
+      {/* Floating Toast Notification with Undo for Deleted Expense */}
+      {expenseUndoToast && (
+        <aside
+          id="expense-undo-toast"
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-2xl text-xs font-semibold border border-gray-800 dark:border-gray-200 animate-in fade-in slide-in-from-bottom-5 duration-200 max-w-[calc(100vw-2rem)] sm:max-w-md"
+        >
+          <div className="w-7 h-7 rounded-xl bg-rose-500/20 text-rose-400 dark:text-rose-600 flex items-center justify-center shrink-0">
+            <Trash2 className="w-3.5 h-3.5" />
+          </div>
+          <div className="min-w-0 flex-1 truncate">
+            <span className="font-bold">Deleted </span>
+            <span className="text-gray-300 dark:text-gray-700">
+              &quot;{expenseUndoToast.item.name}&quot; (₹{Number(expenseUndoToast.item.amount).toLocaleString()})
+            </span>
+          </div>
+          <button
+            type="button"
+            id="expense-undo-button"
+            onClick={handleUndoDeleteExpense}
+            className="shrink-0 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all shadow-xs hover:shadow-sm active:scale-95"
+            title="Restore deleted expense"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Undo</span>
+          </button>
+          <button
+            type="button"
+            id="expense-undo-close-button"
+            onClick={() => {
+              if (expenseUndoTimerRef.current) {
+                clearTimeout(expenseUndoTimerRef.current);
+              }
+              setExpenseUndoToast(null);
+            }}
+            className="shrink-0 p-1 text-gray-400 hover:text-white dark:hover:text-gray-900 transition-colors rounded-lg cursor-pointer"
+            aria-label="Close notification"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </aside>
+      )}
     </div>
   );
 }
