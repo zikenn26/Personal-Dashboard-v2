@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Storage } from './utils/storage';
+import { Storage, STORAGE_KEYS, getScopedKey } from './utils/storage';
 import { Sound } from './utils/audio';
 import { triggerConfetti } from './utils/confetti';
 import {
@@ -282,7 +282,22 @@ export default function App() {
     setHabits(Storage.getHabits());
     setGoals(Storage.getGoals());
     void Storage.hydrateVault(Storage.getSettings().masterPin).then(setVault);
-    setExpenses([...Storage.getExpenses()]);
+
+    // Force fresh direct read from localStorage for expenses to avoid any stale cached data
+    let freshExpenses: ExpenseItem[] = Storage.getExpenses();
+    try {
+      const raw =
+        localStorage.getItem(getScopedKey(STORAGE_KEYS.EXPENSES)) ??
+        localStorage.getItem(STORAGE_KEYS.EXPENSES);
+      if (raw !== null) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          freshExpenses = parsed;
+        }
+      }
+    } catch {}
+    setExpenses([...freshExpenses]);
+
     setExcelImportLogs(Storage.getExcelImportLogs());
     setJournal(Storage.getJournal());
     setMedia(Storage.getMedia());
@@ -303,25 +318,75 @@ export default function App() {
     }
   };
 
-  // Sync state in real-time whenever AI Secretary performs direct CRUD operations
+  // Sync state in real-time whenever AI Secretary or dashboard operations perform CRUD updates
   useEffect(() => {
-    const handleSecretarySync = (e?: Event) => {
+    const handleDashboardDataUpdated = (e?: Event) => {
       const customEvt = e as CustomEvent<{ module?: string; updatedExpenses?: ExpenseItem[] }>;
+
+      // Force a fresh direct read from localStorage to bypass any cached or in-memory references
+      let freshExpenses: ExpenseItem[] | null = null;
+      try {
+        const scopedKey = getScopedKey(STORAGE_KEYS.EXPENSES);
+        const rawScoped = localStorage.getItem(scopedKey);
+        if (rawScoped !== null) {
+          const parsed = JSON.parse(rawScoped);
+          if (Array.isArray(parsed)) {
+            freshExpenses = parsed;
+          }
+        }
+        if (!freshExpenses) {
+          const rawLegacy = localStorage.getItem(STORAGE_KEYS.EXPENSES);
+          if (rawLegacy !== null) {
+            const parsed = JSON.parse(rawLegacy);
+            if (Array.isArray(parsed)) {
+              freshExpenses = parsed;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Direct localStorage read for expenses failed:', err);
+      }
+
+      // If custom event provided explicit updatedExpenses array, prefer it; otherwise use direct localStorage read
       if (customEvt?.detail?.updatedExpenses && Array.isArray(customEvt.detail.updatedExpenses)) {
         setExpenses([...customEvt.detail.updatedExpenses]);
+      } else if (freshExpenses !== null) {
+        setExpenses([...freshExpenses]);
       } else {
         setExpenses([...Storage.getExpenses()]);
       }
-      handleHydrateAllFromStorage(false);
+
+      // Hydrate all other modules cleanly without clobbering the fresh expenses
+      setProfile(Storage.getProfile());
+      setTodos(Storage.getTodos());
+      setHabits(Storage.getHabits());
+      setGoals(Storage.getGoals());
+      void Storage.hydrateVault(Storage.getSettings().masterPin).then(setVault);
+      setExcelImportLogs(Storage.getExcelImportLogs());
+      setJournal(Storage.getJournal());
+      setMedia(Storage.getMedia());
+      setMilestones(Storage.getTimeline());
+      setProjects(Storage.getProjects());
+      setAchievements(Storage.getAchievements());
+      setDoodles(Storage.getDoodles());
+      setSettings(Storage.getSettings());
+      setSections(Storage.getSections());
+      setPhotos(Storage.getPhotos());
+      setResume(Storage.getResume());
+      setQuotes(Storage.getQuotes());
+      setExams(Storage.getExams());
+      setSchedule(Storage.getSchedule());
+
       if (!isRemoteUpdating.current && isSupabaseConfigured()) {
         void flushAutoSyncImmediately(Storage.getAllDataPayload());
       }
     };
-    window.addEventListener('dashboard-data-updated', handleSecretarySync);
-    window.addEventListener('storage', handleSecretarySync);
+
+    window.addEventListener('dashboard-data-updated', handleDashboardDataUpdated);
+    window.addEventListener('storage', handleDashboardDataUpdated);
     return () => {
-      window.removeEventListener('dashboard-data-updated', handleSecretarySync);
-      window.removeEventListener('storage', handleSecretarySync);
+      window.removeEventListener('dashboard-data-updated', handleDashboardDataUpdated);
+      window.removeEventListener('storage', handleDashboardDataUpdated);
     };
   }, []);
 

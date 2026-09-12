@@ -475,6 +475,7 @@ export const INITIAL_SETTINGS: AppSettings = {
   accentColor: '#2563eb',
   masterPin: '',
   groqApiKey: '',
+  groqModel: 'llama-3.3-70b-versatile',
 };
 
 import { getCustomWorkspaceIdentifier } from './supabase';
@@ -498,12 +499,10 @@ export function loadFromStorage<T>(baseKey: string, fallback: T): T {
     if (raw !== null) {
       return JSON.parse(raw) as T;
     }
-    // Also check unscoped legacy key for demo account
-    if (isDemoWorkspace()) {
-      const legacyRaw = localStorage.getItem(baseKey);
-      if (legacyRaw !== null) {
-        return JSON.parse(legacyRaw) as T;
-      }
+    // Also check unscoped legacy key
+    const legacyRaw = localStorage.getItem(baseKey);
+    if (legacyRaw !== null) {
+      return JSON.parse(legacyRaw) as T;
     }
     return fallback;
   } catch (err) {
@@ -654,8 +653,35 @@ export const Storage = {
     return saveToStorage(STORAGE_KEYS.PROFILE, profile);
   },
 
-  getSettings: (): AppSettings => loadFromStorage(STORAGE_KEYS.SETTINGS, INITIAL_SETTINGS),
+  getSettings: (): AppSettings => {
+    const s = loadFromStorage<AppSettings>(STORAGE_KEYS.SETTINGS, INITIAL_SETTINGS);
+    const DEPRECATED = ['mixtral-8x7b-32768', 'llama3-70b-8192', 'llama3-8b-8192', 'gemma-7b-it', 'gemma2-9b-it'];
+    if (s && s.groqModel && DEPRECATED.includes(s.groqModel.trim())) {
+      s.groqModel = 'llama-3.3-70b-versatile';
+      saveToStorage(STORAGE_KEYS.SETTINGS, s);
+    }
+    return s;
+  },
   setSettings: (settings: AppSettings) => saveToStorage(STORAGE_KEYS.SETTINGS, settings),
+
+  getGroqModel: (): string => {
+    const settings = Storage.getSettings();
+    const DEPRECATED = ['mixtral-8x7b-32768', 'llama3-70b-8192', 'llama3-8b-8192', 'gemma-7b-it', 'gemma2-9b-it'];
+    if (settings?.groqModel && !DEPRECATED.includes(settings.groqModel.trim())) {
+      return settings.groqModel.trim();
+    }
+    const directModel = localStorage.getItem('groq_model');
+    if (directModel && !DEPRECATED.includes(directModel.trim())) {
+      return directModel.trim();
+    }
+    return 'llama-3.3-70b-versatile';
+  },
+  setGroqModel: (model: string): void => {
+    const settings = Storage.getSettings();
+    const cleanModel = model.trim() || 'llama-3.3-70b-versatile';
+    Storage.setSettings({ ...settings, groqModel: cleanModel });
+    localStorage.setItem('groq_model', cleanModel);
+  },
 
   getGroqApiKey: (): string => {
     const settings = Storage.getSettings();

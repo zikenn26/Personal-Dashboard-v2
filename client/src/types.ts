@@ -330,6 +330,7 @@ export interface AppSettings {
   accentColor: string;
   masterPin: string; // default "1234"
   groqApiKey?: string;
+  groqModel?: string;
 }
 
 export type MainNavView =

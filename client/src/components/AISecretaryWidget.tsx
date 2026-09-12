@@ -24,6 +24,9 @@ import {
   ChatMessage,
   sendSecretaryMessage,
   GROQ_MODEL,
+  DEFAULT_GROQ_MODEL,
+  getActiveGroqModel,
+  SUPPORTED_GROQ_MODELS,
   testGroqApiKey,
   getActiveGroqKey,
 } from '../services/groqService';
@@ -85,6 +88,7 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
   // Groq API Key Configuration State
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
   const [groqKeyInput, setGroqKeyInput] = useState(() => Storage.getGroqApiKey() || '');
+  const [activeModel, setActiveModel] = useState(() => getActiveGroqModel());
   const [showKey, setShowKey] = useState(false);
   const [keySaved, setKeySaved] = useState(false);
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
@@ -211,9 +215,12 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
               <h3 className="text-xs font-bold uppercase tracking-wider text-[#37352F] dark:text-white">
                 AI Secretary
               </h3>
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-100/70 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
+              <span
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-100/70 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300"
+                title={`Active model: ${activeModel}`}
+              >
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                Groq AI
+                {activeModel.includes('70b') ? 'Llama 3.3 70B' : activeModel.includes('8b') ? 'Llama 3.1 8B' : 'Groq AI'}
               </span>
             </div>
             <p className="text-[11px] text-[#787774] dark:text-gray-400">
@@ -353,6 +360,28 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
                 <span className="truncate">{testMsg}</span>
               </div>
             )}
+
+            {/* Model Selector in Drawer */}
+            <div className="flex items-center gap-2 pt-1 border-t border-indigo-100 dark:border-indigo-900/40">
+              <span className="text-[10px] font-semibold text-indigo-900 dark:text-indigo-200 shrink-0">
+                Model:
+              </span>
+              <select
+                value={activeModel}
+                onChange={(e) => {
+                  const m = e.target.value;
+                  setActiveModel(m);
+                  Storage.setGroqModel(m);
+                }}
+                className="flex-1 py-1 px-2 rounded-md text-[11px] bg-white dark:bg-[#0F172A] border border-indigo-200 dark:border-indigo-800 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+              >
+                {SUPPORTED_GROQ_MODELS.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </form>
         </div>
       )}

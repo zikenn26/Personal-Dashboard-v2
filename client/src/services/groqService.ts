@@ -38,14 +38,40 @@ export interface GroqSecretaryResponse {
 
 const GROQ_DIRECT_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_PROXY_URL = '/api/groq/chat/completions';
-export const GROQ_MODEL = 'llama-3.3-70b-versatile';
+export const DEFAULT_GROQ_MODEL = 'llama-3.3-70b-versatile';
+export const GROQ_MODEL = DEFAULT_GROQ_MODEL;
+
+export const SUPPORTED_GROQ_MODELS = [
+  { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B Versatile (Recommended, Powerful Tool Calling)' },
+  { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B Instant (Ultra-Fast, High Rate Limits)' },
+  { id: 'mistral-saba-24b', label: 'Mistral Saba 24B (Multilingual, High Speed)' },
+  { id: 'qwen-2.5-32b', label: 'Qwen 2.5 32B (Analytical, Advanced Reasoning)' },
+] as const;
+
+export const DEPRECATED_GROQ_MODELS = [
+  'mixtral-8x7b-32768',
+  'llama3-70b-8192',
+  'llama3-8b-8192',
+  'gemma-7b-it',
+  'gemma2-9b-it',
+  'llama-3.2-11b-vision-preview',
+  'llama-3.2-90b-vision-preview',
+];
+
 export const CANDIDATE_GROQ_MODELS = [
   'llama-3.3-70b-versatile',
   'llama-3.1-8b-instant',
-  'llama3-70b-8192',
-  'llama3-8b-8192',
-  'mixtral-8x7b-32768',
+  'mistral-saba-24b',
+  'qwen-2.5-32b',
 ];
+
+export function getActiveGroqModel(): string {
+  const model = Storage.getGroqModel?.() || Storage.getSettings().groqModel;
+  if (model && !DEPRECATED_GROQ_MODELS.includes(model.trim())) {
+    return model.trim();
+  }
+  return DEFAULT_GROQ_MODEL;
+}
 
 async function postGroqChat(apiKey: string, payload: any): Promise<Response> {
   // First try the local proxy to prevent any browser iframe/CORS/extension blocking
@@ -58,7 +84,8 @@ async function postGroqChat(apiKey: string, payload: any): Promise<Response> {
       },
       body: JSON.stringify(payload),
     });
-    if (proxyRes.ok) {
+    // If the proxy responded from Groq (any status other than 502/504 gateway failure), return it directly.
+    if (proxyRes.status !== 502 && proxyRes.status !== 504) {
       return proxyRes;
     }
   } catch {
@@ -2383,17 +2410,26 @@ export async function sendSecretaryMessage(
   }
 
   // Convert ChatMessage history to OpenAI format for Groq
-  // Keep last 10 turns to maintain fast latency and context limit
-  const recentTurns = updatedHistory.slice(-10).map((m) => {
-    const obj: any = {
-      role: m.role,
-      content: m.content || '',
-    };
-    if (m.name) obj.name = m.name;
-    if (m.tool_call_id) obj.tool_call_id = m.tool_call_id;
-    if (m.tool_calls) obj.tool_calls = m.tool_calls;
-    return obj;
-  });
+  // Keep last 10 turns to maintain fast latency and context limit, filtering out assistant error notifications
+  const recentTurns = updatedHistory
+    .slice(-10)
+    .filter(
+      (m) =>
+        (m.role === 'user' || m.role === 'assistant') &&
+        m.content &&
+        !m.content.startsWith('⚠️ **Groq') &&
+        !m.content.startsWith('⚠️ Groq')
+    )
+    .map((m) => {
+      const obj: any = {
+        role: m.role,
+        content: m.content || '',
+      };
+      if (m.name) obj.name = m.name;
+      if (m.tool_call_id) obj.tool_call_id = m.tool_call_id;
+      if (m.tool_calls) obj.tool_calls = m.tool_calls;
+      return obj;
+    });
 
   const maxRecursion = 6;
   const collectedActionChips: string[] = [];
@@ -2405,8 +2441,14 @@ export async function sendSecretaryMessage(
   }> = [];
   let lastGroqError = '';
 
+  // Determine active candidate models in priority order, filtering out any deprecated/decommissioned models
+  const activeModel = getActiveGroqModel();
+  const modelsToTry = Array.from(
+    new Set([activeModel, ...CANDIDATE_GROQ_MODELS])
+  ).filter((m) => !DEPRECATED_GROQ_MODELS.includes(m));
+
   // Try candidate Groq models in order
-  for (const currentModel of CANDIDATE_GROQ_MODELS) {
+  for (const currentModel of modelsToTry) {
     try {
       const groqMessages: any[] = [
         { role: 'system', content: SYSTEM_PROMPT },
@@ -2665,9 +2707,20 @@ export async function sendSecretaryMessage(
   }
 
   // If all candidate models failed, report the Groq error clearly
-  const friendlyError = lastGroqError
-    ? `⚠️ **Groq AI Error**: ${lastGroqError}`
-    : '⚠️ Unable to connect to Groq AI. Please check your network connection or try again in a moment.';
+  let friendlyError: string;
+  if (lastGroqError.includes('decommissioned') || lastGroqError.includes('mixtral') || lastGroqError.includes('llama3-')) {
+    friendlyError = `⚠️ **Groq Model Updated**: An older model was decommissioned by Groq. The assistant has automatically migrated to **Llama 3.3 70B Versatile** (\`llama-3.3-70b-versatile\`) and **Llama 3.1 8B Instant**. Please try sending your message again.`;
+  } else if (
+    lastGroqError.includes('rate_limit') ||
+    lastGroqError.includes('tokens per minute') ||
+    lastGroqError.includes('Rate limit')
+  ) {
+    friendlyError = `⚠️ **Groq Rate Limit**: ${lastGroqError}. Please wait a few seconds and try again, or switch to \`llama-3.1-8b-instant\` for higher rate limits.`;
+  } else if (lastGroqError) {
+    friendlyError = `⚠️ **Groq AI Error**: ${lastGroqError}`;
+  } else {
+    friendlyError = '⚠️ Unable to connect to Groq AI. Please check your network connection or verify your Groq API key in Settings.';
+  }
 
   const finalErrorMsg: ChatMessage = {
     id: 'msg-' + Date.now(),

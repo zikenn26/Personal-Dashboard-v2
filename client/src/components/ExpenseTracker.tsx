@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Plus,
   Trash2,
@@ -225,6 +225,20 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   const [isMonthPickerOpen, setIsMonthPickerOpen] = useState<boolean>(false);
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [categoryScope, setCategoryScope] = useState<'month' | 'all'>('month');
+
+  // Custom useEffect hook that monitors the 'expenses' prop and forces an immediate re-render
+  // if the length of the list changes. This ensures the dashboard updates instantly when items
+  // are deleted without waiting for full page re-hydration.
+  const [, setExpenseRenderTick] = useState<number>(0);
+  const prevExpensesLengthRef = useRef<number>(expenses ? expenses.length : 0);
+
+  useEffect(() => {
+    const currentLength = expenses ? expenses.length : 0;
+    if (currentLength !== prevExpensesLengthRef.current) {
+      prevExpensesLengthRef.current = currentLength;
+      setExpenseRenderTick((tick) => tick + 1);
+    }
+  }, [expenses]);
 
   // Track uploaded spreadsheet history logs and batch management
   const [importLogs, setImportLogs] = useState<ExcelImportLog[]>(() => {

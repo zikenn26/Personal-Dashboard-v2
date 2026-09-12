@@ -25,7 +25,7 @@ import { AppSettings, AuthUser, DeviceSession } from '../types';
 import { Sound } from '../utils/audio';
 import { STOCK_IMAGES } from '../assets/stockImages';
 import { Storage } from '../utils/storage';
-import { testGroqApiKey } from '../services/groqService';
+import { testGroqApiKey, SUPPORTED_GROQ_MODELS, DEFAULT_GROQ_MODEL } from '../services/groqService';
 import {
   fetchAccountDevices,
   revokeDeviceSession,
@@ -68,8 +68,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [newPin, setNewPin] = useState(settings.masterPin);
   const [pinSaved, setPinSaved] = useState(false);
 
-  // Groq API Key state
+  // Groq API Key & Model state
   const [groqKey, setGroqKey] = useState(settings.groqApiKey || Storage.getGroqApiKey() || '');
+  const [selectedModel, setSelectedModel] = useState(
+    settings.groqModel || Storage.getGroqModel?.() || DEFAULT_GROQ_MODEL
+  );
   const [showGroqKey, setShowGroqKey] = useState(false);
   const [groqKeySaved, setGroqKeySaved] = useState(false);
   const [groqTestStatus, setGroqTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
@@ -601,6 +604,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <span>{groqTestMsg}</span>
                 </div>
               )}
+
+              {/* Active Groq Model Selector */}
+              <div className="pt-2 border-t border-gray-100 dark:border-gray-800/60">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[11px] font-semibold text-gray-700 dark:text-gray-300">
+                    Groq LLM Model
+                  </label>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                    Production Active
+                  </span>
+                </div>
+                <select
+                  value={selectedModel}
+                  onChange={(e) => {
+                    const newModel = e.target.value;
+                    setSelectedModel(newModel);
+                    Storage.setGroqModel(newModel);
+                    onUpdateSettings({ ...settings, groqModel: newModel });
+                  }}
+                  className="w-full px-3 py-2 rounded-xl text-xs bg-[#F9FAFB] dark:bg-[#1F2937] border border-[#E5E7EB] dark:border-[#374151] text-[#111827] dark:text-white focus:outline-none focus:ring-1 focus:ring-[#6366F1] cursor-pointer"
+                >
+                  {SUPPORTED_GROQ_MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">
+                  Decommissioned models (e.g. Mixtral 8x7B, Llama 3 70B 8192) have been retired. All selected models support live dashboard tools and autonomous operations.
+                </p>
+              </div>
             </form>
           </div>
 
