@@ -329,6 +329,7 @@ export interface AppSettings {
   soundEnabled: boolean;
   accentColor: string;
   masterPin: string; // default "1234"
+  groqApiKey?: string;
 }
 
 export type MainNavView =

@@ -12,12 +12,22 @@ import {
   ShieldCheck,
   Zap,
   AlertCircle,
+  KeyRound,
+  Check,
+  Eye,
+  EyeOff,
+  ExternalLink,
+  X,
+  RefreshCw,
 } from 'lucide-react';
 import {
   ChatMessage,
   sendSecretaryMessage,
   GROQ_MODEL,
+  testGroqApiKey,
+  getActiveGroqKey,
 } from '../services/groqService';
+import { Storage } from '../utils/storage';
 
 interface AISecretaryWidgetProps {
   dragHandle?: React.ReactNode;
@@ -71,6 +81,38 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Groq API Key Configuration State
+  const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
+  const [groqKeyInput, setGroqKeyInput] = useState(() => Storage.getGroqApiKey() || '');
+  const [showKey, setShowKey] = useState(false);
+  const [keySaved, setKeySaved] = useState(false);
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [testMsg, setTestMsg] = useState('');
+
+  const handleSaveKey = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanKey = groqKeyInput.trim();
+    Storage.setGroqApiKey(cleanKey);
+    setKeySaved(true);
+    setTimeout(() => {
+      setKeySaved(false);
+      setIsKeyModalOpen(false);
+    }, 1500);
+  };
+
+  const handleTestKey = async () => {
+    setTestStatus('testing');
+    setTestMsg('Validating with Groq servers...');
+    const res = await testGroqApiKey(groqKeyInput);
+    if (res.success) {
+      setTestStatus('success');
+      setTestMsg(res.message);
+    } else {
+      setTestStatus('error');
+      setTestMsg(res.message);
+    }
+  };
 
   // Save conversation history to local storage
   useEffect(() => {
@@ -184,6 +226,22 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
         <div className="flex items-center gap-1 text-gray-500 dark:text-gray-400">
           <button
             type="button"
+            onClick={() => {
+              setGroqKeyInput(Storage.getGroqApiKey() || '');
+              setIsKeyModalOpen(!isKeyModalOpen);
+            }}
+            title="Configure Groq API Key"
+            className={`p-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1 text-xs ${
+              isKeyModalOpen
+                ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300'
+                : 'hover:bg-gray-200/60 dark:hover:bg-gray-800 text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400'
+            }`}
+          >
+            <KeyRound className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline text-[11px] font-medium">API Key</span>
+          </button>
+          <button
+            type="button"
             onClick={handleClearChat}
             title="Clear Chat History"
             className="p-1.5 rounded-lg hover:bg-gray-200/60 dark:hover:bg-gray-800 transition-colors cursor-pointer text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
@@ -202,6 +260,102 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
           )}
         </div>
       </div>
+
+      {/* Groq API Key Configuration Drawer / Panel */}
+      {isKeyModalOpen && (
+        <div className="p-3.5 bg-indigo-50/70 dark:bg-[#1E1B4B]/50 border-b border-indigo-100 dark:border-indigo-900/50 animate-in slide-in-from-top-2 duration-150 shrink-0">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-1.5">
+              <KeyRound className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              <span className="text-xs font-bold text-indigo-900 dark:text-indigo-200">
+                Groq API Key Setup
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <a
+                href="https://console.groq.com/keys"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-semibold"
+              >
+                <span>Get Key</span>
+                <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+              <button
+                type="button"
+                onClick={() => setIsKeyModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer p-0.5"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          <form onSubmit={handleSaveKey} className="space-y-2">
+            <div className="flex items-center gap-1.5">
+              <div className="relative flex-1">
+                <input
+                  type={showKey ? 'text' : 'password'}
+                  value={groqKeyInput}
+                  onChange={(e) => {
+                    setGroqKeyInput(e.target.value);
+                    setTestStatus('idle');
+                  }}
+                  placeholder="Paste your Groq API key (gsk_...)"
+                  className="w-full pl-2.5 pr-8 py-1.5 rounded-lg text-xs font-mono bg-white dark:bg-[#0F172A] border border-indigo-200 dark:border-indigo-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey(!showKey)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+                >
+                  {showKey ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                </button>
+              </div>
+
+              <button
+                type="submit"
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer shrink-0"
+              >
+                {keySaved ? <Check className="w-3.5 h-3.5" /> : <KeyRound className="w-3.5 h-3.5" />}
+                <span>{keySaved ? 'Saved' : 'Save'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleTestKey}
+                disabled={testStatus === 'testing' || !groqKeyInput.trim()}
+                className="px-2.5 py-1.5 bg-white dark:bg-gray-800 border border-indigo-200 dark:border-indigo-800 hover:bg-gray-50 text-indigo-700 dark:text-indigo-300 rounded-lg text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50 shrink-0"
+                title="Verify key with Groq"
+              >
+                <Sparkles className="w-3 h-3 text-amber-500" />
+                <span>{testStatus === 'testing' ? '...' : 'Test'}</span>
+              </button>
+            </div>
+
+            {testStatus !== 'idle' && (
+              <div
+                className={`text-[10px] px-2.5 py-1 rounded-md flex items-center gap-1.5 ${
+                  testStatus === 'success'
+                    ? 'bg-emerald-100/70 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                    : testStatus === 'error'
+                    ? 'bg-rose-100/70 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
+                    : 'bg-indigo-100/70 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300'
+                }`}
+              >
+                {testStatus === 'success' ? (
+                  <Check className="w-3 h-3 shrink-0 text-emerald-600" />
+                ) : testStatus === 'error' ? (
+                  <AlertCircle className="w-3 h-3 shrink-0 text-rose-600" />
+                ) : (
+                  <RefreshCw className="w-3 h-3 shrink-0 animate-spin text-indigo-600" />
+                )}
+                <span className="truncate">{testMsg}</span>
+              </div>
+            )}
+          </form>
+        </div>
+      )}
 
       {/* Chat Messages Feed */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5 text-xs text-[#37352F] dark:text-gray-200">
@@ -274,6 +428,22 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
                 <div className="whitespace-pre-wrap font-sans text-xs">
                   {msg.content}
                 </div>
+
+                {msg.content?.includes('Groq API Key Required') && (
+                  <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-800">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGroqKeyInput(Storage.getGroqApiKey() || '');
+                        setIsKeyModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold text-xs transition-colors cursor-pointer shadow-2xs"
+                    >
+                      <KeyRound className="w-3.5 h-3.5" />
+                      <span>Configure Groq API Key</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
               {isUser && (

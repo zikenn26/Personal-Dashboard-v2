@@ -56,8 +56,7 @@ async function postGroqChat(apiKey: string, payload: any): Promise<Response> {
       },
       body: JSON.stringify(payload),
     });
-    // If the proxy handled it (even if Groq returned an error), return it
-    if (proxyRes.status !== 404 && proxyRes.status !== 502) {
+    if (proxyRes.ok) {
       return proxyRes;
     }
   } catch {
@@ -1344,8 +1343,56 @@ CRITICAL RULES & GUARDRAILS:
 6. CLARITY: After executing tool actions, briefly summarize what was completed in a friendly, professional executive tone.
 7. DATE-SPECIFIC EXPENSE QUERIES: When the user asks about spending on a specific date (e.g. "How much did I spend on 9 sept 2026", "spending on 2026-09-09", "what did I buy yesterday"), invoke fetch_expenses with the date argument (e.g. date: "9 sept 2026"). The tool automatically pre-calculates the exact totalSpent across all matching transactions. State the exact total amount in ₹ and list the individual matching items.`;
 
-// Groq API Key loaded securely from environment variable (VITE_GROQ_API_KEY)
+// Groq API Key loaded securely from Storage, environment variable, or fallback
 const DEFAULT_GROQ_KEY = '';
+
+export function getActiveGroqKey(): string {
+  return (
+    Storage.getGroqApiKey() ||
+    (import.meta.env.VITE_GROQ_API_KEY as string | undefined)?.trim() ||
+    DEFAULT_GROQ_KEY
+  );
+}
+
+export async function testGroqApiKey(testKey?: string): Promise<{ success: boolean; message: string }> {
+  const keyToTest = (testKey || getActiveGroqKey()).trim();
+  if (!keyToTest) {
+    return { success: false, message: 'No Groq API key provided. Please enter a valid key.' };
+  }
+
+  try {
+    const res = await fetch('/api/groq/models', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${keyToTest}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (res.ok) {
+      return { success: true, message: 'Groq API key verified successfully! Connected to Groq cloud.' };
+    }
+
+    // Try direct endpoint if proxy returns error
+    const directRes = await fetch('https://api.groq.com/openai/v1/models', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${keyToTest}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (directRes.ok) {
+      return { success: true, message: 'Groq API key verified successfully! Connected to Groq cloud.' };
+    }
+
+    const errData = await directRes.json().catch(() => null);
+    const errMessage = errData?.error?.message || `Status ${directRes.status}`;
+    return { success: false, message: `Groq Authentication Failed: ${errMessage}` };
+  } catch (err: any) {
+    return { success: false, message: err.message || 'Network error while validating key with Groq.' };
+  }
+}
 
 export async function sendSecretaryMessage(
   userPrompt: string,
@@ -1354,6 +1401,7 @@ export async function sendSecretaryMessage(
 ): Promise<GroqSecretaryResponse> {
   const apiKey =
     apiKeyOverride ||
+    Storage.getGroqApiKey() ||
     (import.meta.env.VITE_GROQ_API_KEY as string | undefined)?.trim() ||
     DEFAULT_GROQ_KEY;
 

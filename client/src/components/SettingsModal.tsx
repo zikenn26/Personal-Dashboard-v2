@@ -15,10 +15,17 @@ import {
   LogOut,
   RefreshCw,
   Camera,
+  Eye,
+  EyeOff,
+  Bot,
+  Sparkles,
+  ExternalLink,
 } from 'lucide-react';
 import { AppSettings, AuthUser, DeviceSession } from '../types';
 import { Sound } from '../utils/audio';
 import { STOCK_IMAGES } from '../assets/stockImages';
+import { Storage } from '../utils/storage';
+import { testGroqApiKey } from '../services/groqService';
 import {
   fetchAccountDevices,
   revokeDeviceSession,
@@ -60,6 +67,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Master PIN state
   const [newPin, setNewPin] = useState(settings.masterPin);
   const [pinSaved, setPinSaved] = useState(false);
+
+  // Groq API Key state
+  const [groqKey, setGroqKey] = useState(settings.groqApiKey || Storage.getGroqApiKey() || '');
+  const [showGroqKey, setShowGroqKey] = useState(false);
+  const [groqKeySaved, setGroqKeySaved] = useState(false);
+  const [groqTestStatus, setGroqTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [groqTestMsg, setGroqTestMsg] = useState('');
 
   // Name update state
   const [displayName, setDisplayName] = useState(userName || currentUser?.name || '');
@@ -153,6 +167,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       onUpdateSettings({ ...settings, masterPin: newPin });
       setPinSaved(true);
       setTimeout(() => setPinSaved(false), 2000);
+    }
+  };
+
+  const handleSaveGroqKey = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanKey = groqKey.trim();
+    Storage.setGroqApiKey(cleanKey);
+    onUpdateSettings({ ...settings, groqApiKey: cleanKey });
+    Sound.success(settings.soundEnabled);
+    setGroqKeySaved(true);
+    setTimeout(() => setGroqKeySaved(false), 2500);
+  };
+
+  const handleTestGroqKey = async () => {
+    setGroqTestStatus('testing');
+    setGroqTestMsg('Validating with Groq servers...');
+    Sound.click(settings.soundEnabled);
+
+    const res = await testGroqApiKey(groqKey);
+    if (res.success) {
+      Sound.success(settings.soundEnabled);
+      setGroqTestStatus('success');
+      setGroqTestMsg(res.message);
+    } else {
+      Sound.error(settings.soundEnabled);
+      setGroqTestStatus('error');
+      setGroqTestMsg(res.message);
     }
   };
 
@@ -472,6 +513,94 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 {pinSaved ? <Check className="w-3.5 h-3.5" /> : <KeyRound className="w-3.5 h-3.5" />}
                 <span>{pinSaved ? 'Saved' : 'Update PIN'}</span>
               </button>
+            </form>
+          </div>
+
+          {/* SECTION: GROQ AI ASSISTANT API KEY */}
+          <div className="space-y-3 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold flex items-center gap-1.5">
+                <Bot className="w-3.5 h-3.5 text-indigo-500" />
+                <span>AI Assistant &amp; Groq API Key</span>
+              </span>
+              <a
+                href="https://console.groq.com/keys"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium"
+              >
+                <span>Get Free Key</span>
+                <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+            </div>
+
+            <p className="text-xs text-[#6B7280] dark:text-[#9CA3AF]">
+              Configure your personal Groq API key (<code className="font-mono text-[11px] bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">gsk_...</code>) for the AI Secretary &amp; LLM Bot.
+            </p>
+
+            <form onSubmit={handleSaveGroqKey} className="space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type={showGroqKey ? 'text' : 'password'}
+                    value={groqKey}
+                    onChange={(e) => {
+                      setGroqKey(e.target.value);
+                      setGroqTestStatus('idle');
+                    }}
+                    placeholder="Enter Groq API Key (gsk_...)"
+                    className="w-full pl-3 pr-9 py-2 rounded-xl text-xs font-mono bg-[#F9FAFB] dark:bg-[#1F2937] border border-[#E5E7EB] dark:border-[#374151] text-[#111827] dark:text-white focus:outline-none focus:ring-1 focus:ring-[#6366F1]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowGroqKey(!showGroqKey)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+                    title={showGroqKey ? 'Hide key' : 'Show key'}
+                  >
+                    {showGroqKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+
+                <button
+                  type="submit"
+                  className="px-3.5 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs shrink-0"
+                >
+                  {groqKeySaved ? <Check className="w-3.5 h-3.5" /> : <KeyRound className="w-3.5 h-3.5" />}
+                  <span>{groqKeySaved ? 'Saved' : 'Save Key'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleTestGroqKey}
+                  disabled={groqTestStatus === 'testing' || !groqKey.trim()}
+                  className="px-3 py-2 text-xs font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
+                  title="Test key against Groq API"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                  <span>{groqTestStatus === 'testing' ? 'Testing...' : 'Test'}</span>
+                </button>
+              </div>
+
+              {groqTestStatus !== 'idle' && (
+                <div
+                  className={`text-[11px] px-3 py-1.5 rounded-lg flex items-center gap-1.5 ${
+                    groqTestStatus === 'success'
+                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                      : groqTestStatus === 'error'
+                      ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                      : 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300'
+                  }`}
+                >
+                  {groqTestStatus === 'success' ? (
+                    <Check className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
+                  ) : groqTestStatus === 'error' ? (
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
+                  ) : (
+                    <RefreshCw className="w-3.5 h-3.5 shrink-0 animate-spin text-indigo-600" />
+                  )}
+                  <span>{groqTestMsg}</span>
+                </div>
+              )}
             </form>
           </div>
 

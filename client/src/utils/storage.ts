@@ -474,6 +474,7 @@ export const INITIAL_SETTINGS: AppSettings = {
   soundEnabled: true,
   accentColor: '#2563eb',
   masterPin: '',
+  groqApiKey: '',
 };
 
 import { getCustomWorkspaceIdentifier } from './supabase';
@@ -655,6 +656,24 @@ export const Storage = {
 
   getSettings: (): AppSettings => loadFromStorage(STORAGE_KEYS.SETTINGS, INITIAL_SETTINGS),
   setSettings: (settings: AppSettings) => saveToStorage(STORAGE_KEYS.SETTINGS, settings),
+
+  getGroqApiKey: (): string => {
+    const settings = Storage.getSettings();
+    if (settings?.groqApiKey?.trim()) return settings.groqApiKey.trim();
+    const directKey = localStorage.getItem('groq_api_key');
+    if (directKey?.trim()) return directKey.trim();
+    return '';
+  },
+  setGroqApiKey: (key: string): void => {
+    const settings = Storage.getSettings();
+    const trimmed = key.trim();
+    Storage.setSettings({ ...settings, groqApiKey: trimmed });
+    if (trimmed) {
+      localStorage.setItem('groq_api_key', trimmed);
+    } else {
+      localStorage.removeItem('groq_api_key');
+    }
+  },
 
   getSections: (): DashboardSection[] => loadFromStorage(STORAGE_KEYS.SECTIONS, INITIAL_SECTIONS),
   setSections: (sections: DashboardSection[]) => saveToStorage(STORAGE_KEYS.SECTIONS, sections),

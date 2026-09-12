@@ -113,6 +113,7 @@ import {
   UserCheck,
   KeyRound,
   Camera,
+  Bot,
 } from 'lucide-react';
 
 export default function App() {
@@ -1186,6 +1187,26 @@ export default function App() {
                 <span className="shrink-0">{currentNav.emoji}</span>
                 <span className="truncate">{currentNav.label}</span>
               </div>
+
+              {/* Quick AI Bot Access Button */}
+              <button
+                type="button"
+                id="navbar-ai-bot-btn"
+                onClick={() => {
+                  Sound.click(settings.soundEnabled);
+                  handleNavigate('assistant');
+                }}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  activeView === 'assistant'
+                    ? 'bg-indigo-600 text-white shadow-2xs'
+                    : 'bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/60'
+                }`}
+                title="Open AI Secretary & Assistant"
+              >
+                <Bot className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+                <span className="hidden md:inline">AI Bot</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              </button>
             </div>
           </div>
 

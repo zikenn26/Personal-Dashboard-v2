@@ -37,8 +37,16 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path.replace(/^\/api\/groq/, ""),
-        headers: {
-          Authorization: `Bearer ${process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY || ""}`,
+        configure: (proxy) => {
+          proxy.on("proxyReq", (proxyReq) => {
+            const clientAuth = proxyReq.getHeader("authorization");
+            if (!clientAuth || clientAuth === "Bearer " || clientAuth === "Bearer") {
+              const defaultKey = process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY;
+              if (defaultKey) {
+                proxyReq.setHeader("authorization", `Bearer ${defaultKey}`);
+              }
+            }
+          });
         },
       },
       "/api/supabase": {

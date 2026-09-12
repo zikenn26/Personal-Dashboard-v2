@@ -48,6 +48,7 @@ import {
   GripVertical,
   RotateCcw,
   LayoutGrid,
+  Bot,
 } from 'lucide-react';
 
 interface SlidePhoto {
@@ -439,9 +440,23 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
         {/* Greeting Header with Timezone and Local Time Synchronization */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
-            <h1 className="workspace-heading font-extrabold text-[#37352F] dark:text-white tracking-tight flex items-center gap-2">
+            <h1 className="workspace-heading font-extrabold text-[#37352F] dark:text-white tracking-tight flex items-center gap-2 flex-wrap">
               <span>{greeting}, {profile.name}!</span>
               <span className="inline-block text-2xl">{greetingEmoji}</span>
+              <button
+                type="button"
+                id="main-page-ai-bot-btn"
+                onClick={() => {
+                  Sound.click(soundEnabled);
+                  onNavigate('assistant');
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all hover:scale-105 active:scale-95 cursor-pointer ml-1 sm:ml-2 group"
+                title="Launch Executive AI Assistant (LLM Bot)"
+              >
+                <Bot className="w-3.5 h-3.5 text-indigo-100 group-hover:rotate-6 transition-transform" />
+                <span>AI Assistant</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              </button>
             </h1>
             <p className="text-xs sm:text-sm text-[#787774] dark:text-[#9CA3AF] mt-1 font-medium flex items-center gap-2">
               <span>Let&apos;s make today meaningful and productive.</span>
