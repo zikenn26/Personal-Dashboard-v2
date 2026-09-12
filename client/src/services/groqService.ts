@@ -1,4 +1,5 @@
 import { Storage } from '../utils/storage';
+import { flushAutoSyncImmediately, isSupabaseConfigured } from '../utils/supabase';
 import {
   TodoItem,
   HabitItem,
@@ -180,12 +181,15 @@ const getTodayDayIndex = (): number => {
   return day === 0 ? 6 : day - 1;
 };
 
-// Dispatch a custom event so all open React views update immediately
+// Dispatch a custom event so all open React views update immediately, and flush to cloud storage
 const notifyDataChanged = (module: string) => {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(
       new CustomEvent('dashboard-data-updated', { detail: { module } })
     );
+  }
+  if (isSupabaseConfigured()) {
+    void flushAutoSyncImmediately(Storage.getAllDataPayload());
   }
 };
 
@@ -278,13 +282,45 @@ export const SECRETARY_TOOLS = [
     type: 'function',
     function: {
       name: 'delete_task',
-      description: 'Delete a task from the dashboard by ID.',
+      description:
+        'Delete one or more tasks from the dashboard by ID, title/keyword query, completed status, or latest.',
       parameters: {
         type: 'object',
         properties: {
-          id: { type: 'string', description: 'ID of the task to remove' },
+          id: { type: ['string', 'null'], description: 'Optional specific ID of the task to remove' },
+          query: {
+            type: ['string', 'null'],
+            description: 'Task title, keyword, or text to search and delete (e.g. "buy milk", "workout")',
+          },
+          completedOnly: {
+            type: ['boolean', 'null'],
+            description: 'If true, deletes completed tasks matching query or all completed tasks',
+          },
+          latest: {
+            type: ['boolean', 'null'],
+            description: 'If true, deletes the most recently added task',
+          },
+          all: {
+            type: ['boolean', 'null'],
+            description: 'If true, deletes all matching tasks',
+          },
         },
-        required: ['id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'clear_all_tasks',
+      description: 'Clear all tasks, or all completed tasks, from the dashboard.',
+      parameters: {
+        type: 'object',
+        properties: {
+          completedOnly: {
+            type: ['boolean', 'null'],
+            description: 'If true, clears only completed tasks. If false or omitted, clears all tasks.',
+          },
+        },
       },
     },
   },
@@ -340,13 +376,24 @@ export const SECRETARY_TOOLS = [
     type: 'function',
     function: {
       name: 'delete_habit',
-      description: 'Delete a habit by ID.',
+      description: 'Delete a habit by ID, name/title query, or latest.',
       parameters: {
         type: 'object',
         properties: {
-          id: { type: 'string', description: 'ID of the habit to delete' },
+          id: { type: ['string', 'null'], description: 'Optional ID of the habit to delete' },
+          query: {
+            type: ['string', 'null'],
+            description: 'Habit name or keyword (e.g. "meditation", "drinking water", "gym")',
+          },
+          latest: {
+            type: ['boolean', 'null'],
+            description: 'If true, deletes the most recently added habit',
+          },
+          all: {
+            type: ['boolean', 'null'],
+            description: 'If true, deletes all matching habits',
+          },
         },
-        required: ['id'],
       },
     },
   },
@@ -415,13 +462,58 @@ export const SECRETARY_TOOLS = [
     type: 'function',
     function: {
       name: 'delete_expense',
-      description: 'Delete an expense item by ID.',
+      description:
+        'Delete an expense transaction by ID, name/description/merchant, amount, date, category, or latest. Also supports deleting all matching expenses or clearing all expenses.',
       parameters: {
         type: 'object',
         properties: {
-          id: { type: 'string', description: 'ID of the expense to delete' },
+          id: {
+            type: ['string', 'null'],
+            description: 'Optional specific ID of the expense to delete',
+          },
+          query: {
+            type: ['string', 'null'],
+            description:
+              'Name, merchant, description, or keyword of the expense (e.g. "coffee", "Starbucks", "groceries", "dinner", "petrol")',
+          },
+          amount: {
+            type: ['number', 'null'],
+            description: 'Optional amount of the expense to delete (e.g. 50, 200)',
+          },
+          date: {
+            type: ['string', 'null'],
+            description: 'Transaction date (e.g. "2026-09-09", "9 sept 2026", "today", "yesterday")',
+          },
+          category: {
+            type: ['string', 'null'],
+            description: 'Category of expense to match (e.g. "Food", "Shopping", "Transport")',
+          },
+          latest: {
+            type: ['boolean', 'null'],
+            description: 'If true, deletes the most recently logged expense transaction',
+          },
+          all: {
+            type: ['boolean', 'null'],
+            description: 'If true, deletes all matching expenses, or all expenses if no other filter is given',
+          },
         },
-        required: ['id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'clear_all_expenses',
+      description: 'Permanently remove and clear all expense records from the dashboard.',
+      parameters: {
+        type: 'object',
+        properties: {
+          confirmed: {
+            type: 'boolean',
+            description: 'Confirmation flag, must be true to clear all expenses',
+          },
+        },
+        required: ['confirmed'],
       },
     },
   },
@@ -482,13 +574,28 @@ export const SECRETARY_TOOLS = [
     type: 'function',
     function: {
       name: 'delete_journal_entry',
-      description: 'Delete a journal entry by ID.',
+      description: 'Delete a journal entry by ID, title/keyword query, date, or latest.',
       parameters: {
         type: 'object',
         properties: {
-          id: { type: 'string', description: 'ID of the entry to delete' },
+          id: { type: ['string', 'null'], description: 'Optional ID of the journal entry to delete' },
+          query: {
+            type: ['string', 'null'],
+            description: 'Title, reflection content, or keyword to match in journal',
+          },
+          date: {
+            type: ['string', 'null'],
+            description: 'Optional date of the entry (e.g. "today", "2026-09-12")',
+          },
+          latest: {
+            type: ['boolean', 'null'],
+            description: 'If true, deletes the most recent journal entry',
+          },
+          all: {
+            type: ['boolean', 'null'],
+            description: 'If true, deletes all matching entries',
+          },
         },
-        required: ['id'],
       },
     },
   },
@@ -556,13 +663,15 @@ export const SECRETARY_TOOLS = [
     type: 'function',
     function: {
       name: 'delete_goal',
-      description: 'Delete a goal by ID.',
+      description: 'Delete a goal by ID, title/name query, or latest.',
       parameters: {
         type: 'object',
         properties: {
-          id: { type: 'string', description: 'ID of the goal to delete' },
+          id: { type: ['string', 'null'], description: 'Optional ID of the goal to delete' },
+          query: { type: ['string', 'null'], description: 'Goal title or keyword to match' },
+          latest: { type: ['boolean', 'null'], description: 'If true, deletes the most recent goal' },
+          all: { type: ['boolean', 'null'], description: 'If true, deletes all matching goals' },
         },
-        required: ['id'],
       },
     },
   },
@@ -639,13 +748,15 @@ export const SECRETARY_TOOLS = [
     type: 'function',
     function: {
       name: 'delete_media_item',
-      description: 'Remove a media item by ID.',
+      description: 'Remove a media item by ID, title/name query, or latest.',
       parameters: {
         type: 'object',
         properties: {
-          id: { type: 'string', description: 'ID of the item to delete' },
+          id: { type: ['string', 'null'], description: 'Optional ID of the item to delete' },
+          query: { type: ['string', 'null'], description: 'Media title or keyword to match' },
+          latest: { type: ['boolean', 'null'], description: 'If true, deletes the most recent media item' },
+          all: { type: ['boolean', 'null'], description: 'If true, deletes all matching media items' },
         },
-        required: ['id'],
       },
     },
   },
@@ -786,15 +897,101 @@ export async function executeSecretaryTool(
 
       case 'delete_task': {
         const current = Storage.getTodos();
-        const itemToDelete = current.find((t) => t.id === args.id);
-        const updated = current.filter((t) => t.id !== args.id);
+        if (current.length === 0) {
+          return {
+            data: { success: false, message: 'No tasks found on your dashboard.' },
+            actionChip: '⚠️ No Tasks Found',
+          };
+        }
+
+        let toDelete: TodoItem[] = [];
+
+        if (args.all === true && !args.id && !args.query && !args.completedOnly) {
+          toDelete = [...current];
+        }
+
+        if (toDelete.length === 0 && args.completedOnly === true && !args.id && !args.query) {
+          toDelete = current.filter((t) => t.completed);
+        }
+
+        if (toDelete.length === 0 && args.id) {
+          const rawId = String(args.id).trim();
+          const matchById = current.find((t) => t.id === rawId);
+          if (matchById) {
+            toDelete = [matchById];
+          } else {
+            const lower = rawId.toLowerCase();
+            if (lower === 'last' || lower === 'latest') {
+              toDelete = [current[0]];
+            } else if (lower === 'all') {
+              toDelete = [...current];
+            } else if (lower === 'completed') {
+              toDelete = current.filter((t) => t.completed);
+            } else {
+              const matched = current.filter((t) => t.title.toLowerCase().includes(lower));
+              if (matched.length > 0) toDelete = args.all ? matched : [matched[0]];
+            }
+          }
+        }
+
+        if (
+          toDelete.length === 0 &&
+          (args.latest === true ||
+            String(args.query).toLowerCase() === 'last' ||
+            String(args.query).toLowerCase() === 'latest')
+        ) {
+          toDelete = [current[0]];
+        }
+
+        if (toDelete.length === 0 && args.query) {
+          const q = String(args.query).trim().toLowerCase();
+          let matched = current.filter((t) => t.title.toLowerCase().includes(q));
+          if (args.completedOnly) matched = matched.filter((t) => t.completed);
+          if (matched.length > 0) toDelete = args.all ? matched : [matched[0]];
+        }
+
+        if (toDelete.length === 0) {
+          return {
+            data: {
+              success: false,
+              message: `No task found matching query. Available tasks: ${current
+                .slice(0, 5)
+                .map((t) => `"${t.title}"`)
+                .join(', ')}`,
+            },
+            actionChip: '⚠️ Task Not Found',
+          };
+        }
+
+        const deleteIds = new Set(toDelete.map((t) => t.id));
+        const updated = current.filter((t) => !deleteIds.has(t.id));
         Storage.setTodos(updated);
         notifyDataChanged('tasks');
+        const chipText =
+          toDelete.length === 1
+            ? `✓ Task Removed: "${toDelete[0].title}"`
+            : `✓ Removed ${toDelete.length} Tasks`;
         return {
-          data: { success: true, removedId: args.id },
-          actionChip: itemToDelete
-            ? `✓ Task Removed: "${itemToDelete.title}"`
-            : `✓ Task Removed`,
+          data: { success: true, count: toDelete.length, removed: toDelete.map((t) => t.title) },
+          actionChip: chipText,
+        };
+      }
+
+      case 'clear_all_tasks': {
+        const current = Storage.getTodos();
+        let remaining: TodoItem[] = [];
+        let clearedCount = current.length;
+        if (args.completedOnly) {
+          remaining = current.filter((t) => !t.completed);
+          clearedCount = current.length - remaining.length;
+        }
+        Storage.setTodos(remaining);
+        notifyDataChanged('tasks');
+        return {
+          data: { success: true, clearedCount },
+          actionChip: args.completedOnly
+            ? `✓ Cleared ${clearedCount} Completed Tasks`
+            : `✓ Cleared All Tasks`,
         };
       }
 
@@ -867,15 +1064,77 @@ export async function executeSecretaryTool(
 
       case 'delete_habit': {
         const current = Storage.getHabits();
-        const habitToDelete = current.find((h) => h.id === args.id);
-        const updated = current.filter((h) => h.id !== args.id);
+        if (current.length === 0) {
+          return {
+            data: { success: false, message: 'No habits found.' },
+            actionChip: '⚠️ No Habits Found',
+          };
+        }
+
+        let toDelete: HabitItem[] = [];
+        if (args.all === true && !args.id && !args.query) {
+          toDelete = [...current];
+        }
+
+        if (toDelete.length === 0 && args.id) {
+          const rawId = String(args.id).trim();
+          const matchById = current.find((h) => h.id === rawId);
+          if (matchById) {
+            toDelete = [matchById];
+          } else {
+            const lower = rawId.toLowerCase();
+            if (lower === 'last' || lower === 'latest') {
+              toDelete = [current[0]];
+            } else if (lower === 'all') {
+              toDelete = [...current];
+            } else {
+              const matched = current.filter((h) => h.title.toLowerCase().includes(lower));
+              if (matched.length > 0) toDelete = args.all ? matched : [matched[0]];
+            }
+          }
+        }
+
+        if (
+          toDelete.length === 0 &&
+          (args.latest === true ||
+            String(args.query).toLowerCase() === 'last' ||
+            String(args.query).toLowerCase() === 'latest')
+        ) {
+          toDelete = [current[0]];
+        }
+
+        if (toDelete.length === 0 && args.query) {
+          const q = String(args.query).trim().toLowerCase();
+          const matched = current.filter((h) => h.title.toLowerCase().includes(q));
+          if (matched.length > 0) toDelete = args.all ? matched : [matched[0]];
+        }
+
+        if (toDelete.length === 0) {
+          return {
+            data: {
+              success: false,
+              message: `No habit found matching criteria. Existing habits: ${current
+                .map((h) => `"${h.title}"`)
+                .join(', ')}`,
+            },
+            actionChip: '⚠️ Habit Not Found',
+          };
+        }
+
+        const deleteIds = new Set(toDelete.map((h) => h.id));
+        const updated = current.filter((h) => !deleteIds.has(h.id));
         Storage.setHabits(updated);
         notifyDataChanged('habits');
         return {
-          data: { success: true, id: args.id },
-          actionChip: habitToDelete
-            ? `✓ Habit Removed: "${habitToDelete.title}"`
-            : `✓ Habit Removed`,
+          data: {
+            success: true,
+            count: toDelete.length,
+            removedHabits: toDelete.map((h) => h.title),
+          },
+          actionChip:
+            toDelete.length === 1
+              ? `✓ Habit Removed: "${toDelete[0].title}"`
+              : `✓ Removed ${toDelete.length} Habits`,
         };
       }
 
@@ -994,15 +1253,145 @@ export async function executeSecretaryTool(
 
       case 'delete_expense': {
         const current = Storage.getExpenses();
-        const toDelete = current.find((e) => e.id === args.id);
-        const updated = current.filter((e) => e.id !== args.id);
+        if (current.length === 0) {
+          return {
+            data: { success: false, message: 'No expenses found in your dashboard.' },
+            actionChip: '⚠️ No Expenses to Delete',
+          };
+        }
+
+        let toDelete: ExpenseItem[] = [];
+
+        // Check if explicitly clearing all
+        if (
+          args.all === true &&
+          !args.id &&
+          !args.query &&
+          args.amount === undefined &&
+          !args.date &&
+          !args.category
+        ) {
+          toDelete = [...current];
+        }
+
+        // Check ID match or keyword aliases
+        if (toDelete.length === 0 && args.id) {
+          const rawId = String(args.id).trim();
+          const matchById = current.find((e) => e.id === rawId);
+          if (matchById) {
+            toDelete = [matchById];
+          } else {
+            const lower = rawId.toLowerCase();
+            if (lower === 'last' || lower === 'latest') {
+              toDelete = [current[0]];
+            } else if (lower === 'all') {
+              toDelete = [...current];
+            } else {
+              // Try match name, category, or notes
+              const matched = current.filter(
+                (e) =>
+                  e.name.toLowerCase().includes(lower) ||
+                  (e.category && e.category.toLowerCase().includes(lower)) ||
+                  (e.notes && e.notes.toLowerCase().includes(lower))
+              );
+              if (matched.length > 0) toDelete = args.all ? matched : [matched[0]];
+            }
+          }
+        }
+
+        // Check latest
+        if (
+          toDelete.length === 0 &&
+          (args.latest === true ||
+            String(args.query).toLowerCase() === 'last' ||
+            String(args.query).toLowerCase() === 'latest')
+        ) {
+          toDelete = [current[0]];
+        }
+
+        // Match by query, amount, date, category
+        if (toDelete.length === 0) {
+          let candidates = [...current];
+
+          if (args.query) {
+            const q = String(args.query).trim().toLowerCase();
+            candidates = candidates.filter(
+              (e) =>
+                e.name.toLowerCase().includes(q) ||
+                (e.category && e.category.toLowerCase().includes(q)) ||
+                (e.notes && e.notes.toLowerCase().includes(q))
+            );
+          }
+
+          if (args.amount !== undefined && args.amount !== null) {
+            const targetAmt = Number(args.amount);
+            if (!isNaN(targetAmt)) {
+              candidates = candidates.filter(
+                (e) => Math.abs(Number(e.amount) - targetAmt) < 0.01
+              );
+            }
+          }
+
+          if (args.date) {
+            candidates = candidates.filter((e) => matchesDateFilter(e.date, args.date));
+          }
+
+          if (args.category) {
+            const cat = String(args.category).trim().toLowerCase();
+            candidates = candidates.filter((e) => e.category.toLowerCase().includes(cat));
+          }
+
+          if (candidates.length > 0) {
+            toDelete = args.all ? candidates : [candidates[0]];
+          }
+        }
+
+        if (toDelete.length === 0) {
+          return {
+            data: {
+              success: false,
+              message: `No expense found matching criteria. Recent expenses available: ${current
+                .slice(0, 5)
+                .map((e) => `"${e.name}" (₹${e.amount} on ${e.date})`)
+                .join(', ')}`,
+            },
+            actionChip: '⚠️ Expense Not Found',
+          };
+        }
+
+        const deleteIds = new Set(toDelete.map((e) => e.id));
+        const updated = current.filter((e) => !deleteIds.has(e.id));
         Storage.setExpenses(updated);
         notifyDataChanged('expenses');
+
+        const chipText =
+          toDelete.length === 1
+            ? `✓ Expense Deleted: "${toDelete[0].name}" (₹${toDelete[0].amount})`
+            : `✓ Deleted ${toDelete.length} Expenses`;
+
         return {
-          data: { success: true, id: args.id },
-          actionChip: toDelete
-            ? `✓ Expense Deleted: "${toDelete.name}" (₹${toDelete.amount})`
-            : `✓ Expense Deleted`,
+          data: {
+            success: true,
+            deletedCount: toDelete.length,
+            deletedExpenses: toDelete.map((e) => ({
+              id: e.id,
+              name: e.name,
+              amount: e.amount,
+              date: e.date,
+            })),
+          },
+          actionChip: chipText,
+        };
+      }
+
+      case 'clear_all_expenses': {
+        const count = Storage.getExpenses().length;
+        Storage.setExpenses([]);
+        Storage.setExcelImportLogs([]);
+        notifyDataChanged('expenses');
+        return {
+          data: { success: true, clearedCount: count },
+          actionChip: `✓ Cleared All ${count} Expenses`,
         };
       }
 
@@ -1095,15 +1484,84 @@ export async function executeSecretaryTool(
 
       case 'delete_journal_entry': {
         const current = Storage.getJournal();
-        const toDelete = current.find((j) => j.id === args.id);
-        const updated = current.filter((j) => j.id !== args.id);
+        if (current.length === 0) {
+          return {
+            data: { success: false, message: 'No journal entries found.' },
+            actionChip: '⚠️ No Journal Entries',
+          };
+        }
+
+        let toDelete: JournalEntry[] = [];
+        if (args.all === true && !args.id && !args.query && !args.date) {
+          toDelete = [...current];
+        }
+
+        if (toDelete.length === 0 && args.id) {
+          const rawId = String(args.id).trim();
+          const matchById = current.find((j) => j.id === rawId);
+          if (matchById) {
+            toDelete = [matchById];
+          } else {
+            const lower = rawId.toLowerCase();
+            if (lower === 'last' || lower === 'latest') {
+              toDelete = [current[0]];
+            } else if (lower === 'all') {
+              toDelete = [...current];
+            } else {
+              const matched = current.filter(
+                (j) =>
+                  j.title.toLowerCase().includes(lower) ||
+                  (j.content && j.content.toLowerCase().includes(lower))
+              );
+              if (matched.length > 0) toDelete = args.all ? matched : [matched[0]];
+            }
+          }
+        }
+
+        if (
+          toDelete.length === 0 &&
+          (args.latest === true ||
+            String(args.query).toLowerCase() === 'last' ||
+            String(args.query).toLowerCase() === 'latest')
+        ) {
+          toDelete = [current[0]];
+        }
+
+        if (toDelete.length === 0) {
+          let candidates = [...current];
+          if (args.query) {
+            const q = String(args.query).trim().toLowerCase();
+            candidates = candidates.filter(
+              (j) =>
+                j.title.toLowerCase().includes(q) ||
+                (j.content && j.content.toLowerCase().includes(q))
+            );
+          }
+          if (args.date) {
+            candidates = candidates.filter((j) => matchesDateFilter(j.date, args.date));
+          }
+          if (candidates.length > 0) {
+            toDelete = args.all ? candidates : [candidates[0]];
+          }
+        }
+
+        if (toDelete.length === 0) {
+          return {
+            data: { success: false, message: 'No journal entry found matching criteria.' },
+            actionChip: '⚠️ Journal Entry Not Found',
+          };
+        }
+
+        const deleteIds = new Set(toDelete.map((j) => j.id));
+        const updated = current.filter((j) => !deleteIds.has(j.id));
         Storage.setJournal(updated);
         notifyDataChanged('journal');
         return {
-          data: { success: true, id: args.id },
-          actionChip: toDelete
-            ? `✓ Journal Entry Removed: "${toDelete.title}"`
-            : `✓ Journal Entry Removed`,
+          data: { success: true, count: toDelete.length, removed: toDelete.map((j) => j.title) },
+          actionChip:
+            toDelete.length === 1
+              ? `✓ Journal Deleted: "${toDelete[0].title}"`
+              : `✓ Deleted ${toDelete.length} Journal Entries`,
         };
       }
 
@@ -1184,15 +1642,73 @@ export async function executeSecretaryTool(
 
       case 'delete_goal': {
         const current = Storage.getGoals();
-        const toDelete = current.find((g) => g.id === args.id);
-        const updated = current.filter((g) => g.id !== args.id);
+        if (current.length === 0) {
+          return {
+            data: { success: false, message: 'No goals found.' },
+            actionChip: '⚠️ No Goals Found',
+          };
+        }
+
+        let toDelete: GoalItem[] = [];
+        if (args.all === true && !args.id && !args.query) {
+          toDelete = [...current];
+        }
+
+        if (toDelete.length === 0 && args.id) {
+          const rawId = String(args.id).trim();
+          const matchById = current.find((g) => g.id === rawId);
+          if (matchById) {
+            toDelete = [matchById];
+          } else {
+            const lower = rawId.toLowerCase();
+            if (lower === 'last' || lower === 'latest') {
+              toDelete = [current[0]];
+            } else if (lower === 'all') {
+              toDelete = [...current];
+            } else {
+              const matched = current.filter((g) => g.title.toLowerCase().includes(lower));
+              if (matched.length > 0) toDelete = args.all ? matched : [matched[0]];
+            }
+          }
+        }
+
+        if (
+          toDelete.length === 0 &&
+          (args.latest === true ||
+            String(args.query).toLowerCase() === 'last' ||
+            String(args.query).toLowerCase() === 'latest')
+        ) {
+          toDelete = [current[0]];
+        }
+
+        if (toDelete.length === 0 && args.query) {
+          const q = String(args.query).trim().toLowerCase();
+          const matched = current.filter((g) => g.title.toLowerCase().includes(q));
+          if (matched.length > 0) toDelete = args.all ? matched : [matched[0]];
+        }
+
+        if (toDelete.length === 0) {
+          return {
+            data: {
+              success: false,
+              message: `No goal found matching criteria. Available goals: ${current
+                .map((g) => `"${g.title}"`)
+                .join(', ')}`,
+            },
+            actionChip: '⚠️ Goal Not Found',
+          };
+        }
+
+        const deleteIds = new Set(toDelete.map((g) => g.id));
+        const updated = current.filter((g) => !deleteIds.has(g.id));
         Storage.setGoals(updated);
         notifyDataChanged('goals');
         return {
-          data: { success: true, id: args.id },
-          actionChip: toDelete
-            ? `✓ Goal Deleted: "${toDelete.title}"`
-            : `✓ Goal Deleted`,
+          data: { success: true, count: toDelete.length, removed: toDelete.map((g) => g.title) },
+          actionChip:
+            toDelete.length === 1
+              ? `✓ Goal Deleted: "${toDelete[0].title}"`
+              : `✓ Deleted ${toDelete.length} Goals`,
         };
       }
 
@@ -1267,15 +1783,76 @@ export async function executeSecretaryTool(
 
       case 'delete_media_item': {
         const current = Storage.getMedia();
-        const toDelete = current.find((m) => m.id === args.id);
-        const updated = current.filter((m) => m.id !== args.id);
+        if (current.length === 0) {
+          return {
+            data: { success: false, message: 'No media items found.' },
+            actionChip: '⚠️ No Media Items Found',
+          };
+        }
+
+        let toDelete: MediaItem[] = [];
+        if (args.all === true && !args.id && !args.query) {
+          toDelete = [...current];
+        }
+
+        if (toDelete.length === 0 && args.id) {
+          const rawId = String(args.id).trim();
+          const matchById = current.find((m) => m.id === rawId);
+          if (matchById) {
+            toDelete = [matchById];
+          } else {
+            const lower = rawId.toLowerCase();
+            if (lower === 'last' || lower === 'latest') {
+              toDelete = [current[0]];
+            } else if (lower === 'all') {
+              toDelete = [...current];
+            } else {
+              const matched = current.filter(
+                (m) =>
+                  m.title.toLowerCase().includes(lower) ||
+                  (m.creator && m.creator.toLowerCase().includes(lower))
+              );
+              if (matched.length > 0) toDelete = args.all ? matched : [matched[0]];
+            }
+          }
+        }
+
+        if (
+          toDelete.length === 0 &&
+          (args.latest === true ||
+            String(args.query).toLowerCase() === 'last' ||
+            String(args.query).toLowerCase() === 'latest')
+        ) {
+          toDelete = [current[0]];
+        }
+
+        if (toDelete.length === 0 && args.query) {
+          const q = String(args.query).trim().toLowerCase();
+          const matched = current.filter(
+            (m) =>
+              m.title.toLowerCase().includes(q) ||
+              (m.creator && m.creator.toLowerCase().includes(q))
+          );
+          if (matched.length > 0) toDelete = args.all ? matched : [matched[0]];
+        }
+
+        if (toDelete.length === 0) {
+          return {
+            data: { success: false, message: 'No media item found matching criteria.' },
+            actionChip: '⚠️ Media Item Not Found',
+          };
+        }
+
+        const deleteIds = new Set(toDelete.map((m) => m.id));
+        const updated = current.filter((m) => !deleteIds.has(m.id));
         Storage.setMedia(updated);
         notifyDataChanged('media');
         return {
-          data: { success: true, id: args.id },
-          actionChip: toDelete
-            ? `✓ Media Removed: "${toDelete.title}"`
-            : `✓ Media Removed`,
+          data: { success: true, count: toDelete.length, removed: toDelete.map((m) => m.title) },
+          actionChip:
+            toDelete.length === 1
+              ? `✓ Media Removed: "${toDelete[0].title}"`
+              : `✓ Removed ${toDelete.length} Media Items`,
         };
       }
 
@@ -1341,7 +1918,12 @@ CRITICAL RULES & GUARDRAILS:
 4. SECURITY & VAULT: Vault passwords are confidential and encrypted. You only receive metadata (service name, username, strength). Never ask the user for their vault master PIN or raw passwords.
 5. TEXT-ONLY INTERFACE: Keep responses readable, succinct, and beautifully formatted with markdown (bullet points, bold highlights).
 6. CLARITY: After executing tool actions, briefly summarize what was completed in a friendly, professional executive tone.
-7. DATE-SPECIFIC EXPENSE QUERIES: When the user asks about spending on a specific date (e.g. "How much did I spend on 9 sept 2026", "spending on 2026-09-09", "what did I buy yesterday"), invoke fetch_expenses with the date argument (e.g. date: "9 sept 2026"). The tool automatically pre-calculates the exact totalSpent across all matching transactions. State the exact total amount in ₹ and list the individual matching items.`;
+7. DATE-SPECIFIC EXPENSE QUERIES: When the user asks about spending on a specific date (e.g. "How much did I spend on 9 sept 2026", "spending on 2026-09-09", "what did I buy yesterday"), invoke fetch_expenses with the date argument (e.g. date: "9 sept 2026"). The tool automatically pre-calculates the exact totalSpent across all matching transactions. State the exact total amount in ₹ and list the individual matching items.
+8. DELETION & DATA REMOVAL: When the user asks to delete, remove, or clear data (e.g. "delete my expense for coffee", "delete my last task", "remove 50 rupees expense", "clear all completed tasks", "delete habit gym", "clear all expenses"):
+   - You MUST immediately call the appropriate delete tool (e.g. delete_expense, delete_task, delete_habit, delete_journal_entry, delete_goal, delete_media_item, clear_all_expenses, clear_all_tasks).
+   - You do NOT need the user to give you internal database IDs. Pass the keywords or title in 'query' (e.g. query: "coffee"), the amount in 'amount' (e.g. amount: 50), or set 'latest: true' if they ask to delete the last or latest item.
+   - If the user asks to clear all items, call clear_all_expenses or delete_* with all: true.
+   - After the tool returns, confirm what was removed in your response.`;
 
 // Groq API Key loaded securely from Storage, environment variable, or fallback
 const DEFAULT_GROQ_KEY = '';

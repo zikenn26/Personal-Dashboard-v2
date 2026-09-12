@@ -856,40 +856,12 @@ export const Storage = {
       if (data.vaultEncrypted) Storage.restoreEncryptedVault(data.vaultEncrypted);
       else if (data.vault) Storage.restoreEncryptedVault(null);
 
-      // Smart merge and safe hydration for cross-device spending synchronization
+      // Hydrate expenses and spreadsheet logs directly from authoritative cloud snapshot
       if (Array.isArray(data.expenses)) {
-        if (data.expenses.length > 0) {
-          const currentExpenses = Storage.getExpenses();
-          const expMap = new Map<string, ExpenseItem>();
-          // Index existing expenses
-          currentExpenses.forEach((e) => expMap.set(e.id, e));
-          // Apply incoming expenses (overwrite or insert)
-          data.expenses.forEach((e: ExpenseItem) => expMap.set(e.id, e));
-          Storage.setExpenses(Array.from(expMap.values()));
-        } else {
-          // If remote is empty, only set if local has no user-imported transactions
-          const currentExpenses = Storage.getExpenses();
-          const hasUserExpenses = currentExpenses.some((e) => e.sourceFile || e.importBatchId || !e.id.startsWith('exp-init'));
-          if (!hasUserExpenses) {
-            Storage.setExpenses([]);
-          }
-        }
+        Storage.setExpenses(data.expenses);
       }
-
-      // Sync spreadsheet upload logs across all devices
       if (Array.isArray(data.excelImportLogs)) {
-        if (data.excelImportLogs.length > 0) {
-          const currentLogs = Storage.getExcelImportLogs();
-          const logMap = new Map<string, ExcelImportLog>();
-          currentLogs.forEach((l) => logMap.set(l.id, l));
-          data.excelImportLogs.forEach((l: ExcelImportLog) => logMap.set(l.id, l));
-          Storage.setExcelImportLogs(Array.from(logMap.values()));
-        } else {
-          const currentLogs = Storage.getExcelImportLogs();
-          if (currentLogs.length === 0) {
-            Storage.setExcelImportLogs([]);
-          }
-        }
+        Storage.setExcelImportLogs(data.excelImportLogs);
       }
 
       if (data.journal) Storage.setJournal(data.journal);

@@ -289,6 +289,9 @@ export default function App() {
   useEffect(() => {
     const handleSecretarySync = () => {
       handleHydrateAllFromStorage(false);
+      if (!isRemoteUpdating.current && isSupabaseConfigured()) {
+        void flushAutoSyncImmediately(Storage.getAllDataPayload());
+      }
     };
     window.addEventListener('dashboard-data-updated', handleSecretarySync);
     return () => {
