@@ -294,8 +294,10 @@ export default function App() {
       }
     };
     window.addEventListener('dashboard-data-updated', handleSecretarySync);
+    window.addEventListener('storage', handleSecretarySync);
     return () => {
       window.removeEventListener('dashboard-data-updated', handleSecretarySync);
+      window.removeEventListener('storage', handleSecretarySync);
     };
   }, []);
 
