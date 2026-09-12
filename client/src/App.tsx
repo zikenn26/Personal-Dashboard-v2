@@ -282,7 +282,7 @@ export default function App() {
     setHabits(Storage.getHabits());
     setGoals(Storage.getGoals());
     void Storage.hydrateVault(Storage.getSettings().masterPin).then(setVault);
-    setExpenses(Storage.getExpenses());
+    setExpenses([...Storage.getExpenses()]);
     setExcelImportLogs(Storage.getExcelImportLogs());
     setJournal(Storage.getJournal());
     setMedia(Storage.getMedia());
@@ -305,7 +305,13 @@ export default function App() {
 
   // Sync state in real-time whenever AI Secretary performs direct CRUD operations
   useEffect(() => {
-    const handleSecretarySync = () => {
+    const handleSecretarySync = (e?: Event) => {
+      const customEvt = e as CustomEvent<{ module?: string; updatedExpenses?: ExpenseItem[] }>;
+      if (customEvt?.detail?.updatedExpenses && Array.isArray(customEvt.detail.updatedExpenses)) {
+        setExpenses([...customEvt.detail.updatedExpenses]);
+      } else {
+        setExpenses([...Storage.getExpenses()]);
+      }
       handleHydrateAllFromStorage(false);
       if (!isRemoteUpdating.current && isSupabaseConfigured()) {
         void flushAutoSyncImmediately(Storage.getAllDataPayload());

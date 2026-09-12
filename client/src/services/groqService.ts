@@ -183,19 +183,25 @@ const getTodayDayIndex = (): number => {
 };
 
 // Extract user intent for deleting or clearing expenses
-export function extractExpenseDeletionIntent(prompt: string): {
+export function extractExpenseDeletionIntent(
+  prompt: string,
+  existingExpenses?: ExpenseItem[]
+): {
   isDeletion: boolean;
   isAll: boolean;
   isLatest: boolean;
   amount?: number;
+  amounts?: number[];
   date?: string;
   query?: string;
+  items?: string[];
+  matchedExpenseIds?: string[];
 } {
   const norm = prompt.trim();
   const lower = norm.toLowerCase();
 
-  const deleteWords = /\b(delete|remove|clear|erase|drop|cancel|destroy|cut)\b/i;
-  const expenseWords = /\b(spendings?|expenses?|transactions?|payments?|costs?|bills?|charges?)\b/i;
+  const deleteWords = /\b(delete|remove|clear|erase|drop|cancel|destroy|cut|wipe|purge|discard|trash)\b/i;
+  const expenseWords = /\b(spendings?|expenses?|transactions?|payments?|costs?|bills?|charges?|purchases?)\b/i;
 
   const hasDeleteWord = deleteWords.test(lower);
   const hasExpenseWord = expenseWords.test(lower);
@@ -204,27 +210,95 @@ export function extractExpenseDeletionIntent(prompt: string): {
   const amountWithCurrency = /(?:₹|rs\.?|inr|\$)\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:₹|rs\.?|inr|\$|rupees?|bucks)/i;
   const hasAmountWithCurrency = amountWithCurrency.test(lower);
 
+  // Check if prompt mentions any actual recorded expense from storage
+  const currentExpenses = existingExpenses || Storage.getExpenses();
+  const matchedFromStorage: ExpenseItem[] = [];
+
+  if (hasDeleteWord && currentExpenses.length > 0) {
+    for (const exp of currentExpenses) {
+      const expNameLower = (exp.name || '').toLowerCase().trim();
+      const expCatLower = (exp.category || '').toLowerCase().trim();
+      // Only match meaningful names (> 2 chars)
+      if (expNameLower.length >= 2) {
+        // Word boundary check or direct inclusion if multi-word
+        const regex = new RegExp(`\\b${expNameLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+        if (regex.test(lower) || lower.includes(expNameLower)) {
+          if (!matchedFromStorage.some((m) => m.id === exp.id)) {
+            matchedFromStorage.push(exp);
+          }
+        }
+      }
+      // Also match category if mentioned
+      if (expCatLower.length >= 3 && !['general', 'other'].includes(expCatLower)) {
+        const catRegex = new RegExp(`\\b${expCatLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+        if (catRegex.test(lower)) {
+          if (!matchedFromStorage.some((m) => m.id === exp.id)) {
+            matchedFromStorage.push(exp);
+          }
+        }
+      }
+    }
+  }
+
+  // Also check if any stored amounts are mentioned
+  if (hasDeleteWord && currentExpenses.length > 0) {
+    for (const exp of currentExpenses) {
+      const amtStr = String(Math.round(exp.amount));
+      const amtRegex = new RegExp(`\\b${amtStr}\\b`);
+      if (amtRegex.test(lower)) {
+        if (!matchedFromStorage.some((m) => m.id === exp.id)) {
+          matchedFromStorage.push(exp);
+        }
+      }
+    }
+  }
+
+  const hasSpecificStorageMatch = matchedFromStorage.length > 0;
+  const hasGenericClearOrDelete =
+    lower.includes('clear all') ||
+    lower.includes('clear expenses') ||
+    lower.includes('delete all') ||
+    lower.includes('delete them') ||
+    lower.includes('delete these') ||
+    lower.includes('delete it');
+
   if (!hasDeleteWord && !lower.includes('clear')) {
     return { isDeletion: false, isAll: false, isLatest: false };
   }
 
-  // Must mention expense, spending, or have an amount with delete verb, or "clear all"
-  if (!hasExpenseWord && !hasAmountWithCurrency && !lower.includes('clear all') && !lower.includes('clear expenses')) {
+  // Must mention expense/spending, have currency, match an existing expense, or specify clear/delete all
+  if (
+    !hasExpenseWord &&
+    !hasAmountWithCurrency &&
+    !hasSpecificStorageMatch &&
+    !hasGenericClearOrDelete
+  ) {
     return { isDeletion: false, isAll: false, isLatest: false };
   }
 
-  const isAll = /\b(all|everything|every)\b/i.test(lower) || lower.includes('clear all');
+  const isAll =
+    /\b(all|everything|every|both)\b/i.test(lower) ||
+    lower.includes('clear all') ||
+    /\b(delete\s+(them|these|those|the\s+records|all\s+\d+|the\s+\d+))\b/i.test(lower) ||
+    matchedFromStorage.length > 1;
+
   const isLatest = /\b(last|latest|recent|newest)\b/i.test(lower);
 
-  // Extract numeric amount
-  let amount: number | undefined;
-  const amtMatch = lower.match(/(?:(?:₹|rs\.?|inr|\$)\s*(\d+(?:\.\d+)?))|(?:(\d+(?:\.\d+)?)\s*(?:₹|rs\.?|inr|\$|rupees?|bucks)?)/);
-  if (amtMatch) {
-    const rawVal = amtMatch[1] || amtMatch[2];
+  // Check if a count of items was mentioned (e.g. "delete 3 expenses", "delete the 3 spendings")
+  const countPattern = /\b(?:delete|remove|clear)\s+(?:the\s+)?(\d+)\s+(?:spendings?|expenses?|transactions?|records?|items?)\b/i;
+  const countMatch = lower.match(countPattern);
+  const requestedCount = countMatch ? parseInt(countMatch[1], 10) : undefined;
+
+  // Extract numeric amounts (ignoring the count from "delete 3 expenses")
+  const extractedAmounts: number[] = [];
+  const globalAmtRegex = /(?:(?:₹|rs\.?|inr|\$)\s*(\d+(?:\.\d+)?))|(?:(\d+(?:\.\d+)?)\s*(?:₹|rs\.?|inr|\$|rupees?|bucks))/gi;
+  let gMatch: RegExpExecArray | null;
+  while ((gMatch = globalAmtRegex.exec(lower)) !== null) {
+    const rawVal = gMatch[1] || gMatch[2];
     if (rawVal) {
       const parsed = parseFloat(rawVal);
-      if (!isNaN(parsed) && parsed > 0) {
-        amount = parsed;
+      if (!isNaN(parsed) && parsed > 0 && !extractedAmounts.includes(parsed)) {
+        extractedAmounts.push(parsed);
       }
     }
   }
@@ -238,29 +312,43 @@ export function extractExpenseDeletionIntent(prompt: string): {
     date = dateMatch[1];
   }
 
-  // Extract clean keyword/merchant
-  let query = lower
+  // Extract clean items from comma / and / newline separated list
+  const rawItemsText = lower
     .replace(deleteWords, '')
     .replace(expenseWords, '')
     .replace(/\b(all|everything|every|last|latest|recent|newest|my|the|a|an|of|for|on|in|rs\.?|inr|rupees?|\$)\b/gi, '')
-    .replace(/\b\d+(\.\d+)?\b/g, '')
     .trim();
+
+  const itemTokens = rawItemsText
+    .split(/[,;\n]|(?:\s+and\s+)|(?:\s+&\s+)/i)
+    .map((t) => t.replace(/\b\d+(\.\d+)?\b/g, '').trim())
+    .filter((t) => t.length > 0);
+
+  const matchedExpenseIds =
+    matchedFromStorage.length > 0
+      ? matchedFromStorage.map((m) => m.id)
+      : undefined;
+
+  const resolvedAmount = extractedAmounts.length === 1 ? extractedAmounts[0] : undefined;
 
   return {
     isDeletion: true,
-    isAll,
-    isLatest: isLatest || (!query && amount === undefined && !date && !isAll),
-    amount,
+    isAll: isAll || (requestedCount !== undefined && requestedCount > 1),
+    isLatest: isLatest || (!rawItemsText && extractedAmounts.length === 0 && !date && !isAll),
+    amount: resolvedAmount,
+    amounts: extractedAmounts.length > 0 ? extractedAmounts : undefined,
     date,
-    query: query.length > 0 ? query : undefined,
+    query: rawItemsText.length > 0 ? rawItemsText : undefined,
+    items: itemTokens.length > 0 ? itemTokens : undefined,
+    matchedExpenseIds,
   };
 }
 
 // Dispatch a custom event so all open React views update immediately, and flush to cloud storage
-const notifyDataChanged = (module: string) => {
+const notifyDataChanged = (module: string, extraDetail?: any) => {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(
-      new CustomEvent('dashboard-data-updated', { detail: { module } })
+      new CustomEvent('dashboard-data-updated', { detail: { module, ...extraDetail } })
     );
     try {
       window.dispatchEvent(new Event('storage'));
@@ -543,7 +631,7 @@ export const SECRETARY_TOOLS = [
     function: {
       name: 'delete_expense',
       description:
-        'Delete an expense transaction by name/description/merchant, amount, date, category, ID, or latest. Also supports deleting all matching expenses or clearing all expenses.',
+        'Delete one or more expense transactions by name/merchant, item list, amount(s), date, category, ID(s), or latest. Supports deleting multiple items at once (e.g. "Shipping, Shopping expense, Chocolate" or items: ["Shipping", "Shopping expense", "Chocolate"]). Also supports deleting all matching expenses or clearing all recorded expenses.',
       parameters: {
         type: 'object',
         properties: {
@@ -551,14 +639,34 @@ export const SECRETARY_TOOLS = [
             type: ['string', 'null'],
             description: 'Optional specific ID of the expense to delete',
           },
+          ids: {
+            type: ['array', 'null'],
+            items: { type: 'string' },
+            description: 'Optional array of specific expense IDs to delete',
+          },
           query: {
             type: ['string', 'null'],
             description:
-              'Name, merchant, description, or keyword of the expense (e.g. "coffee", "Starbucks", "groceries", "dinner", "petrol"). Do NOT include generic words like "spending" or "expense".',
+              'Name, merchant, description, or comma-separated list of expenses to delete (e.g. "coffee", "Shipping, Shopping expense, Chocolate", "Starbucks"). Do NOT include filler words like "spending".',
+          },
+          name: {
+            type: ['string', 'null'],
+            description: 'Alias for query (single item or merchant name)',
+          },
+          items: {
+            type: ['array', 'null'],
+            items: { type: 'string' },
+            description:
+              'Array of expense names or descriptions to delete simultaneously (e.g. ["Shipping", "Shopping expense", "Chocolate"]).',
           },
           amount: {
             type: ['number', 'string', 'null'],
-            description: 'Optional amount of the expense to delete (e.g. 50, 200, 500)',
+            description: 'Optional amount of the expense to delete (e.g. 50, 80, 200)',
+          },
+          amounts: {
+            type: ['array', 'null'],
+            items: { type: 'number' },
+            description: 'Optional array of amounts to delete simultaneously (e.g. [80, 50, 10])',
           },
           date: {
             type: ['string', 'null'],
@@ -1342,147 +1450,238 @@ export async function executeSecretaryTool(
 
         let toDelete: ExpenseItem[] = [];
 
-        // 1. Normalize input arguments
-        const rawQuery = args.query !== undefined && args.query !== null ? String(args.query).trim() : '';
+        // 1. Normalize input arguments (supporting arrays, aliases, and multi-value queries)
+        const rawQuery =
+          args.query !== undefined && args.query !== null
+            ? String(args.query).trim()
+            : args.name !== undefined && args.name !== null
+            ? String(args.name).trim()
+            : args.title !== undefined && args.title !== null
+            ? String(args.title).trim()
+            : args.item !== undefined && args.item !== null
+            ? String(args.item).trim()
+            : '';
+
         const rawId = args.id !== undefined && args.id !== null ? String(args.id).trim() : '';
+        const rawIds: string[] = Array.isArray(args.ids)
+          ? args.ids.map(String)
+          : Array.isArray(args.id)
+          ? args.id.map(String)
+          : rawId
+          ? [rawId]
+          : [];
+
         const rawCategory = args.category !== undefined && args.category !== null ? String(args.category).trim() : '';
         const rawDate = args.date !== undefined && args.date !== null ? String(args.date).trim() : '';
 
-        // Extract amount from args.amount (handles number or string with currency symbols)
-        let targetAmount: number | null = null;
+        // Extract multiple item names if provided as array
+        const explicitItems: string[] = Array.isArray(args.items)
+          ? args.items.map(String).filter((s) => s.trim().length > 0)
+          : Array.isArray(args.names)
+          ? args.names.map(String).filter((s) => s.trim().length > 0)
+          : Array.isArray(args.queries)
+          ? args.queries.map(String).filter((s) => s.trim().length > 0)
+          : [];
+
+        // Extract amounts (single or array)
+        const targetAmounts: number[] = [];
+        if (Array.isArray(args.amounts)) {
+          for (const a of args.amounts) {
+            const parsed = typeof a === 'number' ? a : parseFloat(String(a).replace(/[^0-9.]/g, ''));
+            if (!isNaN(parsed) && parsed > 0 && !targetAmounts.includes(parsed)) {
+              targetAmounts.push(parsed);
+            }
+          }
+        }
         if (args.amount !== undefined && args.amount !== null) {
           const parsed =
             typeof args.amount === 'number'
               ? args.amount
               : parseFloat(String(args.amount).replace(/[^0-9.]/g, ''));
-          if (!isNaN(parsed) && parsed > 0) {
-            targetAmount = parsed;
+          if (!isNaN(parsed) && parsed > 0 && !targetAmounts.includes(parsed)) {
+            targetAmounts.push(parsed);
           }
         }
 
-        // If targetAmount was not set, check if rawQuery or rawId contains a number or currency
-        if (targetAmount === null && (rawQuery || rawId)) {
-          const textToScan = `${rawQuery} ${rawId}`;
-          const amtMatch = textToScan.match(/(?:(?:₹|rs\.?|inr|\$)\s*(\d+(?:\.\d+)?))|(?:(\d+(?:\.\d+)?)\s*(?:₹|rs\.?|inr|\$|rupees?|bucks)?)/i);
-          if (amtMatch) {
-            const rawVal = amtMatch[1] || amtMatch[2];
+        // Check if query string contains currency amounts (e.g. "80, 50, 10" or "₹80, ₹50, ₹10")
+        if (rawQuery) {
+          const amtRegex = /(?:(?:₹|rs\.?|inr|\$)\s*(\d+(?:\.\d+)?))|(?:(\d+(?:\.\d+)?)\s*(?:₹|rs\.?|inr|\$|rupees?|bucks)?)/gi;
+          let m: RegExpExecArray | null;
+          while ((m = amtRegex.exec(rawQuery)) !== null) {
+            const rawVal = m[1] || m[2];
             if (rawVal) {
               const parsed = parseFloat(rawVal);
-              if (!isNaN(parsed) && parsed > 0) {
-                targetAmount = parsed;
+              // Avoid mistaking counts in phrases like "the 3 expenses" for an amount
+              const isCount = new RegExp(`\\b(?:the\\s+)?${parsed}\\s+(?:spendings?|expenses?|items?|records?)`, 'i').test(rawQuery);
+              if (!isNaN(parsed) && parsed > 0 && !isCount && !targetAmounts.includes(parsed)) {
+                // If it matches an existing expense amount or has currency symbol, include it
+                const matchesExpense = current.some((e) => Math.abs(Number(e.amount) - parsed) < 0.01);
+                if (matchesExpense || m[0].match(/[₹$]|rs|inr|rupee/i)) {
+                  targetAmounts.push(parsed);
+                }
               }
             }
           }
         }
-
-        // Clean query to isolate merchant/item name by stripping common filler words
-        const cleanQuery = rawQuery
-          .replace(/\b(spendings?|expenses?|transactions?|payments?|costs?|bills?|charges?|items?|records?)\b/gi, '')
-          .replace(/\b(delete|remove|clear|drop|erase|cancel)\b/gi, '')
-          .replace(/\b(all|everything|every)\b/gi, '')
-          .replace(/\b(last|latest|recent|newest)\b/gi, '')
-          .replace(/\b(my|the|a|an|of|for|on|in|rs\.?|inr|rupees?|\$)\b/gi, '')
-          .replace(/\b\d+(\.\d+)?\b/g, '')
-          .trim();
 
         const isAllRequested =
           args.all === true ||
           /\b(all|everything|every|clear)\b/i.test(rawQuery) ||
-          /\b(all|everything|every|clear)\b/i.test(rawId);
+          /\b(delete\s+(them|these|those|all\s+\d+|the\s+\d+))\b/i.test(rawQuery);
 
         const isLatestRequested =
           args.latest === true ||
-          /\b(last|latest|recent|newest)\b/i.test(rawQuery) ||
-          /\b(last|latest|recent|newest)\b/i.test(rawId);
+          /\b(last|latest|recent|newest)\b/i.test(rawQuery);
 
-        // Case A: User specifically requested clearing all expenses and provided no specific item filter
-        if (isAllRequested && !cleanQuery && targetAmount === null && !rawDate && !rawCategory) {
+        // Case A: User explicitly requested clearing ALL expenses and provided no specific item/amount filter
+        if (
+          isAllRequested &&
+          !rawQuery.replace(/\b(all|everything|every|clear|expenses?|spendings?|my|the)\b/gi, '').trim() &&
+          targetAmounts.length === 0 &&
+          explicitItems.length === 0 &&
+          rawIds.length === 0 &&
+          !rawDate &&
+          !rawCategory
+        ) {
           toDelete = [...current];
         }
 
-        // Case B: Direct match by internal ID
-        if (toDelete.length === 0 && rawId) {
-          const matchById = current.find((e) => e.id === rawId);
-          if (matchById) {
-            toDelete = [matchById];
-          }
+        // Case B: Direct match by internal IDs
+        if (toDelete.length === 0 && rawIds.length > 0) {
+          const idSet = new Set(rawIds);
+          toDelete = current.filter((e) => idSet.has(e.id));
         }
 
-        // Case C: Explicit "latest" or "last" without query/amount filters
-        if (toDelete.length === 0 && isLatestRequested && !cleanQuery && targetAmount === null && !rawDate) {
+        // Case C: Explicit "latest" or "last" without other filters
+        if (
+          toDelete.length === 0 &&
+          isLatestRequested &&
+          !rawQuery.replace(/\b(last|latest|recent|newest|expenses?|spendings?|my|the)\b/gi, '').trim() &&
+          targetAmounts.length === 0 &&
+          explicitItems.length === 0 &&
+          !rawDate
+        ) {
           toDelete = [current[0]];
         }
 
-        // Case D: Filter candidates using combined constraints
+        // Case D: Filter candidates by items, query, amounts, date, and category
         if (toDelete.length === 0) {
-          let candidates = [...current];
+          const matchedExpenses = new Map<string, ExpenseItem>();
 
-          // 1. Date filter
-          if (rawDate) {
-            const dateFiltered = candidates.filter((e) => matchesDateFilter(e.date, rawDate));
-            if (dateFiltered.length > 0) {
-              candidates = dateFiltered;
-            }
-          }
+          // 1. Gather all item tokens to search
+          const searchTokens: string[] = [...explicitItems];
+          if (rawQuery) {
+            // Clean out generic command words
+            const cleanedQuery = rawQuery
+              .replace(/\b(delete|remove|clear|erase|drop|cancel|destroy|cut|wipe)\b/gi, '')
+              .replace(/\b(spendings?|expenses?|transactions?|payments?|costs?|bills?|charges?|items?|records?)\b/gi, '')
+              .replace(/\b(all|everything|every|last|latest|recent|newest|my|the|a|an|of|for|on|in)\b/gi, '')
+              .trim();
 
-          // 2. Category filter
-          if (rawCategory) {
-            const cat = rawCategory.toLowerCase();
-            const catFiltered = candidates.filter(
-              (e) => e.category && e.category.toLowerCase().includes(cat)
-            );
-            if (catFiltered.length > 0) {
-              candidates = catFiltered;
-            }
-          }
+            // Split into tokens by comma, semicolon, newline, " and ", " & "
+            const splitParts = cleanedQuery
+              .split(/[,;\n]|(?:\s+and\s+)|(?:\s+&\s+)/i)
+              .map((s) => s.replace(/(?:₹|rs\.?|inr|\$|\b\d+(\.\d+)?\b)/gi, '').trim())
+              .filter((s) => s.length > 0);
 
-          // 3. Amount filter
-          if (targetAmount !== null) {
-            const amtFiltered = candidates.filter(
-              (e) => Math.abs(Number(e.amount) - targetAmount!) < 0.01
-            );
-            if (amtFiltered.length > 0) {
-              candidates = amtFiltered;
-            } else {
-              const nearMatch = candidates.filter(
-                (e) =>
-                  e.name.includes(String(targetAmount)) ||
-                  (e.notes && e.notes.includes(String(targetAmount)))
-              );
-              if (nearMatch.length > 0) {
-                candidates = nearMatch;
+            for (const part of splitParts) {
+              if (part.length > 0 && !searchTokens.includes(part)) {
+                searchTokens.push(part);
               }
             }
           }
 
-          // 4. Name / merchant / keyword filter
-          if (cleanQuery && cleanQuery.length > 0) {
-            const q = cleanQuery.toLowerCase();
-            const textFiltered = candidates.filter(
-              (e) =>
-                e.name.toLowerCase().includes(q) ||
-                (e.category && e.category.toLowerCase().includes(q)) ||
-                (e.notes && e.notes.toLowerCase().includes(q)) ||
-                (e.paymentMethod && e.paymentMethod.toLowerCase().includes(q))
-            );
-            if (textFiltered.length > 0) {
-              candidates = textFiltered;
+          // 2. Match searchTokens against current expenses
+          if (searchTokens.length > 0) {
+            for (const token of searchTokens) {
+              const t = token.toLowerCase();
+              for (const exp of current) {
+                const nameLower = (exp.name || '').toLowerCase();
+                const catLower = (exp.category || '').toLowerCase();
+                const notesLower = (exp.notes || '').toLowerCase();
+                const payLower = (exp.paymentMethod || '').toLowerCase();
+
+                if (
+                  nameLower === t ||
+                  nameLower.includes(t) ||
+                  t.includes(nameLower) ||
+                  catLower === t ||
+                  (t.length >= 3 && catLower.includes(t)) ||
+                  notesLower.includes(t) ||
+                  payLower.includes(t)
+                ) {
+                  matchedExpenses.set(exp.id, exp);
+                }
+              }
             }
           }
 
-          // Decision on candidates
+          // 3. Match target amounts against current expenses
+          if (targetAmounts.length > 0) {
+            for (const amt of targetAmounts) {
+              for (const exp of current) {
+                if (Math.abs(Number(exp.amount) - amt) < 0.01) {
+                  matchedExpenses.set(exp.id, exp);
+                }
+              }
+            }
+          }
+
+          // 4. Date and category filters
+          let results = Array.from(matchedExpenses.values());
+
+          // If no tokens or amounts matched yet, start with all current if category or date is specified
+          if (results.length === 0 && (rawDate || rawCategory)) {
+            results = [...current];
+          }
+
+          if (rawDate && results.length > 0) {
+            const dateFiltered = results.filter((e) => matchesDateFilter(e.date, rawDate));
+            if (dateFiltered.length > 0) {
+              results = dateFiltered;
+            }
+          }
+
+          if (rawCategory && results.length > 0) {
+            const cat = rawCategory.toLowerCase();
+            const catFiltered = results.filter(
+              (e) => e.category && e.category.toLowerCase().includes(cat)
+            );
+            if (catFiltered.length > 0) {
+              results = catFiltered;
+            }
+          }
+
           const hasAnyFilter =
-            cleanQuery.length > 0 || targetAmount !== null || !!rawDate || !!rawCategory;
+            searchTokens.length > 0 ||
+            targetAmounts.length > 0 ||
+            rawIds.length > 0 ||
+            !!rawDate ||
+            !!rawCategory;
 
           if (hasAnyFilter) {
-            if (candidates.length < current.length || candidates.length > 0) {
-              toDelete = isAllRequested ? candidates : [candidates[0]];
+            // A filter was explicitly specified: ONLY delete what actually matched!
+            if (results.length > 0) {
+              if (
+                isAllRequested ||
+                searchTokens.length > 1 ||
+                targetAmounts.length > 1 ||
+                explicitItems.length > 1
+              ) {
+                toDelete = results;
+              } else {
+                // If only a single item/amount was asked and not all, delete the best match
+                toDelete = [results[0]];
+              }
+            } else {
+              // Filter was provided but matched NOTHING: do not delete random expenses!
+              toDelete = [];
             }
           } else {
+            // No filters provided at all
             if (isAllRequested) {
               toDelete = [...current];
             } else {
-              // Delete latest transaction by default
               toDelete = [current[0]];
             }
           }
@@ -1490,8 +1689,9 @@ export async function executeSecretaryTool(
 
         if (toDelete.length === 0) {
           const filterSummary = [
-            cleanQuery ? `name: "${cleanQuery}"` : '',
-            targetAmount !== null ? `amount: ₹${targetAmount}` : '',
+            explicitItems.length > 0 ? `items: [${explicitItems.join(', ')}]` : '',
+            rawQuery ? `query: "${rawQuery}"` : '',
+            targetAmounts.length > 0 ? `amounts: [${targetAmounts.map((a) => `₹${a}`).join(', ')}]` : '',
             rawDate ? `date: "${rawDate}"` : '',
             rawCategory ? `category: "${rawCategory}"` : '',
           ]
@@ -1501,7 +1701,7 @@ export async function executeSecretaryTool(
           return {
             data: {
               success: false,
-              message: `No expense found matching criteria (${filterSummary || 'provided search'}). Available recent expenses: ${current
+              message: `No expense found matching ${filterSummary || 'search criteria'}. Available recent expenses: ${current
                 .slice(0, 5)
                 .map((e) => `"${e.name}" (₹${Number(e.amount).toLocaleString()} on ${e.date})`)
                 .join(', ')}`,
@@ -1529,9 +1729,9 @@ export async function executeSecretaryTool(
           }
         }
 
-        notifyDataChanged('expenses');
+        notifyDataChanged('expenses', { updatedExpenses: updated });
 
-        const chipText =
+        const chipLabel =
           toDelete.length === 1
             ? `✓ Expense Deleted: "${toDelete[0].name}" (₹${Number(toDelete[0].amount).toLocaleString()})`
             : `✓ Deleted ${toDelete.length} Expenses`;
@@ -1540,14 +1740,10 @@ export async function executeSecretaryTool(
           data: {
             success: true,
             deletedCount: toDelete.length,
-            deletedExpenses: toDelete.map((e) => ({
-              id: e.id,
-              name: e.name,
-              amount: e.amount,
-              date: e.date,
-            })),
+            deletedExpenses: toDelete,
+            remainingCount: updated.length,
           },
-          actionChip: chipText,
+          actionChip: chipLabel,
         };
       }
 
@@ -2091,13 +2287,13 @@ CRITICAL RULES & GUARDRAILS:
 6. CLARITY: After executing tool actions, briefly summarize what was completed in a friendly, professional executive tone.
 7. DATE-SPECIFIC EXPENSE QUERIES: When the user asks about spending on a specific date (e.g. "How much did I spend on 9 sept 2026", "spending on 2026-09-09", "what did I buy yesterday"), invoke fetch_expenses with the date argument (e.g. date: "9 sept 2026"). The tool automatically pre-calculates the exact totalSpent across all matching transactions. State the exact total amount in ₹ and list the individual matching items.
 8. DELETION & DATA REMOVAL:
-   - When the user asks to delete, remove, or clear spendings/expenses (e.g. "delete spending 500", "remove coffee expense", "delete last spending", "clear all spendings", "delete 50 rs"):
+   - When the user asks to delete, remove, or clear spendings/expenses (e.g. "delete shipping", "delete chocolate", "delete shipping, shopping expense, and chocolate", "delete spending 500", "remove coffee expense", "delete last spending", "delete these 3 expenses", "clear all spendings", "delete 50 rs"):
      * Immediately execute the tool call 'delete_expense' or 'clear_all_expenses'.
-     * If user specified an amount (e.g. 500, 50), pass amount: 500. DO NOT pass the word "spending" or "expense" in query.
-     * If user specified a merchant/item (e.g. "coffee", "Starbucks"), pass query: "coffee".
-     * If user asked to delete the last or latest expense, pass latest: true.
-     * If user asked to clear all expenses, invoke clear_all_expenses with confirmed: true, or delete_expense with all: true.
-   - ZERO FALSE CONFIRMATIONS: NEVER claim that an expense or item was deleted or removed unless the tool returned { success: true }. If the tool returned { success: false }, you must inform the user that no matching expense was found and show recent available expenses.`;
+     * For multiple items (e.g. Shipping, Shopping expense, Chocolate), invoke 'delete_expense' with items: ["Shipping", "Shopping expense", "Chocolate"] or query: "Shipping, Shopping expense, Chocolate", all: true.
+     * For single items or merchants, pass query: "Shipping" (or name: "Shipping").
+     * For amounts, pass amount: 80 or amounts: [80, 50, 10].
+     * For deleting all expenses or "these expenses" / "them", invoke 'clear_all_expenses' with confirmed: true, or 'delete_expense' with all: true.
+   - ABSOLUTE ZERO FALSE CONFIRMATIONS: NEVER claim or state in your message that an expense was deleted or removed unless the tool 'delete_expense' or 'clear_all_expenses' was executed in this turn and returned { success: true }. If the tool returned { success: false }, inform the user accurately that no matching expense was found and show recent available expenses.`;
 
 // Groq API Key loaded securely from Storage, environment variable, or fallback
 const DEFAULT_GROQ_KEY = '';
@@ -2327,59 +2523,107 @@ export async function sendSecretaryMessage(
           assistantMsg.reasoning?.trim() ||
           'I have completed your request.';
 
-        // Safety check for user expense deletion intent
-        const deletionIntent = extractExpenseDeletionIntent(userPrompt);
+        // Safety check for user expense deletion intent and anti-hallucination guard
+        const currentExpenses = Storage.getExpenses();
+        const deletionIntent = extractExpenseDeletionIntent(userPrompt, currentExpenses);
         const expenseDeletionSucceeded = executedToolEvents.some(
           (t) => (t.name === 'delete_expense' || t.name === 'clear_all_expenses') && t.success
         );
 
-        // Fallback: If user asked to delete spending but the LLM did not execute or failed to pass arguments properly
-        if (deletionIntent.isDeletion && !expenseDeletionSucceeded) {
-          const fallbackTool = deletionIntent.isAll ? 'clear_all_expenses' : 'delete_expense';
-          const fallbackResult = await executeSecretaryTool(fallbackTool, {
-            query: deletionIntent.query,
-            amount: deletionIntent.amount,
-            date: deletionIntent.date,
-            latest: deletionIntent.isLatest,
-            all: deletionIntent.isAll,
-            confirmed: true,
-          });
+        // Check if the LLM's text reply claims that expenses/spendings were deleted or removed
+        const claimsDeletion =
+          /\b(i('ve|\s+have)?\s+(deleted|removed|cleared|erased|purged|wiped|cancelled))\b/i.test(finalReply) ||
+          /\b(has\s+been|have\s+been|were|was)\s+(deleted|removed|cleared|erased|purged)\b/i.test(finalReply) ||
+          /\b(successfully\s+(deleted|removed|cleared|erased))\b/i.test(finalReply) ||
+          /\b(deleted|removed|cleared)\s+(the|your|these|all|those|the\s+following)\b/i.test(finalReply) ||
+          /\b(done|sure|okay|ok)[!.,]?\s*(i('ve|\s+have)?\s*)?(deleted|removed|cleared)\b/i.test(finalReply);
 
-          if (fallbackResult.data?.success === true) {
-            if (fallbackResult.actionChip) {
-              collectedActionChips.push(fallbackResult.actionChip);
-            }
-            executedToolEvents.push({
-              name: fallbackTool,
-              args: deletionIntent,
-              success: true,
-              data: fallbackResult.data,
-            });
-            const deletedList = fallbackResult.data.deletedExpenses
-              ?.map((e: any) => `• **${e.name}** (₹${Number(e.amount).toLocaleString()} on ${e.date})`)
-              .join('\n');
-            finalReply = `✓ I have removed the spending from your dashboard:\n${
-              deletedList ||
-              `Cleared ${fallbackResult.data.deletedCount || fallbackResult.data.clearedCount || 'all'} records.`
-            }\n\nYour dashboard totals and expense charts have been updated.`;
-          } else {
-            finalReply = `⚠️ ${
-              fallbackResult.data?.message || 'Could not find any spending matching your request.'
-            }\n\nNo expenses were deleted.`;
+        const mentionsExpenseTopic =
+          /(spending|spendings|expense|expenses|transaction|transactions|cost|costs|record|records)/i.test(finalReply) ||
+          /(spending|spendings|expense|expenses|transaction|transactions|cost|costs|record|records)/i.test(userPrompt) ||
+          deletionIntent.isDeletion;
+
+        if (!expenseDeletionSucceeded && (deletionIntent.isDeletion || (claimsDeletion && mentionsExpenseTopic))) {
+          // Identify the target expenses to delete
+          let targetIds: string[] = [];
+
+          if (deletionIntent.matchedExpenseIds && deletionIntent.matchedExpenseIds.length > 0) {
+            targetIds = [...deletionIntent.matchedExpenseIds];
           }
-        } else if (!expenseDeletionSucceeded) {
-          // If no deletion actually occurred, guard against LLM hallucinations claiming it deleted something
-          const falselyClaimsDeletion =
-            /(has been|have been|i have|successfully|now)\s+(deleted|removed|cleared|erased)/i.test(finalReply) &&
-            /(spending|spendings|expense|expenses|transaction|cost)/i.test(finalReply);
 
-          if (falselyClaimsDeletion) {
-            const recent = Storage.getExpenses().slice(0, 5);
-            finalReply = `⚠️ No matching spending was found to delete. Available recent expenses:\n${
+          // Also scan userPrompt and finalReply for any existing expense names
+          if (targetIds.length === 0 && currentExpenses.length > 0) {
+            const combinedText = `${userPrompt} \n ${finalReply}`.toLowerCase();
+            for (const exp of currentExpenses) {
+              const nameLower = (exp.name || '').toLowerCase().trim();
+              if (nameLower.length >= 2 && combinedText.includes(nameLower)) {
+                if (!targetIds.includes(exp.id)) {
+                  targetIds.push(exp.id);
+                }
+              }
+            }
+          }
+
+          // If amounts were specified, match by amount
+          if (targetIds.length === 0 && deletionIntent.amounts && deletionIntent.amounts.length > 0) {
+            for (const amt of deletionIntent.amounts) {
+              for (const exp of currentExpenses) {
+                if (Math.abs(Number(exp.amount) - amt) < 0.01 && !targetIds.includes(exp.id)) {
+                  targetIds.push(exp.id);
+                }
+              }
+            }
+          }
+
+          // If user asked to delete "all", "everything", "these", "them", "all 3"
+          if (targetIds.length === 0 && deletionIntent.isAll) {
+            targetIds = currentExpenses.map((e) => e.id);
+          }
+
+          if (targetIds.length > 0) {
+            // Execute deletion with the resolved target IDs
+            const fallbackResult = await executeSecretaryTool('delete_expense', {
+              ids: targetIds,
+              all: targetIds.length > 1,
+            });
+
+            if (fallbackResult.data?.success === true) {
+              if (fallbackResult.actionChip) {
+                collectedActionChips.push(fallbackResult.actionChip);
+              }
+              executedToolEvents.push({
+                name: 'delete_expense',
+                args: { ids: targetIds },
+                success: true,
+                data: fallbackResult.data,
+              });
+              const deletedList = fallbackResult.data.deletedExpenses
+                ?.map((e: any) => `• **${e.name}** (₹${Number(e.amount).toLocaleString()} on ${e.date})`)
+                .join('\n');
+              finalReply = `✓ I have removed the requested spending records from your dashboard:\n${
+                deletedList || `Removed ${targetIds.length} expense(s).`
+              }\n\nYour dashboard totals and expense records have been updated.`;
+            }
+          } else if (deletionIntent.isLatest && currentExpenses.length > 0) {
+            // Delete latest
+            const fallbackResult = await executeSecretaryTool('delete_expense', {
+              latest: true,
+            });
+            if (fallbackResult.data?.success === true) {
+              if (fallbackResult.actionChip) {
+                collectedActionChips.push(fallbackResult.actionChip);
+              }
+              const deleted = fallbackResult.data.deletedExpenses?.[0];
+              finalReply = `✓ Removed recent expense "${deleted?.name || 'Latest'}" (₹${Number(deleted?.amount || 0).toLocaleString()}). Dashboard updated.`;
+            }
+          } else {
+            // No matching expenses exist: NEVER let the AI claim it deleted anything!
+            const recent = currentExpenses.slice(0, 5);
+            finalReply = `⚠️ No matching spending records were found in your dashboard to delete.\n\nCurrent recorded expenses:\n${
               recent.length > 0
                 ? recent.map((e) => `• **${e.name}** (₹${Number(e.amount).toLocaleString()} on ${e.date})`).join('\n')
                 : 'No expenses currently recorded.'
-            }`;
+            }\n\nNo expenses were deleted.`;
           }
         }
 
