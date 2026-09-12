@@ -114,6 +114,13 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         keywords: ['home', 'dashboard', 'overview', 'quotes', 'slideshow', 'notion', 'main', 'start'],
       },
       {
+        id: 'assistant' as MainNavView,
+        title: 'AI Secretary & Assistant',
+        subtitle: 'Autonomous AI Secretary with Groq Llama 3.3 70B',
+        icon: <Sparkles className="w-4 h-4 text-purple-500" />,
+        keywords: ['ai', 'assistant', 'secretary', 'groq', 'llama', 'bot', 'chat', 'ask'],
+      },
+      {
         id: 'workfolio' as MainNavView,
         title: 'Workfolio & Bio',
         subtitle: 'Profile, Design Services, Interactive Resume & Projects',

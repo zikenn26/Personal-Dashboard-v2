@@ -44,6 +44,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { QuickCaptureBar } from './components/QuickCaptureBar';
 import { BackupRestoreView } from './components/BackupRestoreView';
+import { AIAssistantView } from './components/AIAssistantView';
 import { GoalsView } from './components/GoalsView';
 import { QuotesManagerView } from './components/QuotesManagerView';
 import { ExamsSection } from './components/ExamsSection';
@@ -282,6 +283,17 @@ export default function App() {
       triggerConfetti();
     }
   };
+
+  // Sync state in real-time whenever AI Secretary performs direct CRUD operations
+  useEffect(() => {
+    const handleSecretarySync = () => {
+      handleHydrateAllFromStorage(false);
+    };
+    window.addEventListener('dashboard-data-updated', handleSecretarySync);
+    return () => {
+      window.removeEventListener('dashboard-data-updated', handleSecretarySync);
+    };
+  }, []);
 
   // 1. Initial Cloud Hydration & Supabase Realtime WebSocket Listener (Instant Multi-Device Sync)
   useEffect(() => {
@@ -1080,6 +1092,7 @@ export default function App() {
   const navItems: NavItem[] = [
     // Top Level
     { id: 'home', label: 'Home / Today', icon: Home, count: undefined, emoji: '🏠', group: 'top' },
+    { id: 'assistant', label: 'AI Assistant', icon: Sparkles, count: undefined, emoji: '✨', group: 'top' },
 
     // PLAN
     { id: 'tasks', label: 'Tasks', icon: CheckSquare, count: todos.filter((t) => !t.completed).length, emoji: '☑️', group: 'plan' },
@@ -1865,6 +1878,11 @@ export default function App() {
                   onUpdateSchedule={handleUpdateSchedule}
                   soundEnabled={settings.soundEnabled}
                 />
+              )}
+
+              {/* VIEW: Executive AI Secretary & Assistant */}
+              {activeView === 'assistant' && (
+                <AIAssistantView onNavigate={handleNavigate} />
               )}
 
               {/* VIEW 1: Workfolio with Resume Upload & Interactive Bio */}

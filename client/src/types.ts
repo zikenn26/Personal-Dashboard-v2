@@ -333,6 +333,7 @@ export interface AppSettings {
 
 export type MainNavView =
   | 'home'
+  | 'assistant'
   | 'tasks'
   | 'habits'
   | 'goals'

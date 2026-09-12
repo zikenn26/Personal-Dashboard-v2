@@ -10,6 +10,42 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
 
+  // Proxy /api/groq to Groq API backend
+  app.all("/api/groq*", async (req, res) => {
+    try {
+      const subPath = req.originalUrl.replace(/^\/api\/groq/, "");
+      const targetUrl = `https://api.groq.com/openai/v1${subPath}`;
+      const headers: Record<string, string> = {};
+      for (const [k, v] of Object.entries(req.headers)) {
+        if (k.toLowerCase() !== "host" && typeof v === "string") {
+          headers[k] = v;
+        }
+      }
+      const fetchOpts: RequestInit = {
+        method: req.method,
+        headers,
+      };
+      if (!["GET", "HEAD"].includes(req.method)) {
+        const chunks: any[] = [];
+        for await (const chunk of req) {
+          chunks.push(chunk);
+        }
+        fetchOpts.body = Buffer.concat(chunks);
+      }
+      const upstreamRes = await fetch(targetUrl, fetchOpts);
+      res.status(upstreamRes.status);
+      upstreamRes.headers.forEach((value, name) => {
+        if (name.toLowerCase() !== "content-encoding") {
+          res.setHeader(name, value);
+        }
+      });
+      const buf = await upstreamRes.arrayBuffer();
+      res.send(Buffer.from(buf));
+    } catch (err: any) {
+      res.status(502).json({ error: "Groq proxy error", message: err?.message });
+    }
+  });
+
   // Proxy /api/supabase to Supabase backend to prevent CORS/sandbox issues in iframes
   const rawSupabaseUrl =
     process.env.VITE_SUPABASE_URL || "https://amlegmbvqzbhqqqbrvjx.supabase.co";

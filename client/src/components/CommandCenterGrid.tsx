@@ -10,6 +10,7 @@ import {
 import { Sound } from '../utils/audio';
 import { IndianCalendarWidget } from './IndianCalendarWidget';
 import { DynamicScheduleCard } from './DynamicScheduleCard';
+import { AISecretaryWidget } from './AISecretaryWidget';
 import {
   CheckCircle2,
   Circle,
@@ -417,6 +418,16 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
   ) => {
     const dragHandle = renderDragHandle(widgetId, colIdx, rowIdx, colLength);
 
+    if (widgetId === 'ai_secretary' || widgetId === 'secretary') {
+      return (
+        <AISecretaryWidget
+          dragHandle={dragHandle}
+          onNavigate={onNavigate}
+          className="w-full"
+        />
+      );
+    }
+
     if (widgetId === 'calendar') {
       return (
         <IndianCalendarWidget
@@ -435,7 +446,7 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
       return (
         <DynamicScheduleCard
           schedule={schedule}
-          onUpdateSchedule={onUpdateSchedule}
+          onUpdateSchedule={onUpdateSchedule || (() => {})}
           soundEnabled={soundEnabled}
           dragHandle={dragHandle}
           className="w-full"

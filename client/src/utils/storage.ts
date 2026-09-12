@@ -57,6 +57,7 @@ export const STORAGE_KEYS = {
 
 export const DEFAULT_HOME_GRID_ORDER: string[] = [
   'calendar',
+  'ai_secretary',
   'schedule',
   'expenses',
   'habits',
@@ -65,7 +66,7 @@ export const DEFAULT_HOME_GRID_ORDER: string[] = [
 
 export const DEFAULT_HOME_COLUMNS: [string[], string[], string[]] = [
   ['calendar', 'habits'],
-  ['tasks', 'expenses'],
+  ['ai_secretary', 'tasks', 'expenses'],
   ['schedule'],
 ];
 
@@ -714,7 +715,7 @@ export const Storage = {
 
   getHomeGridColumns: (): [string[], string[], string[]] => {
     const raw = loadFromStorage<any>(STORAGE_KEYS.HOME_GRID_ORDER, null);
-    const validWidgets = new Set(['calendar', 'schedule', 'expenses', 'habits', 'tasks']);
+    const validWidgets = new Set(['calendar', 'schedule', 'expenses', 'habits', 'tasks', 'ai_secretary']);
 
     if (Array.isArray(raw) && raw.length === 3 && Array.isArray(raw[0]) && Array.isArray(raw[1]) && Array.isArray(raw[2])) {
       const col0 = raw[0].filter((w: string) => validWidgets.has(w));
@@ -722,6 +723,11 @@ export const Storage = {
       const col2 = raw[2].filter((w: string) => validWidgets.has(w));
 
       const present = new Set([...col0, ...col1, ...col2]);
+      if (!present.has('ai_secretary')) {
+        // Place next to calendar at top of col 1
+        col1.unshift('ai_secretary');
+        present.add('ai_secretary');
+      }
       validWidgets.forEach((w) => {
         if (!present.has(w)) {
           col2.push(w);

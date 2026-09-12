@@ -27,6 +27,12 @@ export default defineConfig({
     host: "0.0.0.0",
     allowedHosts: true,
     proxy: {
+      "/api/groq": {
+        target: "https://api.groq.com/openai/v1",
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api\/groq/, ""),
+      },
       "/api/supabase": {
         target: process.env.VITE_SUPABASE_URL || "https://amlegmbvqzbhqqqbrvjx.supabase.co",
         changeOrigin: true,
