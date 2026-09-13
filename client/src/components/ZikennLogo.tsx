@@ -27,7 +27,6 @@ export const ZikennLogo: React.FC<ZikennLogoProps> = ({
     );
   }
 
-  // Both 'full' and 'icon' variants use the exact brand logo image
   return <BrandLogo size={size} className={className} alt={alt} {...props} />;
 };
 
