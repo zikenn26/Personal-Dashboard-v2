@@ -51,6 +51,7 @@ import { QuotesManagerView } from './components/QuotesManagerView';
 import { ExamsSection } from './components/ExamsSection';
 import { AuthModal } from './components/AuthModal';
 import { AvatarPickerModal } from './components/AvatarPickerModal';
+import { BrandLogo } from './components/BrandLogo';
 import { STOCK_IMAGES } from './assets/stockImages';
 import LandingPage from './components/LandingPage';
 import { Auth, getUserWorkspaceKey } from './utils/auth';
@@ -169,7 +170,7 @@ export default function App() {
   };
 
   // Modals & Floating Bars
-  const [isJarvisPopupOpen, setIsJarvisPopupOpen] = useState(false);
+  const [isZikennPopupOpen, setIsZikennPopupOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
@@ -326,37 +327,14 @@ export default function App() {
     const handleDashboardDataUpdated = (e?: Event) => {
       const customEvt = e as CustomEvent<{ module?: string; updatedExpenses?: ExpenseItem[] }>;
 
-      // Force a fresh direct read from localStorage to bypass any cached or in-memory references
-      let freshExpenses: ExpenseItem[] | null = null;
-      try {
-        const scopedKey = getScopedKey(STORAGE_KEYS.EXPENSES);
-        const rawScoped = localStorage.getItem(scopedKey);
-        if (rawScoped !== null) {
-          const parsed = JSON.parse(rawScoped);
-          if (Array.isArray(parsed)) {
-            freshExpenses = parsed;
-          }
-        }
-        if (!freshExpenses) {
-          const rawLegacy = localStorage.getItem(STORAGE_KEYS.EXPENSES);
-          if (rawLegacy !== null) {
-            const parsed = JSON.parse(rawLegacy);
-            if (Array.isArray(parsed)) {
-              freshExpenses = parsed;
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('Direct localStorage read for expenses failed:', err);
-      }
-
       // If custom event provided explicit updatedExpenses array, prefer it; otherwise use direct localStorage read
       if (customEvt?.detail?.updatedExpenses && Array.isArray(customEvt.detail.updatedExpenses)) {
-        setExpenses([...customEvt.detail.updatedExpenses]);
-      } else if (freshExpenses !== null) {
-        setExpenses([...freshExpenses]);
+        const fresh = [...customEvt.detail.updatedExpenses];
+        setExpenses(fresh);
+        Storage.setExpenses(fresh);
       } else {
-        setExpenses([...Storage.getExpenses()]);
+        const fresh = Storage.getExpenses();
+        setExpenses([...fresh]);
       }
 
       // Hydrate all other modules cleanly without clobbering the fresh expenses
@@ -897,26 +875,60 @@ export default function App() {
     Storage.setExpenses(updated);
   };
 
-  const handleDeleteExpense = (id: string) => {
-    const itemToDelete = expenses.find((e) => e.id === id);
-    if (!itemToDelete) return;
+  const handleDeleteExpense = (id: string, skipConfirm = true) => {
+    Sound.click(settings.soundEnabled);
+    const targetId = String(id).trim();
 
-    const itemLabel = `"${itemToDelete.name}" (₹${Number(itemToDelete.amount).toLocaleString()})`;
-    const confirmed = window.confirm(`Are you sure you want to delete ${itemLabel}?`);
-    if (!confirmed) {
+    // 1. Locate item across React state and Storage
+    const currentStored = Storage.getExpenses();
+    const itemToDelete =
+      expenses.find((e) => String(e.id).trim() === targetId) ||
+      currentStored.find((e) => String(e.id).trim() === targetId);
+
+    if (!itemToDelete) {
+      console.warn(`Expense with ID ${id} not found for deletion`);
       return;
     }
 
-    const itemIndex = expenses.findIndex((e) => e.id === id);
-    const updated = expenses.filter((e) => e.id !== id);
-    setExpenses(updated);
-    Storage.setExpenses(updated);
+    // 2. Prompt confirmation if not already confirmed in-app
+    if (!skipConfirm) {
+      const itemLabel = `"${itemToDelete.name}" (₹${Number(itemToDelete.amount).toLocaleString()})`;
+      const confirmed = window.confirm(`Are you sure you want to delete ${itemLabel}?`);
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    const itemIndex = expenses.findIndex((e) => String(e.id).trim() === targetId);
+
+    // 3. Compute filtered lists for both state and storage
+    const nextExpenses = expenses.filter((e) => String(e.id).trim() !== targetId);
+    const nextStored = currentStored.filter((e) => String(e.id).trim() !== targetId);
+
+    // 4. Immediately persist synchronously to localStorage (both scoped and unscoped)
+    Storage.setExpenses(nextStored);
+    try {
+      localStorage.setItem(getScopedKey(STORAGE_KEYS.EXPENSES), JSON.stringify(nextStored));
+      localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(nextStored));
+    } catch {}
+
+    // 5. Immediately update React state with fresh array reference
+    setExpenses([...nextExpenses]);
+
+    // 6. Dispatch 'dashboard-data-updated' event to notify all listening components
+    window.dispatchEvent(
+      new CustomEvent('dashboard-data-updated', {
+        detail: { module: 'expenses', updatedExpenses: nextExpenses },
+      })
+    );
+
+    // 7. Flush auto sync immediately to Supabase
     flushAutoSyncImmediately({
       ...Storage.getAllDataPayload(),
-      expenses: updated,
+      expenses: nextExpenses,
     });
 
-    // Clear previous timer and trigger Undo Toast
+    // 8. Trigger Undo Toast
     if (expenseUndoTimerRef.current) {
       clearTimeout(expenseUndoTimerRef.current);
     }
@@ -945,6 +957,11 @@ export default function App() {
 
     setExpenses(nextExpenses);
     Storage.setExpenses(nextExpenses);
+    window.dispatchEvent(
+      new CustomEvent('dashboard-data-updated', {
+        detail: { module: 'expenses', updatedExpenses: nextExpenses },
+      })
+    );
     flushAutoSyncImmediately({
       ...Storage.getAllDataPayload(),
       expenses: nextExpenses,
@@ -963,6 +980,11 @@ export default function App() {
     const updated = expenses.filter((e) => !idSet.has(e.id));
     setExpenses(updated);
     Storage.setExpenses(updated);
+    window.dispatchEvent(
+      new CustomEvent('dashboard-data-updated', {
+        detail: { module: 'expenses', updatedExpenses: updated },
+      })
+    );
     flushAutoSyncImmediately({
       ...Storage.getAllDataPayload(),
       expenses: updated,
@@ -975,6 +997,11 @@ export default function App() {
     Storage.setExpenses([]);
     setExcelImportLogs([]);
     Storage.setExcelImportLogs([]);
+    window.dispatchEvent(
+      new CustomEvent('dashboard-data-updated', {
+        detail: { module: 'expenses', updatedExpenses: [] },
+      })
+    );
     flushAutoSyncImmediately({
       ...Storage.getAllDataPayload(),
       expenses: [],
@@ -1240,7 +1267,7 @@ export default function App() {
   const navItems: NavItem[] = [
     // Top Level
     { id: 'home', label: 'Home / Today', icon: Home, count: undefined, emoji: '🏠', group: 'top' },
-    { id: 'assistant', label: 'Jarvis AI', icon: Sparkle, count: undefined, emoji: '✨', group: 'top' },
+    { id: 'assistant', label: 'Zikenn AI', icon: Sparkle, count: undefined, emoji: '✨', group: 'top' },
 
     // PLAN
     { id: 'tasks', label: 'Tasks', icon: CheckSquare, count: todos.filter((t) => !t.completed).length, emoji: '☑️', group: 'plan' },
@@ -1331,27 +1358,31 @@ export default function App() {
               </button>
               <span className="hidden sm:inline text-[#D1D5DB] dark:text-[#4B5563]">/</span>
               <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#F7F7F5] dark:bg-[#1F2937] border border-[#EDECE9] dark:border-[#374151] text-[#37352F] dark:text-white font-semibold text-xs min-w-0 max-w-[110px] sm:max-w-none">
-                <span className="shrink-0">{currentNav.emoji}</span>
+                {currentNav.id === 'assistant' ? (
+                  <BrandLogo size={16} className="rounded-xs shrink-0" />
+                ) : (
+                  <span className="shrink-0">{currentNav.emoji}</span>
+                )}
                 <span className="truncate">{currentNav.label}</span>
               </div>
 
-              {/* Quick Jarvis AI Access Button */}
+              {/* Quick Zikenn AI Access Button */}
               <button
                 type="button"
                 id="navbar-ai-bot-btn"
                 onClick={() => {
                   Sound.click(settings.soundEnabled);
-                  setIsJarvisPopupOpen(true);
+                  setIsZikennPopupOpen(true);
                 }}
                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  isJarvisPopupOpen || activeView === 'assistant'
+                  isZikennPopupOpen || activeView === 'assistant'
                     ? 'bg-indigo-600 text-white shadow-2xs'
                     : 'bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/60'
                 }`}
-                title="Chat with Personalized Jarvis AI"
+                title="Chat with Personalized Zikenn AI"
               >
-                <Sparkle className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400 fill-indigo-500/20" />
-                <span className="hidden md:inline">Jarvis AI</span>
+                <BrandLogo size={16} className="rounded-xs shrink-0" />
+                <span className="hidden md:inline">Zikenn AI</span>
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
               </button>
             </div>
@@ -1690,7 +1721,11 @@ export default function App() {
                         title={item.label}
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <span className="text-base shrink-0">{item.emoji}</span>
+                          {item.id === 'assistant' ? (
+                            <BrandLogo size={18} className="rounded-xs shrink-0" />
+                          ) : (
+                            <span className="text-base shrink-0">{item.emoji}</span>
+                          )}
                           {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
                         </div>
                       </button>
@@ -1961,7 +1996,11 @@ export default function App() {
                           }`}
                         >
                           <div className="flex items-center gap-2.5">
-                            <span>{item.emoji}</span>
+                            {item.id === 'assistant' ? (
+                              <BrandLogo size={18} className="rounded-xs shrink-0" />
+                            ) : (
+                              <span>{item.emoji}</span>
+                            )}
                             <span>{item.label}</span>
                           </div>
                           {item.badge && (
@@ -2045,11 +2084,11 @@ export default function App() {
                   schedule={schedule}
                   onUpdateSchedule={handleUpdateSchedule}
                   soundEnabled={settings.soundEnabled}
-                  onOpenJarvisPopup={() => setIsJarvisPopupOpen(true)}
+                  onOpenZikennPopup={() => setIsZikennPopupOpen(true)}
                 />
               )}
 
-              {/* VIEW: Personalized Jarvis AI */}
+              {/* VIEW: Personalized Zikenn AI */}
               {activeView === 'assistant' && (
                 <AIAssistantView onNavigate={handleNavigate} />
               )}
@@ -2313,19 +2352,19 @@ export default function App() {
         userId={currentUser?.email || profile.contactEmail}
       />
 
-      {/* Floating Bottom-Right Popup: Personalized Jarvis AI */}
-      {isJarvisPopupOpen && (
+      {/* Floating Bottom-Right Popup: Personalized Zikenn AI */}
+      {isZikennPopupOpen && (
         <aside
-          id="jarvis-ai-popup"
+          id="zikenn-ai-popup"
           role="dialog"
-          aria-label="Personalized Jarvis AI Chat"
+          aria-label="Personalized Zikenn AI Chat"
           className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 w-[calc(100vw-2rem)] sm:w-[440px] md:w-[460px] h-[580px] max-h-[82vh] rounded-2xl shadow-2xl border border-[#E5E5E2] dark:border-[#334155] overflow-hidden bg-white dark:bg-[#1E293B] flex flex-col animate-in fade-in slide-in-from-bottom-5 duration-200"
         >
           <AISecretaryWidget
             isPopup={true}
-            onClosePopup={() => setIsJarvisPopupOpen(false)}
+            onClosePopup={() => setIsZikennPopupOpen(false)}
             onNavigate={(view, tabOrFilter) => {
-              setIsJarvisPopupOpen(false);
+              setIsZikennPopupOpen(false);
               handleNavigate(view, tabOrFilter);
             }}
           />

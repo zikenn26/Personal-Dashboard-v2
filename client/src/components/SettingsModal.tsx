@@ -525,7 +525,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <div className="flex items-center justify-between">
               <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold flex items-center gap-1.5">
                 <Sparkle className="w-3.5 h-3.5 text-indigo-500 fill-indigo-500/20" />
-                <span>Jarvis AI &amp; Groq API Key</span>
+                <span>Zikenn AI &amp; Groq API Key</span>
               </span>
               <a
                 href="https://console.groq.com/keys"
@@ -539,7 +539,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
 
             <p className="text-xs text-[#6B7280] dark:text-[#9CA3AF]">
-              Configure your personal Groq API key (<code className="font-mono text-[11px] bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">gsk_...</code>) for Personalized Jarvis AI.
+              Configure your personal Groq API key (<code className="font-mono text-[11px] bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">gsk_...</code>) for Personalized Zikenn AI.
             </p>
 
             <form onSubmit={handleSaveGroqKey} className="space-y-2">

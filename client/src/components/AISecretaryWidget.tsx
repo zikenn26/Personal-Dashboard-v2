@@ -31,6 +31,7 @@ import {
   getActiveGroqKey,
 } from '../services/groqService';
 import { Storage } from '../utils/storage';
+import { BrandLogo } from './BrandLogo';
 
 interface AISecretaryWidgetProps {
   dragHandle?: React.ReactNode;
@@ -78,7 +79,7 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
         id: 'welcome',
         role: 'assistant',
         content:
-          'Hello! I am your Personalized Jarvis AI. How can I assist you today?',
+          'Hello! I am your Personalized Zikenn AI. How can I assist you today?',
         timestamp: Date.now(),
       },
     ];
@@ -215,15 +216,15 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
       <div className="p-3.5 sm:px-4 pb-3 border-b border-[#EDECE9] dark:border-[#334155]/60 flex items-center justify-between gap-2 shrink-0 bg-[#FAF9F6] dark:bg-[#1E293B]">
         <div className="flex items-center gap-2.5 min-w-0">
           {dragHandle}
-          <div className="w-7 h-7 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-900/40 flex items-center justify-center text-[#6366F1] dark:text-[#818CF8] shrink-0">
-            <Sparkle className="w-3.5 h-3.5 fill-indigo-500/20" />
+          <div className="w-7 h-7 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-900/40 flex items-center justify-center shrink-0 overflow-hidden">
+            <BrandLogo size={22} className="rounded-sm" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[#37352F] dark:text-white truncate">
-                Personalized Jarvis AI
+              <h3 className="text-xs font-bold uppercase tracking-wider text-black dark:text-white truncate">
+                Personalized Zikenn AI
               </h3>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" title="Jarvis AI Online" />
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" title="Zikenn AI Online" />
             </div>
           </div>
         </div>
@@ -281,7 +282,7 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
             <button
               type="button"
               onClick={onClosePopup}
-              title="Close Jarvis AI"
+              title="Close Zikenn AI"
               className="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950/60 transition-colors cursor-pointer text-gray-400 hover:text-rose-600 dark:hover:text-rose-400"
             >
               <X className="w-4 h-4" />
@@ -418,8 +419,8 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
               className={`flex gap-2.5 ${isUser ? 'justify-end' : 'justify-start'}`}
             >
               {!isUser && (
-                <div className="w-6 h-6 rounded-lg bg-[#6366F1] text-white flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
-                  <Sparkle className="w-3.5 h-3.5 fill-white/20" />
+                <div className="w-6 h-6 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-900/40 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs overflow-hidden">
+                  <BrandLogo size={20} className="rounded-xs" />
                 </div>
               )}
 
@@ -524,9 +525,9 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Suggested Quick Prompts (Only if 2 or fewer messages) */}
+      {/* Suggested Quick Prompts (Only if 2 or fewer messages, hidden on mobile for clutter-free view) */}
       {messages.length <= 2 && (
-        <div className="px-4 pb-2 flex flex-wrap gap-1.5 shrink-0">
+        <div className="hidden sm:flex px-4 pb-2 flex-wrap gap-1.5 shrink-0">
           {INITIAL_SUGGESTIONS.map((sugg, i) => (
             <button
               key={i}
@@ -555,7 +556,7 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
             value={inputPrompt}
             onChange={(e) => setInputPrompt(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask Jarvis anything (e.g., 'Add task...', 'Analyze spending')..."
+            placeholder="Ask Zikenn anything (e.g., 'Add task...', 'Analyze spending')..."
             disabled={isLoading}
             className="flex-1 bg-transparent px-2.5 py-1.5 text-xs text-[#111827] dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-hidden disabled:opacity-50"
           />

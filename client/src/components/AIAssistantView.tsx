@@ -1,5 +1,5 @@
 import React from 'react';
-import { ZikennEmblem, ZikennLogo } from './ZikennLogo';
+import { BrandLogo } from './BrandLogo';
 import { AISecretaryWidget } from './AISecretaryWidget';
 
 interface AIAssistantViewProps {
@@ -9,13 +9,10 @@ interface AIAssistantViewProps {
 export const AIAssistantView: React.FC<AIAssistantViewProps> = ({ onNavigate }) => {
   return (
     <div className="space-y-5 max-w-4xl mx-auto pb-6">
-      {/* Top Heading with Official Zikenn Logo
-          Light theme: Letters in black
-          Dark theme: Letters in white
-      */}
+      {/* Top Heading with Official Zikenn Brand Logo */}
       <div className="pb-3 border-b border-[#E5E7EB] dark:border-[#1F2937] flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <ZikennEmblem size={28} />
+          <BrandLogo size={36} className="rounded-lg" />
           <div>
             <h1 className="workspace-heading font-extrabold flex items-center gap-2">
               <span className="font-serif tracking-wide text-black dark:text-white transition-colors duration-200">

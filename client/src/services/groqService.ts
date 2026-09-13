@@ -2309,7 +2309,7 @@ export async function executeSecretaryTool(
   }
 }
 
-const SYSTEM_PROMPT = `You are Personalized Jarvis AI embedded directly in the user's Personal Dashboard & Life OS.
+const SYSTEM_PROMPT = `You are Personalized Zikenn AI embedded directly in the user's Personal Dashboard & Life OS.
 You are professional, concise, proactive, friendly, and accurate.
 
 CRITICAL RULES & GUARDRAILS:
@@ -2718,19 +2718,19 @@ export async function sendSecretaryMessage(
   // If all candidate models failed, report the error clearly
   let friendlyError: string;
   if (lastGroqError.includes('405') || lastGroqError.includes('Method Not Allowed')) {
-    friendlyError = `⚠️ **Jarvis AI**: Direct connection re-routed. Please retry your request with Jarvis AI.`;
+    friendlyError = `⚠️ **Zikenn AI**: Direct connection re-routed. Please retry your request with Zikenn AI.`;
   } else if (lastGroqError.includes('decommissioned') || lastGroqError.includes('mixtral') || lastGroqError.includes('llama3-') || lastGroqError.includes('model_not_found')) {
-    friendlyError = `⚠️ **Jarvis AI Updated**: Switched to high-performance model **GPT OSS 120B**. Please send your message again.`;
+    friendlyError = `⚠️ **Zikenn AI Updated**: Switched to high-performance model **GPT OSS 120B**. Please send your message again.`;
   } else if (
     lastGroqError.includes('rate_limit') ||
     lastGroqError.includes('tokens per minute') ||
     lastGroqError.includes('Rate limit')
   ) {
-    friendlyError = `⚠️ **Jarvis AI Rate Limit**: ${lastGroqError}. Please wait a few seconds and try again.`;
+    friendlyError = `⚠️ **Zikenn AI Rate Limit**: ${lastGroqError}. Please wait a few seconds and try again.`;
   } else if (lastGroqError) {
-    friendlyError = `⚠️ **Jarvis AI Error**: ${lastGroqError}`;
+    friendlyError = `⚠️ **Zikenn AI Error**: ${lastGroqError}`;
   } else {
-    friendlyError = '⚠️ Unable to connect to Jarvis AI. Please check your network connection or verify your Groq API key in Settings.';
+    friendlyError = '⚠️ Unable to connect to Zikenn AI. Please check your network connection or verify your Groq API key in Settings.';
   }
 
   const finalErrorMsg: ChatMessage = {

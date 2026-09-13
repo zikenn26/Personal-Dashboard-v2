@@ -226,19 +226,37 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [categoryScope, setCategoryScope] = useState<'month' | 'all'>('month');
 
-  // Custom useEffect hook that monitors the 'expenses' prop and forces an immediate re-render
-  // if the length of the list changes. This ensures the dashboard updates instantly when items
-  // are deleted without waiting for full page re-hydration.
-  const [, setExpenseRenderTick] = useState<number>(0);
+  // Custom useEffect hooks that monitor the 'expenses' prop and listen for 'dashboard-data-updated'
+  // and 'storage' events to force an immediate re-render whenever an item is removed or modified.
+  // This ensures the dashboard updates instantly when items are deleted without waiting for full page re-hydration.
+  const [expenseRenderTick, setExpenseRenderTick] = useState<number>(0);
   const prevExpensesLengthRef = useRef<number>(expenses ? expenses.length : 0);
 
   useEffect(() => {
-    const currentLength = expenses ? expenses.length : 0;
-    if (currentLength !== prevExpensesLengthRef.current) {
-      prevExpensesLengthRef.current = currentLength;
-      setExpenseRenderTick((tick) => tick + 1);
-    }
+    prevExpensesLengthRef.current = expenses ? expenses.length : 0;
+    setExpenseRenderTick((tick) => tick + 1);
   }, [expenses]);
+
+  // Guaranteed fresh expenses array synchronized with Storage and props
+  const currentExpenses = useMemo(() => {
+    if (Array.isArray(expenses)) {
+      return expenses;
+    }
+    const stored = Storage.getExpenses();
+    return Array.isArray(stored) ? stored : [];
+  }, [expenses, expenseRenderTick]);
+
+  useEffect(() => {
+    const handleSync = () => {
+      setExpenseRenderTick((tick) => tick + 1);
+    };
+    window.addEventListener('dashboard-data-updated', handleSync);
+    window.addEventListener('storage', handleSync);
+    return () => {
+      window.removeEventListener('dashboard-data-updated', handleSync);
+      window.removeEventListener('storage', handleSync);
+    };
+  }, []);
 
   // Track uploaded spreadsheet history logs and batch management
   const [importLogs, setImportLogs] = useState<ExcelImportLog[]>(() => {
@@ -342,6 +360,32 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   });
 
   const [clearAllExpensesModal, setClearAllExpensesModal] = useState<boolean>(false);
+
+  // In-app confirmation modal for single expense deletion (100% reliable inside iframes)
+  const [deleteExpenseModal, setDeleteExpenseModal] = useState<{
+    isOpen: boolean;
+    item: ExpenseItem | null;
+  }>({
+    isOpen: false,
+    item: null,
+  });
+
+  const handleOpenDeleteExpenseModal = (item: ExpenseItem) => {
+    Sound.click(soundEnabled);
+    setDeleteExpenseModal({
+      isOpen: true,
+      item,
+    });
+  };
+
+  const handleConfirmDeleteExpense = () => {
+    if (!deleteExpenseModal.item) return;
+    const item = deleteExpenseModal.item;
+    Sound.click(soundEnabled);
+    onDeleteExpense(item.id);
+    showToast(`Deleted "${item.name}"`);
+    setDeleteExpenseModal({ isOpen: false, item: null });
+  };
 
   const [actionToast, setActionToast] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
 
@@ -671,14 +715,14 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     const now = new Date();
 
     // Sum for Today
-    const todayTotal = expenses
+    const todayTotal = currentExpenses
       .filter((e) => e.date === todayStr)
       .reduce((sum, e) => sum + (e.amount || 0), 0);
 
     // Sum for This Week (last 7 days)
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(now.getDate() - 7);
-    const weekTotal = expenses
+    const weekTotal = currentExpenses
       .filter((e) => {
         const d = new Date(e.date);
         return d >= sevenDaysAgo && d <= now;
@@ -687,14 +731,14 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
 
     // Sum for Selected Month
     const selectedPrefix = `${selectedYear}-${String(selectedMonthIndex + 1).padStart(2, '0')}`;
-    const monthExpenses = expenses.filter((e) => (e.date || '').startsWith(selectedPrefix));
+    const monthExpenses = currentExpenses.filter((e) => (e.date || '').startsWith(selectedPrefix));
     const monthTotal = monthExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
 
     // Previous Month Comparison (for accurate % trend)
     const prevMonthIndex = selectedMonthIndex === 0 ? 11 : selectedMonthIndex - 1;
     const prevYear = selectedMonthIndex === 0 ? selectedYear - 1 : selectedYear;
     const prevPrefix = `${prevYear}-${String(prevMonthIndex + 1).padStart(2, '0')}`;
-    const prevMonthTotal = expenses
+    const prevMonthTotal = currentExpenses
       .filter((e) => (e.date || '').startsWith(prevPrefix))
       .reduce((sum, e) => sum + (e.amount || 0), 0);
 
@@ -704,7 +748,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     }
 
     // Total of Active Subscriptions / month
-    const recurringTotal = expenses
+    const recurringTotal = currentExpenses
       .filter((e) => e.billingCycle && e.billingCycle !== 'one-time' && e.active !== false)
       .reduce((sum, e) => {
         if (e.billingCycle === 'yearly') return sum + e.amount / 12;
@@ -720,21 +764,21 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       weekDisplay: weekTotal,
       todayDisplay: todayTotal,
       recurringDisplay: recurringTotal,
-      hasRealData: expenses.length > 0,
+      hasRealData: currentExpenses.length > 0,
     };
-  }, [expenses, selectedYear, selectedMonthIndex]);
+  }, [currentExpenses, selectedYear, selectedMonthIndex, expenseRenderTick]);
 
   // Category Breakdown Data (supports filtering by selected month or all time)
   const categoryBreakdown = useMemo(() => {
-    if (expenses.length === 0) {
+    if (currentExpenses.length === 0) {
       return [];
     }
 
     const selectedPrefix = `${selectedYear}-${String(selectedMonthIndex + 1).padStart(2, '0')}`;
-    let sourceExpenses = expenses;
+    let sourceExpenses = currentExpenses;
 
     if (categoryScope === 'month') {
-      const filtered = expenses.filter((e) => (e.date || '').startsWith(selectedPrefix));
+      const filtered = currentExpenses.filter((e) => (e.date || '').startsWith(selectedPrefix));
       if (filtered.length > 0) {
         sourceExpenses = filtered;
       }
@@ -763,17 +807,17 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
         };
       })
       .sort((a, b) => b.amount - a.amount);
-  }, [expenses, selectedYear, selectedMonthIndex, categoryScope]);
+  }, [currentExpenses, selectedYear, selectedMonthIndex, categoryScope, expenseRenderTick]);
 
   // Monthly Spending Trend Data
   const trendData = useMemo(() => {
-    if (expenses.length === 0) {
+    if (currentExpenses.length === 0) {
       return [];
     }
 
     const selectedPrefix = `${selectedYear}-${String(selectedMonthIndex + 1).padStart(2, '0')}`;
-    const monthExpenses = expenses.filter((e) => (e.date || '').startsWith(selectedPrefix));
-    const source = monthExpenses.length > 0 ? monthExpenses : expenses.slice(0, 20);
+    const monthExpenses = currentExpenses.filter((e) => (e.date || '').startsWith(selectedPrefix));
+    const source = monthExpenses.length > 0 ? monthExpenses : currentExpenses.slice(0, 20);
 
     // Group actual expenses by date
     const days: Record<string, number> = {};
@@ -789,17 +833,17 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
         amount,
         label: date,
       }));
-  }, [expenses, selectedYear, selectedMonthIndex]);
+  }, [currentExpenses, selectedYear, selectedMonthIndex, expenseRenderTick]);
 
   // Subscriptions list
   const subscriptions = useMemo(() => {
-    return expenses.filter((e) => e.billingCycle && e.billingCycle !== 'one-time');
-  }, [expenses]);
+    return currentExpenses.filter((e) => e.billingCycle && e.billingCycle !== 'one-time');
+  }, [currentExpenses, expenseRenderTick]);
 
   // Dynamic Quick Add Presets: Computed dynamically from user's most frequent transactions
   // Empty for a new user with zero transactions
   const dynamicPresets = useMemo(() => {
-    if (!expenses || expenses.length === 0) return [];
+    if (!currentExpenses || currentExpenses.length === 0) return [];
 
     const freqMap = new Map<
       string,
@@ -814,7 +858,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       }
     >();
 
-    expenses.forEach((item) => {
+    currentExpenses.forEach((item) => {
       const cleanName = (item.name || '').trim();
       if (!cleanName) return;
       const key = cleanName.toLowerCase();
@@ -850,11 +894,11 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
         count: item.count,
         note: item.note,
       }));
-  }, [expenses]);
+  }, [currentExpenses, expenseRenderTick]);
 
   // Filtered & Grouped Transactions
   const groupedTransactions = useMemo(() => {
-    let list = [...expenses];
+    let list = [...currentExpenses];
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -916,12 +960,12 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       Earlier: groups.Earlier,
       isEmpty: list.length === 0,
     };
-  }, [expenses, searchQuery, selectedCategoryFilter, activeFilter, selectedYear, selectedMonthIndex, selectedSheetFilter]);
+  }, [currentExpenses, searchQuery, selectedCategoryFilter, activeFilter, selectedYear, selectedMonthIndex, selectedSheetFilter, expenseRenderTick]);
 
   // Count of imported items in database
   const importedCount = useMemo(() => {
-    return expenses.filter((e) => !!e.importBatchId || !!e.sourceFile).length;
-  }, [expenses]);
+    return currentExpenses.filter((e) => !!e.importBatchId || !!e.sourceFile).length;
+  }, [currentExpenses, expenseRenderTick]);
 
   const getCategoryBadge = (category: string) => {
     const cat = EXPENSE_CATEGORIES.find((c) => c.name.toLowerCase() === category.toLowerCase());
@@ -1460,11 +1504,8 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    Sound.click(soundEnabled);
-                                    onDeleteExpense(tx.id);
-                                  }}
-                                  className="p-1 text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
+                                  onClick={() => handleOpenDeleteExpenseModal(tx)}
+                                  className="p-1 text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer"
                                   title="Delete"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
@@ -1532,11 +1573,8 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    Sound.click(soundEnabled);
-                                    onDeleteExpense(tx.id);
-                                  }}
-                                  className="p-1 text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
+                                  onClick={() => handleOpenDeleteExpenseModal(tx)}
+                                  className="p-1 text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer"
                                   title="Delete"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
@@ -1604,11 +1642,8 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    Sound.click(soundEnabled);
-                                    onDeleteExpense(tx.id);
-                                  }}
-                                  className="p-1 text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
+                                  onClick={() => handleOpenDeleteExpenseModal(tx)}
+                                  className="p-1 text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer"
                                   title="Delete"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
@@ -2410,10 +2445,10 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          Sound.click(soundEnabled);
-                          onDeleteExpense(tx.id);
+                          setShowAllTransactionsModal(false);
+                          handleOpenDeleteExpenseModal(tx);
                         }}
-                        className="p-1 text-gray-400 hover:text-rose-600"
+                        className="p-1 text-gray-400 hover:text-rose-600 cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -2438,6 +2473,78 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       {/* ========================================================================= */}
       {/* 9. SAFE IN-APP CONFIRMATION MODALS (Replaces window.confirm/alert) */}
       {/* ========================================================================= */}
+
+      {/* Modal 0: Delete Single Spending Record Modal */}
+      {deleteExpenseModal.isOpen && deleteExpenseModal.item && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div
+            className="w-full max-w-md bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-expense-modal-heading"
+          >
+            <div className="p-5 sm:p-6 space-y-4">
+              {/* Modal Header */}
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 id="delete-expense-modal-heading" className="text-base font-bold text-gray-900 dark:text-white">
+                    Delete Spending Record
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    Are you sure you want to delete this expense record?
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDeleteExpenseModal({ isOpen: false, item: null })}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Item Info Box */}
+              <div className="p-3.5 rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700/80 flex items-center justify-between text-xs">
+                <div className="min-w-0 pr-2">
+                  <div className="font-semibold text-gray-900 dark:text-white text-sm truncate">
+                    {deleteExpenseModal.item.name}
+                  </div>
+                  <div className="text-gray-500 dark:text-gray-400 mt-0.5 flex items-center gap-2">
+                    <span>{deleteExpenseModal.item.category}</span>
+                    <span>•</span>
+                    <span>{deleteExpenseModal.item.date}</span>
+                  </div>
+                </div>
+                <div className="font-bold text-base text-rose-600 dark:text-rose-400 shrink-0 font-mono">
+                  {formatCurrency(deleteExpenseModal.item.amount)}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setDeleteExpenseModal({ isOpen: false, item: null })}
+                  className="px-4 py-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDeleteExpense}
+                  className="px-4 py-2 text-xs font-semibold bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Record</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal 1: Delete Specific Spreadsheet Modal */}
       {deleteSheetModal.isOpen && deleteSheetModal.log && (

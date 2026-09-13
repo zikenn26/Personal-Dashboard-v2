@@ -514,7 +514,10 @@ export function loadFromStorage<T>(baseKey: string, fallback: T): T {
 export function saveToStorage<T>(baseKey: string, value: T): void {
   try {
     const scopedKey = getScopedKey(baseKey);
-    localStorage.setItem(scopedKey, JSON.stringify(value));
+    const serialized = JSON.stringify(value);
+    localStorage.setItem(scopedKey, serialized);
+    // Keep legacy/unscoped key strictly in sync so direct reads never fetch stale data
+    localStorage.setItem(baseKey, serialized);
   } catch (err) {
     console.warn(`Error writing key ${baseKey} to localStorage:`, err);
   }
