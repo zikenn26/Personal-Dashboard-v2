@@ -19,9 +19,36 @@ export interface HabitItem {
   title: string;
   category: string;
   icon: string;
-  completedDays: boolean[]; // 7 days (Mon-Sun or Sun-Sat)
+  completedDays: boolean[]; // 7 days (Mon-Sun)
   streak: number;
   color: string;
+}
+
+export interface HabitActivityLog {
+  id: string;
+  habitId: string;
+  habitTitle: string;
+  category: string;
+  icon: string;
+  color: string;
+  dayIndex: number; // 0=Mon, ..., 6=Sun
+  dayName: string; // 'Mon', 'Tue', etc.
+  date: string; // 'YYYY-MM-DD'
+  completed: boolean;
+  timestamp: number;
+}
+
+export interface HabitWeekRecord {
+  id: string; // e.g. "week-2026-09-07"
+  weekStart: string; // Monday YYYY-MM-DD
+  weekEnd: string; // Sunday YYYY-MM-DD
+  label: string; // e.g. "Sep 7 – Sep 13, 2026"
+  archivedAt: number;
+  completionRate: number; // 0 - 100
+  totalDone: number;
+  totalPossible: number;
+  habits: HabitItem[];
+  activities?: HabitActivityLog[];
 }
 
 export type GoalStatus = 'active' | 'upcoming' | 'completed' | 'archived';

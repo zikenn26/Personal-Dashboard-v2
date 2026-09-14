@@ -6,6 +6,8 @@ import {
   UserProfile,
   TodoItem,
   HabitItem,
+  HabitWeekRecord,
+  HabitActivityLog,
   GoalItem,
   VaultCredential,
   ExpenseItem,
@@ -54,6 +56,14 @@ import { AvatarPickerModal } from './components/AvatarPickerModal';
 import { BrandLogo } from './components/BrandLogo';
 import { STOCK_IMAGES } from './assets/stockImages';
 import LandingPage from './components/LandingPage';
+import {
+  checkAndRollOverHabits,
+  getMondayOfWeek,
+  getWeekId,
+  getWeekDaysInfo,
+  archiveCurrentWeekRecord,
+  DAYS_OF_WEEK,
+} from './utils/habitWeekManager';
 import { Auth, getUserWorkspaceKey } from './utils/auth';
 import { registerCurrentDevice } from './utils/devices';
 import { AuthUser } from './types';
@@ -130,6 +140,9 @@ export default function App() {
   const [profile, setProfile] = useState<UserProfile>(Storage.getProfile);
   const [todos, setTodos] = useState<TodoItem[]>(Storage.getTodos);
   const [habits, setHabits] = useState<HabitItem[]>(Storage.getHabits);
+  const [habitHistory, setHabitHistory] = useState<HabitWeekRecord[]>(Storage.getHabitHistory);
+  const [habitActiveWeek, setHabitActiveWeek] = useState<string>(Storage.getHabitActiveWeek);
+  const [habitActivities, setHabitActivities] = useState<HabitActivityLog[]>(Storage.getHabitActivities);
   const [goals, setGoals] = useState<GoalItem[]>(Storage.getGoals);
   const [vault, setVault] = useState<VaultCredential[]>(Storage.getVault);
   const [expenses, setExpenses] = useState<ExpenseItem[]>(Storage.getExpenses);
@@ -284,6 +297,9 @@ export default function App() {
     setProfile(Storage.getProfile());
     setTodos(Storage.getTodos());
     setHabits(Storage.getHabits());
+    setHabitHistory(Storage.getHabitHistory());
+    setHabitActiveWeek(Storage.getHabitActiveWeek());
+    setHabitActivities(Storage.getHabitActivities());
     setGoals(Storage.getGoals());
     void Storage.hydrateVault(Storage.getSettings().masterPin).then(setVault);
 
@@ -341,6 +357,9 @@ export default function App() {
       setProfile(Storage.getProfile());
       setTodos(Storage.getTodos());
       setHabits(Storage.getHabits());
+      setHabitHistory(Storage.getHabitHistory());
+      setHabitActiveWeek(Storage.getHabitActiveWeek());
+      setHabitActivities(Storage.getHabitActivities());
       setGoals(Storage.getGoals());
       void Storage.hydrateVault(Storage.getSettings().masterPin).then(setVault);
       setExcelImportLogs(Storage.getExcelImportLogs());
@@ -736,24 +755,106 @@ export default function App() {
     Storage.setTodos(updated);
   };
 
+  // Habit Lifecycle & Automated Monday Rollover Detector
+  // Automatically detects when a new week begins on Monday 00:00, archives the previous
+  // week's activities into historical records, and starts the habit routine fresh.
+  useEffect(() => {
+    const runHabitRolloverCheck = () => {
+      const activeWeek = Storage.getHabitActiveWeek();
+      const storedHabits = Storage.getHabits();
+      const storedHistory = Storage.getHabitHistory();
+
+      const result = checkAndRollOverHabits(storedHabits, activeWeek || null, storedHistory);
+
+      if (result.didRollover) {
+        setHabits(result.updatedHabits);
+        Storage.setHabits(result.updatedHabits);
+        setHabitHistory(result.updatedHistory);
+        Storage.setHabitHistory(result.updatedHistory);
+        setHabitActiveWeek(result.newWeekId);
+        Storage.setHabitActiveWeek(result.newWeekId);
+      } else if (!activeWeek) {
+        // Initial setup on first visit
+        setHabitActiveWeek(result.newWeekId);
+        Storage.setHabitActiveWeek(result.newWeekId);
+        if (result.updatedHistory.length > 0 && storedHistory.length === 0) {
+          setHabitHistory(result.updatedHistory);
+          Storage.setHabitHistory(result.updatedHistory);
+        }
+      }
+    };
+
+    runHabitRolloverCheck();
+    const interval = setInterval(runHabitRolloverCheck, 60000);
+    window.addEventListener('focus', runHabitRolloverCheck);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', runHabitRolloverCheck);
+    };
+  }, []);
+
   // Habit Handlers
   const handleToggleHabitDay = (habitId: string, dayIndex: number) => {
     Sound.click(settings.soundEnabled);
+    let toggledHabit: HabitItem | null = null;
+    let isNowCompleted = false;
+
     const updated = habits.map((h) => {
       if (h.id === habitId) {
         const newDays = [...h.completedDays];
         newDays[dayIndex] = !newDays[dayIndex];
+        isNowCompleted = newDays[dayIndex];
         const completedCount = newDays.filter(Boolean).length;
-        return {
+        toggledHabit = {
           ...h,
           completedDays: newDays,
           streak: completedCount > 0 ? h.streak + (newDays[dayIndex] ? 1 : -1) : 0,
         };
+        return toggledHabit;
       }
       return h;
     });
+
     setHabits(updated);
     Storage.setHabits(updated);
+
+    // Record or update the discrete habit activity log
+    if (toggledHabit) {
+      const currentMonday = getMondayOfWeek();
+      const days = getWeekDaysInfo(currentMonday);
+      const dayInfo = days[dayIndex];
+
+      if (dayInfo) {
+        if (isNowCompleted) {
+          const habitToLog = toggledHabit as HabitItem;
+          const newActivity: HabitActivityLog = {
+            id: `act-${habitId}-${dayInfo.dateStr}-${Date.now()}`,
+            habitId,
+            habitTitle: habitToLog.title,
+            category: habitToLog.category,
+            icon: habitToLog.icon,
+            color: habitToLog.color,
+            dayIndex,
+            dayName: DAYS_OF_WEEK[dayIndex],
+            date: dayInfo.dateStr,
+            completed: true,
+            timestamp: Date.now(),
+          };
+          const nextActs = [
+            newActivity,
+            ...habitActivities.filter((a) => !(a.habitId === habitId && a.date === dayInfo.dateStr)),
+          ];
+          setHabitActivities(nextActs);
+          Storage.setHabitActivities(nextActs);
+        } else {
+          const nextActs = habitActivities.filter(
+            (a) => !(a.habitId === habitId && a.date === dayInfo.dateStr)
+          );
+          setHabitActivities(nextActs);
+          Storage.setHabitActivities(nextActs);
+        }
+      }
+    }
   };
 
   const handleAddHabit = (title: string, category: string, icon: string, color: string) => {
@@ -784,6 +885,30 @@ export default function App() {
     }));
     setHabits(updated);
     Storage.setHabits(updated);
+  };
+
+  // Simulates or forces a clean Monday rollover: archives the current week into past records
+  // and starts the habit routine fresh.
+  const handleSimulateMondayRollover = () => {
+    Sound.success(settings.soundEnabled);
+    triggerConfetti();
+    const currentMonday = getMondayOfWeek();
+    const weekId = habitActiveWeek || getWeekId(currentMonday);
+
+    // Archive current week
+    const archivedWeek = archiveCurrentWeekRecord(habits, weekId, habitActivities);
+    const updatedHistory = [archivedWeek, ...habitHistory.filter((h) => h.id !== archivedWeek.id)];
+
+    // Reset habits fresh for the new week
+    const freshHabits = habits.map((h) => ({
+      ...h,
+      completedDays: [false, false, false, false, false, false, false],
+    }));
+
+    setHabits(freshHabits);
+    Storage.setHabits(freshHabits);
+    setHabitHistory(updatedHistory);
+    Storage.setHabitHistory(updatedHistory);
   };
 
   // Goal Handlers
@@ -2181,10 +2306,13 @@ export default function App() {
                   </div>
                   <HabitTracker
                     habits={habits}
+                    habitHistory={habitHistory}
+                    habitActivities={habitActivities}
                     onToggleHabitDay={handleToggleHabitDay}
                     onAddHabit={handleAddHabit}
                     onDeleteHabit={handleDeleteHabit}
                     onResetWeek={handleResetHabitWeek}
+                    onSimulateMondayRollover={handleSimulateMondayRollover}
                     soundEnabled={settings.soundEnabled}
                   />
                 </div>

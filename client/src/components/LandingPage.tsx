@@ -17,7 +17,7 @@ const pageData: Record<PageKey, { icon: any; color: string; bg: string; title: s
   Today: { icon: LayoutDashboard, color: "#6b35d9", bg: "#f0e8ff", title: "Your day, in focus", subtitle: "Make today meaningful and productive." },
   Assistant: { icon: BrandLogoPreviewIcon, color: "#6366f1", bg: "#eef2ff", title: "Zikenn AI", subtitle: "Personalized Zikenn AI assistant with live context fetching & action execution." },
   Tasks: { icon: CheckCircle2, color: "#6b35d9", bg: "#f0e8ff", title: "Tasks", subtitle: "Your personal kanban for a calmer queue." },
-  Habits: { icon: Flame, color: "#e88a51", bg: "#fff0e5", title: "Daily routines & habits", subtitle: "Small rituals that compound over time." },
+  Habits: { icon: Flame, color: "#e88a51", bg: "#fff0e5", title: "Current week habits & routines", subtitle: "Starts fresh every Monday automatically • Only current week visible." },
   Goals: { icon: Goal, color: "#55aa93", bg: "#e0f7ed", title: "Goals & milestones", subtitle: "Turn your big picture into next steps." },
   Journal: { icon: NotebookPen, color: "#d68570", bg: "#fff0e5", title: "Journal", subtitle: "A private space to notice, reflect, and reset." },
   Spending: { icon: CircleDollarSign, color: "#65a1d8", bg: "#e8f3fb", title: "Spending snapshot", subtitle: "Clarity over clutter, every week." },
@@ -70,7 +70,46 @@ function PageContent({ active }: { active: PageKey }) {
     </div>
   );
   if (active === "Tasks") return <div className="tour-panel kanban"><div className="kanban-head"><b>All tasks</b><span>Filter by status <Plus size={12} /></span></div><div className="kanban-cols"><div><small>TO-DO · 3</small><p>Go for a run <i>today</i></p><p>Reply to emails <i>today</i></p></div><div><small>IN PROGRESS · 1</small><p>Build something useful <i>60%</i></p></div><div><small>COMPLETE · 4</small><p className="done">Read 20 pages <i>✓</i></p></div></div></div>;
-  if (active === "Habits") return <div className="tour-panel routine"><div className="routine-head"><b>Habit Tracker & Weekly Routine</b><span>29% weekly target</span></div>{["Gym", "Painting", "Meditate"].map((x, i) => <div className="routine-row" key={x}><span>{x}</span>{[0,1,2,3,4,5,6].map((_, d) => <i className={(d < i + 3 || (i === 1 && d === 5)) ? "checked" : ""} key={d}>{d < i + 3 || (i === 1 && d === 5) ? "✓" : ""}</i>)}</div>)}<div className="progress-line"><span style={{ width: "29%" }} /></div></div>;
+  if (active === "Habits") return (
+    <div className="tour-panel routine">
+      <div className="routine-head">
+        <div>
+          <b>Habit Tracker & Weekly Routine</b>
+          <span style={{ display: "block", fontSize: "10px", color: "#6366f1", fontWeight: 600, marginTop: "2px" }}>
+            Current Week Only • Resets fresh every Monday
+          </span>
+        </div>
+        <span style={{ background: "#eef2ff", color: "#4f46e5", padding: "2px 6px", borderRadius: "4px", fontSize: "10px", fontWeight: 700 }}>
+          Current Week Active
+        </span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr repeat(7, 24px)", gap: "6px", alignItems: "center", fontSize: "9px", color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", marginBottom: "4px", paddingLeft: "4px" }}>
+        <span>Routine</span>
+        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d, i) => (
+          <span key={i} style={{ textAlign: "center", color: i === 2 ? "#6366f1" : (i >= 5 ? "#ef4444" : undefined), fontWeight: i === 2 ? 800 : undefined }}>
+            {d}
+          </span>
+        ))}
+      </div>
+      {[
+        { name: "Gym & Fitness", done: [true, true, true, false, false, false, false] },
+        { name: "Deep Work Sprint", done: [true, true, false, false, false, false, false] },
+        { name: "15m Meditation", done: [true, true, true, false, false, false, false] },
+      ].map((h) => (
+        <div className="routine-row" key={h.name}>
+          <span>{h.name}</span>
+          {h.done.map((checked, d) => (
+            <i className={checked ? "checked" : ""} key={d}>{checked ? "✓" : ""}</i>
+          ))}
+        </div>
+      ))}
+      <div className="progress-line"><span style={{ width: "38%" }} /></div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "10px", color: "#64748b", marginTop: "6px", padding: "0 2px" }}>
+        <span>🌱 Only current week is visible on landing</span>
+        <span style={{ fontWeight: 600, color: "#6366f1" }}>38% target</span>
+      </div>
+    </div>
+  );
   if (active === "Goals") return <div className="tour-panel goals"><div className="goal-big"><div className="goal-ring"><b>72%</b><span>on track</span></div><div><b>Launch personal site</b><p>4 of 6 milestones completed</p></div></div>{["Polish case studies", "Write about page", "Share with 3 friends"].map((x, i) => <div className="goal-row" key={x}><span className={i < 2 ? "goal-check" : "goal-empty"}>{i < 2 ? "✓" : ""}</span>{x}<em>{i < 2 ? "Done" : "Next"}</em></div>)}</div>;
   if (active === "Journal") return <div className="tour-panel journal-panel"><span className="journal-date">WEDNESDAY · SEP 02</span><h4>What felt lighter today?</h4><p>“The best systems are the ones that leave room for being human.”</p><div className="writing-space"><span>Write freely…</span>{[1,2,3,4,5].map((x) => <i key={x} />)}</div><div className="journal-footer"><span>3 minute reflection</span><span><LockKeyhole size={9} /> Private · encrypted</span></div></div>;
   if (active === "Spending") return <div className="tour-panel spending-panel"><div className="spending-head"><div><small>SPENT THIS WEEK</small><b>₹1,240</b><em>₹320 today</em></div><span>↗ 12% vs last week</span></div><div className="spending-detail"><div className="spending-pie" /><div className="spending-legend"><span><i className="legend-purple" /> Groceries <b>₹420</b></span><span><i className="legend-mint" /> Uber <b>₹180</b></span><span><i className="legend-peach" /> Dining <b>₹320</b></span><span><i className="legend-blue" /> Other <b>₹320</b></span></div></div><div className="transactions"><div><span className="transaction-icon grocery">⌁</span><b>Fresh Mart <small>Groceries · Today</small></b><em>−₹420</em></div><div><span className="transaction-icon uber">↗</span><b>Uber <small>Transport · Yesterday</small></b><em>−₹180</em></div><div><span className="transaction-icon dining">✦</span><b>Greenhouse Cafe <small>Dining · Sep 1</small></b><em>−₹320</em></div></div></div>;

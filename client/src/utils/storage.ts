@@ -1,6 +1,8 @@
 import {
   TodoItem,
   HabitItem,
+  HabitWeekRecord,
+  HabitActivityLog,
   GoalItem,
   VaultCredential,
   ExpenseItem,
@@ -33,6 +35,9 @@ import { INITIAL_USER_EXAMS } from '../data/defaultExams';
 export const STORAGE_KEYS = {
   TODOS: 'notion_os_v4_todos',
   HABITS: 'notion_os_v4_habits',
+  HABIT_HISTORY: 'notion_os_v4_habit_history',
+  HABIT_ACTIVE_WEEK: 'notion_os_v4_habit_active_week',
+  HABIT_ACTIVITIES: 'notion_os_v4_habit_activities',
   GOALS: 'notion_os_v4_goals',
   VAULT: 'notion_os_v4_vault',
   EXPENSES: 'notion_os_v4_expenses',
@@ -531,6 +536,15 @@ export const Storage = {
   getHabits: (): HabitItem[] => loadFromStorage(STORAGE_KEYS.HABITS, INITIAL_HABITS),
   setHabits: (items: HabitItem[]) => saveToStorage(STORAGE_KEYS.HABITS, items),
 
+  getHabitHistory: (): HabitWeekRecord[] => loadFromStorage(STORAGE_KEYS.HABIT_HISTORY, []),
+  setHabitHistory: (items: HabitWeekRecord[]) => saveToStorage(STORAGE_KEYS.HABIT_HISTORY, items),
+
+  getHabitActiveWeek: (): string => loadFromStorage(STORAGE_KEYS.HABIT_ACTIVE_WEEK, ''),
+  setHabitActiveWeek: (weekId: string) => saveToStorage(STORAGE_KEYS.HABIT_ACTIVE_WEEK, weekId),
+
+  getHabitActivities: (): HabitActivityLog[] => loadFromStorage(STORAGE_KEYS.HABIT_ACTIVITIES, []),
+  setHabitActivities: (items: HabitActivityLog[]) => saveToStorage(STORAGE_KEYS.HABIT_ACTIVITIES, items),
+
   getGoals: (): GoalItem[] => loadFromStorage(STORAGE_KEYS.GOALS, INITIAL_GOALS),
   setGoals: (items: GoalItem[]) => saveToStorage(STORAGE_KEYS.GOALS, items),
 
@@ -831,6 +845,9 @@ export const Storage = {
       profile: Storage.getProfile(),
       todos: Storage.getTodos(),
       habits: Storage.getHabits(),
+      habitHistory: Storage.getHabitHistory(),
+      habitActiveWeek: Storage.getHabitActiveWeek(),
+      habitActivities: Storage.getHabitActivities(),
       goals: Storage.getGoals(),
       vaultEncrypted: Storage.getEncryptedVaultBackup(),
       expenses: Storage.getExpenses(),
@@ -881,6 +898,9 @@ export const Storage = {
       }
       if (data.todos) Storage.setTodos(data.todos);
       if (data.habits) Storage.setHabits(data.habits);
+      if (Array.isArray(data.habitHistory)) Storage.setHabitHistory(data.habitHistory);
+      if (typeof data.habitActiveWeek === 'string') Storage.setHabitActiveWeek(data.habitActiveWeek);
+      if (Array.isArray(data.habitActivities)) Storage.setHabitActivities(data.habitActivities);
       if (data.goals) Storage.setGoals(data.goals);
       if (data.vaultEncrypted) Storage.restoreEncryptedVault(data.vaultEncrypted);
       else if (data.vault) Storage.restoreEncryptedVault(null);
@@ -933,6 +953,9 @@ export const Storage = {
     Storage.setProfile(INITIAL_PROFILE);
     Storage.setTodos(INITIAL_TODOS);
     Storage.setHabits(INITIAL_HABITS);
+    Storage.setHabitHistory([]);
+    Storage.setHabitActiveWeek('');
+    Storage.setHabitActivities([]);
     Storage.setGoals(INITIAL_GOALS);
     localStorage.removeItem(getVaultStorageKey());
     vaultCache = [];
