@@ -2748,3 +2748,195 @@ export async function sendSecretaryMessage(
     error: lastGroqError || 'Groq AI service error',
   };
 }
+
+export interface DailyInsightResult {
+  summary: string;
+  priorityFocus: {
+    taskId?: string;
+    taskTitle: string;
+    reason: string;
+    priority: Priority;
+    category?: string;
+    dueDate?: string;
+  };
+  focusTip: string;
+  isAiGenerated: boolean;
+  generatedAt: number;
+}
+
+export async function generateDailyInsightAI(
+  profile: { name: string; title?: string; bio?: string },
+  todos: TodoItem[],
+  apiKeyOverride?: string
+): Promise<DailyInsightResult> {
+  const pending = todos.filter((t) => !t.completed);
+
+  // Fallback heuristic function guaranteed to return high-quality insight immediately
+  const getHeuristicInsight = (): DailyInsightResult => {
+    if (pending.length === 0) {
+      return {
+        summary: `Great work, ${profile.name}! All your tasks are completed. Your slate is clean today, leaving ample space to strategize future milestones, review your goals, or recharge.`,
+        priorityFocus: {
+          taskTitle: 'Plan Weekly Goals & Recharge',
+          reason: 'No open tasks on your board. Take 15 minutes to review higher-horizon goals or enjoy well-deserved rest.',
+          priority: 'low',
+          category: 'Personal',
+        },
+        focusTip: 'A clear task list is the best time for deep creative thinking and strategic review.',
+        isAiGenerated: false,
+        generatedAt: Date.now(),
+      };
+    }
+
+    // Sort: urgent (4) > high (3) > medium (2) > low (1)
+    const priorityWeight: Record<Priority, number> = {
+      urgent: 4,
+      high: 3,
+      medium: 2,
+      low: 1,
+    };
+
+    const sorted = [...pending].sort((a, b) => {
+      const wA = priorityWeight[a.priority] || 1;
+      const wB = priorityWeight[b.priority] || 1;
+      if (wB !== wA) return wB - wA;
+      // Closer due dates first
+      if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+      if (a.dueDate) return -1;
+      if (b.dueDate) return 1;
+      return a.createdAt - b.createdAt;
+    });
+
+    const topTask = sorted[0];
+    const urgentOrHighCount = pending.filter(
+      (t) => t.priority === 'urgent' || t.priority === 'high'
+    ).length;
+
+    // Category distribution
+    const catCounts: Record<string, number> = {};
+    for (const t of pending) {
+      const c = t.category || 'General';
+      catCounts[c] = (catCounts[c] || 0) + 1;
+    }
+    const dominantCategory =
+      Object.entries(catCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Tasks';
+
+    const summary = `${profile.name ? `${profile.name}, you` : 'You'} have ${pending.length} upcoming task${
+      pending.length > 1 ? 's' : ''
+    } today${
+      urgentOrHighCount > 0
+        ? ` with ${urgentOrHighCount} high-leverage priorit${urgentOrHighCount > 1 ? 'ies' : 'y'}`
+        : ''
+    }. Your primary focus clusters around ${dominantCategory}. Direct your fresh morning energy toward your top priority before context switching.`;
+
+    const reason = `Flagged as ${topTask.priority.toUpperCase()} priority${
+      topTask.dueDate ? ` (due ${topTask.dueDate})` : ''
+    }. Completing this first will eliminate cognitive friction and create strong positive momentum for the rest of your day.`;
+
+    return {
+      summary,
+      priorityFocus: {
+        taskId: topTask.id,
+        taskTitle: topTask.title,
+        reason,
+        priority: topTask.priority,
+        category: topTask.category,
+        dueDate: topTask.dueDate,
+      },
+      focusTip: `Execute a 25-minute uninterrupted sprint on "${topTask.title}" before checking notifications or inbox.`,
+      isAiGenerated: false,
+      generatedAt: Date.now(),
+    };
+  };
+
+  const apiKey =
+    apiKeyOverride ||
+    Storage.getGroqApiKey() ||
+    (import.meta.env.VITE_GROQ_API_KEY as string | undefined)?.trim() ||
+    DEFAULT_GROQ_KEY;
+
+  if (!apiKey) {
+    return getHeuristicInsight();
+  }
+
+  // Active Groq model
+  const activeModel = getActiveGroqModel();
+  const modelsToTry = Array.from(
+    new Set([activeModel, ...CANDIDATE_GROQ_MODELS])
+  ).filter((m) => !DEPRECATED_GROQ_MODELS.includes(m));
+
+  const promptTasks = pending.slice(0, 15).map((t) => ({
+    id: t.id,
+    title: t.title,
+    priority: t.priority,
+    category: t.category,
+    dueDate: t.dueDate,
+  }));
+
+  const systemPrompt = `You are an elite executive productivity strategist and executive AI coach.
+Given the user profile and their pending tasks, return ONLY a valid JSON object with:
+{
+  "summary": "A concise, encouraging 2-sentence summary of the day's upcoming workload, tone, and energy demand.",
+  "priorityTaskId": "The exact ID of the single most critical task to tackle first",
+  "priorityTaskTitle": "Title of the priority task",
+  "priorityReason": "1-2 sentence compelling rationale why this single task should be the #1 focus right now",
+  "priority": "urgent" | "high" | "medium" | "low",
+  "category": "task category",
+  "focusTip": "One sharp, actionable focus tip for the day"
+}
+Do NOT include markdown backticks or any preamble. Output pure JSON only.`;
+
+  const userContent = JSON.stringify({
+    user: {
+      name: profile.name,
+      role: profile.title || 'Professional',
+      bio: profile.bio || '',
+    },
+    currentDate: new Date().toISOString().split('T')[0],
+    pendingTasksCount: pending.length,
+    tasks: promptTasks,
+  });
+
+  for (const model of modelsToTry) {
+    try {
+      const res = await postGroqChat(apiKey, {
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userContent },
+        ],
+        temperature: 0.3,
+        response_format: { type: 'json_object' },
+      });
+
+      if (!res.ok) continue;
+
+      const data = await res.json();
+      const content = data?.choices?.[0]?.message?.content;
+      if (!content) continue;
+
+      const parsed = JSON.parse(content.trim());
+      if (parsed && parsed.summary && parsed.priorityTaskTitle) {
+        return {
+          summary: parsed.summary,
+          priorityFocus: {
+            taskId: parsed.priorityTaskId || pending[0]?.id,
+            taskTitle: parsed.priorityTaskTitle || pending[0]?.title || 'Key Focus',
+            reason: parsed.priorityReason || 'Highest value task to tackle today.',
+            priority: (parsed.priority as Priority) || pending[0]?.priority || 'high',
+            category: parsed.category || pending[0]?.category,
+            dueDate: pending.find((t) => t.id === parsed.priorityTaskId)?.dueDate,
+          },
+          focusTip: parsed.focusTip || 'Single-task without interruption until your key priority is done.',
+          isAiGenerated: true,
+          generatedAt: Date.now(),
+        };
+      }
+    } catch {
+      // Continue to next model or fallback
+    }
+  }
+
+  return getHeuristicInsight();
+}
+

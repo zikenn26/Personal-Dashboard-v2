@@ -20,6 +20,7 @@ import { IndianCalendarWidget } from './IndianCalendarWidget';
 import { DynamicScheduleCard } from './DynamicScheduleCard';
 import { CommandCenterGrid } from './CommandCenterGrid';
 import { FlipClock } from './FlipClock';
+import { DailyInsightCard } from './DailyInsightCard';
 import {
   CheckCircle2,
   Circle,
@@ -449,11 +450,11 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
   }, [expenses]);
 
   return (
-    <div className="space-y-6 pb-12 animate-in fade-in duration-300">
+    <div className="space-y-3.5 pb-8 animate-in fade-in duration-300">
       {/* ========================================================================= */}
       {/* 1. GREETING & HERO HEADER WITH REDUCED QUOTE TILE & FLIP CLOCK */}
       {/* ========================================================================= */}
-      <div className="space-y-3 pb-0">
+      <div className="space-y-2.5 pb-0">
         {/* Greeting Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -461,81 +462,88 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
               <span>{greeting}, {profile.name}!</span>
               <span className="inline-block text-2xl">{greetingEmoji}</span>
             </h1>
-            <p className="text-xs sm:text-sm text-[#787774] dark:text-[#9CA3AF] mt-1 font-medium flex items-center gap-2">
+            <p className="text-xs sm:text-sm text-[#787774] dark:text-[#9CA3AF] mt-0.5 font-medium flex items-center gap-2">
               <span>Let&apos;s make today meaningful and productive.</span>
             </p>
           </div>
         </div>
 
-        {/* Side-by-Side: Reduced Quote Grid Tile + Date & Flip Clock Tile */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 items-stretch">
-          {/* Quote Tile (reduced horizontal length: 7 cols on lg, 8 on xl) */}
+        {/* Side-by-Side: 2x Quote Tile + 3/4th Size Date & Flip Clock Tile */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
+          {/* Quote Tile (expanded horizontal span: 8 cols on lg, 9 on xl) */}
           <div
             onMouseEnter={() => setIsQuoteAutoPlay(false)}
             onMouseLeave={() => setIsQuoteAutoPlay(true)}
-            className="lg:col-span-7 xl:col-span-8 relative px-4 py-3 sm:px-5 sm:py-3.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] shadow-xs flex flex-col justify-between gap-2.5 transition-all group"
+            className="lg:col-span-8 xl:col-span-9 relative px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] shadow-xs flex flex-col justify-between gap-2 transition-all group"
           >
             <div className="flex items-start gap-3 min-w-0 flex-1">
               <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200/70 dark:border-amber-900/50 flex items-center justify-center shrink-0 text-amber-600 dark:text-amber-400 shadow-2xs mt-0.5">
                 <Quote className="w-4 h-4" />
               </div>
               <div className="min-w-0 space-y-1 flex-1">
-                <p className="text-xs sm:text-sm md:text-base font-serif italic text-[#1E293B] dark:text-[#F3F4F6] leading-relaxed line-clamp-2 sm:line-clamp-3">
+                {/* 2x Font Size Quote Text */}
+                <p className="text-base sm:text-xl md:text-2xl lg:text-[26px] font-serif italic text-[#1E293B] dark:text-[#F3F4F6] leading-snug line-clamp-2 sm:line-clamp-3">
                   &ldquo;{activeQuote.text}&rdquo;
                 </p>
-                <div className="flex items-center gap-2 text-xs text-[#64748B] dark:text-[#94A3B8] flex-wrap">
-                  <span className="font-semibold text-[#475569] dark:text-[#CBD5E1] truncate">— {activeQuote.author}</span>
-                  {allQuotesList.length > 1 && (
-                    <span className="font-mono text-[10px] px-1.5 py-0.2 rounded-md bg-[#EDECE9]/80 dark:bg-[#0F172A] text-[#64748B] dark:text-[#94A3B8] border border-[#E2E8F0] dark:border-[#334155]">
-                      {currentQuoteIdx + 1} of {allQuotesList.length}
-                    </span>
-                  )}
-                </div>
               </div>
             </div>
 
-            {/* Quote Controls Bar (without 'Quotes Tab' button) */}
-            <div className="flex items-center justify-between gap-2 pt-1 border-t border-[#EDECE9]/70 dark:border-[#334155]/60 flex-wrap">
-              {/* Previous & Next Quote Buttons */}
-              {allQuotesList.length > 1 ? (
-                <div className="flex items-center gap-0.5 bg-white dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#334155] rounded-xl p-0.5 shadow-2xs">
-                  <button
-                    type="button"
-                    onClick={handlePrevQuote}
-                    title="Previous quote"
-                    className="p-1 rounded-lg text-[#64748B] hover:text-[#6366F1] dark:hover:text-white hover:bg-[#F1F5F9] dark:hover:bg-[#1E293B] transition-colors cursor-pointer"
-                  >
-                    <ChevronLeft className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleNextQuote}
-                    title="Next quote"
-                    className="p-1 rounded-lg text-[#64748B] hover:text-[#6366F1] dark:hover:text-white hover:bg-[#F1F5F9] dark:hover:bg-[#1E293B] transition-colors cursor-pointer"
-                  >
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ) : <div />}
+            {/* Quote Controls Bar (<> button in right bottom corner previous to Add quote button) */}
+            <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-[#EDECE9]/70 dark:border-[#334155]/60 flex-wrap">
+              {/* Author & counter badge */}
+              <div className="flex items-center gap-2 text-xs text-[#64748B] dark:text-[#94A3B8] truncate">
+                <span className="font-semibold text-[#475569] dark:text-[#CBD5E1] truncate">
+                  — {activeQuote.author}
+                </span>
+                {allQuotesList.length > 1 && (
+                  <span className="font-mono text-[10px] px-1.5 py-0.5 rounded-md bg-[#EDECE9]/80 dark:bg-[#0F172A] text-[#64748B] dark:text-[#94A3B8] border border-[#E2E8F0] dark:border-[#334155]">
+                    {currentQuoteIdx + 1} of {allQuotesList.length}
+                  </span>
+                )}
+              </div>
 
-              {/* Add Quote Button */}
-              <button
-                ref={quoteButtonRef}
-                type="button"
-                onClick={() => {
-                  Sound.click(soundEnabled);
-                  setShowAddQuotePopover((prev) => !prev);
-                }}
-                title="Add quote to collection"
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs ${
-                  showAddQuotePopover
-                    ? 'bg-[#6366F1] text-white'
-                    : 'bg-[#6366F1] text-white hover:bg-[#4F46E5]'
-                }`}
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Quote</span>
-              </button>
+              {/* Right bottom corner: <> button immediately previous to Add quote button */}
+              <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                {allQuotesList.length > 1 && (
+                  <div className="flex items-center gap-0.5 bg-white dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#334155] rounded-xl p-0.5 shadow-2xs">
+                    <button
+                      type="button"
+                      onClick={handlePrevQuote}
+                      title="Previous quote"
+                      className="p-1 rounded-lg text-[#64748B] hover:text-[#6366F1] dark:hover:text-white hover:bg-[#F1F5F9] dark:hover:bg-[#1E293B] transition-colors cursor-pointer"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleNextQuote}
+                      title="Next quote"
+                      className="p-1 rounded-lg text-[#64748B] hover:text-[#6366F1] dark:hover:text-white hover:bg-[#F1F5F9] dark:hover:bg-[#1E293B] transition-colors cursor-pointer"
+                    >
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                {/* Add Quote Button */}
+                <button
+                  ref={quoteButtonRef}
+                  type="button"
+                  onClick={() => {
+                    Sound.click(soundEnabled);
+                    setShowAddQuotePopover((prev) => !prev);
+                  }}
+                  title="Add quote to collection"
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs ${
+                    showAddQuotePopover
+                      ? 'bg-[#6366F1] text-white'
+                      : 'bg-[#6366F1] text-white hover:bg-[#4F46E5]'
+                  }`}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Quote</span>
+                </button>
+              </div>
             </div>
 
             {/* Floating Collapsible Add Quote Popover Form */}
@@ -628,15 +636,26 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
             )}
           </div>
 
-          {/* Date & Flip Clock Tile (occupying the vacant horizontal space) */}
-          <div className="lg:col-span-5 xl:col-span-4 px-4 py-3 sm:px-4.5 sm:py-3.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] shadow-xs flex flex-col justify-between">
+          {/* Date & Flip Clock Tile (3/4th size: 4 cols on lg, 3 on xl) */}
+          <div className="lg:col-span-4 xl:col-span-3 px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] shadow-xs flex flex-col justify-between">
             <FlipClock />
           </div>
         </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* 2. MAIN DASHBOARD GRID (Smart Space-Efficient Packing Grid) */}
+      {/* 2. DAILY INSIGHT CARD (AI-Powered Task Synthesis & Priority Focus) */}
+      {/* ========================================================================= */}
+      <DailyInsightCard
+        profile={profile}
+        todos={todos}
+        onToggleTodo={onToggleTodo}
+        onNavigate={onNavigate}
+        soundEnabled={soundEnabled}
+      />
+
+      {/* ========================================================================= */}
+      {/* 3. MAIN DASHBOARD GRID (Smart Space-Efficient Packing Grid) */}
       {/* ========================================================================= */}
       <CommandCenterGrid
         columns={columns}

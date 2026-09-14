@@ -246,9 +246,6 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
               Schedule
             </h2>
           </div>
-          <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-md bg-white dark:bg-[#0F172A] text-[#64748B] dark:text-[#94A3B8] border border-[#E2E8F0] dark:border-[#334155]/60 hidden sm:inline truncate">
-            {weekDates[selectedDay]?.fullDateStr || DAY_METADATA[selectedDay].label}
-          </span>
           {copyNotification && (
             <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium animate-in fade-in">
               {copyNotification}
@@ -294,10 +291,9 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
             type="button"
             onClick={handleAddRow}
             title="Add new activity row"
-            className="px-2 py-1 text-xs font-semibold rounded-lg bg-white dark:bg-[#0F172A] hover:bg-gray-50 dark:hover:bg-[#334155] text-[#37352F] dark:text-[#E2E8F0] border border-[#E2E8F0] dark:border-[#334155] cursor-pointer transition-colors flex items-center gap-1 shadow-2xs"
+            className="p-1.5 rounded-lg bg-white dark:bg-[#0F172A] hover:bg-gray-50 dark:hover:bg-[#334155] text-[#37352F] dark:text-[#E2E8F0] border border-[#E2E8F0] dark:border-[#334155] cursor-pointer transition-colors flex items-center justify-center shadow-2xs"
           >
             <Plus className="w-3.5 h-3.5 text-[#6366F1]" />
-            <span className="text-[11px]">Add</span>
           </button>
 
           <button
@@ -307,22 +303,17 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
               setIsEditing(!isEditing);
               setEditingRowId(null);
             }}
-            className={`px-2.5 py-1 text-xs font-semibold rounded-lg border cursor-pointer transition-all flex items-center gap-1 shadow-2xs ${
+            title={isEditing ? 'Finish editing' : 'Edit schedule'}
+            className={`p-1.5 rounded-lg border cursor-pointer transition-all flex items-center justify-center shadow-2xs ${
               isEditing
                 ? 'bg-[#6366F1] text-white border-[#6366F1]'
-                : 'bg-white dark:bg-[#0F172A] border-[#E2E8F0] dark:border-[#334155] text-[#37352F] dark:text-[#E2E8F0] hover:border-[#6366F1]'
+                : 'bg-white dark:bg-[#0F172A] border-[#E2E8F0] dark:border-[#334155] text-[#64748B] dark:text-[#94A3B8] hover:border-[#6366F1]'
             }`}
           >
             {isEditing ? (
-              <>
-                <Check className="w-3.5 h-3.5" />
-                <span className="text-[11px]">Done</span>
-              </>
+              <Check className="w-3.5 h-3.5" />
             ) : (
-              <>
-                <Edit3 className="w-3.5 h-3.5" />
-                <span className="text-[11px]">Edit</span>
-              </>
+              <Edit3 className="w-3.5 h-3.5" />
             )}
           </button>
         </div>
