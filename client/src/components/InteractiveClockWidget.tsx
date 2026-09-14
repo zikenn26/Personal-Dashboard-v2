@@ -59,7 +59,7 @@ export const InteractiveClockWidget: React.FC<InteractiveClockWidgetProps> = ({
 
   return (
     <div
-      className={`p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] shadow-2xs transition-all flex flex-col justify-between relative overflow-hidden ${className}`}
+      className={`grid-tile p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#23324C] border border-[#EDECE9] dark:border-[#334155] shadow-2xs transition-all flex flex-col justify-between relative overflow-hidden ${className}`}
     >
       {/* Top Header with Mode Toggle Button */}
       <div className="flex items-center justify-between pb-2 border-b border-[#EDECE9]/60 dark:border-[#334155]/60">

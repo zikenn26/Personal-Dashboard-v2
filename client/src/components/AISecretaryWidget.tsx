@@ -207,13 +207,13 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
       className={
         isPopup
           ? `h-full flex flex-col w-full bg-white dark:bg-[#1E293B] ${className}`
-          : `rounded-2xl bg-[#F7F7F5] dark:bg-[#1E293B] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col w-full ${
+          : `grid-tile rounded-2xl bg-[#F7F7F5] dark:bg-[#23324C] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col w-full ${
               isExpandedView ? 'h-[calc(100vh-140px)] min-h-[500px]' : 'min-h-[360px] max-h-[480px]'
             } ${className}`
       }
     >
       {/* Widget Header */}
-      <div className="p-3 sm:px-3.5 pb-2.5 border-b border-[#EDECE9] dark:border-[#334155]/60 flex items-center justify-between gap-2 shrink-0 bg-[#FAF9F6] dark:bg-[#1E293B]">
+      <div className="p-3 sm:px-3.5 pb-2.5 border-b border-[#EDECE9] dark:border-[#334155]/60 flex items-center justify-between gap-2 shrink-0 bg-[#FAF9F6] dark:bg-[#23324C]">
         <div className="flex items-center gap-2.5 min-w-0">
           {dragHandle}
           <div className="w-7 h-7 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-900/40 flex items-center justify-center shrink-0 overflow-hidden">

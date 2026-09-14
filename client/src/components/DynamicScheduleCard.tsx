@@ -231,7 +231,7 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
 
   return (
     <div
-      className={`p-3.5 sm:p-4 rounded-2xl bg-[#F7F7F5] dark:bg-[#1E293B] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col ${className}`}
+      className={`grid-tile p-3.5 sm:p-4 rounded-2xl bg-[#F7F7F5] dark:bg-[#23324C] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col ${className}`}
     >
       {/* Top Bar: Title matching other grid tiles & Action Controls */}
       <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-[#EDECE9] dark:border-[#334155]/60 mb-2.5 shrink-0">

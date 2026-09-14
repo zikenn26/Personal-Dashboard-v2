@@ -394,7 +394,7 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
 
     if (widgetId === 'expenses') {
       return (
-        <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F7F7F5] dark:bg-[#1E293B] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col space-y-3 w-full">
+        <div className="grid-tile p-3.5 sm:p-4 rounded-2xl bg-[#F7F7F5] dark:bg-[#23324C] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col space-y-3 w-full">
           {/* Header */}
           <div className="flex items-center justify-between pb-2 border-b border-[#EDECE9] dark:border-[#334155]/60">
             <div className="flex items-center gap-2">
@@ -547,7 +547,7 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
 
     if (widgetId === 'habits') {
       return (
-        <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F7F7F5] dark:bg-[#1E293B] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col space-y-3 w-full">
+        <div className="grid-tile p-3.5 sm:p-4 rounded-2xl bg-[#F7F7F5] dark:bg-[#23324C] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col space-y-3 w-full">
           {/* Header */}
           <div className="flex items-center justify-between pb-2 border-b border-[#EDECE9] dark:border-[#334155]/60">
             <div className="flex items-center gap-2">
@@ -671,7 +671,7 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
 
     if (widgetId === 'tasks') {
       return (
-        <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F7F7F5] dark:bg-[#1E293B] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col space-y-3 w-full">
+        <div className="grid-tile p-3.5 sm:p-4 rounded-2xl bg-[#F7F7F5] dark:bg-[#23324C] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col space-y-3 w-full">
           {/* Header */}
           <div className="flex items-center justify-between pb-2 border-b border-[#EDECE9] dark:border-[#334155]/60">
             <div className="flex items-center gap-2">

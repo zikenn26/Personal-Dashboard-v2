@@ -61,8 +61,8 @@ const FlipDigit: React.FC<FlipDigitProps> = ({ value, label }) => {
 
         {/* Center Split Line & Mechanical Side Notches */}
         <div className="absolute inset-x-0 top-1/2 -translate-y-[0.5px] h-[1px] bg-slate-950 dark:bg-black z-20" />
-        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-1 bg-[#F8FAFC] dark:bg-[#121520] rounded-r-full z-20" />
-        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-1 bg-[#F8FAFC] dark:bg-[#121520] rounded-l-full z-20" />
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-1 bg-[#F8FAFC] dark:bg-[#23324C] rounded-r-full z-20" />
+        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-1 bg-[#F8FAFC] dark:bg-[#23324C] rounded-l-full z-20" />
       </div>
 
       {label && (

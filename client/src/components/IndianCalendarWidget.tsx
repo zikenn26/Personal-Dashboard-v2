@@ -397,7 +397,7 @@ export const IndianCalendarWidget: React.FC<IndianCalendarWidgetProps> = ({
   };
 
   return (
-    <div className={`p-3.5 sm:p-4 rounded-2xl bg-[#F7F7F5] dark:bg-[#1E293B] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col ${className}`}>
+    <div className={`grid-tile p-3.5 sm:p-4 rounded-2xl bg-[#F7F7F5] dark:bg-[#23324C] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col ${className}`}>
       {/* Header with Title, Month Nav, View Tabs */}
       <div className="flex items-center justify-between gap-2 pb-2 border-b border-[#EDECE9] dark:border-[#334155]/60 mb-2 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
