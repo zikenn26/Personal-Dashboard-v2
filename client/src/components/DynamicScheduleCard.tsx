@@ -354,7 +354,7 @@ export const DynamicScheduleCard: React.FC<DynamicScheduleCardProps> = ({
                   Sound.click(soundEnabled);
                   setSelectedDay(key);
                 }}
-                className={`relative px-1 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer text-center flex-1 min-w-[38px] ${
+                className={`relative px-0.5 sm:px-1 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer text-center flex-1 min-w-[26px] sm:min-w-[32px] ${
                   isSelected
                     ? 'bg-[#37352F] dark:bg-white text-white dark:text-[#0F172A] shadow-2xs font-bold'
                     : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-white hover:bg-gray-100/70 dark:hover:bg-[#1E293B]/70'

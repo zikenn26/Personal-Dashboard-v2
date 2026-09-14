@@ -2037,7 +2037,7 @@ export default function App() {
 
           {/* Main Document Canvas View */}
           <main className="flex-1 h-full overflow-y-auto min-h-0 workspace-canvas bg-white dark:bg-[#111827] p-2 sm:p-4 lg:p-6">
-            <div className="max-w-5xl mx-auto space-y-4 pb-12">
+            <div className="max-w-6xl mx-auto space-y-4 pb-12">
               {/* Universal Return to Dashboard Shortcut for all sub-views */}
               {activeView !== 'home' && (
                 <div className="pt-2 pb-1.5">

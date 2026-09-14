@@ -146,6 +146,7 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
   const [draggedWidgetId, setDraggedWidgetId] = useState<string | null>(null);
   const [dropIndicator, setDropIndicator] = useState<DropIndicator | null>(null);
   const [dragOverColIdx, setDragOverColIdx] = useState<number | null>(null);
+  const [selectedSpendDayIdx, setSelectedSpendDayIdx] = useState<number | null>(null);
 
   const cleanupDrag = useCallback(() => {
     setDraggedWidgetId(null);
@@ -485,10 +486,30 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
           <div className="flex items-baseline justify-between">
             <div>
               <span className="text-2xl font-bold text-[#37352F] dark:text-white font-mono tracking-tight">
-                ₹{spendingStats.weekly.toLocaleString()}
+                {selectedSpendDayIdx !== null
+                  ? `₹${spendingStats.dayTotals[selectedSpendDayIdx].toLocaleString()}`
+                  : `₹${spendingStats.weekly.toLocaleString()}`}
               </span>
               <span className="text-xs text-[#787774] dark:text-[#9CA3AF] ml-2 font-medium">
-                {spendingStats.hasExpenses ? 'This week' : 'No expenses logged'}
+                {selectedSpendDayIdx !== null ? (
+                  <span className="inline-flex items-center gap-1">
+                    <span>{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][selectedSpendDayIdx]} spent</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedSpendDayIdx(null);
+                      }}
+                      className="text-[10px] text-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300 underline cursor-pointer"
+                    >
+                      (show week)
+                    </button>
+                  </span>
+                ) : spendingStats.hasExpenses ? (
+                  'This week'
+                ) : (
+                  'No expenses logged'
+                )}
               </span>
             </div>
             {spendingStats.hasExpenses ? (
@@ -507,30 +528,52 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
           <div className="grid grid-cols-7 gap-1.5 pt-1 items-end h-16">
             {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, i) => {
               const isToday = i === todayIndex;
+              const isSelected = selectedSpendDayIdx === i;
               const daySpend = spendingStats.dayTotals[i];
               const pct = spendingStats.dayPercentages[i];
               return (
-                <div key={day} className="flex flex-col items-center gap-1" title={`${day}: ₹${daySpend}`}>
-                  <div className="w-full bg-white dark:bg-gray-800/80 rounded-sm h-12 flex items-end relative overflow-hidden border border-gray-200/50 dark:border-gray-700/50">
+                <button
+                  type="button"
+                  key={day}
+                  onClick={() => {
+                    Sound.click(soundEnabled);
+                    setSelectedSpendDayIdx(selectedSpendDayIdx === i ? null : i);
+                  }}
+                  className="flex flex-col items-center gap-1 group/bar cursor-pointer focus:outline-hidden p-0.5 rounded-md hover:bg-indigo-50/50 dark:hover:bg-indigo-950/30 transition-colors"
+                  title={`${day}: ₹${daySpend.toLocaleString()} (Click to inspect)`}
+                >
+                  <div
+                    className={`w-full bg-white dark:bg-gray-800/80 rounded-sm h-12 flex items-end relative overflow-hidden border transition-all ${
+                      isSelected
+                        ? 'border-amber-500 dark:border-amber-400 ring-2 ring-amber-400/40 shadow-xs'
+                        : 'border-gray-200/50 dark:border-gray-700/50 group-hover/bar:border-indigo-300 dark:group-hover/bar:border-indigo-700'
+                    }`}
+                  >
                     <div
                       style={{ height: `${pct > 0 ? pct : 6}%` }}
                       className={`w-full rounded-sm transition-all duration-300 ${
-                        pct === 0
+                        isSelected
+                          ? 'bg-amber-500 dark:bg-amber-400'
+                          : pct === 0
                           ? 'bg-gray-300/40 dark:bg-gray-700/40'
                           : isToday
                           ? 'bg-[#6366F1]'
-                          : 'bg-indigo-300 dark:bg-indigo-600'
+                          : 'bg-indigo-300 dark:bg-indigo-600 group-hover/bar:bg-indigo-400'
                       }`}
                     />
                   </div>
                   <span
-                    className={`text-[9px] font-mono ${
-                      isToday ? 'font-bold text-[#6366F1]' : 'text-[#94A3B8]'
+                    className={`text-[9px] font-mono transition-colors ${
+                      isSelected
+                        ? 'font-bold text-amber-600 dark:text-amber-400'
+                        : isToday
+                        ? 'font-bold text-[#6366F1]'
+                        : 'text-[#94A3B8] group-hover/bar:text-gray-700 dark:group-hover/bar:text-gray-300'
                     }`}
                   >
                     {day}
                   </span>
-                </div>
+                </button>
               );
             })}
           </div>

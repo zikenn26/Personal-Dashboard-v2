@@ -90,9 +90,57 @@ function AppPreview({ onGetStarted }: { onGetStarted: () => void }) {
   return <div className="preview-shell interactive-preview" aria-label="Interactive Personal Dashboard product preview"><div className="preview-topbar"><div className="preview-brand"><span className="brand-mark small"><Sparkles size={12} /></span><span>personal-dashboard</span></div><div className="preview-top-actions"><span className="preview-search"><Search size={12} /> Search</span><Moon size={14} /><span className="avatar">WS</span></div></div><div className="preview-body"><aside className="preview-sidebar"><div className="mini-profile"><div className="avatar large">WS</div><div><b>Workspace</b><span>Good morning</span></div></div>{sidebarGroups.map(group => <div key={group.label}><div className="side-label">{group.label}</div>{group.items.map(item => { const I = pageData[item].icon; return <button className={active === item ? "side-active" : "side-item"} key={item} onClick={() => setActive(item)}><I size={13} style={{ color: pageData[item].color }} /> {item}{item !== "Today" && <em>{item === "Tasks" ? "4" : item === "Habits" ? "3" : ""}</em>}</button>})}</div>)}</aside><main className="preview-main"><div className="preview-heading"><div><p className="eyebrow">WEDNESDAY, SEPTEMBER 2</p><h3><span className="preview-page-icon" style={{ background: data.bg, color: data.color }}><Icon size={16} /></span>{data.title}</h3><p>{data.subtitle}</p></div><button className="mini-add" onClick={onGetStarted}><Plus size={13} /> Add</button></div><PageContent active={active} /><div className="preview-footer-note"><span style={{ background: data.color }} /> Click a page in the sidebar to explore the workspace</div></main></div></div>;
 }
 
+function MoneyFeatureVisual() {
+  const dayData = [
+    { day: "Mon", amount: "₹1,420", height: 38 },
+    { day: "Tue", amount: "₹2,350", height: 62 },
+    { day: "Wed", amount: "₹1,840", height: 48 },
+    { day: "Thu", amount: "₹2,910", height: 76 },
+    { day: "Fri", amount: "₹2,100", height: 54 },
+    { day: "Sat", amount: "₹3,420", height: 88 },
+    { day: "Sun", amount: "₹2,680", height: 70 },
+  ];
+  const [selectedDay, setSelectedDay] = useState<number | null>(null);
+
+  return (
+    <div className="feature-art money-art">
+      <div className="money-header">
+        <span>{selectedDay !== null ? `${dayData[selectedDay].day} spending` : "spending rhythm"}</span>
+        <b>{selectedDay !== null ? dayData[selectedDay].amount : "₹12,480"}</b>
+      </div>
+      <div className="bars">
+        {dayData.map((d, i) => {
+          const isSelected = selectedDay === i;
+          return (
+            <button
+              type="button"
+              key={d.day}
+              onClick={() => setSelectedDay(selectedDay === i ? null : i)}
+              style={{
+                height: `${d.height}%`,
+                background: isSelected ? "#efa976" : undefined,
+                boxShadow: isSelected ? "0 0 12px #efa976aa" : undefined,
+                border: isSelected ? "2px solid #fff" : "none",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+              }}
+              className={isSelected ? "active-money-bar" : ""}
+              title={`${d.day}: ${d.amount}`}
+            />
+          );
+        })}
+      </div>
+      <div className="money-line" />
+      <span className="money-note">
+        {selectedDay !== null ? "tap bar again to reset" : "clarity over clutter"}
+      </span>
+    </div>
+  );
+}
+
 function FeatureVisual({ type }: { type: string }) {
   if (type === "habits") return <div className="feature-art habit-art"><div className="sun-orb" /><div className="habit-lines"><span style={{ width: "82%" }} /><span style={{ width: "64%" }} /><span style={{ width: "91%" }} /><span style={{ width: "48%" }} /></div><div className="sparkle">✦</div><div className="art-caption">small rituals<br /><b>big momentum</b></div></div>;
-  if (type === "money") return <div className="feature-art money-art"><div className="money-header"><span>spending rhythm</span><b>₹12,480</b></div><div className="bars">{[38,62,48,76,54,88,70].map((h,i)=><i style={{ height: `${h}%` }} key={i} />)}</div><div className="money-line" /><span className="money-note">clarity over clutter</span></div>;
+  if (type === "money") return <MoneyFeatureVisual />;
   return <div className="feature-art journal-art"><div className="paper-sheet"><span className="paper-date">02 / 09 / 26</span><b>Today I noticed…</b><span className="paper-line" /><span className="paper-line short" /><span className="paper-line" /><span className="paper-line shorter" /><div className="paper-star">✦</div></div><div className="pen" /></div>;
 }
 
