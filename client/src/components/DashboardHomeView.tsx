@@ -20,7 +20,6 @@ import { IndianCalendarWidget } from './IndianCalendarWidget';
 import { DynamicScheduleCard } from './DynamicScheduleCard';
 import { CommandCenterGrid } from './CommandCenterGrid';
 import { FlipClock } from './FlipClock';
-import { DailyInsightCard } from './DailyInsightCard';
 import {
   CheckCircle2,
   Circle,
@@ -481,8 +480,8 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
                 <Quote className="w-4 h-4" />
               </div>
               <div className="min-w-0 space-y-1 flex-1">
-                {/* 2x Font Size Quote Text */}
-                <p className="text-base sm:text-xl md:text-2xl lg:text-[26px] font-serif italic text-[#1E293B] dark:text-[#F3F4F6] leading-snug line-clamp-2 sm:line-clamp-3">
+                {/* Readable & Soothing Book-Quality Quote Typography */}
+                <p className="font-quote text-base sm:text-lg md:text-xl lg:text-[22px] font-normal sm:font-medium text-[#2D3748] dark:text-[#E2E8F0] leading-relaxed tracking-wide line-clamp-2 sm:line-clamp-3">
                   &ldquo;{activeQuote.text}&rdquo;
                 </p>
               </div>
@@ -644,18 +643,7 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
       </div>
 
       {/* ========================================================================= */}
-      {/* 2. DAILY INSIGHT CARD (AI-Powered Task Synthesis & Priority Focus) */}
-      {/* ========================================================================= */}
-      <DailyInsightCard
-        profile={profile}
-        todos={todos}
-        onToggleTodo={onToggleTodo}
-        onNavigate={onNavigate}
-        soundEnabled={soundEnabled}
-      />
-
-      {/* ========================================================================= */}
-      {/* 3. MAIN DASHBOARD GRID (Smart Space-Efficient Packing Grid) */}
+      {/* 2. MAIN DASHBOARD GRID (Smart Space-Efficient Packing Grid) */}
       {/* ========================================================================= */}
       <CommandCenterGrid
         columns={columns}
