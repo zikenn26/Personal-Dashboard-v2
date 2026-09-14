@@ -1490,26 +1490,6 @@ export default function App() {
                 )}
                 <span className="truncate">{currentNav.label}</span>
               </div>
-
-              {/* Quick Zikenn AI Access Button */}
-              <button
-                type="button"
-                id="navbar-ai-bot-btn"
-                onClick={() => {
-                  Sound.click(settings.soundEnabled);
-                  setIsZikennPopupOpen(true);
-                }}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  isZikennPopupOpen || activeView === 'assistant'
-                    ? 'bg-indigo-600 text-white shadow-2xs'
-                    : 'bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/60'
-                }`}
-                title="Chat with Personalized Zikenn AI"
-              >
-                <BrandLogo size={16} className="rounded-xs shrink-0" />
-                <span className="hidden md:inline">Zikenn AI</span>
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              </button>
             </div>
           </div>
 
@@ -2499,13 +2479,30 @@ export default function App() {
         </aside>
       )}
 
+      {/* Floating Round Action Button for Zikenn AI (only brand logo visible) */}
+      {!isZikennPopupOpen && (
+        <button
+          type="button"
+          id="floating-zikenn-ai-fab"
+          onClick={() => {
+            Sound.click(settings.soundEnabled);
+            setIsZikennPopupOpen(true);
+          }}
+          className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-600 hover:from-indigo-500 hover:to-indigo-600 text-white shadow-xl hover:shadow-2xl hover:shadow-indigo-500/30 border border-white/20 dark:border-indigo-400/40 flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 cursor-pointer group focus:outline-none focus:ring-4 focus:ring-indigo-300 dark:focus:ring-indigo-800"
+          title="Chat with Personalized Zikenn AI"
+          aria-label="Open Zikenn AI"
+        >
+          <BrandLogo size={28} className="rounded-xs group-hover:scale-105 transition-transform duration-200 pointer-events-none" />
+        </button>
+      )}
+
       {/* Floating Toast Notification with Undo for Deleted Expense */}
       {expenseUndoToast && (
         <aside
           id="expense-undo-toast"
           role="status"
           aria-live="polite"
-          className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-2xl text-xs font-semibold border border-gray-800 dark:border-gray-200 animate-in fade-in slide-in-from-bottom-5 duration-200 max-w-[calc(100vw-2rem)] sm:max-w-md"
+          className="fixed bottom-22 right-6 sm:bottom-24 sm:right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-2xl text-xs font-semibold border border-gray-800 dark:border-gray-200 animate-in fade-in slide-in-from-bottom-5 duration-200 max-w-[calc(100vw-2rem)] sm:max-w-md"
         >
           <div className="w-7 h-7 rounded-xl bg-rose-500/20 text-rose-400 dark:text-rose-600 flex items-center justify-center shrink-0">
             <Trash2 className="w-3.5 h-3.5" />

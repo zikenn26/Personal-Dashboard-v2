@@ -117,6 +117,7 @@ export interface ExpenseItem {
   active?: boolean;
   sourceFile?: string;
   importBatchId?: string;
+  time?: string;
 }
 
 export interface ExcelImportLog {

@@ -39,7 +39,9 @@ import {
   Filter,
   ShieldCheck,
   AlertTriangle,
+  ArrowUpDown,
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -588,8 +590,11 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
 
   const [activeFilter, setActiveFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc' | 'name-asc'>('date-desc');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showAllTransactionsModal, setShowAllTransactionsModal] = useState<boolean>(false);
+  const [modalCategoryFilter, setModalCategoryFilter] = useState<string>('all');
+  const [modalSortBy, setModalSortBy] = useState<'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc' | 'name-asc'>('date-desc');
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [editingExpense, setEditingExpense] = useState<ExpenseItem | null>(null);
 
@@ -947,6 +952,25 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       list = list.filter((e) => (e.date || '').startsWith(selectedPrefix));
     }
 
+    const sortFn = (a: ExpenseItem, b: ExpenseItem) => {
+      if (sortBy === 'date-desc') {
+        const dDiff = (b.date || '').localeCompare(a.date || '');
+        if (dDiff !== 0) return dDiff;
+        return (b.time || '').localeCompare(a.time || '');
+      } else if (sortBy === 'date-asc') {
+        const dDiff = (a.date || '').localeCompare(b.date || '');
+        if (dDiff !== 0) return dDiff;
+        return (a.time || '').localeCompare(b.time || '');
+      } else if (sortBy === 'amount-desc') {
+        return Number(b.amount) - Number(a.amount);
+      } else if (sortBy === 'amount-asc') {
+        return Number(a.amount) - Number(b.amount);
+      } else if (sortBy === 'name-asc') {
+        return (a.name || '').localeCompare(b.name || '');
+      }
+      return 0;
+    };
+
     // Group real transactions
     const groups: Record<string, ExpenseItem[]> = {
       Today: [],
@@ -964,18 +988,49 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       }
     });
 
+    groups.Today.sort(sortFn);
+    groups.Yesterday.sort(sortFn);
+    groups.Earlier.sort(sortFn);
+
     return {
       Today: groups.Today,
       Yesterday: groups.Yesterday,
       Earlier: groups.Earlier,
       isEmpty: list.length === 0,
     };
-  }, [currentExpenses, searchQuery, selectedCategoryFilter, activeFilter, selectedYear, selectedMonthIndex, selectedSheetFilter, expenseRenderTick]);
+  }, [currentExpenses, searchQuery, selectedCategoryFilter, activeFilter, selectedYear, selectedMonthIndex, selectedSheetFilter, expenseRenderTick, sortBy]);
 
   // Count of imported items in database
   const importedCount = useMemo(() => {
     return currentExpenses.filter((e) => !!e.importBatchId || !!e.sourceFile).length;
   }, [currentExpenses, expenseRenderTick]);
+
+  // Modal Filtered & Sorted Transactions
+  const filteredModalExpenses = useMemo(() => {
+    let list = [...expenses];
+    if (modalCategoryFilter !== 'all') {
+      list = list.filter((e) => e.category.toLowerCase() === modalCategoryFilter.toLowerCase());
+    }
+    list.sort((a, b) => {
+      if (modalSortBy === 'date-desc') {
+        const dDiff = (b.date || '').localeCompare(a.date || '');
+        if (dDiff !== 0) return dDiff;
+        return (b.time || '').localeCompare(a.time || '');
+      } else if (modalSortBy === 'date-asc') {
+        const dDiff = (a.date || '').localeCompare(b.date || '');
+        if (dDiff !== 0) return dDiff;
+        return (a.time || '').localeCompare(b.time || '');
+      } else if (modalSortBy === 'amount-desc') {
+        return Number(b.amount) - Number(a.amount);
+      } else if (modalSortBy === 'amount-asc') {
+        return Number(a.amount) - Number(b.amount);
+      } else if (modalSortBy === 'name-asc') {
+        return (a.name || '').localeCompare(b.name || '');
+      }
+      return 0;
+    });
+    return list;
+  }, [expenses, modalCategoryFilter, modalSortBy]);
 
   const getCategoryBadge = (category: string) => {
     const cat = EXPENSE_CATEGORIES.find((c) => c.name.toLowerCase() === category.toLowerCase());
@@ -1408,21 +1463,47 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                 </button>
               ))}
 
-              <div className="h-4 w-px bg-gray-200 dark:bg-gray-700 mx-1" />
+              <div className="h-4 w-px bg-gray-200 dark:bg-gray-700 mx-1 shrink-0" />
 
               {/* Category Quick Filter Dropdown */}
-              <select
-                value={selectedCategoryFilter}
-                onChange={(e) => setSelectedCategoryFilter(e.target.value)}
-                className="px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-50 dark:bg-[#242C3D] text-[#37352F] dark:text-white border border-[#E5E7EB] dark:border-[#2D3748] outline-none cursor-pointer"
-              >
-                <option value="all">All Categories</option>
-                {EXPENSE_CATEGORIES.map((c) => (
-                  <option key={c.name} value={c.name}>
-                    {c.icon} {c.name}
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Filter className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                <select
+                  value={selectedCategoryFilter}
+                  onChange={(e) => {
+                    Sound.click(soundEnabled);
+                    setSelectedCategoryFilter(e.target.value);
+                  }}
+                  className="px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-50 dark:bg-[#242C3D] text-[#37352F] dark:text-white border border-[#E5E7EB] dark:border-[#2D3748] outline-none cursor-pointer hover:border-purple-300 dark:hover:border-purple-600 transition-colors"
+                >
+                  <option value="all">All Categories</option>
+                  {EXPENSE_CATEGORIES.map((c) => (
+                    <option key={c.name} value={c.name}>
+                      {c.icon} {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Sort Order Dropdown */}
+              <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                <ArrowUpDown className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                <select
+                  value={sortBy}
+                  onChange={(e) => {
+                    Sound.click(soundEnabled);
+                    setSortBy(e.target.value as any);
+                  }}
+                  className="px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-50 dark:bg-[#242C3D] text-[#37352F] dark:text-white border border-[#E5E7EB] dark:border-[#2D3748] outline-none cursor-pointer hover:border-purple-300 dark:hover:border-purple-600 transition-colors"
+                  title="Sort expenses list"
+                >
+                  <option value="date-desc">Newest First</option>
+                  <option value="date-asc">Oldest First</option>
+                  <option value="amount-desc">Amount: High to Low</option>
+                  <option value="amount-asc">Amount: Low to High</option>
+                  <option value="name-asc">Name (A-Z)</option>
+                </select>
+              </div>
             </div>
 
             {/* Transaction Items (Grouped by Today, Yesterday, Earlier) */}
@@ -1466,64 +1547,74 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                         Today
                       </div>
                       <div className="divide-y divide-gray-100 dark:divide-gray-800">
-                        {groupedTransactions.Today.map((tx: any) => (
-                          <div
-                            key={tx.id}
-                            className="py-2.5 flex items-center justify-between group hover:bg-gray-50/70 dark:hover:bg-gray-800/40 px-2 rounded-xl transition-colors"
-                          >
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 flex items-center justify-center text-base shrink-0">
-                                {getCategoryIcon(tx.category, tx.icon)}
+                        <AnimatePresence mode="popLayout" initial={false}>
+                          {groupedTransactions.Today.map((tx: any) => (
+                            <motion.div
+                              layout
+                              initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.95, y: -4, transition: { duration: 0.15 } }}
+                              transition={{
+                                layout: { type: "spring", stiffness: 350, damping: 30 },
+                                opacity: { duration: 0.2 },
+                              }}
+                              key={tx.id}
+                              className="py-2.5 flex items-center justify-between group hover:bg-gray-50/70 dark:hover:bg-gray-800/40 px-2 rounded-xl transition-colors"
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 flex items-center justify-center text-base shrink-0">
+                                  {getCategoryIcon(tx.category, tx.icon)}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="text-xs sm:text-sm font-bold text-[#37352F] dark:text-white truncate">
+                                    {tx.name}
+                                  </div>
+                                  <div className="text-[11px] text-[#787774] dark:text-[#9CA3AF] truncate">
+                                    {tx.notes || tx.category}
+                                  </div>
+                                </div>
                               </div>
-                              <div className="min-w-0">
-                                <div className="text-xs sm:text-sm font-bold text-[#37352F] dark:text-white truncate">
-                                  {tx.name}
-                                </div>
-                                <div className="text-[11px] text-[#787774] dark:text-[#9CA3AF] truncate">
-                                  {tx.notes || tx.category}
-                                </div>
-                              </div>
-                            </div>
 
-                            <div className="flex items-center gap-3 shrink-0">
-                              <div className="text-right">
-                                <div className="text-xs sm:text-sm font-extrabold text-[#37352F] dark:text-white">
-                                  {formatCurrency(tx.amount)}
+                              <div className="flex items-center gap-3 shrink-0">
+                                <div className="text-right">
+                                  <div className="text-xs sm:text-sm font-extrabold text-[#37352F] dark:text-white">
+                                    {formatCurrency(tx.amount)}
+                                  </div>
+                                  <div className="text-[10px] text-[#787774] dark:text-[#9CA3AF]">
+                                    {tx.time || '10:20 AM'}
+                                  </div>
                                 </div>
-                                <div className="text-[10px] text-[#787774] dark:text-[#9CA3AF]">
-                                  {tx.time || '10:20 AM'}
-                                </div>
-                              </div>
 
-                              <span
-                                className={`hidden sm:inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getCategoryBadge(
-                                  tx.category
-                                )}`}
-                              >
-                                {tx.category}
-                              </span>
-
-                              <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => openEditModal(tx)}
-                                  className="p-1 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
-                                  title="Edit"
+                                <span
+                                  className={`hidden sm:inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getCategoryBadge(
+                                    tx.category
+                                  )}`}
                                 >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenDeleteExpenseModal(tx)}
-                                  className="p-1 text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer"
-                                  title="Delete"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                  {tx.category}
+                                </span>
+
+                                <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditModal(tx)}
+                                    className="p-1 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+                                    title="Edit"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenDeleteExpenseModal(tx)}
+                                    className="p-1 text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer"
+                                    title="Delete"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                          </div>
-                        ))}
+                            </motion.div>
+                          ))}
+                        </AnimatePresence>
                       </div>
                     </div>
                   )}
@@ -1535,64 +1626,74 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                         Yesterday
                       </div>
                       <div className="divide-y divide-gray-100 dark:divide-gray-800">
-                        {groupedTransactions.Yesterday.map((tx: any) => (
-                          <div
-                            key={tx.id}
-                            className="py-2.5 flex items-center justify-between group hover:bg-gray-50/70 dark:hover:bg-gray-800/40 px-2 rounded-xl transition-colors"
-                          >
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-300 flex items-center justify-center text-base shrink-0">
-                                {getCategoryIcon(tx.category, tx.icon)}
+                        <AnimatePresence mode="popLayout" initial={false}>
+                          {groupedTransactions.Yesterday.map((tx: any) => (
+                            <motion.div
+                              layout
+                              initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.95, y: -4, transition: { duration: 0.15 } }}
+                              transition={{
+                                layout: { type: "spring", stiffness: 350, damping: 30 },
+                                opacity: { duration: 0.2 },
+                              }}
+                              key={tx.id}
+                              className="py-2.5 flex items-center justify-between group hover:bg-gray-50/70 dark:hover:bg-gray-800/40 px-2 rounded-xl transition-colors"
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-300 flex items-center justify-center text-base shrink-0">
+                                  {getCategoryIcon(tx.category, tx.icon)}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="text-xs sm:text-sm font-bold text-[#37352F] dark:text-white truncate">
+                                    {tx.name}
+                                  </div>
+                                  <div className="text-[11px] text-[#787774] dark:text-[#9CA3AF] truncate">
+                                    {tx.notes || tx.category}
+                                  </div>
+                                </div>
                               </div>
-                              <div className="min-w-0">
-                                <div className="text-xs sm:text-sm font-bold text-[#37352F] dark:text-white truncate">
-                                  {tx.name}
-                                </div>
-                                <div className="text-[11px] text-[#787774] dark:text-[#9CA3AF] truncate">
-                                  {tx.notes || tx.category}
-                                </div>
-                              </div>
-                            </div>
 
-                            <div className="flex items-center gap-3 shrink-0">
-                              <div className="text-right">
-                                <div className="text-xs sm:text-sm font-extrabold text-[#37352F] dark:text-white">
-                                  {formatCurrency(tx.amount)}
+                              <div className="flex items-center gap-3 shrink-0">
+                                <div className="text-right">
+                                  <div className="text-xs sm:text-sm font-extrabold text-[#37352F] dark:text-white">
+                                    {formatCurrency(tx.amount)}
+                                  </div>
+                                  <div className="text-[10px] text-[#787774] dark:text-[#9CA3AF]">
+                                    {tx.time || 'Yesterday'}
+                                  </div>
                                 </div>
-                                <div className="text-[10px] text-[#787774] dark:text-[#9CA3AF]">
-                                  {tx.time || 'Yesterday'}
-                                </div>
-                              </div>
 
-                              <span
-                                className={`hidden sm:inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getCategoryBadge(
-                                  tx.category
-                                )}`}
-                              >
-                                {tx.category}
-                              </span>
-
-                              <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => openEditModal(tx)}
-                                  className="p-1 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
-                                  title="Edit"
+                                <span
+                                  className={`hidden sm:inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getCategoryBadge(
+                                    tx.category
+                                  )}`}
                                 >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenDeleteExpenseModal(tx)}
-                                  className="p-1 text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer"
-                                  title="Delete"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                  {tx.category}
+                                </span>
+
+                                <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditModal(tx)}
+                                    className="p-1 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+                                    title="Edit"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenDeleteExpenseModal(tx)}
+                                    className="p-1 text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer"
+                                    title="Delete"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                          </div>
-                        ))}
+                            </motion.div>
+                          ))}
+                        </AnimatePresence>
                       </div>
                     </div>
                   )}
@@ -1604,64 +1705,74 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                         Earlier
                       </div>
                       <div className="divide-y divide-gray-100 dark:divide-gray-800">
-                        {groupedTransactions.Earlier.map((tx: any) => (
-                          <div
-                            key={tx.id}
-                            className="py-2.5 flex items-center justify-between group hover:bg-gray-50/70 dark:hover:bg-gray-800/40 px-2 rounded-xl transition-colors"
-                          >
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 flex items-center justify-center text-base shrink-0">
-                                {getCategoryIcon(tx.category, tx.icon)}
+                        <AnimatePresence mode="popLayout" initial={false}>
+                          {groupedTransactions.Earlier.map((tx: any) => (
+                            <motion.div
+                              layout
+                              initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.95, y: -4, transition: { duration: 0.15 } }}
+                              transition={{
+                                layout: { type: "spring", stiffness: 350, damping: 30 },
+                                opacity: { duration: 0.2 },
+                              }}
+                              key={tx.id}
+                              className="py-2.5 flex items-center justify-between group hover:bg-gray-50/70 dark:hover:bg-gray-800/40 px-2 rounded-xl transition-colors"
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 flex items-center justify-center text-base shrink-0">
+                                  {getCategoryIcon(tx.category, tx.icon)}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="text-xs sm:text-sm font-bold text-[#37352F] dark:text-white truncate">
+                                    {tx.name}
+                                  </div>
+                                  <div className="text-[11px] text-[#787774] dark:text-[#9CA3AF] truncate">
+                                    {tx.notes || tx.category}
+                                  </div>
+                                </div>
                               </div>
-                              <div className="min-w-0">
-                                <div className="text-xs sm:text-sm font-bold text-[#37352F] dark:text-white truncate">
-                                  {tx.name}
-                                </div>
-                                <div className="text-[11px] text-[#787774] dark:text-[#9CA3AF] truncate">
-                                  {tx.notes || tx.category}
-                                </div>
-                              </div>
-                            </div>
 
-                            <div className="flex items-center gap-3 shrink-0">
-                              <div className="text-right">
-                                <div className="text-xs sm:text-sm font-extrabold text-[#37352F] dark:text-white">
-                                  {formatCurrency(tx.amount)}
+                              <div className="flex items-center gap-3 shrink-0">
+                                <div className="text-right">
+                                  <div className="text-xs sm:text-sm font-extrabold text-[#37352F] dark:text-white">
+                                    {formatCurrency(tx.amount)}
+                                  </div>
+                                  <div className="text-[10px] text-[#787774] dark:text-[#9CA3AF]">
+                                    {tx.date}
+                                  </div>
                                 </div>
-                                <div className="text-[10px] text-[#787774] dark:text-[#9CA3AF]">
-                                  {tx.date}
-                                </div>
-                              </div>
 
-                              <span
-                                className={`hidden sm:inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getCategoryBadge(
-                                  tx.category
-                                )}`}
-                              >
-                                {tx.category}
-                              </span>
-
-                              <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => openEditModal(tx)}
-                                  className="p-1 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
-                                  title="Edit"
+                                <span
+                                  className={`hidden sm:inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getCategoryBadge(
+                                    tx.category
+                                  )}`}
                                 >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenDeleteExpenseModal(tx)}
-                                  className="p-1 text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer"
-                                  title="Delete"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                  {tx.category}
+                                </span>
+
+                                <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditModal(tx)}
+                                    className="p-1 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+                                    title="Edit"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenDeleteExpenseModal(tx)}
+                                    className="p-1 text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer"
+                                    title="Delete"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                          </div>
-                        ))}
+                            </motion.div>
+                          ))}
+                        </AnimatePresence>
                       </div>
                     </div>
                   )}
@@ -2387,7 +2498,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                   All Transactions Log
                 </h3>
                 <p className="text-xs text-[#787774] dark:text-[#9CA3AF]">
-                  Complete chronological history of recorded expenses ({expenses.length} records)
+                  Complete history ({filteredModalExpenses.length} of {expenses.length} records)
                 </p>
               </div>
               <button
@@ -2399,72 +2510,134 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
               </button>
             </div>
 
+            {/* Modal Filter & Sort Toolbar */}
+            <div className="px-4 py-2.5 bg-gray-50/70 dark:bg-[#151C28] border-b border-[#E5E7EB] dark:border-[#2D3748] flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <Filter className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                <select
+                  value={modalCategoryFilter}
+                  onChange={(e) => {
+                    Sound.click(soundEnabled);
+                    setModalCategoryFilter(e.target.value);
+                  }}
+                  className="px-2.5 py-1 rounded-full text-xs font-semibold bg-white dark:bg-[#1E293B] text-[#37352F] dark:text-white border border-[#E5E7EB] dark:border-[#2D3748] outline-none cursor-pointer"
+                >
+                  <option value="all">All Categories</option>
+                  {EXPENSE_CATEGORIES.map((c) => (
+                    <option key={c.name} value={c.name}>
+                      {c.icon} {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5 ml-auto">
+                <ArrowUpDown className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                <select
+                  value={modalSortBy}
+                  onChange={(e) => {
+                    Sound.click(soundEnabled);
+                    setModalSortBy(e.target.value as any);
+                  }}
+                  className="px-2.5 py-1 rounded-full text-xs font-semibold bg-white dark:bg-[#1E293B] text-[#37352F] dark:text-white border border-[#E5E7EB] dark:border-[#2D3748] outline-none cursor-pointer"
+                >
+                  <option value="date-desc">Newest First</option>
+                  <option value="date-asc">Oldest First</option>
+                  <option value="amount-desc">Amount: High to Low</option>
+                  <option value="amount-asc">Amount: Low to High</option>
+                  <option value="name-asc">Name (A-Z)</option>
+                </select>
+              </div>
+            </div>
+
             <div className="p-4 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-800 space-y-1">
-              {expenses.length === 0 ? (
+              {filteredModalExpenses.length === 0 ? (
                 <div className="text-center py-10 space-y-3">
                   <div className="text-3xl">💳</div>
                   <h4 className="text-sm font-bold text-gray-800 dark:text-white">
-                    YOUR SPENDING JOURNEY STARTS HERE
+                    {expenses.length === 0 ? 'YOUR SPENDING JOURNEY STARTS HERE' : 'NO MATCHING TRANSACTIONS'}
                   </h4>
                   <p className="text-xs text-gray-500 max-w-sm mx-auto">
-                    Track everyday expenses so you can understand where your money goes.
+                    {expenses.length === 0
+                      ? 'Track everyday expenses so you can understand where your money goes.'
+                      : 'No expenses found with the selected category filter.'}
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowAllTransactionsModal(false);
-                      openAddModal();
-                    }}
-                    className="px-4 py-2 rounded-xl bg-purple-600 text-white text-xs font-bold shadow-xs hover:bg-purple-700"
-                  >
-                    Add First Expense
-                  </button>
+                  {expenses.length === 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAllTransactionsModal(false);
+                        openAddModal();
+                      }}
+                      className="px-4 py-2 rounded-xl bg-purple-600 text-white text-xs font-bold shadow-xs hover:bg-purple-700"
+                    >
+                      Add First Expense
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setModalCategoryFilter('all')}
+                      className="px-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-700 dark:text-gray-200"
+                    >
+                      Clear Category Filter
+                    </button>
+                  )}
                 </div>
               ) : (
-                expenses.map((tx) => (
-                  <div
-                    key={tx.id}
-                    className="py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-800/50 px-2 rounded-xl transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-lg">{getCategoryIcon(tx.category, tx.icon)}</span>
-                      <div>
-                        <div className="text-xs sm:text-sm font-bold text-[#37352F] dark:text-white">
-                          {tx.name}
-                        </div>
-                        <div className="text-[11px] text-gray-500">
-                          {tx.date} • {tx.paymentMethod || 'Card'} {tx.notes ? `• ${tx.notes}` : ''}
+                <AnimatePresence mode="popLayout" initial={false}>
+                  {filteredModalExpenses.map((tx) => (
+                    <motion.div
+                      layout
+                      initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95, y: -4, transition: { duration: 0.15 } }}
+                      transition={{
+                        layout: { type: "spring", stiffness: 350, damping: 30 },
+                        opacity: { duration: 0.2 },
+                      }}
+                      key={tx.id}
+                      className="py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-800/50 px-2 rounded-xl transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg">{getCategoryIcon(tx.category, tx.icon)}</span>
+                        <div>
+                          <div className="text-xs sm:text-sm font-bold text-[#37352F] dark:text-white">
+                            {tx.name}
+                          </div>
+                          <div className="text-[11px] text-gray-500">
+                            {tx.date} • {tx.paymentMethod || 'Card'} {tx.notes ? `• ${tx.notes}` : ''}
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs sm:text-sm font-extrabold text-[#37352F] dark:text-white">
-                        {formatCurrency(tx.amount)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowAllTransactionsModal(false);
-                          openEditModal(tx);
-                        }}
-                        className="p-1 text-gray-400 hover:text-purple-600"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowAllTransactionsModal(false);
-                          handleOpenDeleteExpenseModal(tx);
-                        }}
-                        className="p-1 text-gray-400 hover:text-rose-600 cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs sm:text-sm font-extrabold text-[#37352F] dark:text-white">
+                          {formatCurrency(tx.amount)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowAllTransactionsModal(false);
+                            openEditModal(tx);
+                          }}
+                          className="p-1 text-gray-400 hover:text-purple-600"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowAllTransactionsModal(false);
+                            handleOpenDeleteExpenseModal(tx);
+                          }}
+                          className="p-1 text-gray-400 hover:text-rose-600 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
               )}
             </div>
           </div>

@@ -19,7 +19,6 @@ import { INITIAL_QUOTES, INITIAL_SCHEDULE, Storage, DEFAULT_HOME_GRID_ORDER, DEF
 import { IndianCalendarWidget } from './IndianCalendarWidget';
 import { DynamicScheduleCard } from './DynamicScheduleCard';
 import { CommandCenterGrid } from './CommandCenterGrid';
-import { BrandLogo } from './BrandLogo';
 import {
   CheckCircle2,
   Circle,
@@ -460,24 +459,6 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
             <h1 className="workspace-heading font-extrabold text-[#37352F] dark:text-white tracking-tight flex items-center gap-2 flex-wrap">
               <span>{greeting}, {profile.name}!</span>
               <span className="inline-block text-2xl">{greetingEmoji}</span>
-              <button
-                type="button"
-                id="main-page-ai-bot-btn"
-                onClick={() => {
-                  Sound.click(soundEnabled);
-                  if (onOpenZikennPopup) {
-                    onOpenZikennPopup();
-                  } else {
-                    onNavigate('assistant');
-                  }
-                }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all hover:scale-105 active:scale-95 cursor-pointer ml-1 sm:ml-2 group"
-                title="Chat with Personalized Zikenn AI"
-              >
-                <BrandLogo size={18} className="rounded-xs group-hover:scale-110 transition-transform" />
-                <span>Zikenn AI</span>
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              </button>
             </h1>
             <p className="text-xs sm:text-sm text-[#787774] dark:text-[#9CA3AF] mt-1 font-medium flex items-center gap-2">
               <span>Let&apos;s make today meaningful and productive.</span>
