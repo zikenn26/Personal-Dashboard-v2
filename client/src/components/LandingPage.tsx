@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight, BarChart3, BookOpen, Check, CheckCircle2, CircleDollarSign,
   Flame, Goal, Grid2X2, LayoutDashboard, Menu, Moon, NotebookPen, Plus,
@@ -112,10 +112,37 @@ function PageContent({ active }: { active: PageKey }) {
   );
   if (active === "Goals") return <div className="tour-panel goals"><div className="goal-big"><div className="goal-ring"><b>72%</b><span>on track</span></div><div><b>Launch personal site</b><p>4 of 6 milestones completed</p></div></div>{["Polish case studies", "Write about page", "Share with 3 friends"].map((x, i) => <div className="goal-row" key={x}><span className={i < 2 ? "goal-check" : "goal-empty"}>{i < 2 ? "✓" : ""}</span>{x}<em>{i < 2 ? "Done" : "Next"}</em></div>)}</div>;
   if (active === "Journal") return <div className="tour-panel journal-panel"><span className="journal-date">WEDNESDAY · SEP 02</span><h4>What felt lighter today?</h4><p>“The best systems are the ones that leave room for being human.”</p><div className="writing-space"><span>Write freely…</span>{[1,2,3,4,5].map((x) => <i key={x} />)}</div><div className="journal-footer"><span>3 minute reflection</span><span><LockKeyhole size={9} /> Private · encrypted</span></div></div>;
-  if (active === "Spending") return <div className="tour-panel spending-panel"><div className="spending-head"><div><small>SPENT THIS WEEK</small><b>₹1,240</b><em>₹320 today</em></div><span>↗ 12% vs last week</span></div><div className="spending-detail"><div className="spending-pie" /><div className="spending-legend"><span><i className="legend-purple" /> Groceries <b>₹420</b></span><span><i className="legend-mint" /> Uber <b>₹180</b></span><span><i className="legend-peach" /> Dining <b>₹320</b></span><span><i className="legend-blue" /> Other <b>₹320</b></span></div></div><div className="transactions"><div><span className="transaction-icon grocery">⌁</span><b>Fresh Mart <small>Groceries · Today</small></b><em>−₹420</em></div><div><span className="transaction-icon uber">↗</span><b>Uber <small>Transport · Yesterday</small></b><em>−₹180</em></div><div><span className="transaction-icon dining">✦</span><b>Greenhouse Cafe <small>Dining · Sep 1</small></b><em>−₹320</em></div></div></div>;
+  if (active === "Spending") return (
+    <div className="tour-panel spending-panel">
+      <div className="spending-head">
+        <div>
+          <small>SPENT THIS WEEK (MON–SUN)</small>
+          <b>₹420</b>
+          <em>₹420 today (Mon)</em>
+        </div>
+        <span style={{ fontSize: "9px" }}>Week starts Mon</span>
+      </div>
+      <div className="spending-detail">
+        <div className="spending-pie" />
+        <div className="spending-legend">
+          <span><i className="legend-purple" /> Groceries <b>₹420</b></span>
+          <span><i className="legend-mint" /> Transport <b>₹0</b></span>
+          <span><i className="legend-peach" /> Dining <b>₹0</b></span>
+          <span><i className="legend-blue" /> Other <b>₹0</b></span>
+        </div>
+      </div>
+      <div className="transactions">
+        <div>
+          <span className="transaction-icon grocery">⌁</span>
+          <b>Fresh Mart <small>Groceries · Today (Mon)</small></b>
+          <em>−₹420</em>
+        </div>
+      </div>
+    </div>
+  );
   if (active === "Library") return <div className="tour-panel library-panel"><div className="book-cover"><BookOpen size={24} /><b>Make Time</b><span>Jake Knapp</span></div><div className="library-copy"><small>READING NEXT</small><h4>Make time for what matters.</h4><p>Save articles, books, podcasts, and ideas in one thoughtful shelf.</p><div className="rating">★★★★★ <span>In progress</span></div></div></div>;
   if (active === "Portfolio") return <div className="tour-panel portfolio-panel"><div className="portfolio-cover"><div className="portfolio-avatar">ME</div><span>CREATIVE PORTFOLIO</span><b>Personal Portfolio</b></div><div className="resume-sheet"><div><small>RESUME PREVIEW</small><b>Interactive Resume & CV</b><span>Clean · Modular · Customizable</span></div><button><ArrowRight size={10} /> View CV</button></div><div className="portfolio-stats"><span><b>0</b> projects</span><span><b>0</b> articles</span><span><b>0</b> skills</span></div><div className="portfolio-line" /></div>;
-  return <div className="today-dashboard"><div className="quote-card"><div className="quote-icon">“</div><div><p>“You do not rise to the level of your goals. You fall to the level of your systems.”</p><small>— James Clear</small></div><div className="quote-dots"><i /><i /><i /></div></div><div className="today-stats"><div><span className="stat-icon purple"><Check size={14} /></span><small>Tasks left</small><b>0</b><em>! 0 high priority</em></div><div><span className="stat-icon mint"><Flame size={14} /></span><small>Habits done</small><b>0%</b><em className="mint-text">✓ 0 / 0 completed</em></div><div><span className="stat-icon peach"><CircleDollarSign size={14} /></span><small>Spent this week</small><b>₹1,240</b><em>₹320 today</em></div></div><div className="today-columns"><div className="mini-calendar"><div className="today-card-title"><span><CalendarDays size={13} /> CALENDAR</span><div><button>Grid</button><button>Festivals</button></div></div><b className="month-label">September 2026</b><div className="calendar-week">{["Mo","Tu","We","Th","Fr","Sa","Su"].map(d => <span key={d}>{d}</span>)}</div><div className="calendar-grid">{[31,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27].map((n, i) => <span className={`${i === 2 ? "today" : ""} ${i > 3 && i % 7 > 4 ? "soft-red" : ""}`} key={i}>{n}</span>)}</div></div><div className="today-side-card"><div className="today-card-title"><span><CheckCircle2 size={13} /> TODAY'S TASKS</span><a>View all</a></div><div className="empty-state"><CheckCircle2 size={23} /><b>No tasks created yet</b><span>Add a task below to plan your day.</span></div><button className="add-link"><Plus size={13} /> Add Task</button></div><div className="today-side-card"><div className="today-card-title"><span><Flame size={13} /> TODAY'S HABITS</span><a>View all</a></div><div className="empty-state"><Flame size={23} /><b>Build daily momentum</b><span>Track small rituals that compound over time.</span></div><button className="add-link"><Plus size={13} /> Add Habit</button></div></div></div>;
+  return <div className="today-dashboard"><div className="quote-card"><div className="quote-icon">“</div><div><p>“You do not rise to the level of your goals. You fall to the level of your systems.”</p><small>— James Clear</small></div><div className="quote-dots"><i /><i /><i /></div></div><div className="today-stats"><div><span className="stat-icon purple"><Check size={14} /></span><small>Tasks left</small><b>0</b><em>! 0 high priority</em></div><div><span className="stat-icon mint"><Flame size={14} /></span><small>Habits done</small><b>0%</b><em className="mint-text">✓ 0 / 0 completed</em></div><div><span className="stat-icon peach"><CircleDollarSign size={14} /></span><small>Spent this week</small><b>₹420</b><em>₹420 today · Week starts Mon</em></div></div><div className="today-columns"><div className="mini-calendar"><div className="today-card-title"><span><CalendarDays size={13} /> CALENDAR</span><div><button>Grid</button><button>Festivals</button></div></div><b className="month-label">September 2026</b><div className="calendar-week">{["Mo","Tu","We","Th","Fr","Sa","Su"].map(d => <span key={d}>{d}</span>)}</div><div className="calendar-grid">{[31,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27].map((n, i) => <span className={`${i === 2 ? "today" : ""} ${i > 3 && i % 7 > 4 ? "soft-red" : ""}`} key={i}>{n}</span>)}</div></div><div className="today-side-card"><div className="today-card-title"><span><CheckCircle2 size={13} /> TODAY'S TASKS</span><a>View all</a></div><div className="empty-state"><CheckCircle2 size={23} /><b>No tasks created yet</b><span>Add a task below to plan your day.</span></div><button className="add-link"><Plus size={13} /> Add Task</button></div><div className="today-side-card"><div className="today-card-title"><span><Flame size={13} /> TODAY'S HABITS</span><a>View all</a></div><div className="empty-state"><Flame size={23} /><b>Build daily momentum</b><span>Track small rituals that compound over time.</span></div><button className="add-link"><Plus size={13} /> Add Habit</button></div></div></div>;
 }
 
 function AppPreview({ onGetStarted }: { onGetStarted: () => void }) {
@@ -130,22 +157,59 @@ function AppPreview({ onGetStarted }: { onGetStarted: () => void }) {
 }
 
 function MoneyFeatureVisual() {
-  const dayData = [
-    { day: "Mon", amount: "₹1,420", height: 38 },
-    { day: "Tue", amount: "₹2,350", height: 62 },
-    { day: "Wed", amount: "₹1,840", height: 48 },
-    { day: "Thu", amount: "₹2,910", height: 76 },
-    { day: "Fri", amount: "₹2,100", height: 54 },
-    { day: "Sat", amount: "₹3,420", height: 88 },
-    { day: "Sun", amount: "₹2,680", height: 70 },
+  // ISO Week starts from Monday (index 0 = Monday, index 6 = Sunday)
+  const currentDayOfWeek = useMemo(() => {
+    const day = new Date().getDay(); // 0 is Sunday, 1 is Monday
+    return day === 0 ? 6 : day - 1; // 0 for Mon, 6 for Sun
+  }, []);
+
+  // Base spending amounts for active week starting from Monday.
+  // When today is Monday (index 0), Sunday (index 6, end of week) has not occurred and is ₹0.
+  const weekDayTemplate = [
+    { day: "Mon", fullDay: "Monday", amountVal: 1420, height: 48 },
+    { day: "Tue", fullDay: "Tuesday", amountVal: 2350, height: 62 },
+    { day: "Wed", fullDay: "Wednesday", amountVal: 1840, height: 50 },
+    { day: "Thu", fullDay: "Thursday", amountVal: 2910, height: 76 },
+    { day: "Fri", fullDay: "Friday", amountVal: 2100, height: 55 },
+    { day: "Sat", fullDay: "Saturday", amountVal: 3420, height: 88 },
+    { day: "Sun", fullDay: "Sunday", amountVal: 2680, height: 70 },
   ];
+
+  const dayData = useMemo(() => {
+    return weekDayTemplate.map((item, idx) => {
+      const isPastOrToday = idx <= currentDayOfWeek;
+      const amountVal = isPastOrToday ? item.amountVal : 0;
+      return {
+        day: item.day,
+        fullDay: item.fullDay,
+        amount: isPastOrToday ? `₹${amountVal.toLocaleString()}` : '₹0',
+        amountVal,
+        height: isPastOrToday ? item.height : 6,
+        isUpcoming: idx > currentDayOfWeek,
+        isToday: idx === currentDayOfWeek,
+      };
+    });
+  }, [currentDayOfWeek]);
+
+  const totalSpentThisWeek = useMemo(() => {
+    return dayData.reduce((sum, d) => sum + d.amountVal, 0);
+  }, [dayData]);
+
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
 
   return (
     <div className="feature-art money-art">
       <div className="money-header">
-        <span>{selectedDay !== null ? `${dayData[selectedDay].day} spending` : "spending rhythm"}</span>
-        <b>{selectedDay !== null ? dayData[selectedDay].amount : "₹12,480"}</b>
+        <span>
+          {selectedDay !== null
+            ? `${dayData[selectedDay].day} spending${dayData[selectedDay].isUpcoming ? ' (Upcoming)' : dayData[selectedDay].isToday ? ' (Today)' : ''}`
+            : "spending this week (Mon–Sun)"}
+        </span>
+        <b>
+          {selectedDay !== null
+            ? dayData[selectedDay].amount
+            : `₹${totalSpentThisWeek.toLocaleString()}`}
+        </b>
       </div>
       <div className="bars">
         {dayData.map((d, i) => {
@@ -157,21 +221,23 @@ function MoneyFeatureVisual() {
               onClick={() => setSelectedDay(selectedDay === i ? null : i)}
               style={{
                 height: `${d.height}%`,
-                background: isSelected ? "#efa976" : undefined,
+                background: isSelected ? "#efa976" : d.isUpcoming ? "rgba(239, 169, 118, 0.15)" : undefined,
                 boxShadow: isSelected ? "0 0 12px #efa976aa" : undefined,
-                border: isSelected ? "2px solid #fff" : "none",
+                border: isSelected ? "2px solid #fff" : d.isToday ? "2px solid #6366f1" : "none",
                 cursor: "pointer",
                 transition: "all 0.2s ease",
               }}
               className={isSelected ? "active-money-bar" : ""}
-              title={`${d.day}: ${d.amount}`}
+              title={`${d.day}: ${d.amount}${d.isUpcoming ? ' (Upcoming - Week starts Monday)' : ''}`}
             />
           );
         })}
       </div>
       <div className="money-line" />
       <span className="money-note">
-        {selectedDay !== null ? "tap bar again to reset" : "clarity over clutter"}
+        {selectedDay !== null
+          ? "tap bar again to reset · week starts Monday"
+          : "week starts Monday · clarity over clutter"}
       </span>
     </div>
   );

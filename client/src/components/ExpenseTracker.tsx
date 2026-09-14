@@ -719,13 +719,16 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       .filter((e) => e.date === todayStr)
       .reduce((sum, e) => sum + (e.amount || 0), 0);
 
-    // Sum for This Week (last 7 days)
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(now.getDate() - 7);
+    // Sum for This Week (Starting Monday)
+    const currentDayOfWeek = (now.getDay() + 6) % 7; // 0 for Monday
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - currentDayOfWeek);
+    monday.setHours(0, 0, 0, 0);
     const weekTotal = currentExpenses
       .filter((e) => {
-        const d = new Date(e.date);
-        return d >= sevenDaysAgo && d <= now;
+        if (!e.date) return false;
+        const d = new Date(e.date + 'T00:00:00');
+        return d >= monday && d <= now;
       })
       .reduce((sum, e) => sum + (e.amount || 0), 0);
 
@@ -930,9 +933,16 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     if (activeFilter === 'today') {
       list = list.filter((e) => e.date === todayStr);
     } else if (activeFilter === 'week') {
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(new Date().getDate() - 7);
-      list = list.filter((e) => new Date(e.date) >= sevenDaysAgo);
+      const now = new Date();
+      const currentDayOfWeek = (now.getDay() + 6) % 7; // 0 for Monday
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - currentDayOfWeek);
+      monday.setHours(0, 0, 0, 0);
+      list = list.filter((e) => {
+        if (!e.date) return false;
+        const d = new Date(e.date + 'T00:00:00');
+        return d >= monday;
+      });
     } else if (activeFilter === 'month') {
       list = list.filter((e) => (e.date || '').startsWith(selectedPrefix));
     }

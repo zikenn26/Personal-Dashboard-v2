@@ -353,7 +353,7 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
     [journal, todayDateStr]
   );
 
-  // Real Dynamic Spending Stats derived from expenses prop
+  // Real Dynamic Spending Stats derived from expenses prop strictly for current week (Mon-Sun)
   const spendingStats = useMemo(() => {
     // Current week boundary: Monday to Sunday
     const now = new Date();
@@ -362,21 +362,32 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
     monday.setDate(now.getDate() - currentDayOfWeek);
     monday.setHours(0, 0, 0, 0);
 
+    // Deterministic YYYY-MM-DD dates for Monday (index 0) through Sunday (index 6)
+    const weekDates = Array.from({ length: 7 }).map((_, i) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    });
+
     const dayTotals = [0, 0, 0, 0, 0, 0, 0];
-    expenses.forEach((e) => {
-      if (!e.date) return;
-      const expDate = new Date(e.date + 'T00:00:00');
-      const diffTime = expDate.getTime() - monday.getTime();
-      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-      if (diffDays >= 0 && diffDays <= 6) {
-        dayTotals[diffDays] += (Number(e.amount) || 0);
+    const thisWeekExpenses = expenses.filter((e) => {
+      if (!e.date) return false;
+      const cleanDate = e.date.split('T')[0];
+      return weekDates.includes(cleanDate);
+    });
+
+    thisWeekExpenses.forEach((e) => {
+      const cleanDate = e.date.split('T')[0];
+      const dayIdx = weekDates.indexOf(cleanDate);
+      if (dayIdx >= 0 && dayIdx <= 6) {
+        dayTotals[dayIdx] += (Number(e.amount) || 0);
       }
     });
 
     const weeklyTotal = dayTotals.reduce((a, b) => a + b, 0);
-    const allTimeTotal = expenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
-    // If no expenses in the exact current week date range, show all-time sum or weekly
-    const displayWeekly = weeklyTotal > 0 ? weeklyTotal : (expenses.length > 0 ? allTimeTotal : 0);
 
     const maxDay = Math.max(...dayTotals, 1);
     const dayPercentages = dayTotals.map((tot) => {
@@ -384,8 +395,8 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
       return Math.min(100, Math.max(16, Math.round((tot / maxDay) * 100)));
     });
 
-    // Dynamic Category Breakdown: Food, Transport, Subscriptions
-    const foodTotal = expenses
+    // Dynamic Category Breakdown strictly for THIS WEEK (Mon-Sun)
+    const foodTotal = thisWeekExpenses
       .filter((e) => {
         const c = (e.category || '').toLowerCase();
         return (
@@ -398,7 +409,7 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
       })
       .reduce((a, c) => a + (Number(c.amount) || 0), 0);
 
-    const transportTotal = expenses
+    const transportTotal = thisWeekExpenses
       .filter((e) => {
         const c = (e.category || '').toLowerCase();
         return (
@@ -411,7 +422,7 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
       })
       .reduce((a, c) => a + (Number(c.amount) || 0), 0);
 
-    const subsTotal = expenses
+    const subsTotal = thisWeekExpenses
       .filter((e) => {
         const c = (e.category || '').toLowerCase();
         return (
@@ -425,13 +436,15 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
       .reduce((a, c) => a + (Number(c.amount) || 0), 0);
 
     return {
-      weekly: displayWeekly,
+      weekly: weeklyTotal,
       dayTotals,
       dayPercentages,
       food: foodTotal,
       transport: transportTotal,
       subs: subsTotal,
-      hasExpenses: expenses.length > 0,
+      hasExpenses: thisWeekExpenses.length > 0,
+      thisWeekCount: thisWeekExpenses.length,
+      allTimeCount: expenses.length,
     };
   }, [expenses]);
 

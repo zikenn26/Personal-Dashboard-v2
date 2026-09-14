@@ -68,6 +68,8 @@ export interface CommandCenterGridProps {
     food: number;
     transport: number;
     subs: number;
+    thisWeekCount?: number;
+    allTimeCount?: number;
   };
   expenses: ExpenseItem[];
   setShowQuickExpenseModal: (val: boolean) => void;
@@ -506,20 +508,20 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
                     </button>
                   </span>
                 ) : spendingStats.hasExpenses ? (
-                  'This week'
+                  'This week (Mon–Sun)'
                 ) : (
-                  'No expenses logged'
+                  'Clean sheet this week'
                 )}
               </span>
             </div>
             {spendingStats.hasExpenses ? (
               <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-0.5 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-lg border border-indigo-200/50 dark:border-indigo-900/40">
                 <CreditCard className="w-3 h-3" />
-                <span>{expenses.length} logged</span>
+                <span>{spendingStats.thisWeekCount ?? expenses.length} this week</span>
               </span>
             ) : (
               <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 px-2 py-0.5 rounded-lg border border-gray-200 dark:border-gray-700">
-                Clean sheet
+                Clean sheet (Mon start)
               </span>
             )}
           </div>
