@@ -213,7 +213,7 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
       }
     >
       {/* Widget Header */}
-      <div className="p-3.5 sm:px-4 pb-3 border-b border-[#EDECE9] dark:border-[#334155]/60 flex items-center justify-between gap-2 shrink-0 bg-[#FAF9F6] dark:bg-[#1E293B]">
+      <div className="p-3 sm:px-3.5 pb-2.5 border-b border-[#EDECE9] dark:border-[#334155]/60 flex items-center justify-between gap-2 shrink-0 bg-[#FAF9F6] dark:bg-[#1E293B]">
         <div className="flex items-center gap-2.5 min-w-0">
           {dragHandle}
           <div className="w-7 h-7 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-900/40 flex items-center justify-center shrink-0 overflow-hidden">

@@ -22,10 +22,6 @@ import {
   GripVertical,
   RotateCcw,
   LayoutGrid,
-  ChevronLeft,
-  ChevronRight,
-  ChevronUp,
-  ChevronDown,
 } from 'lucide-react';
 
 export interface DropIndicator {
@@ -336,78 +332,17 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
     Sound.click(soundEnabled);
   };
 
-  // Drag handle & quick arrow controls for tile headers
-  const renderDragHandle = (widgetId: string, colIdx: number, rowIdx: number, colLength: number) => {
+  // Drag handle for tile headers (clean grip icon, no cluttering arrow buttons)
+  const renderDragHandle = (widgetId: string, _colIdx: number, _rowIdx: number, _colLength: number) => {
     return (
-      <div className="flex items-center gap-1 shrink-0">
-        <div
-          draggable
-          onDragStart={(e) => handleDragStart(e, widgetId)}
-          onDragEnd={handleDragEnd}
-          className="p-1 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200/50 dark:hover:bg-gray-700/50 cursor-grab active:cursor-grabbing transition-colors select-none"
-          title="Drag to rearrange tile"
-        >
-          <GripVertical className="w-3.5 h-3.5" />
-        </div>
-
-        {/* Quick Column Shift Controls (hover-revealed) */}
-        <div className="opacity-0 group-hover/tile:opacity-100 transition-opacity flex items-center gap-0.5 bg-white dark:bg-[#0F172A] rounded-lg border border-gray-200 dark:border-gray-700 p-0.5 shadow-2xs">
-          <button
-            type="button"
-            disabled={colIdx === 0}
-            onClick={(e) => {
-              e.stopPropagation();
-              handleMoveWidgetColumn(widgetId, -1);
-            }}
-            className="p-0.5 text-gray-500 hover:text-[#6366F1] disabled:opacity-20 disabled:cursor-not-allowed rounded cursor-pointer"
-            title="Move to left column"
-          >
-            <ChevronLeft className="w-3 h-3" />
-          </button>
-
-          {colLength > 1 && (
-            <>
-              <button
-                type="button"
-                disabled={rowIdx === 0}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleMoveWidgetVertical(widgetId, -1);
-                }}
-                className="p-0.5 text-gray-500 hover:text-[#6366F1] disabled:opacity-20 disabled:cursor-not-allowed rounded cursor-pointer"
-                title="Move up"
-              >
-                <ChevronUp className="w-3 h-3" />
-              </button>
-
-              <button
-                type="button"
-                disabled={rowIdx >= colLength - 1}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleMoveWidgetVertical(widgetId, 1);
-                }}
-                className="p-0.5 text-gray-500 hover:text-[#6366F1] disabled:opacity-20 disabled:cursor-not-allowed rounded cursor-pointer"
-                title="Move down"
-              >
-                <ChevronDown className="w-3 h-3" />
-              </button>
-            </>
-          )}
-
-          <button
-            type="button"
-            disabled={colIdx === 2}
-            onClick={(e) => {
-              e.stopPropagation();
-              handleMoveWidgetColumn(widgetId, 1);
-            }}
-            className="p-0.5 text-gray-500 hover:text-[#6366F1] disabled:opacity-20 disabled:cursor-not-allowed rounded cursor-pointer"
-            title="Move to right column"
-          >
-            <ChevronRight className="w-3 h-3" />
-          </button>
-        </div>
+      <div
+        draggable
+        onDragStart={(e) => handleDragStart(e, widgetId)}
+        onDragEnd={handleDragEnd}
+        className="p-1 -ml-1 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200/50 dark:hover:bg-gray-700/50 cursor-grab active:cursor-grabbing transition-colors select-none shrink-0"
+        title="Drag card"
+      >
+        <GripVertical className="w-3.5 h-3.5" />
       </div>
     );
   };
@@ -459,7 +394,7 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
 
     if (widgetId === 'expenses') {
       return (
-        <div className="p-4.5 sm:p-5 rounded-2xl bg-[#F7F7F5] dark:bg-[#1E293B] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col space-y-3.5 w-full">
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F7F7F5] dark:bg-[#1E293B] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col space-y-3 w-full">
           {/* Header */}
           <div className="flex items-center justify-between pb-2 border-b border-[#EDECE9] dark:border-[#334155]/60">
             <div className="flex items-center gap-2">
@@ -508,9 +443,9 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
                     </button>
                   </span>
                 ) : spendingStats.hasExpenses ? (
-                  'This week (Mon–Sun)'
+                  'This week'
                 ) : (
-                  'Clean sheet this week'
+                  '₹0 spent'
                 )}
               </span>
             </div>
@@ -521,7 +456,7 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
               </span>
             ) : (
               <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 px-2 py-0.5 rounded-lg border border-gray-200 dark:border-gray-700">
-                Clean sheet (Mon start)
+                0 expenses
               </span>
             )}
           </div>
@@ -612,7 +547,7 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
 
     if (widgetId === 'habits') {
       return (
-        <div className="p-4.5 sm:p-5 rounded-2xl bg-[#F7F7F5] dark:bg-[#1E293B] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col space-y-3.5 w-full">
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F7F7F5] dark:bg-[#1E293B] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col space-y-3 w-full">
           {/* Header */}
           <div className="flex items-center justify-between pb-2 border-b border-[#EDECE9] dark:border-[#334155]/60">
             <div className="flex items-center gap-2">
@@ -736,7 +671,7 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
 
     if (widgetId === 'tasks') {
       return (
-        <div className="p-4.5 sm:p-5 rounded-2xl bg-[#F7F7F5] dark:bg-[#1E293B] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col space-y-3.5 w-full">
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F7F7F5] dark:bg-[#1E293B] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col space-y-3 w-full">
           {/* Header */}
           <div className="flex items-center justify-between pb-2 border-b border-[#EDECE9] dark:border-[#334155]/60">
             <div className="flex items-center gap-2">
@@ -901,16 +836,12 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
 
   return (
     <div className="space-y-4 select-none" ref={containerRef}>
-      {/* Top Header Bar with Reset Layout only (matching screenshot) */}
+      {/* Top Header Bar with Reset Layout */}
       <div className="flex items-center justify-between gap-3 flex-wrap px-1">
         <div className="flex items-center gap-2 text-xs font-semibold text-[#787774] dark:text-[#9CA3AF]">
           <LayoutGrid className="w-4 h-4 text-[#6366F1]" />
           <span className="text-[#37352F] dark:text-white font-bold tracking-tight text-sm">
             Dashboard
-          </span>
-          <span className="text-gray-300 dark:text-gray-600 hidden sm:inline">•</span>
-          <span className="text-xs font-normal text-[#787774] dark:text-[#9CA3AF] hidden sm:inline">
-            Drag any card to rearrange layout
           </span>
         </div>
 

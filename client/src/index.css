@@ -410,3 +410,35 @@ html.dark .lifemap-hero h1,
 :where(.dark, .dark *) .lifemap-hero h1 {
   color: #FFFFFF !important;
 }
+
+/* Flip Clock 3D mechanical animations */
+@keyframes flipTop {
+  0% {
+    transform: rotateX(0deg);
+  }
+  100% {
+    transform: rotateX(-90deg);
+  }
+}
+
+@keyframes flipBottom {
+  0% {
+    transform: rotateX(90deg);
+  }
+  100% {
+    transform: rotateX(0deg);
+  }
+}
+
+.animate-flip-top {
+  animation: flipTop 0.25s ease-in forwards;
+  transform-origin: bottom;
+  backface-visibility: hidden;
+}
+
+.animate-flip-bottom {
+  animation: flipBottom 0.25s ease-out 0.25s forwards;
+  transform-origin: top;
+  backface-visibility: hidden;
+}
+

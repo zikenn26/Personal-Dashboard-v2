@@ -19,6 +19,7 @@ import { INITIAL_QUOTES, INITIAL_SCHEDULE, Storage, DEFAULT_HOME_GRID_ORDER, DEF
 import { IndianCalendarWidget } from './IndianCalendarWidget';
 import { DynamicScheduleCard } from './DynamicScheduleCard';
 import { CommandCenterGrid } from './CommandCenterGrid';
+import { FlipClock } from './FlipClock';
 import {
   CheckCircle2,
   Circle,
@@ -450,11 +451,11 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
   return (
     <div className="space-y-6 pb-12 animate-in fade-in duration-300">
       {/* ========================================================================= */}
-      {/* 1. GREETING & HERO HEADER WITH FULL-LINE QUOTE */}
+      {/* 1. GREETING & HERO HEADER WITH REDUCED QUOTE TILE & FLIP CLOCK */}
       {/* ========================================================================= */}
-      <div className="space-y-1 pb-0">
-        {/* Greeting Header with Timezone and Local Time Synchronization */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      <div className="space-y-3 pb-0">
+        {/* Greeting Header */}
+        <div className="flex items-center justify-between">
           <div>
             <h1 className="workspace-heading font-extrabold text-[#37352F] dark:text-white tracking-tight flex items-center gap-2 flex-wrap">
               <span>{greeting}, {profile.name}!</span>
@@ -464,187 +465,173 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
               <span>Let&apos;s make today meaningful and productive.</span>
             </p>
           </div>
-
-          {/* Local Time and Timezone Badge */}
-          <div className="flex items-center gap-2 self-start sm:self-center px-3 py-1.5 rounded-xl bg-white dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] shadow-2xs text-xs font-mono text-[#64748B] dark:text-[#94A3B8]">
-            <Clock className="w-3.5 h-3.5 text-[#6366F1]" />
-            <span>{formattedTimeStr}</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 font-sans hidden md:inline">
-              {timezoneStr}
-            </span>
-          </div>
         </div>
 
-        {/* Full-Line Quote Banner with 10s Auto-Slideshow, Prev/Next Controls & Life Section Link (1.5x Scaled) */}
-        <div
-          onMouseEnter={() => setIsQuoteAutoPlay(false)}
-          onMouseLeave={() => setIsQuoteAutoPlay(true)}
-          className="relative w-full px-5 py-4 sm:px-6 sm:py-5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-6 transition-all group"
-        >
-          <div className="flex items-start sm:items-center gap-4 min-w-0 flex-1">
-            <div className="w-10 h-10 rounded-2xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200/70 dark:border-amber-900/50 flex items-center justify-center shrink-0 text-amber-600 dark:text-amber-400 shadow-2xs mt-0.5 sm:mt-0">
-              <Quote className="w-5 h-5" />
-            </div>
-            <div className="min-w-0 space-y-1.5 flex-1">
-              <p className="text-sm sm:text-base md:text-lg font-serif italic text-[#1E293B] dark:text-[#F3F4F6] leading-relaxed">
-                &ldquo;{activeQuote.text}&rdquo;
-              </p>
-              <div className="flex items-center gap-2.5 text-xs text-[#64748B] dark:text-[#94A3B8] flex-wrap">
-                <span className="font-semibold text-[#475569] dark:text-[#CBD5E1]">— {activeQuote.author}</span>
-                {allQuotesList.length > 1 && (
-                  <span className="font-mono text-[11px] px-2 py-0.5 rounded-md bg-[#EDECE9]/80 dark:bg-[#0F172A] text-[#64748B] dark:text-[#94A3B8] border border-[#E2E8F0] dark:border-[#334155]">
-                    {currentQuoteIdx + 1} of {allQuotesList.length} • 10s auto
-                  </span>
-                )}
+        {/* Side-by-Side: Reduced Quote Grid Tile + Date & Flip Clock Tile */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 items-stretch">
+          {/* Quote Tile (reduced horizontal length: 7 cols on lg, 8 on xl) */}
+          <div
+            onMouseEnter={() => setIsQuoteAutoPlay(false)}
+            onMouseLeave={() => setIsQuoteAutoPlay(true)}
+            className="lg:col-span-7 xl:col-span-8 relative px-4 py-3 sm:px-5 sm:py-3.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] shadow-xs flex flex-col justify-between gap-2.5 transition-all group"
+          >
+            <div className="flex items-start gap-3 min-w-0 flex-1">
+              <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200/70 dark:border-amber-900/50 flex items-center justify-center shrink-0 text-amber-600 dark:text-amber-400 shadow-2xs mt-0.5">
+                <Quote className="w-4 h-4" />
+              </div>
+              <div className="min-w-0 space-y-1 flex-1">
+                <p className="text-xs sm:text-sm md:text-base font-serif italic text-[#1E293B] dark:text-[#F3F4F6] leading-relaxed line-clamp-2 sm:line-clamp-3">
+                  &ldquo;{activeQuote.text}&rdquo;
+                </p>
+                <div className="flex items-center gap-2 text-xs text-[#64748B] dark:text-[#94A3B8] flex-wrap">
+                  <span className="font-semibold text-[#475569] dark:text-[#CBD5E1] truncate">— {activeQuote.author}</span>
+                  {allQuotesList.length > 1 && (
+                    <span className="font-mono text-[10px] px-1.5 py-0.2 rounded-md bg-[#EDECE9]/80 dark:bg-[#0F172A] text-[#64748B] dark:text-[#94A3B8] border border-[#E2E8F0] dark:border-[#334155]">
+                      {currentQuoteIdx + 1} of {allQuotesList.length}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="flex items-center gap-2 shrink-0 self-end sm:self-center pl-14 sm:pl-0 flex-wrap">
-            {/* Previous & Next Quote Buttons */}
-            {allQuotesList.length > 1 && (
-              <div className="flex items-center gap-1 bg-white dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#334155] rounded-xl p-1 shadow-2xs">
-                <button
-                  type="button"
-                  onClick={handlePrevQuote}
-                  title="Previous quote"
-                  className="p-1.5 rounded-lg text-[#64748B] hover:text-[#6366F1] dark:hover:text-white hover:bg-[#F1F5F9] dark:hover:bg-[#1E293B] transition-colors cursor-pointer"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={handleNextQuote}
-                  title="Next quote"
-                  className="p-1.5 rounded-lg text-[#64748B] hover:text-[#6366F1] dark:hover:text-white hover:bg-[#F1F5F9] dark:hover:bg-[#1E293B] transition-colors cursor-pointer"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            )}
-
-            {/* Quick Link to Life OS Quotes Section */}
-            <button
-              type="button"
-              onClick={() => {
-                Sound.click(soundEnabled);
-                onNavigate('quotes');
-              }}
-              title="Manage all quotes in Life section"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#334155] text-[#475569] dark:text-[#CBD5E1] hover:text-[#6366F1] hover:bg-[#EEF2FF] dark:hover:bg-[#1E1B4B] transition-colors cursor-pointer shadow-2xs"
-            >
-              <Edit3 className="w-3.5 h-3.5 text-[#6366F1]" />
-              <span>Quotes Tab</span>
-            </button>
-
-            {/* Add Quote Button */}
-            <button
-              ref={quoteButtonRef}
-              type="button"
-              onClick={() => {
-                Sound.click(soundEnabled);
-                setShowAddQuotePopover((prev) => !prev);
-              }}
-              title="Add quote to collection"
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs ${
-                showAddQuotePopover
-                  ? 'bg-[#6366F1] text-white'
-                  : 'bg-[#6366F1] text-white hover:bg-[#4F46E5]'
-              }`}
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add</span>
-            </button>
-          </div>
-
-          {/* Floating Collapsible Add Quote Popover Form (Collapses when clicking anywhere outside) */}
-          {showAddQuotePopover && (
-            <div
-              ref={quotePopoverRef}
-              className="absolute right-0 top-full mt-2 w-80 sm:w-96 z-50 p-4 rounded-2xl bg-white dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] shadow-xl animate-in fade-in slide-in-from-top-2"
-            >
-              <div className="flex items-center justify-between pb-2 border-b border-[#EDECE9] dark:border-[#334155]">
-                <div className="flex items-center gap-2">
-                  <Quote className="w-3.5 h-3.5 text-[#6366F1]" />
-                  <h4 className="text-xs font-bold text-[#37352F] dark:text-white">
-                    Add New Inspirational Quote
-                  </h4>
+            {/* Quote Controls Bar (without 'Quotes Tab' button) */}
+            <div className="flex items-center justify-between gap-2 pt-1 border-t border-[#EDECE9]/70 dark:border-[#334155]/60 flex-wrap">
+              {/* Previous & Next Quote Buttons */}
+              {allQuotesList.length > 1 ? (
+                <div className="flex items-center gap-0.5 bg-white dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#334155] rounded-xl p-0.5 shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={handlePrevQuote}
+                    title="Previous quote"
+                    className="p-1 rounded-lg text-[#64748B] hover:text-[#6366F1] dark:hover:text-white hover:bg-[#F1F5F9] dark:hover:bg-[#1E293B] transition-colors cursor-pointer"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleNextQuote}
+                    title="Next quote"
+                    className="p-1 rounded-lg text-[#64748B] hover:text-[#6366F1] dark:hover:text-white hover:bg-[#F1F5F9] dark:hover:bg-[#1E293B] transition-colors cursor-pointer"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setShowAddQuotePopover(false)}
-                  className="text-gray-400 hover:text-gray-600 p-0.5 cursor-pointer"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
+              ) : <div />}
 
-              <form onSubmit={handleSaveNewQuote} className="space-y-2.5 pt-3">
-                <div>
-                  <label className="block text-[10px] font-semibold text-[#787774] dark:text-[#9CA3AF] mb-1">
-                    Quote Text
-                  </label>
-                  <textarea
-                    required
-                    rows={2}
-                    placeholder="e.g. The journey of a thousand miles begins with one step."
-                    value={newQuoteText}
-                    onChange={(e) => setNewQuoteText(e.target.value)}
-                    className="w-full px-3 py-1.5 rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0F172A] text-xs text-[#37352F] dark:text-white focus:outline-hidden focus:border-[#6366F1]"
-                    autoFocus
-                  />
-                </div>
+              {/* Add Quote Button */}
+              <button
+                ref={quoteButtonRef}
+                type="button"
+                onClick={() => {
+                  Sound.click(soundEnabled);
+                  setShowAddQuotePopover((prev) => !prev);
+                }}
+                title="Add quote to collection"
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs ${
+                  showAddQuotePopover
+                    ? 'bg-[#6366F1] text-white'
+                    : 'bg-[#6366F1] text-white hover:bg-[#4F46E5]'
+                }`}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Quote</span>
+              </button>
+            </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[10px] font-semibold text-[#787774] dark:text-[#9CA3AF] mb-1">
-                      Author
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Lao Tzu"
-                      value={newQuoteAuthor}
-                      onChange={(e) => setNewQuoteAuthor(e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0F172A] text-xs text-[#37352F] dark:text-white focus:outline-hidden focus:border-[#6366F1]"
-                    />
+            {/* Floating Collapsible Add Quote Popover Form */}
+            {showAddQuotePopover && (
+              <div
+                ref={quotePopoverRef}
+                className="absolute right-0 top-full mt-2 w-80 sm:w-96 z-50 p-4 rounded-2xl bg-white dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] shadow-xl animate-in fade-in slide-in-from-top-2"
+              >
+                <div className="flex items-center justify-between pb-2 border-b border-[#EDECE9] dark:border-[#334155]">
+                  <div className="flex items-center gap-2">
+                    <Quote className="w-3.5 h-3.5 text-[#6366F1]" />
+                    <h4 className="text-xs font-bold text-[#37352F] dark:text-white">
+                      Add New Inspirational Quote
+                    </h4>
                   </div>
-
-                  <div>
-                    <label className="block text-[10px] font-semibold text-[#787774] dark:text-[#9CA3AF] mb-1">
-                      Category
-                    </label>
-                    <select
-                      value={newQuoteCategory}
-                      onChange={(e) => setNewQuoteCategory(e.target.value)}
-                      className="w-full px-2 py-1.5 rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0F172A] text-xs text-[#37352F] dark:text-white focus:outline-hidden"
-                    >
-                      <option value="Inspiration">Inspiration</option>
-                      <option value="Focus">Focus</option>
-                      <option value="Discipline">Discipline</option>
-                      <option value="Wisdom">Wisdom</option>
-                      <option value="Mindset">Mindset</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-2 pt-1 border-t border-[#EDECE9]/60 dark:border-[#334155]/60">
                   <button
                     type="button"
                     onClick={() => setShowAddQuotePopover(false)}
-                    className="px-3 py-1 text-xs font-semibold text-gray-500 hover:text-gray-700 cursor-pointer"
+                    className="text-gray-400 hover:text-gray-600 p-0.5 cursor-pointer"
                   >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-3.5 py-1 bg-[#6366F1] hover:bg-[#4F46E5] text-white text-xs font-bold rounded-xl cursor-pointer"
-                  >
-                    Save Quote
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
-              </form>
-            </div>
-          )}
+
+                <form onSubmit={handleSaveNewQuote} className="space-y-2.5 pt-3">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-[#787774] dark:text-[#9CA3AF] mb-1">
+                      Quote Text
+                    </label>
+                    <textarea
+                      required
+                      rows={2}
+                      placeholder="e.g. The journey of a thousand miles begins with one step."
+                      value={newQuoteText}
+                      onChange={(e) => setNewQuoteText(e.target.value)}
+                      className="w-full px-3 py-1.5 rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0F172A] text-xs text-[#37352F] dark:text-white focus:outline-hidden focus:border-[#6366F1]"
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-semibold text-[#787774] dark:text-[#9CA3AF] mb-1">
+                        Author
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Lao Tzu"
+                        value={newQuoteAuthor}
+                        onChange={(e) => setNewQuoteAuthor(e.target.value)}
+                        className="w-full px-2.5 py-1.5 rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0F172A] text-xs text-[#37352F] dark:text-white focus:outline-hidden focus:border-[#6366F1]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-semibold text-[#787774] dark:text-[#9CA3AF] mb-1">
+                        Category
+                      </label>
+                      <select
+                        value={newQuoteCategory}
+                        onChange={(e) => setNewQuoteCategory(e.target.value)}
+                        className="w-full px-2 py-1.5 rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0F172A] text-xs text-[#37352F] dark:text-white focus:outline-hidden"
+                      >
+                        <option value="Inspiration">Inspiration</option>
+                        <option value="Focus">Focus</option>
+                        <option value="Discipline">Discipline</option>
+                        <option value="Wisdom">Wisdom</option>
+                        <option value="Mindset">Mindset</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-1 border-t border-[#EDECE9]/60 dark:border-[#334155]/60">
+                    <button
+                      type="button"
+                      onClick={() => setShowAddQuotePopover(false)}
+                      className="px-3 py-1 text-xs font-semibold text-gray-500 hover:text-gray-700 cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-3.5 py-1 bg-[#6366F1] hover:bg-[#4F46E5] text-white text-xs font-bold rounded-xl cursor-pointer"
+                    >
+                      Save Quote
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+          </div>
+
+          {/* Date & Flip Clock Tile (occupying the vacant horizontal space) */}
+          <div className="lg:col-span-5 xl:col-span-4 px-4 py-3 sm:px-4.5 sm:py-3.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] shadow-xs flex flex-col justify-between">
+            <FlipClock />
+          </div>
         </div>
       </div>
 

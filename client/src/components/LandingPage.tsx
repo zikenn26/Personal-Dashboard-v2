@@ -203,7 +203,7 @@ function MoneyFeatureVisual() {
         <span>
           {selectedDay !== null
             ? `${dayData[selectedDay].day} spending${dayData[selectedDay].isUpcoming ? ' (Upcoming)' : dayData[selectedDay].isToday ? ' (Today)' : ''}`
-            : "spending this week (Mon–Sun)"}
+            : "Spending this week"}
         </span>
         <b>
           {selectedDay !== null
