@@ -1441,12 +1441,12 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen w-full bg-[#FBFBFA] dark:bg-[#111827] text-[#37352F] dark:text-[#F3F4F6] selection:bg-[#EEF2FF] selection:text-[#6366F1] dark:selection:bg-[#1E1B4B] dark:selection:text-[#818CF8] transition-colors duration-200 font-sans flex flex-col overflow-hidden">
-      <div className="w-full h-full bg-white dark:bg-[#111827] flex flex-col overflow-hidden">
+    <div className="h-screen w-full bg-[#FBFBFA] dark:bg-[#090A0F] text-[#37352F] dark:text-[#F8FAFC] selection:bg-[#EEF2FF] selection:text-[#6366F1] dark:selection:bg-indigo-900/50 dark:selection:text-indigo-200 transition-colors duration-200 font-sans flex flex-col overflow-hidden">
+      <div className="w-full h-full bg-white dark:bg-[#090A0F] flex flex-col overflow-hidden">
         {/* ===================================================================== */}
         {/* 1. TOP GLOBAL NAVIGATION HEADER */}
         {/* ===================================================================== */}
-        <header className="px-3 sm:px-4 py-2 border-b border-[#EDECE9] dark:border-[#1F2937] bg-white/95 dark:bg-[#111827]/95 backdrop-blur-md flex items-center justify-between gap-1.5 sm:gap-3 shrink-0 z-30 sticky top-0">
+        <header className="px-3 sm:px-4 py-2 border-b border-[#EDECE9] dark:border-[#1A1F2D] bg-white/95 dark:bg-[#0C0E14]/95 backdrop-blur-md flex items-center justify-between gap-1.5 sm:gap-3 shrink-0 z-30 sticky top-0">
           {/* Left: Sidebar Toggle, Mobile Menu & Notion Breadcrumb Navigation */}
           <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
             {/* Desktop Sidebar Toggle Button */}
@@ -1778,7 +1778,7 @@ export default function App() {
         <div className="flex-1 flex overflow-hidden min-h-0">
           {/* Desktop Left Sidebar: Pinned Home/Today at top, categorized nav, Collapse button at bottom */}
           <aside
-            className={`hidden md:flex h-full bg-[#F7F7F5] dark:bg-[#111827] border-r border-[#EDECE9] dark:border-[#1F2937] flex-col justify-between shrink-0 select-none transition-all duration-200 ease-in-out z-20 overflow-y-auto overflow-x-hidden ${
+            className={`hidden md:flex h-full bg-[#F7F7F5] dark:bg-[#0C0E14] border-r border-[#EDECE9] dark:border-[#1A1F2D] flex-col justify-between shrink-0 select-none transition-all duration-200 ease-in-out z-20 overflow-y-auto overflow-x-hidden ${
               !isSidebarCollapsed ? 'w-60 p-3.5' : 'w-16 p-2 items-center'
             }`}
           >
@@ -2141,7 +2141,7 @@ export default function App() {
           )}
 
           {/* Main Document Canvas View */}
-          <main className="flex-1 h-full overflow-y-auto min-h-0 workspace-canvas bg-white dark:bg-[#111827] p-2 sm:p-4 lg:p-6">
+          <main className="flex-1 h-full overflow-y-auto min-h-0 workspace-canvas bg-white dark:bg-[#090A0F] p-2 sm:p-4 lg:p-6">
             <div className="max-w-6xl mx-auto space-y-4 pb-12">
               {/* Universal Return to Dashboard Shortcut for all sub-views */}
               {activeView !== 'home' && (

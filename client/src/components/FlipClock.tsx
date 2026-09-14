@@ -26,16 +26,16 @@ const FlipDigit: React.FC<FlipDigitProps> = ({ value, label }) => {
   return (
     <div className="flex flex-col items-center">
       {/* Flip Card Unit (Darker grey in light mode, high-contrast readable obsidian/slate in dark mode) */}
-      <div className="relative w-8 sm:w-8.5 md:w-9 h-10 sm:h-11 md:h-11.5 rounded-lg bg-[#1E293B] dark:bg-[#0F172A] text-white shadow-md border border-slate-700/80 dark:border-indigo-400/50 dark:ring-1 dark:ring-indigo-500/20 font-mono font-black text-lg sm:text-xl flex flex-col items-center justify-center select-none overflow-hidden [perspective:300px]">
+      <div className="relative w-8 sm:w-8.5 md:w-9 h-10 sm:h-11 md:h-11.5 rounded-lg bg-[#1E293B] dark:bg-[#0A0C14] text-white shadow-md border border-slate-700/80 dark:border-indigo-400/40 dark:ring-1 dark:ring-indigo-500/25 font-mono font-black text-lg sm:text-xl flex flex-col items-center justify-center select-none overflow-hidden [perspective:300px]">
         {/* Top Half (static) */}
-        <div className="absolute inset-x-0 top-0 h-1/2 overflow-hidden bg-gradient-to-b from-[#334155] to-[#1E293B] dark:from-[#1E293B] dark:to-[#0F172A] flex items-end justify-center border-b border-slate-900/80 dark:border-black">
+        <div className="absolute inset-x-0 top-0 h-1/2 overflow-hidden bg-gradient-to-b from-[#334155] to-[#1E293B] dark:from-[#181C2B] dark:to-[#0A0C14] flex items-end justify-center border-b border-slate-900/80 dark:border-black">
           <span className="translate-y-1/2 leading-none text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.9)]">
             {current}
           </span>
         </div>
 
         {/* Bottom Half (static) */}
-        <div className="absolute inset-x-0 bottom-0 h-1/2 overflow-hidden bg-gradient-to-b from-[#0F172A] to-[#1E293B] dark:from-[#090D16] dark:to-[#172033] flex items-start justify-center">
+        <div className="absolute inset-x-0 bottom-0 h-1/2 overflow-hidden bg-gradient-to-b from-[#0F172A] to-[#1E293B] dark:from-[#06080E] dark:to-[#141826] flex items-start justify-center">
           <span className="-translate-y-1/2 leading-none text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.9)]">
             {current}
           </span>
@@ -43,7 +43,7 @@ const FlipDigit: React.FC<FlipDigitProps> = ({ value, label }) => {
 
         {/* Flipping Top flap */}
         {isFlipping && (
-          <div className="absolute inset-x-0 top-0 h-1/2 overflow-hidden bg-gradient-to-b from-[#334155] to-[#1E293B] dark:from-[#1E293B] dark:to-[#0F172A] flex items-end justify-center border-b border-slate-900/80 dark:border-black origin-bottom animate-flip-top z-10">
+          <div className="absolute inset-x-0 top-0 h-1/2 overflow-hidden bg-gradient-to-b from-[#334155] to-[#1E293B] dark:from-[#181C2B] dark:to-[#0A0C14] flex items-end justify-center border-b border-slate-900/80 dark:border-black origin-bottom animate-flip-top z-10">
             <span className="translate-y-1/2 leading-none text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.9)]">
               {previous}
             </span>
@@ -52,7 +52,7 @@ const FlipDigit: React.FC<FlipDigitProps> = ({ value, label }) => {
 
         {/* Flipping Bottom flap */}
         {isFlipping && (
-          <div className="absolute inset-x-0 bottom-0 h-1/2 overflow-hidden bg-gradient-to-b from-[#0F172A] to-[#1E293B] dark:from-[#090D16] dark:to-[#172033] flex items-start justify-center origin-top animate-flip-bottom z-10">
+          <div className="absolute inset-x-0 bottom-0 h-1/2 overflow-hidden bg-gradient-to-b from-[#0F172A] to-[#1E293B] dark:from-[#06080E] dark:to-[#141826] flex items-start justify-center origin-top animate-flip-bottom z-10">
             <span className="-translate-y-1/2 leading-none text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.9)]">
               {current}
             </span>
@@ -61,8 +61,8 @@ const FlipDigit: React.FC<FlipDigitProps> = ({ value, label }) => {
 
         {/* Center Split Line & Mechanical Side Notches */}
         <div className="absolute inset-x-0 top-1/2 -translate-y-[0.5px] h-[1px] bg-slate-950 dark:bg-black z-20" />
-        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-1 bg-[#F8FAFC] dark:bg-[#1E293B] rounded-r-full z-20" />
-        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-1 bg-[#F8FAFC] dark:bg-[#1E293B] rounded-l-full z-20" />
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-1 bg-[#F8FAFC] dark:bg-[#121520] rounded-r-full z-20" />
+        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-1 bg-[#F8FAFC] dark:bg-[#121520] rounded-l-full z-20" />
       </div>
 
       {label && (
