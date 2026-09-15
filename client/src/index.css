@@ -416,8 +416,12 @@ html.dark .lifemap-hero h1,
   color: #FFFFFF !important;
 }
 
-/* Flip Clock 3D mechanical animations */
-@keyframes flipTop {
+/* ========================================================================== */
+/* MECHANICAL SPLIT-FLAP 3D CLOCK ANIMATIONS                                  */
+/* Authentic Solari-style leaf fold and dampened physical snap                */
+/* ========================================================================== */
+
+@keyframes mechanicalFoldTop {
   0% {
     transform: rotateX(0deg);
   }
@@ -426,7 +430,7 @@ html.dark .lifemap-hero h1,
   }
 }
 
-@keyframes flipBottom {
+@keyframes mechanicalDropBottom {
   0% {
     transform: rotateX(90deg);
   }
@@ -435,17 +439,48 @@ html.dark .lifemap-hero h1,
   }
 }
 
-.animate-flip-top {
-  animation: flipTop 0.25s ease-in forwards;
-  transform-origin: bottom;
-  backface-visibility: hidden;
+@keyframes flapShadowDarken {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0.85;
+  }
 }
 
-.animate-flip-bottom {
-  animation: flipBottom 0.25s ease-out 0.25s forwards;
-  transform-origin: top;
-  backface-visibility: hidden;
+@keyframes flapHighlightFade {
+  0% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+  }
 }
+
+.mechanical-flap-top {
+  animation: mechanicalFoldTop 0.22s cubic-bezier(0.45, 0, 0.7, 1) forwards;
+  transform-origin: bottom center;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  will-change: transform;
+}
+
+.mechanical-flap-bottom {
+  animation: mechanicalDropBottom 0.24s cubic-bezier(0.18, 0.89, 0.32, 1.14) 0.20s both;
+  transform-origin: top center;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  will-change: transform;
+}
+
+.mechanical-shadow-top {
+  animation: flapShadowDarken 0.22s ease-in forwards;
+}
+
+.mechanical-highlight-bottom {
+  animation: flapHighlightFade 0.24s ease-out 0.20s both;
+}
+
 
 /* ========================================================================== */
 /* GRID TILES CONTRAST (Slightly contrasting dark slate blue against #0F172A) */

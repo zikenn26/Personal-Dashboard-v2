@@ -467,13 +467,13 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
           </div>
         </div>
 
-        {/* Side-by-Side: 2x Quote Tile + 3/4th Size Date & Flip Clock Tile */}
+        {/* Side-by-Side: Quote Tile + Prominent 24H Flip Clock Tile */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
-          {/* Quote Tile (expanded horizontal span: 8 cols on lg, 9 on xl) */}
+          {/* Quote Tile (lg: 7 cols, xl: 7 cols) */}
           <div
             onMouseEnter={() => setIsQuoteAutoPlay(false)}
             onMouseLeave={() => setIsQuoteAutoPlay(true)}
-            className="grid-tile lg:col-span-8 xl:col-span-9 relative px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-2xl bg-[#F8FAFC] dark:bg-[#23324C] border border-[#EDECE9] dark:border-[#334155] shadow-xs flex flex-col justify-between gap-2 transition-all group"
+            className="grid-tile lg:col-span-7 xl:col-span-7 relative px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-2xl bg-[#F8FAFC] dark:bg-[#23324C] border border-[#EDECE9] dark:border-[#334155] shadow-xs flex flex-col justify-between gap-2 transition-all group"
           >
             <div className="flex items-start gap-3 min-w-0 flex-1">
               <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200/70 dark:border-amber-900/50 flex items-center justify-center shrink-0 text-amber-600 dark:text-amber-400 shadow-2xs mt-0.5">
@@ -635,8 +635,8 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
             )}
           </div>
 
-          {/* Date & Flip Clock Tile (3/4th size: 4 cols on lg, 3 on xl) */}
-          <div className="grid-tile lg:col-span-4 xl:col-span-3 px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#23324C] border border-[#EDECE9] dark:border-[#334155] shadow-xs flex flex-col justify-between">
+          {/* Date & Flip Clock Tile (lg: 5 cols, xl: 5 cols, full space coverage) */}
+          <div className="grid-tile lg:col-span-5 xl:col-span-5 px-3 py-2.5 sm:px-4 sm:py-3 rounded-2xl bg-[#F8FAFC] dark:bg-[#23324C] border border-[#EDECE9] dark:border-[#334155] shadow-xs flex flex-col justify-between">
             <FlipClock />
           </div>
         </div>
