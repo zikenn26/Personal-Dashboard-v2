@@ -124,4 +124,29 @@ export const Sound = {
       // Ignore
     }
   },
+
+  softAlarm: (enabled = true) => {
+    if (!enabled) return;
+    try {
+      const ctx = getAudioContext();
+      if (!ctx) return;
+      const now = ctx.currentTime;
+      // Gentle, soothing chime sequence (D5, F#5, A5, D6)
+      const notes = [587.33, 739.99, 880.0, 1174.66];
+      notes.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.14);
+        gain.gain.setValueAtTime(0.09, now + idx * 0.14);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.14 + 1.1);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + idx * 0.14);
+        osc.stop(now + idx * 0.14 + 1.15);
+      });
+    } catch {
+      // Audio context might be restricted before interaction
+    }
+  },
 };
