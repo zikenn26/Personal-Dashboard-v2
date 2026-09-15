@@ -593,12 +593,18 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc' | 'name-asc'>('date-desc');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [visibleTxCount, setVisibleTxCount] = useState<number>(15);
+  const [txCurrentPage, setTxCurrentPage] = useState<number>(1);
+  const TX_PAGE_SIZE = 15;
   const [showAllTransactionsModal, setShowAllTransactionsModal] = useState<boolean>(false);
   const [modalCategoryFilter, setModalCategoryFilter] = useState<string>('all');
   const [modalSortBy, setModalSortBy] = useState<'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc' | 'name-asc'>('date-desc');
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [editingExpense, setEditingExpense] = useState<ExpenseItem | null>(null);
+
+  // Automatically reset pagination to page 1 whenever any filter or search changes
+  useEffect(() => {
+    setTxCurrentPage(1);
+  }, [searchQuery, selectedCategoryFilter, activeFilter, selectedYear, selectedMonthIndex, selectedSheetFilter, sortBy]);
 
   // Quick Preset Custom Modal
   const [showCustomPresetModal, setShowCustomPresetModal] = useState<boolean>(false);
@@ -976,9 +982,14 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     // Sort all filtered transactions first
     list.sort(sortFn);
     const totalFilteredCount = list.length;
-    const visibleSlice = list.slice(0, visibleTxCount);
+    const totalPages = Math.max(1, Math.ceil(totalFilteredCount / TX_PAGE_SIZE));
+    const safePage = Math.min(Math.max(1, txCurrentPage), totalPages);
+    const startIndex = (safePage - 1) * TX_PAGE_SIZE;
+    const endIndex = Math.min(startIndex + TX_PAGE_SIZE, totalFilteredCount);
+    // visibleSlice replaces the current screen on pagination rather than extending the list
+    const visibleSlice = list.slice(startIndex, endIndex);
 
-    // Group the visible transactions (recent 15 by default)
+    // Group the visible transactions for the current page
     const groups: Record<string, ExpenseItem[]> = {
       Today: [],
       Yesterday: [],
@@ -1002,8 +1013,12 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       isEmpty: visibleSlice.length === 0,
       totalFilteredCount,
       displayedCount: visibleSlice.length,
+      currentPage: safePage,
+      totalPages,
+      startIndex,
+      endIndex,
     };
-  }, [currentExpenses, searchQuery, selectedCategoryFilter, activeFilter, selectedYear, selectedMonthIndex, selectedSheetFilter, expenseRenderTick, sortBy, visibleTxCount]);
+  }, [currentExpenses, searchQuery, selectedCategoryFilter, activeFilter, selectedYear, selectedMonthIndex, selectedSheetFilter, expenseRenderTick, sortBy, txCurrentPage]);
 
   // Count of imported items in database
   const importedCount = useMemo(() => {
@@ -1513,6 +1528,33 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
 
             {/* Transaction Items (Grouped by Today, Yesterday, Earlier) */}
             <div className="space-y-4 pt-1">
+              {selectedCategoryFilter !== 'all' && (
+                <div className="flex items-center justify-between p-2.5 px-3 rounded-xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-xs text-purple-900 dark:text-purple-200">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Filter className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                    <span className="truncate">
+                      Filtering transactions by category:{' '}
+                      <strong className="font-bold text-purple-700 dark:text-purple-300">
+                        {selectedCategoryFilter}
+                      </strong>{' '}
+                      ({groupedTransactions.totalFilteredCount} transactions)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      Sound.click(soundEnabled);
+                      setSelectedCategoryFilter('all');
+                      setTxCurrentPage(1);
+                    }}
+                    className="flex items-center gap-1 text-xs font-bold text-purple-700 dark:text-purple-300 hover:underline cursor-pointer shrink-0 ml-2"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>Show All Categories</span>
+                  </button>
+                </div>
+              )}
+
               {selectedSheetFilter && (
                 <div className="flex items-center justify-between p-2.5 px-3 rounded-xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-xs text-purple-900 dark:text-purple-200">
                   <div className="flex items-center gap-2 min-w-0">
@@ -1785,34 +1827,67 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
               )}
             </div>
 
-            {/* View All & Pagination Footer (Recent 15 with Show Next 15) */}
+            {/* View All & Pagination Footer (Recent 15 with Show Next 15 replacing screen) */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-gray-100 dark:border-gray-800">
               <div className="text-xs text-[#787774] dark:text-[#9CA3AF]">
-                Showing <strong className="text-[#37352F] dark:text-white">{Math.min(visibleTxCount, groupedTransactions.totalFilteredCount || 0)}</strong> of{' '}
-                <strong className="text-[#37352F] dark:text-white">{groupedTransactions.totalFilteredCount || 0}</strong> transactions
+                {groupedTransactions.totalFilteredCount === 0 ? (
+                  <span>Showing 0 transactions</span>
+                ) : (
+                  <span>
+                    Showing{' '}
+                    <strong className="text-[#37352F] dark:text-white">
+                      {groupedTransactions.startIndex + 1}–{groupedTransactions.endIndex}
+                    </strong>{' '}
+                    of{' '}
+                    <strong className="text-[#37352F] dark:text-white">
+                      {groupedTransactions.totalFilteredCount}
+                    </strong>{' '}
+                    transactions{' '}
+                    <span className="text-gray-400 dark:text-gray-500 font-medium">
+                      (Page {groupedTransactions.currentPage} of {groupedTransactions.totalPages})
+                    </span>
+                  </span>
+                )}
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                {(groupedTransactions.totalFilteredCount || 0) > visibleTxCount && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      Sound.click(soundEnabled);
-                      setVisibleTxCount((prev) => prev + 15);
-                    }}
-                    className="px-3 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                  >
-                    <ChevronDown className="w-3.5 h-3.5" />
-                    <span>Show Next 15</span>
-                  </button>
-                )}
+                {/* Previous 15 button */}
+                <button
+                  type="button"
+                  disabled={groupedTransactions.currentPage <= 1}
+                  onClick={() => {
+                    Sound.click(soundEnabled);
+                    setTxCurrentPage((prev) => Math.max(1, prev - 1));
+                  }}
+                  className="px-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  title="Show previous 15 transactions"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <span>Previous 15</span>
+                </button>
 
-                {visibleTxCount > 15 && (
+                {/* Next 15 button - replaces current 15 on screen */}
+                <button
+                  type="button"
+                  disabled={groupedTransactions.currentPage >= groupedTransactions.totalPages}
+                  onClick={() => {
+                    Sound.click(soundEnabled);
+                    setTxCurrentPage((prev) => Math.min(groupedTransactions.totalPages, prev + 1));
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  title="Show next 15 transactions (replaces current screen)"
+                >
+                  <span>Next 15</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+
+                {/* Show Recent 15 (Page 1) */}
+                {groupedTransactions.currentPage > 1 && (
                   <button
                     type="button"
                     onClick={() => {
                       Sound.click(soundEnabled);
-                      setVisibleTxCount(15);
+                      setTxCurrentPage(1);
                     }}
                     className="px-2.5 py-1.5 rounded-xl text-gray-500 hover:text-gray-900 dark:hover:text-white text-xs font-semibold transition-colors cursor-pointer"
                   >
@@ -1841,6 +1916,11 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
             selectedMonthIndex={selectedMonthIndex}
             selectedMonthLabel={selectedMonthLabel}
             formatCurrency={formatCurrency}
+            selectedCategory={selectedCategoryFilter}
+            onSelectCategory={(category) => {
+              setSelectedCategoryFilter(category);
+              setTxCurrentPage(1);
+            }}
             soundEnabled={soundEnabled}
           />
 
