@@ -1,0 +1,337 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  Sun,
+  Moon,
+  CloudSun,
+  CloudMoon,
+  Cloud,
+  CloudRain,
+  CloudDrizzle,
+  CloudSnow,
+  CloudLightning,
+  CloudFog,
+  Wind,
+  Droplets,
+  MapPin,
+  RefreshCw,
+  AlertCircle,
+  Thermometer,
+} from 'lucide-react';
+import { Sound } from '../utils/audio';
+
+interface CurrentWeatherWidgetProps {
+  soundEnabled?: boolean;
+}
+
+interface WeatherData {
+  temperature: number;
+  apparentTemperature: number;
+  humidity: number;
+  windSpeed: number;
+  weatherCode: number;
+  isDay: boolean;
+  cityName: string;
+  timestamp: number;
+}
+
+// Fallback coordinates mapped by prominent regions if geolocation is not granted
+const TIMEZONE_CITY_MAP: Record<string, { name: string; lat: number; lon: number }> = {
+  'America/New_York': { name: 'New York', lat: 40.7128, lon: -74.006 },
+  'America/Chicago': { name: 'Chicago', lat: 41.8781, lon: -87.6298 },
+  'America/Denver': { name: 'Denver', lat: 39.7392, lon: -104.9903 },
+  'America/Los_Angeles': { name: 'Los Angeles', lat: 34.0522, lon: -118.2437 },
+  'Europe/London': { name: 'London', lat: 51.5074, lon: -0.1278 },
+  'Europe/Paris': { name: 'Paris', lat: 48.8566, lon: 2.3522 },
+  'Europe/Berlin': { name: 'Berlin', lat: 52.52, lon: 13.405 },
+  'Asia/Kolkata': { name: 'New Delhi', lat: 28.6139, lon: 77.209 },
+  'Asia/Calcutta': { name: 'Mumbai', lat: 19.076, lon: 72.8777 },
+  'Asia/Dubai': { name: 'Dubai', lat: 25.2048, lon: 55.2708 },
+  'Asia/Singapore': { name: 'Singapore', lat: 1.3521, lon: 103.8198 },
+  'Asia/Tokyo': { name: 'Tokyo', lat: 35.6762, lon: 139.6503 },
+  'Australia/Sydney': { name: 'Sydney', lat: -33.8688, lon: 151.2093 },
+};
+
+// Map WMO Weather Codes to descriptive labels and icons
+function getWeatherDetails(code: number, isDay: boolean): {
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  iconColor: string;
+  bgGradient: string;
+} {
+  switch (code) {
+    case 0:
+      return isDay
+        ? { label: 'Clear Sky', icon: Sun, iconColor: 'text-amber-500', bgGradient: 'from-amber-500/10 to-orange-500/10' }
+        : { label: 'Clear Night', icon: Moon, iconColor: 'text-indigo-400', bgGradient: 'from-indigo-500/10 to-blue-500/10' };
+    case 1:
+      return isDay
+        ? { label: 'Mainly Clear', icon: Sun, iconColor: 'text-amber-500', bgGradient: 'from-amber-500/10 to-yellow-500/10' }
+        : { label: 'Mainly Clear', icon: Moon, iconColor: 'text-indigo-400', bgGradient: 'from-indigo-500/10 to-blue-500/10' };
+    case 2:
+      return isDay
+        ? { label: 'Partly Cloudy', icon: CloudSun, iconColor: 'text-amber-400', bgGradient: 'from-sky-500/10 to-amber-500/10' }
+        : { label: 'Partly Cloudy', icon: CloudMoon, iconColor: 'text-indigo-300', bgGradient: 'from-slate-500/10 to-indigo-500/10' };
+    case 3:
+      return { label: 'Overcast', icon: Cloud, iconColor: 'text-slate-400 dark:text-slate-300', bgGradient: 'from-slate-500/10 to-gray-500/10' };
+    case 45:
+    case 48:
+      return { label: 'Foggy', icon: CloudFog, iconColor: 'text-zinc-400', bgGradient: 'from-zinc-500/10 to-slate-500/10' };
+    case 51:
+    case 53:
+    case 55:
+      return { label: 'Light Drizzle', icon: CloudDrizzle, iconColor: 'text-sky-400', bgGradient: 'from-sky-500/10 to-blue-500/10' };
+    case 61:
+    case 63:
+      return { label: 'Rain', icon: CloudRain, iconColor: 'text-blue-500', bgGradient: 'from-blue-500/10 to-indigo-500/10' };
+    case 65:
+      return { label: 'Heavy Rain', icon: CloudRain, iconColor: 'text-blue-600', bgGradient: 'from-blue-600/10 to-indigo-600/10' };
+    case 71:
+    case 73:
+    case 75:
+    case 77:
+      return { label: 'Snowfall', icon: CloudSnow, iconColor: 'text-cyan-400', bgGradient: 'from-cyan-500/10 to-blue-500/10' };
+    case 80:
+    case 81:
+    case 82:
+      return { label: 'Rain Showers', icon: CloudRain, iconColor: 'text-blue-500', bgGradient: 'from-blue-500/10 to-sky-500/10' };
+    case 85:
+    case 86:
+      return { label: 'Snow Showers', icon: CloudSnow, iconColor: 'text-cyan-300', bgGradient: 'from-cyan-500/10 to-indigo-500/10' };
+    case 95:
+    case 96:
+    case 99:
+      return { label: 'Thunderstorm', icon: CloudLightning, iconColor: 'text-amber-500', bgGradient: 'from-amber-500/15 to-purple-500/15' };
+    default:
+      return { label: 'Partly Cloudy', icon: CloudSun, iconColor: 'text-amber-400', bgGradient: 'from-sky-500/10 to-blue-500/10' };
+  }
+}
+
+const STORAGE_CACHE_KEY = 'lifeos_current_weather_cache';
+
+export const CurrentWeatherWidget: React.FC<CurrentWeatherWidgetProps> = ({ soundEnabled = false }) => {
+  const [weather, setWeather] = useState<WeatherData | null>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_CACHE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // If cached less than 45 minutes ago, use it immediately
+        if (Date.now() - parsed.timestamp < 45 * 60 * 1000) {
+          return parsed;
+        }
+      }
+    } catch {
+      // Ignore cache errors
+    }
+    return null;
+  });
+
+  const [isLoading, setIsLoading] = useState<boolean>(!weather);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [useFahrenheit, setUseFahrenheit] = useState<boolean>(() => {
+    return localStorage.getItem('lifeos_weather_unit') === 'F';
+  });
+
+  // Toggle °C / °F
+  const toggleUnit = () => {
+    Sound.click(soundEnabled);
+    const next = !useFahrenheit;
+    setUseFahrenheit(next);
+    localStorage.setItem('lifeos_weather_unit', next ? 'F' : 'C');
+  };
+
+  // Convert temperature
+  const formatTemp = (celsius: number): string => {
+    if (useFahrenheit) {
+      const fahrenheit = Math.round((celsius * 9) / 5 + 32);
+      return `${fahrenheit}°F`;
+    }
+    return `${Math.round(celsius)}°C`;
+  };
+
+  // Fetch weather data from Open-Meteo external API
+  const fetchWeather = useCallback(async (lat: number, lon: number, locationName?: string) => {
+    try {
+      setErrorMsg(null);
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,wind_speed_10m&timezone=auto`;
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Weather service returned ${response.status}`);
+      }
+      const data = await response.json();
+      const current = data.current;
+
+      let resolvedCity = locationName;
+      if (!resolvedCity) {
+        // Try reverse geocoding via Nominatim with short timeout
+        try {
+          const geoRes = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`,
+            {
+              headers: { 'Accept-Language': 'en' },
+              signal: AbortSignal.timeout(3500),
+            }
+          );
+          if (geoRes.ok) {
+            const geoData = await geoRes.json();
+            const addr = geoData.address || {};
+            resolvedCity = addr.city || addr.town || addr.village || addr.suburb || addr.county || addr.state;
+          }
+        } catch {
+          // Fallback to Open-Meteo timezone or coordinate city
+        }
+      }
+
+      if (!resolvedCity && data.timezone) {
+        const parts = data.timezone.split('/');
+        resolvedCity = parts[parts.length - 1].replace(/_/g, ' ');
+      }
+
+      const freshWeather: WeatherData = {
+        temperature: current.temperature_2m,
+        apparentTemperature: current.apparent_temperature,
+        humidity: current.relative_humidity_2m,
+        windSpeed: current.wind_speed_10m,
+        weatherCode: current.weather_code,
+        isDay: current.is_day === 1,
+        cityName: resolvedCity || 'My Location',
+        timestamp: Date.now(),
+      };
+
+      setWeather(freshWeather);
+      localStorage.setItem(STORAGE_CACHE_KEY, JSON.stringify(freshWeather));
+    } catch (err: any) {
+      console.error('Failed to fetch weather:', err);
+      setErrorMsg('Weather unavailable');
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  // Request location from browser or fallback to timezone region
+  const requestLocationAndWeather = useCallback(() => {
+    setIsRefreshing(true);
+
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          fetchWeather(latitude, longitude);
+        },
+        (geoError) => {
+          console.warn('Geolocation denied or timed out:', geoError.message);
+          // Fallback to timezone based coordinates
+          const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          const fallback = TIMEZONE_CITY_MAP[tz] || {
+            name: tz.split('/').pop()?.replace(/_/g, ' ') || 'Current Location',
+            lat: 40.7128,
+            lon: -74.006,
+          };
+          fetchWeather(fallback.lat, fallback.lon, fallback.name);
+        },
+        { timeout: 7000, enableHighAccuracy: false }
+      );
+    } else {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const fallback = TIMEZONE_CITY_MAP[tz] || { name: 'New York', lat: 40.7128, lon: -74.006 };
+      fetchWeather(fallback.lat, fallback.lon, fallback.name);
+    }
+  }, [fetchWeather]);
+
+  // Initial load
+  useEffect(() => {
+    if (!weather) {
+      requestLocationAndWeather();
+    }
+  }, [weather, requestLocationAndWeather]);
+
+  const handleManualRefresh = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    Sound.click(soundEnabled);
+    requestLocationAndWeather();
+  };
+
+  if (isLoading && !weather) {
+    return (
+      <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-white dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] shadow-2xs animate-pulse">
+        <div className="w-7 h-7 rounded-lg bg-gray-200 dark:bg-gray-700" />
+        <div className="space-y-1">
+          <div className="w-14 h-3 rounded-sm bg-gray-200 dark:bg-gray-700" />
+          <div className="w-20 h-2 rounded-sm bg-gray-100 dark:bg-gray-800" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!weather) {
+    return (
+      <button
+        type="button"
+        onClick={handleManualRefresh}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] text-xs text-gray-500 hover:text-gray-900 dark:hover:text-white cursor-pointer transition-colors shadow-2xs"
+        title="Click to load weather"
+      >
+        <AlertCircle className="w-3.5 h-3.5 text-amber-500" />
+        <span>{errorMsg || 'Load Weather'}</span>
+        <RefreshCw className="w-3 h-3 text-gray-400 ml-1" />
+      </button>
+    );
+  }
+
+  const { label, icon: WeatherIcon, iconColor, bgGradient } = getWeatherDetails(
+    weather.weatherCode,
+    weather.isDay
+  );
+
+  return (
+    <div
+      className={`inline-flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] shadow-2xs hover:shadow-xs transition-all select-none relative group bg-gradient-to-r ${bgGradient}`}
+    >
+      {/* Weather Condition Icon */}
+      <div className="relative shrink-0 flex items-center justify-center">
+        <WeatherIcon className={`w-6 h-6 ${iconColor} drop-shadow-xs transition-transform group-hover:scale-110`} />
+      </div>
+
+      {/* Weather Temperature & Condition */}
+      <div className="flex flex-col min-w-0">
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={toggleUnit}
+            title="Click to toggle °C / °F"
+            className="text-sm font-extrabold text-[#37352F] dark:text-white hover:text-[#6366F1] dark:hover:text-[#818CF8] transition-colors cursor-pointer"
+          >
+            {formatTemp(weather.temperature)}
+          </button>
+          <span className="text-[11px] font-semibold text-[#787774] dark:text-[#9CA3AF] truncate max-w-[95px] sm:max-w-[120px]">
+            {label}
+          </span>
+        </div>
+
+        {/* Location & Extra Stats */}
+        <div className="flex items-center gap-2 text-[10px] text-[#787774] dark:text-[#9CA3AF]">
+          <span className="flex items-center gap-0.5 truncate max-w-[85px] sm:max-w-[110px]" title={weather.cityName}>
+            <MapPin className="w-2.5 h-2.5 shrink-0 text-gray-400" />
+            <span className="truncate">{weather.cityName}</span>
+          </span>
+          <span className="hidden sm:inline-block text-gray-300 dark:text-gray-600">•</span>
+          <span className="hidden sm:inline-flex items-center gap-0.5" title={`Humidity ${weather.humidity}%`}>
+            <Droplets className="w-2.5 h-2.5 text-sky-400" />
+            <span>{weather.humidity}%</span>
+          </span>
+        </div>
+      </div>
+
+      {/* Refresh Button */}
+      <button
+        type="button"
+        onClick={handleManualRefresh}
+        title="Refresh current weather"
+        className="p-1 rounded-lg text-gray-400 hover:text-[#6366F1] dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer ml-0.5"
+      >
+        <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin text-[#6366F1]' : ''}`} />
+      </button>
+    </div>
+  );
+};

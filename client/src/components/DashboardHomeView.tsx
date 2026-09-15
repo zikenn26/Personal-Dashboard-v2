@@ -20,6 +20,7 @@ import { IndianCalendarWidget } from './IndianCalendarWidget';
 import { DynamicScheduleCard } from './DynamicScheduleCard';
 import { CommandCenterGrid } from './CommandCenterGrid';
 import { FlipClock } from './FlipClock';
+import { CurrentWeatherWidget } from './CurrentWeatherWidget';
 import {
   CheckCircle2,
   Circle,
@@ -455,8 +456,8 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
       {/* 1. GREETING & HERO HEADER WITH REDUCED QUOTE TILE & FLIP CLOCK */}
       {/* ========================================================================= */}
       <div className="space-y-2.5 pb-0">
-        {/* Greeting Header */}
-        <div className="flex items-center justify-between">
+        {/* Greeting Header with Compact Weather Widget */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h1 className="workspace-heading font-extrabold text-[#37352F] dark:text-white tracking-tight flex items-center gap-2 flex-wrap">
               <span>{greeting}, {profile.name}!</span>
@@ -465,6 +466,10 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
             <p className="text-xs sm:text-sm text-[#787774] dark:text-[#9CA3AF] mt-0.5 font-medium flex items-center gap-2">
               <span>Let&apos;s make today meaningful and productive.</span>
             </p>
+          </div>
+
+          <div className="self-start sm:self-auto shrink-0">
+            <CurrentWeatherWidget soundEnabled={soundEnabled} />
           </div>
         </div>
 

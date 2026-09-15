@@ -5,18 +5,12 @@ import {
   Pie,
   Cell,
   Tooltip,
-  Legend,
-  Sector,
 } from 'recharts';
 import {
   PieChart as PieChartIcon,
   TrendingUp,
   Tag,
-  ArrowUpRight,
-  Filter,
-  CheckCircle2,
   Sparkles,
-  Plus,
 } from 'lucide-react';
 import { ExpenseItem } from '../types';
 import { Sound } from '../utils/audio';
@@ -28,15 +22,12 @@ export interface ExpenseDistributionSectionProps {
   selectedMonthLabel: string;
   formatCurrency: (amount: number) => string;
   soundEnabled: boolean;
-  onSelectCategory?: (category: string) => void;
-  onOpenAddExpense?: () => void;
 }
 
 interface CategoryDataPoint {
   name: string;
   amount: number;
   percent: number;
-  count: number;
   color: string;
   icon: string;
 }
@@ -49,13 +40,13 @@ const CATEGORY_PALETTE: Record<string, { color: string; icon: string }> = {
   'Groceries': { color: '#10B981', icon: '🥦' },
   'Electronics & Gadgets': { color: '#6366F1', icon: '💻' },
   'Bills & Utilities': { color: '#EF4444', icon: '⚡' },
-  'Entertainment': { color: '#8B5CF6', icon: '🎬' },
+  'Entertainment': { color: '#A855F7', icon: '🎬' },
   'Health & Medical': { color: '#14B8A6', icon: '💊' },
   'Education & Learning': { color: '#06B6D4', icon: '🎓' },
   'Personal Care': { color: '#F43F5E', icon: '✨' },
   'Travel & Leisure': { color: '#0EA5E9', icon: '✈️' },
-  'Investment & Savings': { color: '#10B981', icon: '📈' },
-  'Others': { color: '#94A3B8', icon: '🏷️' },
+  'Investment & Savings': { color: '#059669', icon: '📈' },
+  'Others': { color: '#64748B', icon: '🏷️' },
 };
 
 const DEFAULT_COLORS = [
@@ -78,60 +69,46 @@ export const ExpenseDistributionSection: React.FC<ExpenseDistributionSectionProp
   selectedMonthLabel,
   formatCurrency,
   soundEnabled,
-  onSelectCategory,
-  onOpenAddExpense,
 }) => {
-  const [scope, setScope] = useState<'month' | '30days' | 'all'>('month');
-  const [chartMode, setChartMode] = useState<'pie' | 'donut'>('pie');
-  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [scope, setScope] = useState<'month' | 'all'>('month');
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
-  // Filter expenses by selected scope
+  // Filter expenses by selected scope (current month vs all time)
   const filteredExpenses = useMemo(() => {
-    const today = new Date();
     if (scope === 'month') {
       const prefix = `${selectedYear}-${String(selectedMonthIndex + 1).padStart(2, '0')}`;
       return expenses.filter((e) => (e.date || '').startsWith(prefix));
     }
-    if (scope === '30days') {
-      const thirtyDaysAgo = new Date(today);
-      thirtyDaysAgo.setDate(today.getDate() - 30);
-      const threshold = thirtyDaysAgo.toISOString().slice(0, 10);
-      return expenses.filter((e) => (e.date || '') >= threshold);
-    }
     return expenses;
   }, [expenses, scope, selectedYear, selectedMonthIndex]);
 
-  // Aggregate by Category
+  // Aggregate total expenses and percentage for each category
   const categoryData = useMemo<CategoryDataPoint[]>(() => {
     if (filteredExpenses.length === 0) return [];
 
-    const map: Record<string, { amount: number; count: number }> = {};
+    const map: Record<string, number> = {};
     let total = 0;
 
     filteredExpenses.forEach((exp) => {
       const cat = exp.category || 'Others';
-      if (!map[cat]) {
-        map[cat] = { amount: 0, count: 0 };
-      }
-      map[cat].amount += exp.amount;
-      map[cat].count += 1;
-      total += exp.amount;
+      const amt = Number(exp.amount) || 0;
+      map[cat] = (map[cat] || 0) + amt;
+      total += amt;
     });
 
-    if (total === 0) total = 1;
+    if (total === 0) return [];
 
     return Object.entries(map)
-      .map(([name, data], idx) => {
+      .map(([name, amount], idx) => {
         const meta = CATEGORY_PALETTE[name] || {
           color: DEFAULT_COLORS[idx % DEFAULT_COLORS.length],
           icon: '🏷️',
         };
-        const percent = Math.round((data.amount / total) * 100);
+        const percent = Math.round((amount / total) * 100);
         return {
           name,
-          amount: data.amount,
+          amount,
           percent,
-          count: data.count,
           color: meta.color,
           icon: meta.icon,
         };
@@ -140,56 +117,15 @@ export const ExpenseDistributionSection: React.FC<ExpenseDistributionSectionProp
   }, [filteredExpenses]);
 
   // Summary Metrics
-  const metrics = useMemo(() => {
-    const totalAmount = categoryData.reduce((sum, c) => sum + c.amount, 0);
-    const topCategory = categoryData.length > 0 ? categoryData[0] : null;
-    const avgPerCategory = categoryData.length > 0 ? Math.round(totalAmount / categoryData.length) : 0;
-    const totalTransactions = categoryData.reduce((sum, c) => sum + c.count, 0);
-
-    return {
-      totalAmount,
-      topCategory,
-      avgPerCategory,
-      totalTransactions,
-      categoryCount: categoryData.length,
-    };
+  const totalAmount = useMemo(() => {
+    return categoryData.reduce((sum, c) => sum + c.amount, 0);
   }, [categoryData]);
 
-  // Active highlighted category
-  const activeCategory = activeIndex !== null && categoryData[activeIndex] ? categoryData[activeIndex] : null;
-
-  // Custom label renderer for the pie chart slices
-  const renderCustomizedLabel = ({
-    cx,
-    cy,
-    midAngle,
-    innerRadius,
-    outerRadius,
-    percent,
-  }: any) => {
-    if (percent < 0.05) return null; // Don't crowd small slices
-    const RADIAN = Math.PI / 180;
-    const radius = innerRadius + (outerRadius - innerRadius) * 0.55;
-    const x = cx + radius * Math.cos(-midAngle * RADIAN);
-    const y = cy + radius * Math.sin(-midAngle * RADIAN);
-
-    return (
-      <text
-        x={x}
-        y={y}
-        fill="#FFFFFF"
-        textAnchor="middle"
-        dominantBaseline="central"
-        className="text-[11px] font-black drop-shadow-md pointer-events-none select-none"
-      >
-        {`${(percent * 100).toFixed(0)}%`}
-      </text>
-    );
-  };
+  const topCategory = categoryData.length > 0 ? categoryData[0] : null;
 
   return (
     <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-xs space-y-5">
-      {/* Header & Controls */}
+      {/* Header & Scope Toggle */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#F3F4F6] dark:border-[#2D3748]">
         <div>
           <div className="flex items-center gap-2">
@@ -197,244 +133,141 @@ export const ExpenseDistributionSection: React.FC<ExpenseDistributionSectionProp
               <PieChartIcon className="w-4 h-4" />
             </span>
             <h2 className="text-base sm:text-lg font-bold text-[#37352F] dark:text-white">
-              Expense Distribution Across Categories
+              Category Expense &amp; Percentage Breakdown
             </h2>
           </div>
           <p className="text-xs text-[#787774] dark:text-[#9CA3AF] mt-0.5">
-            Detailed breakdown and visual share of your spending by category
+            Clear view of spending amount and percentage share per category
           </p>
         </div>
 
-        {/* Action Controls: Scope & Chart Style */}
-        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
-          {/* Scope Filter */}
-          <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 p-0.5 rounded-xl text-xs font-semibold">
-            <button
-              type="button"
-              onClick={() => {
-                Sound.click(soundEnabled);
-                setScope('month');
-              }}
-              className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                scope === 'month'
-                  ? 'bg-white dark:bg-[#1A202C] text-purple-600 dark:text-purple-400 shadow-2xs font-bold'
-                  : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
-              }`}
-            >
-              {selectedMonthLabel}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                Sound.click(soundEnabled);
-                setScope('30days');
-              }}
-              className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                scope === '30days'
-                  ? 'bg-white dark:bg-[#1A202C] text-purple-600 dark:text-purple-400 shadow-2xs font-bold'
-                  : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
-              }`}
-            >
-              Past 30 Days
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                Sound.click(soundEnabled);
-                setScope('all');
-              }}
-              className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                scope === 'all'
-                  ? 'bg-white dark:bg-[#1A202C] text-purple-600 dark:text-purple-400 shadow-2xs font-bold'
-                  : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
-              }`}
-            >
-              All Time
-            </button>
-          </div>
-
-          {/* Pie vs Donut Toggle */}
-          <div className="inline-flex p-0.5 rounded-xl bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-            <button
-              type="button"
-              onClick={() => {
-                Sound.click(soundEnabled);
-                setChartMode('pie');
-              }}
-              className={`px-2 py-1 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-                chartMode === 'pie'
-                  ? 'bg-white dark:bg-[#1A202C] text-purple-600 dark:text-purple-400 shadow-2xs'
-                  : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
-              }`}
-            >
-              Clean Pie
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                Sound.click(soundEnabled);
-                setChartMode('donut');
-              }}
-              className={`px-2 py-1 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-                chartMode === 'donut'
-                  ? 'bg-white dark:bg-[#1A202C] text-purple-600 dark:text-purple-400 shadow-2xs'
-                  : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
-              }`}
-            >
-              Donut View
-            </button>
-          </div>
+        {/* Month vs All Time Filter */}
+        <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 p-0.5 rounded-xl text-xs font-semibold self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() => {
+              Sound.click(soundEnabled);
+              setScope('month');
+            }}
+            className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
+              scope === 'month'
+                ? 'bg-white dark:bg-[#1A202C] text-purple-600 dark:text-purple-400 shadow-2xs font-bold'
+                : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
+            }`}
+          >
+            {selectedMonthLabel}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              Sound.click(soundEnabled);
+              setScope('all');
+            }}
+            className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
+              scope === 'all'
+                ? 'bg-white dark:bg-[#1A202C] text-purple-600 dark:text-purple-400 shadow-2xs font-bold'
+                : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
+            }`}
+          >
+            All Time
+          </button>
         </div>
       </div>
 
-      {/* KPI Cards Row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="p-3 rounded-xl bg-gradient-to-br from-purple-50/70 to-white dark:from-purple-950/30 dark:to-[#1A202C] border border-purple-100 dark:border-purple-900/40">
+      {/* Summary KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="p-3.5 rounded-xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-100 dark:border-purple-900/40">
           <span className="text-[10px] uppercase font-bold tracking-wider text-purple-600 dark:text-purple-400 flex items-center gap-1">
             <TrendingUp className="w-3 h-3" />
-            <span>Total Evaluated</span>
+            <span>Total Spent ({scope === 'month' ? selectedMonthLabel : 'All Time'})</span>
           </span>
-          <div className="flex items-baseline gap-1.5 mt-1">
-            <span className="text-lg sm:text-xl font-extrabold text-[#37352F] dark:text-white">
-              {formatCurrency(metrics.totalAmount)}
-            </span>
+          <div className="text-xl font-extrabold text-[#37352F] dark:text-white mt-1">
+            {formatCurrency(totalAmount)}
           </div>
-          <span className="text-[10px] text-[#787774] dark:text-[#9CA3AF]">
-            across {metrics.totalTransactions} transactions
-          </span>
         </div>
 
-        <div className="p-3 rounded-xl bg-gradient-to-br from-pink-50/70 to-white dark:from-pink-950/30 dark:to-[#1A202C] border border-pink-100 dark:border-pink-900/40">
+        <div className="p-3.5 rounded-xl bg-pink-50/60 dark:bg-pink-950/30 border border-pink-100 dark:border-pink-900/40">
           <span className="text-[10px] uppercase font-bold tracking-wider text-pink-600 dark:text-pink-400 flex items-center gap-1">
             <Sparkles className="w-3 h-3" />
             <span>Top Category</span>
           </span>
-          <div className="flex items-baseline gap-1.5 mt-1">
-            <span className="text-base sm:text-lg font-extrabold text-[#37352F] dark:text-white truncate">
-              {metrics.topCategory ? metrics.topCategory.name : 'None'}
-            </span>
+          <div className="text-base sm:text-lg font-extrabold text-[#37352F] dark:text-white mt-1 truncate">
+            {topCategory ? `${topCategory.name} (${topCategory.percent}%)` : 'None'}
           </div>
-          <span className="text-[10px] text-pink-600 dark:text-pink-400 font-semibold">
-            {metrics.topCategory
-              ? `${metrics.topCategory.percent}% (${formatCurrency(metrics.topCategory.amount)})`
-              : 'No data'}
+          <span className="text-[11px] text-pink-600 dark:text-pink-400 font-semibold">
+            {topCategory ? formatCurrency(topCategory.amount) : 'No expenses recorded'}
           </span>
         </div>
 
-        <div className="p-3 rounded-xl bg-gray-50/80 dark:bg-gray-800/40 border border-gray-200 dark:border-gray-700">
+        <div className="p-3.5 rounded-xl bg-gray-50 dark:bg-gray-800/40 border border-gray-200 dark:border-gray-700">
           <span className="text-[10px] uppercase font-bold tracking-wider text-gray-500 dark:text-gray-400 flex items-center gap-1">
             <Tag className="w-3 h-3" />
             <span>Active Categories</span>
           </span>
-          <div className="flex items-baseline gap-1.5 mt-1">
-            <span className="text-lg sm:text-xl font-extrabold text-[#37352F] dark:text-white">
-              {metrics.categoryCount}
-            </span>
-            <span className="text-[10px] text-gray-400">types recorded</span>
+          <div className="text-xl font-extrabold text-[#37352F] dark:text-white mt-1">
+            {categoryData.length}
           </div>
-          <span className="text-[10px] text-[#787774] dark:text-[#9CA3AF]">
-            categorized spending
-          </span>
-        </div>
-
-        <div className="p-3 rounded-xl bg-gray-50/80 dark:bg-gray-800/40 border border-gray-200 dark:border-gray-700">
-          <span className="text-[10px] uppercase font-bold tracking-wider text-gray-500 dark:text-gray-400 flex items-center gap-1">
-            <CheckCircle2 className="w-3 h-3" />
-            <span>Avg / Category</span>
-          </span>
-          <div className="flex items-baseline gap-1.5 mt-1">
-            <span className="text-lg sm:text-xl font-extrabold text-[#37352F] dark:text-white">
-              {formatCurrency(metrics.avgPerCategory)}
-            </span>
-          </div>
-          <span className="text-[10px] text-[#787774] dark:text-[#9CA3AF]">
-            mean distribution
+          <span className="text-[11px] text-[#787774] dark:text-[#9CA3AF]">
+            different spending types
           </span>
         </div>
       </div>
 
-      {/* Main Visualization & Breakdown Grid */}
+      {/* Main Content: Simple Pie Chart + Clear Expense & Percentage List */}
       {categoryData.length === 0 ? (
-        <div className="p-8 text-center bg-gray-50 dark:bg-gray-800/30 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700 space-y-3">
-          <PieChartIcon className="w-10 h-10 text-purple-400 mx-auto opacity-70" />
+        <div className="p-8 text-center bg-gray-50 dark:bg-gray-800/30 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700 space-y-2">
+          <PieChartIcon className="w-8 h-8 text-gray-400 mx-auto opacity-70" />
           <h3 className="text-sm font-bold text-[#37352F] dark:text-white">
-            No expenses recorded in this period
+            No expenses recorded for this period
           </h3>
-          <p className="text-xs text-[#787774] dark:text-[#9CA3AF] max-w-sm mx-auto">
-            Log your daily expenses to see an interactive, color-coded pie chart of your category distribution.
+          <p className="text-xs text-[#787774] dark:text-[#9CA3AF]">
+            Add expenses in the tracker above to view the category breakdown.
           </p>
-          {onOpenAddExpense && (
-            <button
-              type="button"
-              onClick={onOpenAddExpense}
-              className="px-3.5 py-1.5 text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white rounded-xl transition-colors inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add Expense</span>
-            </button>
-          )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center pt-1">
-          {/* Left Column: Interactive Clean Pie Chart */}
-          <div className="lg:col-span-6 flex flex-col items-center justify-center relative min-h-[290px] p-2 rounded-2xl bg-gray-50/50 dark:bg-[#111827]/40 border border-gray-100 dark:border-gray-800">
-            <div className="w-full h-64 sm:h-72">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center pt-2">
+          {/* Left: Clean, Uncluttered Pie Chart */}
+          <div className="md:col-span-5 flex flex-col items-center justify-center p-3 rounded-2xl bg-gray-50/60 dark:bg-[#111827]/40 border border-gray-100 dark:border-gray-800">
+            <div className="w-full h-56 sm:h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
                     data={categoryData}
                     cx="50%"
                     cy="50%"
-                    labelLine={false}
-                    label={renderCustomizedLabel}
-                    innerRadius={chartMode === 'donut' ? 62 : 0}
-                    outerRadius={96}
-                    paddingAngle={chartMode === 'donut' ? 3 : 1.5}
+                    innerRadius={50}
+                    outerRadius={85}
+                    paddingAngle={2}
                     dataKey="amount"
                     stroke="#FFFFFF"
                     strokeWidth={1.5}
-                    onMouseEnter={(_, index) => setActiveIndex(index)}
-                    onMouseLeave={() => setActiveIndex(null)}
-                    onClick={(entry) => {
-                      Sound.click(soundEnabled);
-                      if (onSelectCategory) {
-                        onSelectCategory(entry.name);
-                      }
-                    }}
-                    cursor="pointer"
+                    onMouseEnter={(_, index) => setHoveredIndex(index)}
+                    onMouseLeave={() => setHoveredIndex(null)}
                   >
                     {categoryData.map((entry, index) => (
                       <Cell
                         key={`cell-${entry.name}`}
                         fill={entry.color}
-                        opacity={activeIndex === null || activeIndex === index ? 1 : 0.45}
-                        stroke={activeIndex === index ? '#FFFFFF' : 'none'}
-                        strokeWidth={activeIndex === index ? 2.5 : 0}
+                        opacity={hoveredIndex === null || hoveredIndex === index ? 1 : 0.5}
                       />
                     ))}
                   </Pie>
                   <Tooltip
-                    formatter={(val: number) => [formatCurrency(val), 'Amount Spent']}
+                    formatter={(val: number) => [formatCurrency(val), 'Expense']}
                     content={({ active, payload }) => {
                       if (active && payload && payload.length) {
-                        const data = payload[0].payload as CategoryDataPoint;
+                        const item = payload[0].payload as CategoryDataPoint;
                         return (
-                          <div className="p-3 rounded-xl bg-[#1E293B] text-white text-xs shadow-2xl border border-gray-700 space-y-1 min-w-[150px]">
-                            <div className="flex items-center gap-1.5 font-bold border-b border-gray-700 pb-1">
-                              <span>{data.icon}</span>
-                              <span>{data.name}</span>
+                          <div className="px-3 py-2 rounded-xl bg-[#1E293B] text-white text-xs shadow-xl border border-gray-700 space-y-1">
+                            <div className="flex items-center gap-1.5 font-bold">
+                              <span>{item.icon}</span>
+                              <span>{item.name}</span>
                             </div>
-                            <div className="flex items-center justify-between text-emerald-400 font-extrabold pt-0.5">
-                              <span>Spent:</span>
-                              <span>{formatCurrency(data.amount)}</span>
+                            <div className="text-emerald-400 font-extrabold text-sm">
+                              {formatCurrency(item.amount)}
                             </div>
-                            <div className="flex items-center justify-between text-gray-300">
-                              <span>Share:</span>
-                              <span className="font-bold text-white">{data.percent}%</span>
-                            </div>
-                            <div className="flex items-center justify-between text-gray-400 text-[11px]">
-                              <span>Entries:</span>
-                              <span>{data.count} transactions</span>
+                            <div className="text-gray-300 text-[11px]">
+                              Share: <span className="font-bold text-white">{item.percent}%</span>
                             </div>
                           </div>
                         );
@@ -445,73 +278,52 @@ export const ExpenseDistributionSection: React.FC<ExpenseDistributionSectionProp
                 </PieChart>
               </ResponsiveContainer>
             </div>
-
-            {/* Donut Center Label when in Donut View */}
-            {chartMode === 'donut' && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <span className="text-base sm:text-lg font-black text-[#37352F] dark:text-white tracking-tight">
-                  {activeCategory ? formatCurrency(activeCategory.amount) : formatCurrency(metrics.totalAmount)}
-                </span>
-                <span className="text-[10px] font-semibold text-[#787774] dark:text-[#9CA3AF] uppercase">
-                  {activeCategory ? activeCategory.name : 'Total Spent'}
-                </span>
-              </div>
-            )}
-
-            {/* Chart Interaction Hint */}
-            <p className="text-[11px] text-gray-400 text-center mt-1">
-              Hover or click slices to highlight category and filter transactions
-            </p>
+            <div className="text-center mt-1">
+              <span className="text-xs font-semibold text-[#787774] dark:text-[#9CA3AF]">
+                Hover slices to view category details
+              </span>
+            </div>
           </div>
 
-          {/* Right Column: Category Distribution List & Progress Bars */}
-          <div className="lg:col-span-6 space-y-2.5">
-            <div className="flex items-center justify-between text-xs font-bold text-[#787774] dark:text-[#9CA3AF] px-1 pb-1 border-b border-gray-100 dark:border-gray-800">
-              <span>Category ({categoryData.length})</span>
-              <span>Amount &amp; Share</span>
+          {/* Right: Category Breakdown showing Name, Expense Amount, and Percentage */}
+          <div className="md:col-span-7 space-y-2">
+            <div className="flex items-center justify-between text-xs font-bold text-[#787774] dark:text-[#9CA3AF] pb-1 border-b border-gray-100 dark:border-gray-800 px-1">
+              <span>Category</span>
+              <span>Expense &amp; Percentage</span>
             </div>
 
-            <div className="max-h-72 overflow-y-auto pr-1 space-y-2.5">
+            <div className="max-h-72 overflow-y-auto pr-1 space-y-2">
               {categoryData.map((cat, idx) => {
-                const isHovered = activeIndex === idx;
+                const isHovered = hoveredIndex === idx;
                 return (
                   <div
                     key={cat.name}
-                    onMouseEnter={() => setActiveIndex(idx)}
-                    onMouseLeave={() => setActiveIndex(null)}
-                    onClick={() => {
-                      Sound.click(soundEnabled);
-                      if (onSelectCategory) {
-                        onSelectCategory(cat.name);
-                      }
-                    }}
-                    className={`p-2 rounded-xl transition-all cursor-pointer border ${
+                    onMouseEnter={() => setHoveredIndex(idx)}
+                    onMouseLeave={() => setHoveredIndex(null)}
+                    className={`p-2.5 rounded-xl transition-all border ${
                       isHovered
-                        ? 'bg-purple-50/60 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800 shadow-xs'
-                        : 'bg-transparent hover:bg-gray-50 dark:hover:bg-gray-800/40 border-transparent'
+                        ? 'bg-purple-50/60 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800'
+                        : 'bg-gray-50/40 dark:bg-gray-800/30 border-gray-100 dark:border-gray-800'
                     }`}
                   >
-                    <div className="flex items-center justify-between text-xs font-semibold mb-1">
+                    <div className="flex items-center justify-between text-xs font-semibold mb-1.5">
                       <div className="flex items-center gap-2">
                         <span
                           className="w-2.5 h-2.5 rounded-full shrink-0"
                           style={{ backgroundColor: cat.color }}
                         />
-                        <span className="text-sm">{cat.icon}</span>
+                        <span className="text-base leading-none">{cat.icon}</span>
                         <span className="text-[#37352F] dark:text-white font-bold">{cat.name}</span>
-                        <span className="text-[10px] text-gray-400 font-normal">
-                          ({cat.count} {cat.count === 1 ? 'tx' : 'txs'})
-                        </span>
                       </div>
 
                       <div className="flex items-center gap-2.5">
-                        <span className="font-extrabold text-[#37352F] dark:text-white">
+                        <span className="font-extrabold text-sm text-[#37352F] dark:text-white">
                           {formatCurrency(cat.amount)}
                         </span>
                         <span
-                          className="text-[11px] font-bold px-1.5 py-0.5 rounded-md min-w-[38px] text-right"
+                          className="text-xs font-black px-2 py-0.5 rounded-lg min-w-[42px] text-center"
                           style={{
-                            backgroundColor: `${cat.color}15`,
+                            backgroundColor: `${cat.color}18`,
                             color: cat.color,
                           }}
                         >
@@ -520,10 +332,10 @@ export const ExpenseDistributionSection: React.FC<ExpenseDistributionSectionProp
                       </div>
                     </div>
 
-                    {/* Proportional Bar */}
-                    <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-1.5 overflow-hidden">
+                    {/* Proportional Share Bar */}
+                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
                       <div
-                        className="h-full rounded-full transition-all duration-500"
+                        className="h-full rounded-full transition-all duration-300"
                         style={{
                           width: `${Math.min(cat.percent, 100)}%`,
                           backgroundColor: cat.color,

@@ -1793,7 +1793,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
             </div>
           </div>
 
-          {/* B. EXPENSE DISTRIBUTION ACROSS CATEGORIES SECTION (Clean Pie Chart & Analytics) */}
+          {/* B. CATEGORY EXPENSE BREAKDOWN & PIE CHART */}
           <ExpenseDistributionSection
             expenses={currentExpenses}
             selectedYear={selectedYear}
@@ -1801,11 +1801,6 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
             selectedMonthLabel={selectedMonthLabel}
             formatCurrency={formatCurrency}
             soundEnabled={soundEnabled}
-            onSelectCategory={(category) => {
-              setSelectedCategoryFilter(category);
-              setActiveFilter('all');
-            }}
-            onOpenAddExpense={() => setShowAddModal(true)}
           />
 
           {/* C. MONTHLY SPENDING TREND CARD */}
