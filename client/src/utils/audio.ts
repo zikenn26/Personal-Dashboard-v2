@@ -125,26 +125,74 @@ export const Sound = {
     }
   },
 
-  softAlarm: (enabled = true) => {
+  softAlarm: (enabled = true, tone = 'zen') => {
     if (!enabled) return;
     try {
       const ctx = getAudioContext();
       if (!ctx) return;
       const now = ctx.currentTime;
-      // Gentle, soothing chime sequence (D5, F#5, A5, D6)
-      const notes = [587.33, 739.99, 880.0, 1174.66];
-      notes.forEach((freq, idx) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, now + idx * 0.14);
-        gain.gain.setValueAtTime(0.09, now + idx * 0.14);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.14 + 1.1);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(now + idx * 0.14);
-        osc.stop(now + idx * 0.14 + 1.15);
-      });
+
+      if (tone === 'marimba') {
+        // Warm marimba arpeggio (C5, G5, C6, E6)
+        const notes = [523.25, 783.99, 1046.50, 1318.51];
+        notes.forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, now + idx * 0.12);
+          gain.gain.setValueAtTime(0.1, now + idx * 0.12);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.12 + 0.45);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now + idx * 0.12);
+          osc.stop(now + idx * 0.12 + 0.48);
+        });
+      } else if (tone === 'crystal') {
+        // Bright crystal bell chords (E5, B5, E6, G#6)
+        const notes = [659.25, 987.77, 1318.51, 1661.22];
+        notes.forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, now + idx * 0.1);
+          gain.gain.setValueAtTime(0.08, now + idx * 0.1);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.1 + 0.9);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now + idx * 0.1);
+          osc.stop(now + idx * 0.1 + 0.95);
+        });
+      } else if (tone === 'pulse') {
+        // Gentle digital heartbeat double-pulse
+        [880, 880, 1174, 1174].forEach((freq, idx) => {
+          const t = now + idx * 0.14;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, t);
+          gain.gain.setValueAtTime(0.07, t);
+          gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(t);
+          osc.stop(t + 0.12);
+        });
+      } else {
+        // Default Zen Chime sequence (D5, F#5, A5, D6)
+        const notes = [587.33, 739.99, 880.0, 1174.66];
+        notes.forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, now + idx * 0.14);
+          gain.gain.setValueAtTime(0.09, now + idx * 0.14);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.14 + 1.1);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now + idx * 0.14);
+          osc.stop(now + idx * 0.14 + 1.15);
+        });
+      }
     } catch {
       // Audio context might be restricted before interaction
     }
