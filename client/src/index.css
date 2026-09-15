@@ -495,3 +495,43 @@ html.dark .lifemap-hero h1,
   border-color: #334155 !important;
 }
 
+/* ========================================================================== */
+/* ALARM TRIGGERED GENTLE PULSE ANIMATION                                    */
+/* ========================================================================== */
+
+@keyframes alarmTilePulseLight {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4), 0 2px 8px -1px rgba(99, 102, 241, 0.15);
+    border-color: #6366F1;
+  }
+  50% {
+    transform: scale(1.012);
+    box-shadow: 0 0 0 6px rgba(99, 102, 241, 0.18), 0 8px 20px -2px rgba(99, 102, 241, 0.28);
+    border-color: #818CF8;
+  }
+}
+
+@keyframes alarmTilePulseDark {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(129, 140, 248, 0.45), 0 0 12px rgba(99, 102, 241, 0.25);
+    border-color: #6366F1 !important;
+  }
+  50% {
+    transform: scale(1.012);
+    box-shadow: 0 0 0 8px rgba(129, 140, 248, 0.22), 0 0 24px rgba(129, 140, 248, 0.45);
+    border-color: #A5B4FC !important;
+  }
+}
+
+.alarm-tile-pulse {
+  animation: alarmTilePulseLight 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  z-index: 20;
+}
+
+.dark .alarm-tile-pulse {
+  animation: alarmTilePulseDark 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  z-index: 20;
+}
+

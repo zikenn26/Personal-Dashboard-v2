@@ -246,6 +246,33 @@ export const broadcastWorkspaceUpdate = (enrichedPayload: any) => {
   }
 };
 
+/**
+ * Broadcast instant alarm events (set, snooze, dismiss, delete) to all devices
+ * logged into the same user account with sub-30ms delivery.
+ */
+export const broadcastAlarmAction = (
+  action: 'set' | 'snooze' | 'dismiss' | 'delete',
+  alarm: any | null
+) => {
+  if (!activeRealtimeChannel) return;
+  try {
+    activeRealtimeChannel.send({
+      type: 'broadcast',
+      event: 'alarm_action',
+      payload: {
+        action,
+        alarm,
+        deviceId: DEVICE_SESSION_ID,
+        timestamp: Date.now(),
+      },
+    }).catch((err: any) => {
+      console.warn('Realtime alarm action broadcast notice:', err);
+    });
+  } catch (err) {
+    console.warn('Failed to broadcast alarm action:', err);
+  }
+};
+
 export const subscribeToSyncStatus = (listener: (status: 'synced' | 'syncing' | 'error' | 'idle') => void) => {
   statusListeners.add(listener);
   listener(currentSyncStatus);
@@ -535,7 +562,27 @@ export const subscribeToRealtimeWorkspace = (
           }
         }
       )
-      // 2. Postgres replication database changes (authoritative state persistence)
+      // 3. Instant peer-to-peer alarm action broadcast (sub-30ms cross-device snooze/dismiss/delete/set)
+      .on(
+        'broadcast',
+        { event: 'alarm_action' },
+        (res: any) => {
+          try {
+            const payload = res?.payload;
+            if (!payload) return;
+            if (payload.deviceId === DEVICE_SESSION_ID) return;
+
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(
+                new CustomEvent('remote-alarm-sync', { detail: payload })
+              );
+            }
+          } catch (e) {
+            console.warn('Realtime alarm_action listener error:', e);
+          }
+        }
+      )
+      // 4. Postgres replication database changes (authoritative state persistence)
       .on(
         'postgres_changes',
         {

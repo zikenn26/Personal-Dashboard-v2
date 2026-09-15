@@ -128,6 +128,7 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
 
   // Time-based Greeting & Live Clock (Timezone Synchronized)
   const [currentTime, setCurrentTime] = useState(() => new Date());
+  const [isAlarmRinging, setIsAlarmRinging] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -636,8 +637,12 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
           </div>
 
           {/* Date & Clock Tile (3/4th size: 4 cols on lg, 3 on xl) */}
-          <div className="grid-tile lg:col-span-4 xl:col-span-3 px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#23324C] border border-[#EDECE9] dark:border-[#334155] shadow-xs flex flex-col justify-between">
-            <FlipClock />
+          <div
+            className={`grid-tile lg:col-span-4 xl:col-span-3 px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#23324C] border border-[#EDECE9] dark:border-[#334155] shadow-xs flex flex-col justify-between transition-all duration-300 ${
+              isAlarmRinging ? 'alarm-tile-pulse' : ''
+            }`}
+          >
+            <FlipClock onRingingChange={setIsAlarmRinging} />
           </div>
         </div>
       </div>

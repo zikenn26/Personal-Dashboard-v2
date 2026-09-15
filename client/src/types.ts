@@ -604,3 +604,15 @@ export interface WeeklyScheduleData {
   days: Record<DayOfWeek, DayScheduleOverride>;
 }
 
+export interface QuickAlarm {
+  id: string;
+  targetTimestamp: number; // Unix epoch ms
+  targetTimeStr: string;   // "14:35"
+  label: string;           // "Focus Session"
+  createdTimestamp: number;// when the alarm was scheduled
+  updatedTimestamp?: number;
+  lastAction?: 'set' | 'snooze' | 'dismiss' | 'delete';
+  deviceId?: string;
+  ringing?: boolean;
+}
+

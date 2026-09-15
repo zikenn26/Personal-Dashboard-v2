@@ -27,6 +27,7 @@ import {
   ScheduleActivity,
   DayOfWeek,
   DayScheduleOverride,
+  QuickAlarm,
 } from '../types';
 import { STOCK_IMAGES } from '../assets/stockImages';
 import { decryptJson, encryptJson, isEncryptedPayload, EncryptedPayload } from './crypto';
@@ -58,6 +59,8 @@ export const STORAGE_KEYS = {
   SCHEDULE: 'notion_os_v4_schedule',
   HOME_GRID_ORDER: 'notion_os_v4_home_grid_order',
   EXCEL_IMPORT_LOGS: 'notion_os_v4_excel_import_logs',
+  ALARM: 'notion_os_v4_active_alarm',
+  ALARM_SNOOZE: 'notion_os_v4_alarm_snooze_interval',
 };
 
 export const DEFAULT_HOME_GRID_ORDER: string[] = [
@@ -838,6 +841,25 @@ export const Storage = {
     saveToStorage('notion_os_v4_home_grid_preset', preset);
   },
 
+  getActiveAlarm: (): QuickAlarm | null => {
+    return loadFromStorage<QuickAlarm | null>(STORAGE_KEYS.ALARM, null);
+  },
+  setActiveAlarm: (alarm: QuickAlarm | null) => {
+    saveToStorage(STORAGE_KEYS.ALARM, alarm);
+    try {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('alarm-data-updated', { detail: { alarm } }));
+      }
+    } catch {}
+  },
+
+  getAlarmSnoozeInterval: (): number => {
+    return loadFromStorage<number>(STORAGE_KEYS.ALARM_SNOOZE, 5);
+  },
+  setAlarmSnoozeInterval: (mins: number) => {
+    saveToStorage(STORAGE_KEYS.ALARM_SNOOZE, mins);
+  },
+
   getAllDataPayload: () => {
     return {
       version: '4.0.0',
@@ -866,6 +888,8 @@ export const Storage = {
       quotes: Storage.getQuotes(),
       exams: Storage.getExams(),
       schedule: Storage.getSchedule(),
+      activeAlarm: Storage.getActiveAlarm(),
+      alarmSnoozeInterval: Storage.getAlarmSnoozeInterval(),
     };
   },
 
@@ -876,7 +900,7 @@ export const Storage = {
         'profile', 'todos', 'habits', 'goals', 'vaultEncrypted', 'vault',
         'expenses', 'excelImportLogs', 'journal', 'media', 'achievements', 'doodles',
         'timeline', 'projects', 'skills', 'settings', 'sections',
-        'photos', 'resume', 'quotes', 'exams', 'schedule', 'version'
+        'photos', 'resume', 'quotes', 'exams', 'schedule', 'version', 'activeAlarm', 'alarmSnoozeInterval'
       ];
       const hasKnownKey = knownKeys.some((k) => k in data && data[k] !== undefined);
       if (!hasKnownKey) return false;
@@ -927,6 +951,12 @@ export const Storage = {
       if (data.quotes) Storage.setQuotes(data.quotes);
       if (data.exams) Storage.setExams(data.exams);
       if (data.schedule) Storage.setSchedule(data.schedule);
+      if ('activeAlarm' in data) {
+        Storage.setActiveAlarm(data.activeAlarm ?? null);
+      }
+      if ('alarmSnoozeInterval' in data && typeof data.alarmSnoozeInterval === 'number') {
+        Storage.setAlarmSnoozeInterval(data.alarmSnoozeInterval);
+      }
       return true;
     } catch (err) {
       console.error('Failed to import payload:', err);
