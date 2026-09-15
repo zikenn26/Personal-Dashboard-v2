@@ -64,6 +64,7 @@ import {
   getWeekDaysInfo,
   archiveCurrentWeekRecord,
   DAYS_OF_WEEK,
+  parseIsoDate,
 } from './utils/habitWeekManager';
 import { Auth, getUserWorkspaceKey } from './utils/auth';
 import { registerCurrentDevice } from './utils/devices';
@@ -942,6 +943,185 @@ export default function App() {
 
     setHabits(freshHabits);
     Storage.setHabits(freshHabits);
+    setHabitHistory(updatedHistory);
+    Storage.setHabitHistory(updatedHistory);
+  };
+
+  // Historical Habit Handlers (Allows user to edit and toggle habits from previous weeks)
+  const handleToggleHistoricalHabitDay = (weekId: string, habitId: string, dayIndex: number) => {
+    Sound.click(settings.soundEnabled);
+    let isNowDone = false;
+    let habitItem: HabitItem | null = null;
+    let targetWeekDateStr = '';
+
+    const updatedHistory = habitHistory.map((week) => {
+      if (week.id === weekId) {
+        const weekMonday = new Date(week.weekStart);
+        const days = getWeekDaysInfo(weekMonday);
+        const dayInfo = days[dayIndex];
+        if (dayInfo) targetWeekDateStr = dayInfo.dateStr;
+
+        const updatedHabits = week.habits.map((h) => {
+          if (h.id === habitId) {
+            const nextDays = [...h.completedDays];
+            nextDays[dayIndex] = !nextDays[dayIndex];
+            isNowDone = nextDays[dayIndex];
+            habitItem = {
+              ...h,
+              completedDays: nextDays,
+              streak: nextDays.filter(Boolean).length,
+            };
+            return habitItem;
+          }
+          return h;
+        });
+
+        const totalDone = updatedHabits.reduce(
+          (acc, h) => acc + h.completedDays.filter(Boolean).length,
+          0
+        );
+        const totalPossible = updatedHabits.length * 7;
+        const completionRate = totalPossible > 0 ? Math.round((totalDone / totalPossible) * 100) : 0;
+
+        let nextActivities = week.activities ? [...week.activities] : [];
+        if (targetWeekDateStr) {
+          if (isNowDone && habitItem) {
+            const item = habitItem as HabitItem;
+            const newAct: HabitActivityLog = {
+              id: `act-${habitId}-${targetWeekDateStr}-${Date.now()}`,
+              habitId,
+              habitTitle: item.title,
+              category: item.category,
+              icon: item.icon,
+              color: item.color,
+              dayIndex,
+              dayName: DAYS_OF_WEEK[dayIndex],
+              date: targetWeekDateStr,
+              completed: true,
+              timestamp: parseIsoDate(targetWeekDateStr).getTime() + 12 * 3600 * 1000,
+            };
+            nextActivities = [
+              newAct,
+              ...nextActivities.filter((a) => !(a.habitId === habitId && a.date === targetWeekDateStr)),
+            ];
+          } else {
+            nextActivities = nextActivities.filter(
+              (a) => !(a.habitId === habitId && a.date === targetWeekDateStr)
+            );
+          }
+        }
+
+        return {
+          ...week,
+          habits: updatedHabits,
+          totalDone,
+          totalPossible,
+          completionRate,
+          activities: nextActivities,
+        };
+      }
+      return week;
+    });
+
+    setHabitHistory(updatedHistory);
+    Storage.setHabitHistory(updatedHistory);
+
+    if (targetWeekDateStr && habitItem) {
+      if (isNowDone) {
+        const item = habitItem as HabitItem;
+        const newAct: HabitActivityLog = {
+          id: `act-${habitId}-${targetWeekDateStr}-${Date.now()}`,
+          habitId,
+          habitTitle: item.title,
+          category: item.category,
+          icon: item.icon,
+          color: item.color,
+          dayIndex,
+          dayName: DAYS_OF_WEEK[dayIndex],
+          date: targetWeekDateStr,
+          completed: true,
+          timestamp: parseIsoDate(targetWeekDateStr).getTime() + 12 * 3600 * 1000,
+        };
+        const nextGlobal = [
+          newAct,
+          ...habitActivities.filter((a) => !(a.habitId === habitId && a.date === targetWeekDateStr)),
+        ];
+        setHabitActivities(nextGlobal);
+        Storage.setHabitActivities(nextGlobal);
+      } else {
+        const nextGlobal = habitActivities.filter(
+          (a) => !(a.habitId === habitId && a.date === targetWeekDateStr)
+        );
+        setHabitActivities(nextGlobal);
+        Storage.setHabitActivities(nextGlobal);
+      }
+    }
+  };
+
+  const handleAddHistoricalHabit = (
+    weekId: string,
+    title: string,
+    category: string,
+    icon: string,
+    color: string
+  ) => {
+    Sound.success(settings.soundEnabled);
+    const newHabit: HabitItem = {
+      id: `hb-hist-${Date.now()}`,
+      title,
+      category,
+      icon,
+      completedDays: [false, false, false, false, false, false, false],
+      streak: 0,
+      color,
+    };
+
+    const updatedHistory = habitHistory.map((week) => {
+      if (week.id === weekId) {
+        const updatedHabits = [...week.habits, newHabit];
+        const totalDone = updatedHabits.reduce(
+          (acc, h) => acc + h.completedDays.filter(Boolean).length,
+          0
+        );
+        const totalPossible = updatedHabits.length * 7;
+        const completionRate = totalPossible > 0 ? Math.round((totalDone / totalPossible) * 100) : 0;
+        return {
+          ...week,
+          habits: updatedHabits,
+          totalDone,
+          totalPossible,
+          completionRate,
+        };
+      }
+      return week;
+    });
+
+    setHabitHistory(updatedHistory);
+    Storage.setHabitHistory(updatedHistory);
+  };
+
+  const handleDeleteHistoricalHabit = (weekId: string, habitId: string) => {
+    Sound.click(settings.soundEnabled);
+    const updatedHistory = habitHistory.map((week) => {
+      if (week.id === weekId) {
+        const updatedHabits = week.habits.filter((h) => h.id !== habitId);
+        const totalDone = updatedHabits.reduce(
+          (acc, h) => acc + h.completedDays.filter(Boolean).length,
+          0
+        );
+        const totalPossible = updatedHabits.length * 7;
+        const completionRate = totalPossible > 0 ? Math.round((totalDone / totalPossible) * 100) : 0;
+        return {
+          ...week,
+          habits: updatedHabits,
+          totalDone,
+          totalPossible,
+          completionRate,
+        };
+      }
+      return week;
+    });
+
     setHabitHistory(updatedHistory);
     Storage.setHabitHistory(updatedHistory);
   };
@@ -2337,6 +2517,9 @@ export default function App() {
                     onDeleteHabit={handleDeleteHabit}
                     onResetWeek={handleResetHabitWeek}
                     onSimulateMondayRollover={handleSimulateMondayRollover}
+                    onToggleHistoricalHabitDay={handleToggleHistoricalHabitDay}
+                    onAddHistoricalHabit={handleAddHistoricalHabit}
+                    onDeleteHistoricalHabit={handleDeleteHistoricalHabit}
                     soundEnabled={settings.soundEnabled}
                   />
                 </div>

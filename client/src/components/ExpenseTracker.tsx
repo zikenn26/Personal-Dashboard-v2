@@ -593,6 +593,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc' | 'name-asc'>('date-desc');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [visibleTxCount, setVisibleTxCount] = useState<number>(15);
   const [showAllTransactionsModal, setShowAllTransactionsModal] = useState<boolean>(false);
   const [modalCategoryFilter, setModalCategoryFilter] = useState<string>('all');
   const [modalSortBy, setModalSortBy] = useState<'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc' | 'name-asc'>('date-desc');
@@ -972,14 +973,19 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       return 0;
     };
 
-    // Group real transactions
+    // Sort all filtered transactions first
+    list.sort(sortFn);
+    const totalFilteredCount = list.length;
+    const visibleSlice = list.slice(0, visibleTxCount);
+
+    // Group the visible transactions (recent 15 by default)
     const groups: Record<string, ExpenseItem[]> = {
       Today: [],
       Yesterday: [],
       Earlier: [],
     };
 
-    list.forEach((item) => {
+    visibleSlice.forEach((item) => {
       if (item.date === todayStr) {
         groups.Today.push(item);
       } else if (item.date === yesterdayStr) {
@@ -989,17 +995,15 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       }
     });
 
-    groups.Today.sort(sortFn);
-    groups.Yesterday.sort(sortFn);
-    groups.Earlier.sort(sortFn);
-
     return {
       Today: groups.Today,
       Yesterday: groups.Yesterday,
       Earlier: groups.Earlier,
-      isEmpty: list.length === 0,
+      isEmpty: visibleSlice.length === 0,
+      totalFilteredCount,
+      displayedCount: visibleSlice.length,
     };
-  }, [currentExpenses, searchQuery, selectedCategoryFilter, activeFilter, selectedYear, selectedMonthIndex, selectedSheetFilter, expenseRenderTick, sortBy]);
+  }, [currentExpenses, searchQuery, selectedCategoryFilter, activeFilter, selectedYear, selectedMonthIndex, selectedSheetFilter, expenseRenderTick, sortBy, visibleTxCount]);
 
   // Count of imported items in database
   const importedCount = useMemo(() => {
@@ -1781,15 +1785,52 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
               )}
             </div>
 
-            {/* View All Footer */}
-            <div className="text-center pt-2 border-t border-gray-100 dark:border-gray-800">
-              <button
-                type="button"
-                onClick={() => setShowAllTransactionsModal(true)}
-                className="text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline cursor-pointer"
-              >
-                View All Transactions
-              </button>
+            {/* View All & Pagination Footer (Recent 15 with Show Next 15) */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+              <div className="text-xs text-[#787774] dark:text-[#9CA3AF]">
+                Showing <strong className="text-[#37352F] dark:text-white">{Math.min(visibleTxCount, groupedTransactions.totalFilteredCount || 0)}</strong> of{' '}
+                <strong className="text-[#37352F] dark:text-white">{groupedTransactions.totalFilteredCount || 0}</strong> transactions
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {(groupedTransactions.totalFilteredCount || 0) > visibleTxCount && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      Sound.click(soundEnabled);
+                      setVisibleTxCount((prev) => prev + 15);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    <ChevronDown className="w-3.5 h-3.5" />
+                    <span>Show Next 15</span>
+                  </button>
+                )}
+
+                {visibleTxCount > 15 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      Sound.click(soundEnabled);
+                      setVisibleTxCount(15);
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl text-gray-500 hover:text-gray-900 dark:hover:text-white text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    Show Recent 15
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    Sound.click(soundEnabled);
+                    setShowAllTransactionsModal(true);
+                  }}
+                  className="text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline cursor-pointer ml-1"
+                >
+                  View All ({groupedTransactions.totalFilteredCount || 0})
+                </button>
+              </div>
             </div>
           </div>
 
