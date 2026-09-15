@@ -424,10 +424,54 @@ export interface ResumeDocument {
   fileSize: string;
   uploadedAt: string;
   summary: string;
-  experiences: Array<{ role: string; company: string; period: string; details: string }>;
-  education: Array<{ degree: string; school: string; year: string }>;
+  experiences: Array<{
+    role: string;
+    company: string;
+    period: string;
+    details: string;
+    achievements?: string[];
+    techStack?: string[];
+  }>;
+  education: Array<{
+    degree: string;
+    school: string;
+    year: string;
+    score?: string;
+    location?: string;
+    specialization?: string;
+    highlights?: string[];
+  }>;
   skills: string[];
+  skillsByCategory?: Array<{
+    category: string;
+    items: string[];
+  }>;
   fileDataUrl?: string;
+  contact?: {
+    name?: string;
+    phone?: string;
+    email?: string;
+    github?: string;
+    linkedin?: string;
+    location?: string;
+    portfolio?: string;
+  };
+  projects?: Array<{
+    title: string;
+    subtitle?: string;
+    period?: string;
+    description?: string;
+    techStack?: string[];
+    points?: string[];
+    link?: string;
+  }>;
+  certifications?: Array<{
+    name: string;
+    issuer?: string;
+    year?: string;
+    link?: string;
+  }>;
+  additionalInfo?: string[];
 }
 
 export interface QuoteItem {

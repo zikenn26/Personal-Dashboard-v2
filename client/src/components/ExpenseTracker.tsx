@@ -64,6 +64,7 @@ import { Storage, STORAGE_KEYS } from '../utils/storage';
 import { Sound } from '../utils/audio';
 import { triggerConfetti } from '../utils/confetti';
 import { ExcelImportModal } from './ExcelImportModal';
+import { ExpenseDistributionSection } from './ExpenseDistributionSection';
 
 interface ExpenseTrackerProps {
   expenses: ExpenseItem[];
@@ -1792,134 +1793,20 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
             </div>
           </div>
 
-          {/* B. SPENDING BY CATEGORY CARD (Donut Chart + List Breakdown) */}
-          <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-xs space-y-4">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div>
-                <h2 className="text-base sm:text-lg font-bold text-[#37352F] dark:text-white">
-                  Spending by Category
-                </h2>
-                <p className="text-xs text-[#787774] dark:text-[#9CA3AF]">
-                  Category distribution for {categoryScope === 'month' ? selectedMonthLabel : 'all recorded expenses'}
-                </p>
-              </div>
-
-              {/* Scope Switcher: Selected Month vs All Time */}
-              <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 p-0.5 rounded-xl text-xs font-semibold">
-                <button
-                  type="button"
-                  onClick={() => {
-                    Sound.click(soundEnabled);
-                    setCategoryScope('month');
-                  }}
-                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                    categoryScope === 'month'
-                      ? 'bg-white dark:bg-[#1A202C] text-purple-600 dark:text-purple-400 shadow-2xs font-bold'
-                      : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
-                  }`}
-                >
-                  {MONTH_NAMES[selectedMonthIndex]}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    Sound.click(soundEnabled);
-                    setCategoryScope('all');
-                  }}
-                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                    categoryScope === 'all'
-                      ? 'bg-white dark:bg-[#1A202C] text-purple-600 dark:text-purple-400 shadow-2xs font-bold'
-                      : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
-                  }`}
-                >
-                  All Time
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center pt-2">
-              {/* Left Donut Chart with Center Total */}
-              <div className="md:col-span-5 flex flex-col items-center justify-center relative h-52">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={categoryBreakdown}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={55}
-                      outerRadius={78}
-                      paddingAngle={3}
-                      dataKey="amount"
-                      stroke="none"
-                    >
-                      {categoryBreakdown.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={(val: number) => [formatCurrency(val), 'Spent']}
-                      contentStyle={{
-                        borderRadius: '12px',
-                        border: '1px solid #E5E7EB',
-                        backgroundColor: '#1E293B',
-                        color: '#FFFFFF',
-                        fontSize: '12px',
-                        fontWeight: 'bold',
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-
-                {/* Inner Donut Center Text */}
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  <span className="text-base sm:text-lg font-extrabold text-[#37352F] dark:text-white tracking-tight">
-                    {formatCurrency(
-                      categoryScope === 'month'
-                        ? stats.monthDisplay
-                        : expenses.reduce((sum, e) => sum + e.amount, 0)
-                    )}
-                  </span>
-                  <span className="text-[10px] font-semibold text-[#787774] dark:text-[#9CA3AF] uppercase">
-                    Total
-                  </span>
-                </div>
-              </div>
-
-              {/* Right Horizontal Category Breakdown List */}
-              <div className="md:col-span-7 space-y-2.5">
-                {categoryBreakdown.map((cat) => (
-                  <div key={cat.name} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs font-semibold">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className="w-2.5 h-2.5 rounded-full shrink-0"
-                          style={{ backgroundColor: cat.color }}
-                        />
-                        <span className="text-[#37352F] dark:text-white">{cat.name}</span>
-                      </div>
-
-                      <div className="flex items-center gap-3">
-                        <span className="font-extrabold text-[#37352F] dark:text-white">
-                          {formatCurrency(cat.amount)}
-                        </span>
-                        <span className="text-[#787774] dark:text-[#9CA3AF] text-[11px] w-8 text-right">
-                          {cat.percent}%
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Progress Bar */}
-                    <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-1.5 overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all duration-500"
-                        style={{ width: `${Math.min(cat.percent, 100)}%`, backgroundColor: cat.color }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          {/* B. EXPENSE DISTRIBUTION ACROSS CATEGORIES SECTION (Clean Pie Chart & Analytics) */}
+          <ExpenseDistributionSection
+            expenses={currentExpenses}
+            selectedYear={selectedYear}
+            selectedMonthIndex={selectedMonthIndex}
+            selectedMonthLabel={selectedMonthLabel}
+            formatCurrency={formatCurrency}
+            soundEnabled={soundEnabled}
+            onSelectCategory={(category) => {
+              setSelectedCategoryFilter(category);
+              setActiveFilter('all');
+            }}
+            onOpenAddExpense={() => setShowAddModal(true)}
+          />
 
           {/* C. MONTHLY SPENDING TREND CARD */}
           <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-xs space-y-3">

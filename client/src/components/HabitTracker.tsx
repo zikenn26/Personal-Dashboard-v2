@@ -26,6 +26,7 @@ import {
   formatWeekRange,
   getWeekDaysInfo,
 } from '../utils/habitWeekManager';
+import { HabitStreakChart } from './HabitStreakChart';
 
 export interface HabitTrackerProps {
   habits: HabitItem[];
@@ -50,7 +51,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
   onSimulateMondayRollover,
   soundEnabled,
 }) => {
-  const [activeTab, setActiveTab] = useState<'current' | 'history'>('current');
+  const [activeTab, setActiveTab] = useState<'current' | 'analytics' | 'history'>('current');
   const [historySubTab, setHistorySubTab] = useState<'weeks' | 'activities'>('weeks');
   const [expandedWeekId, setExpandedWeekId] = useState<string | null>(null);
   const [activitySearch, setActivitySearch] = useState('');
@@ -172,7 +173,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
         </div>
 
         {/* View Switcher Tabs & New Habit Action */}
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
           <div className="inline-flex p-1 rounded-xl bg-[#F3F4F6] dark:bg-[#1F2937] border border-[#E5E7EB] dark:border-[#374151]">
             <button
               type="button"
@@ -194,6 +195,25 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
               type="button"
               onClick={() => {
                 Sound.click(soundEnabled);
+                setActiveTab('analytics');
+              }}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'analytics'
+                  ? 'bg-white dark:bg-[#111827] text-[#111827] dark:text-white shadow-2xs'
+                  : 'text-[#6B7280] dark:text-[#9CA3AF] hover:text-[#111827] dark:hover:text-white'
+              }`}
+            >
+              <TrendingUp className="w-3.5 h-3.5 text-indigo-500" />
+              <span>30-Day Growth</span>
+              <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold">
+                Chart
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                Sound.click(soundEnabled);
                 setActiveTab('history');
               }}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
@@ -203,7 +223,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
               }`}
             >
               <History className="w-3.5 h-3.5 text-amber-500" />
-              <span>Past Records & Activities</span>
+              <span>Past Records</span>
               {habitHistory.length > 0 && (
                 <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 font-bold">
                   {habitHistory.length}
@@ -212,18 +232,16 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
             </button>
           </div>
 
-          {activeTab === 'current' && (
-            <button
-              onClick={() => {
-                Sound.click(soundEnabled);
-                setShowAddModal(true);
-              }}
-              className="px-3 py-1.5 text-xs font-semibold bg-[#111827] dark:bg-white text-white dark:text-[#111827] hover:opacity-90 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>New Habit</span>
-            </button>
-          )}
+          <button
+            onClick={() => {
+              Sound.click(soundEnabled);
+              setShowAddModal(true);
+            }}
+            className="px-3 py-1.5 text-xs font-semibold bg-[#111827] dark:bg-white text-white dark:text-[#111827] hover:opacity-90 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>New Habit</span>
+          </button>
         </div>
       </div>
 
@@ -473,6 +491,28 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Integrated 30-Day Streak & Completion Visualizer */}
+          <div className="pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">
+            <HabitStreakChart
+              habits={habits}
+              habitHistory={habitHistory}
+              habitActivities={habitActivities}
+              soundEnabled={soundEnabled}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ==================== 30-DAY GROWTH & ANALYTICS VIEW ==================== */}
+      {activeTab === 'analytics' && (
+        <div className="space-y-4">
+          <HabitStreakChart
+            habits={habits}
+            habitHistory={habitHistory}
+            habitActivities={habitActivities}
+            soundEnabled={soundEnabled}
+          />
         </div>
       )}
 

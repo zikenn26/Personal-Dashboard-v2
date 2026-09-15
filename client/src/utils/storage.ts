@@ -107,52 +107,140 @@ export const INITIAL_SCHEDULE: WeeklyScheduleData = {
   },
 };
 
-export const INITIAL_EDUCATION_RECORDS: EducationRecord[] = [];
+export const INITIAL_EDUCATION_RECORDS: EducationRecord[] = [
+  {
+    id: 'edu-nit-raipur',
+    degree: 'M.Tech in Information Technology',
+    level: 'postgraduation',
+    levelTitle: 'Postgraduate (M.Tech)',
+    institution: 'National Institute of Technology Raipur, Chhattisgarh',
+    boardOrUniversity: 'NIT Raipur',
+    location: 'Raipur, Chhattisgarh, India',
+    year: '2024–2026',
+    score: '8.18 CGPA',
+    specialization: 'Information Technology',
+    highlights: ['Advanced Distributed Systems, AI Architectures & Data Engineering'],
+  },
+  {
+    id: 'edu-vssut-burla',
+    degree: 'B.Tech in Information Technology',
+    level: 'graduation',
+    levelTitle: 'Undergraduate (B.Tech)',
+    institution: 'Veer Surendra Sai University of Technology Burla, Odisha',
+    boardOrUniversity: 'VSSUT Burla',
+    location: 'Burla, Odisha, India',
+    year: '2020–2024',
+    score: '8.62 CGPA',
+    specialization: 'Information Technology',
+    highlights: ['Core IT Engineering, Algorithms, Database Management & Full-Stack Systems'],
+  },
+];
 
-export const INITIAL_JOB_EXPERIENCES: JobExperience[] = [];
+export const INITIAL_JOB_EXPERIENCES: JobExperience[] = [
+  {
+    id: 'exp-gnanig-2023',
+    role: 'Trainee / Intern',
+    company: 'GNANIG Technologies',
+    startDate: '2023',
+    endDate: '2023',
+    location: 'India',
+    description:
+      'Designed and developed a Spring Boot backend application to manage insurance policies, clients, and claims via RESTful APIs.',
+    keyAchievements: [
+      'Designed and developed a Spring Boot backend application to manage insurance policies, clients, and claims via RESTful APIs.',
+      'Implemented robust CRUD operations and integrated MySQL with Spring Data JPA for efficient data storage and retrieval.',
+      'Utilized Swagger for comprehensive API documentation, enhancing usability and simplifying testing processes.',
+    ],
+    techStack: ['Spring Boot', 'Java', 'RESTful APIs', 'MySQL', 'Spring Data JPA', 'Swagger'],
+  },
+];
 
-export const INITIAL_HOBBIES: HobbyItem[] = [];
+export const INITIAL_HOBBIES: HobbyItem[] = [
+  {
+    id: 'hb-1',
+    title: 'Tech Innovation & Open Source',
+    icon: '🚀',
+    category: 'Tech & Gaming',
+    description: 'Exploring modern frameworks, system designs, and contributing to open-source.',
+    passionLevel: 'Active Passion',
+  },
+  {
+    id: 'hb-2',
+    title: 'Data Analytics & Modeling',
+    icon: '📊',
+    category: 'Intellectual',
+    description: 'Building analytical pipelines, statistical dashboards, and machine learning models.',
+    passionLevel: 'Active Passion',
+  },
+  {
+    id: 'hb-3',
+    title: 'Competitive Coding & Problem Solving',
+    icon: '⚡',
+    category: 'Intellectual',
+    description: 'Algorithmic problem solving, data structure optimization, and clean architecture.',
+    passionLevel: 'Active Passion',
+  },
+  {
+    id: 'hb-4',
+    title: 'Continuous Learning',
+    icon: '📚',
+    category: 'Lifestyle',
+    description: 'Reading technical publications, research papers, and software architecture deep dives.',
+    passionLevel: 'Active Passion',
+  },
+];
 
-export const INITIAL_CERTIFICATIONS: Array<{ id: string; name: string; issuer: string; year: string; link?: string }> = [];
+export const INITIAL_CERTIFICATIONS: Array<{ id: string; name: string; issuer: string; year: string; link?: string }> = [
+  { id: 'cert-1', name: 'Power BI', issuer: 'Simplilearn', year: '2024' },
+  { id: 'cert-2', name: 'Cisco CCNAv7 Networks', issuer: 'Cisco Networking Academy', year: '2023' },
+  { id: 'cert-3', name: 'AWS Machine Learning', issuer: 'Amazon Web Services', year: '2024' },
+  { id: 'cert-4', name: 'Data Analysis Using Python', issuer: 'IBM', year: '2023' },
+];
 
-export const INITIAL_LANGUAGES: Array<{ id: string; name: string; proficiency: string }> = [];
+export const INITIAL_LANGUAGES: Array<{ id: string; name: string; proficiency: string }> = [
+  { id: 'lang-1', name: 'English', proficiency: 'Professional' },
+  { id: 'lang-2', name: 'Hindi', proficiency: 'Native / Fluent' },
+  { id: 'lang-3', name: 'Odia', proficiency: 'Native' },
+];
 
-// Clean Base User Profile for any new user
+// Clean Base User Profile formatted according to verified resume
 export const INITIAL_PROFILE: UserProfile = {
-  name: '',
-  caption: '',
-  handle: '',
-  title: '',
-  bio: '',
-  location: '',
-  statusText: '',
-  statusEmoji: '✨',
+  name: 'GULSHAN KUMAR NAYAK',
+  caption: 'Information Technology Specialist & Software Engineer',
+  handle: '@gulshan',
+  title: 'Information Technology • Backend, Full Stack & AI Systems',
+  bio: 'Passionate and goal-driven Information Technology student with a strong academic foundation and hands-on experience in backend development, full-stack applications, Data Science and Analytics, and AI-integrated systems.',
+  location: 'Raipur, Chhattisgarh, India',
+  statusText: 'Open to opportunities',
+  statusEmoji: '💼',
   avatarUrl: STOCK_IMAGES.avatar,
   avatarEnabled: false,
   bannerType: 'gradient',
   bannerBg: 'linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 50%, #FDF4FF 100%)',
   staticCoverImage: STOCK_IMAGES.workspaceCover,
   coverImageEnabled: true,
-  contactEmail: '',
-  phone: '',
-  github: '',
-  linkedin: '',
+  contactEmail: 'gulnayak1206@gmail.com',
+  phone: '+91-7304838209',
+  github: 'https://github.com',
+  linkedin: 'https://linkedin.com',
   twitter: '',
-  website: '',
-  resumeAvailable: false,
-  services: [],
-  tools: [],
-  educationRecords: [],
-  jobExperiences: [],
-  hobbies: [],
-  certifications: [],
-  languages: [],
-  professionalSummary: '',
-  careerObjective: '',
+  website: 'https://github.com',
+  resumeAvailable: true,
+  services: ['Backend API Engineering', 'Full-Stack Web Development', 'Data Analytics & Power BI', 'AI & Computer Vision'],
+  tools: ['Java', 'Spring Boot', 'Python', 'React', 'Power BI', 'SQL', 'Postman', 'Git'],
+  educationRecords: INITIAL_EDUCATION_RECORDS,
+  jobExperiences: INITIAL_JOB_EXPERIENCES,
+  hobbies: INITIAL_HOBBIES,
+  certifications: INITIAL_CERTIFICATIONS,
+  languages: INITIAL_LANGUAGES,
+  professionalSummary:
+    'Passionate and goal-driven Information Technology student with a strong academic foundation and hands-on experience in backend development, full-stack applications, Data Science and Analytics, and AI-integrated systems. Skilled in a wide range of technologies including Java, Spring Boot, React, Python, Networking, Power BI, Generative AI, LLM, and APIs. Strong problem solving skills, leadership qualities, and commitment to continuous learning and development.',
+  careerObjective:
+    'Aspiring to contribute as a Software Engineer and Data Analyst, leveraging robust backend skills, AI integrations, and high-impact analytics.',
   availabilityStatus: 'Open to opportunities',
-  yearsOfExperience: '',
-  currentCompany: '',
-  currentDesignation: '',
+  yearsOfExperience: '1+ yrs',
+  currentCompany: 'NIT Raipur',
+  currentDesignation: 'M.Tech IT Scholar & Software Developer',
 };
 
 // Empty Clean State Collections (No fake/mock data for new accounts)
@@ -169,8 +257,104 @@ export const INITIAL_JOURNAL: JournalEntry[] = [];
 export const INITIAL_MEDIA: MediaItem[] = [];
 export const INITIAL_ACHIEVEMENTS: AchievementItem[] = [];
 export const INITIAL_TIMELINE: LifeMilestone[] = [];
-export const INITIAL_PROJECTS: PortfolioProject[] = [];
-export const INITIAL_SKILLS: SkillCategory[] = [];
+export const INITIAL_PROJECTS: PortfolioProject[] = [
+  {
+    id: 'proj-exam-dashboard',
+    title: 'My Exam Dashboard – Full Stack Application',
+    tagLine: 'Exam Management Platform with AI & Real-time Updates',
+    description:
+      'Developed a full-stack system with JWT-based authentication, complete CRUD operations for exams and categories, and responsive UI with dark/light mode. Integrated AI-powered ChatBot, real-time exam news, live countdown timers and smart recommendations.',
+    techStack: ['Next.js', 'React.js', 'Node.js', 'Tailwind CSS', 'JWT', 'RESTful APIs', 'Gemini API'],
+    category: 'Fullstack',
+    featured: true,
+  },
+  {
+    id: 'proj-data-analytics',
+    title: 'Cross-Functional Data Analytics Initiative',
+    tagLine: 'Enterprise BI Solutions & Executive Dashboards',
+    description:
+      'Integrated academic, research, and open-source data to create cross-domain analytics solutions using DAX calculations supported by robust data pipelines with SQL and Power BI tools. Developed dynamic dashboards and reports in Power BI to present insights and enable decision-making across multiple domains.',
+    techStack: ['Power BI', 'SQL', 'MS Excel', 'Microsoft Office Suite', 'DAX'],
+    category: 'Systems',
+    featured: true,
+  },
+  {
+    id: 'proj-pothole-lane',
+    title: 'Real-Time Pothole and Lane Detection System',
+    tagLine: 'Computer Vision & Deep Learning for Autonomous Driving',
+    description:
+      'Developed a computer vision system to enhance autonomous driving safety by detecting road potholes and lane markings in real time. Utilized Python, OpenCV, and PyTorch, implementing YOLOv8 and Torchvision for deep learning-based detection with 80% road damage detection accuracy.',
+    techStack: ['Python', 'OpenCV', 'PyTorch', 'YOLOv8', 'Torchvision'],
+    category: 'Systems',
+    featured: true,
+  },
+];
+
+export const INITIAL_SKILLS: SkillCategory[] = [
+  {
+    category: 'Programming Languages',
+    skills: [
+      { name: 'Java', level: 95, experience: 'Proficient', highlight: true },
+      { name: 'Python', level: 92, experience: 'Proficient', highlight: true },
+      { name: 'C', level: 85, experience: 'Core Language', highlight: false },
+      { name: 'C++', level: 88, experience: 'DSA & Systems', highlight: true },
+      { name: 'SQL', level: 90, experience: 'Queries & Schemas', highlight: true },
+      { name: 'JavaScript', level: 90, experience: 'Web & Node', highlight: true },
+      { name: 'HTML', level: 95, experience: 'Frontend', highlight: false },
+    ],
+  },
+  {
+    category: 'Tools and Technical Skills',
+    skills: [
+      { name: 'Spring Boot', level: 92, experience: 'Backend APIs', highlight: true },
+      { name: 'Git', level: 95, experience: 'Version Control', highlight: true },
+      { name: 'GitHub', level: 95, experience: 'Collaboration & CI', highlight: true },
+      { name: 'Postman', level: 90, experience: 'API Testing', highlight: false },
+      { name: 'Web Sockets', level: 85, experience: 'Realtime', highlight: false },
+      { name: 'Generative AI', level: 90, experience: 'AI Integrations', highlight: true },
+      { name: 'LLM', level: 88, experience: 'Prompt & SDKs', highlight: true },
+    ],
+  },
+  {
+    category: 'Computer Science Fundamentals',
+    skills: [
+      { name: 'Data Structures and Algorithms', level: 92, experience: 'Core DSA', highlight: true },
+      { name: 'OOP', level: 95, experience: 'Design Patterns', highlight: true },
+      { name: 'DBMS', level: 90, experience: 'Relational Design', highlight: true },
+      { name: 'Networking', level: 88, experience: 'Protocols & Routing', highlight: false },
+    ],
+  },
+  {
+    category: 'Data Visualization & BI',
+    skills: [
+      { name: 'Power BI', level: 95, experience: 'Calculations & Modeling', highlight: true },
+      { name: 'Dashboard Design', level: 92, experience: 'Executive BI', highlight: true },
+      { name: 'Data Engineering', level: 88, experience: 'Pipelines & ETL', highlight: false },
+      { name: 'Data Mining', level: 86, experience: 'Extraction', highlight: false },
+      { name: 'Interactive Visualizations', level: 90, experience: 'Analytics', highlight: true },
+    ],
+  },
+  {
+    category: 'Advanced MS Excel',
+    skills: [
+      { name: 'Pivot Tables', level: 92, experience: 'Data Summarization', highlight: true },
+      { name: 'Macros', level: 88, experience: 'VBA Automation', highlight: false },
+      { name: 'Lookups', level: 95, experience: 'VLOOKUP / XLOOKUP', highlight: true },
+      { name: 'Data Functions', level: 90, experience: 'Formulas & Auditing', highlight: false },
+    ],
+  },
+  {
+    category: 'Data Analysis Core Competencies',
+    skills: [
+      { name: 'Data Visualization & Analytics', level: 92, experience: 'High Impact', highlight: true },
+      { name: 'Compliance Tracking', level: 88, experience: 'Governance', highlight: false },
+      { name: 'Metrics Analysis', level: 90, experience: 'KPI Tracking', highlight: true },
+      { name: 'Data Collection & Integration', level: 88, experience: 'ETL Pipelines', highlight: false },
+      { name: 'Cross-functional Teamwork', level: 95, experience: 'Collaboration', highlight: true },
+      { name: 'Attention to Detail & Data Accuracy', level: 95, experience: 'Data Integrity', highlight: true },
+    ],
+  },
+];
 
 // Rich Curated Quotes Collection (Consistent across Quotes Section and Dashboard)
 export const INITIAL_QUOTES: QuoteItem[] = [
@@ -464,16 +648,151 @@ export const INITIAL_PHOTOS = [
   },
 ];
 
-export const INITIAL_RESUME: ResumeDocument = {
-  fileName: '',
-  fileSize: '',
-  uploadedAt: '',
-  summary: '',
-  experiences: [],
-  education: [],
-  skills: [],
-  fileDataUrl: undefined,
+export const DEFAULT_ATS_RESUME: ResumeDocument = {
+  fileName: 'Gulshan_Kumar_Nayak_Resume.pdf',
+  fileSize: '128 KB',
+  uploadedAt: 'Verified ATS Format',
+  summary:
+    'Passionate and goal-driven Information Technology student with a strong academic foundation and hands-on experience in backend development, full-stack applications, Data Science and Analytics, and AI-integrated systems. Skilled in a wide range of technologies including Java, Spring Boot, React, Python, Networking, Power BI, Generative AI, LLM, and APIs. Strong problem solving skills, leadership qualities, and commitment to continuous learning and development.',
+  contact: {
+    name: 'GULSHAN KUMAR NAYAK',
+    phone: '+91-7304838209',
+    email: 'gulnayak1206@gmail.com',
+    github: 'https://github.com',
+    linkedin: 'https://linkedin.com',
+    location: 'Raipur, Chhattisgarh, India',
+    portfolio: 'https://github.com',
+  },
+  skills: [
+    'Java', 'Spring Boot', 'Python', 'C', 'C++', 'SQL', 'JavaScript', 'HTML', 'React',
+    'Power BI', 'Git', 'GitHub', 'Postman', 'Web Sockets', 'Generative AI', 'LLM',
+    'Data Structures and Algorithms', 'OOP', 'DBMS', 'Networking', 'Advanced MS Excel'
+  ],
+  skillsByCategory: [
+    {
+      category: 'Programming Languages',
+      items: ['C', 'C++', 'HTML', 'JavaScript', 'Java', 'Python', 'SQL'],
+    },
+    {
+      category: 'Tools and Technical Skills',
+      items: ['Git', 'GitHub', 'Spring Boot', 'Postman', 'Web Sockets', 'Generative AI', 'LLM'],
+    },
+    {
+      category: 'Computer Science Fundamentals',
+      items: ['Data Structures and Algorithms', 'OOP', 'DBMS', 'Networking'],
+    },
+    {
+      category: 'Data Visualization & BI',
+      items: [
+        'Power BI (calculations, dashboard design, data engineering, data mining, interactive visualizations)',
+      ],
+    },
+    {
+      category: 'Advanced MS Excel',
+      items: ['Pivot Tables', 'Macros', 'Lookups', 'Data Functions'],
+    },
+    {
+      category: 'Data Analysis Core Competencies',
+      items: [
+        'Data Visualization & Analytics',
+        'Compliance Tracking',
+        'Metrics Analysis',
+        'Data Collection & Integration',
+        'Cross-functional Teamwork',
+        'Attention to Detail & Data Accuracy',
+      ],
+    },
+  ],
+  education: [
+    {
+      school: 'National Institute of Technology Raipur, Chhattisgarh',
+      degree: 'M.Tech in Information Technology',
+      year: '2024–2026',
+      score: '8.18 CGPA',
+      location: 'Raipur, Chhattisgarh',
+      specialization: 'Information Technology',
+      highlights: ['Advanced Distributed Systems, AI Architectures & Data Engineering'],
+    },
+    {
+      school: 'Veer Surendra Sai University of Technology Burla, Odisha',
+      degree: 'B.Tech in Information Technology',
+      year: '2020–2024',
+      score: '8.62 CGPA',
+      location: 'Burla, Odisha',
+      specialization: 'Information Technology',
+      highlights: ['Core IT Engineering, Algorithms, Database Management & Full-Stack Systems'],
+    },
+  ],
+  experiences: [
+    {
+      role: 'Trainee / Intern',
+      company: 'GNANIG Technologies',
+      period: '2023',
+      details:
+        'Designed and developed a Spring Boot backend application to manage insurance policies, clients, and claims via RESTful APIs.',
+      achievements: [
+        'Designed and developed a Spring Boot backend application to manage insurance policies, clients, and claims via RESTful APIs.',
+        'Implemented robust CRUD operations and integrated MySQL with Spring Data JPA for efficient data storage and retrieval.',
+        'Utilized Swagger for comprehensive API documentation, enhancing usability and simplifying testing processes.',
+      ],
+      techStack: ['Spring Boot', 'Java', 'RESTful APIs', 'MySQL', 'Spring Data JPA', 'Swagger'],
+    },
+  ],
+  projects: [
+    {
+      title: 'My Exam Dashboard – Full Stack Application',
+      subtitle: 'Exam Management Platform with AI & Real-time Updates',
+      period: '2025',
+      description:
+        'Developed a full-stack system with JWT-based authentication, complete CRUD operations for exams and categories, and responsive UI with dark/light mode. Integrated AI-powered ChatBot, real-time exam news, live countdown timers and smart recommendations for users.',
+      techStack: ['Next.js', 'React.js', 'Node.js', 'Tailwind CSS', 'JWT', 'RESTful APIs', 'Gemini API'],
+      points: [
+        'Developed a full-stack system with JWT-based authentication, complete CRUD operations for exams and categories, and responsive UI with dark/light mode.',
+        'Integrated AI-powered ChatBot, real-time exam news, live countdown timers and smart personalized recommendations.',
+        'Engineered responsive layouts and optimized REST endpoints with resilient client-side state handling.',
+      ],
+    },
+    {
+      title: 'Cross-Functional Data Analytics Initiative',
+      subtitle: 'Enterprise BI Solutions & Executive Dashboards',
+      period: '2025',
+      description:
+        'Integrated academic, research, and open-source data to create cross-domain analytics solutions using DAX calculations supported by robust data pipelines with SQL and Power BI tools.',
+      techStack: ['Power BI', 'SQL', 'MS Excel', 'Microsoft Office Suite', 'DAX'],
+      points: [
+        'Integrated academic, research, and open-source data to create cross-domain analytics solutions using DAX calculations supported by robust data pipelines with SQL and Power BI tools.',
+        'Developed dynamic dashboards and reports in Power BI to present insights and enable decision-making across multiple domains.',
+        'Authored clear project documentation in Word and PowerPoint, demonstrating adaptability to evolving requirements.',
+      ],
+    },
+    {
+      title: 'Real-Time Pothole and Lane Detection System',
+      subtitle: 'Computer Vision & Deep Learning for Autonomous Driving',
+      period: '2024',
+      description:
+        'Developed a computer vision system to enhance autonomous driving safety by detecting road potholes and lane markings in real time.',
+      techStack: ['Python', 'OpenCV', 'PyTorch', 'YOLOv8', 'Torchvision'],
+      points: [
+        'Developed a computer vision system to enhance autonomous driving safety by detecting road potholes and lane markings in real time.',
+        'Utilized Python, OpenCV, and PyTorch, implementing YOLOv8 and Torchvision for deep learning-based detection.',
+        'Achieved 80% accuracy in road damage detection on custom datasets, and integrated robust lane detection using OpenCV line detection and perspective transformation techniques.',
+      ],
+    },
+  ],
+  certifications: [
+    { name: 'Power BI', issuer: 'Simplilearn', year: '2024' },
+    { name: 'Cisco CCNAv7 Networks', issuer: 'Cisco Networking Academy', year: '2023' },
+    { name: 'AWS Machine Learning', issuer: 'Amazon Web Services', year: '2024' },
+    { name: 'Data Analysis Using Python', issuer: 'IBM', year: '2023' },
+  ],
+  additionalInfo: [
+    'Fast learner—comfortable mastering new technologies according to the project needs.',
+    'Excellent written and verbal communication skills.',
+    'Strong analytical thinking, problem solving, and cross-functional team collaboration.',
+  ],
 };
+
+export const INITIAL_RESUME: ResumeDocument = DEFAULT_ATS_RESUME;
 
 export const INITIAL_SECTIONS: DashboardSection[] = [];
 
@@ -635,37 +954,63 @@ export const Storage = {
   getTimeline: (): LifeMilestone[] => loadFromStorage(STORAGE_KEYS.TIMELINE, INITIAL_TIMELINE),
   setTimeline: (items: LifeMilestone[]) => saveToStorage(STORAGE_KEYS.TIMELINE, items),
 
-  getProjects: (): PortfolioProject[] => loadFromStorage(STORAGE_KEYS.PROJECTS, INITIAL_PROJECTS),
+  getProjects: (): PortfolioProject[] => {
+    const loaded = loadFromStorage(STORAGE_KEYS.PROJECTS, INITIAL_PROJECTS);
+    if (!loaded || !Array.isArray(loaded) || loaded.length === 0) {
+      return INITIAL_PROJECTS;
+    }
+    return loaded;
+  },
   setProjects: (items: PortfolioProject[]) => saveToStorage(STORAGE_KEYS.PROJECTS, items),
 
-  getSkills: (): SkillCategory[] => loadFromStorage(STORAGE_KEYS.SKILLS, INITIAL_SKILLS),
+  getSkills: (): SkillCategory[] => {
+    const loaded = loadFromStorage(STORAGE_KEYS.SKILLS, INITIAL_SKILLS);
+    if (!loaded || !Array.isArray(loaded) || loaded.length === 0) {
+      return INITIAL_SKILLS;
+    }
+    return loaded;
+  },
   setSkills: (items: SkillCategory[]) => saveToStorage(STORAGE_KEYS.SKILLS, items),
 
   getProfile: (): UserProfile => {
     const data = loadFromStorage(STORAGE_KEYS.PROFILE, INITIAL_PROFILE);
+    if (!data.name || !data.name.trim()) {
+      data.name = INITIAL_PROFILE.name;
+      data.caption = INITIAL_PROFILE.caption;
+      data.handle = INITIAL_PROFILE.handle;
+      data.title = INITIAL_PROFILE.title;
+      data.bio = INITIAL_PROFILE.bio;
+      data.location = INITIAL_PROFILE.location;
+      data.contactEmail = INITIAL_PROFILE.contactEmail;
+      data.phone = INITIAL_PROFILE.phone;
+      data.github = INITIAL_PROFILE.github;
+      data.linkedin = INITIAL_PROFILE.linkedin;
+      data.website = INITIAL_PROFILE.website;
+      data.professionalSummary = INITIAL_PROFILE.professionalSummary;
+    }
     if (!data.avatarUrl) {
       data.avatarUrl = STOCK_IMAGES.avatar;
     }
-    if (!data.educationRecords) {
-      data.educationRecords = [];
+    if (!data.educationRecords || data.educationRecords.length === 0) {
+      data.educationRecords = INITIAL_EDUCATION_RECORDS;
     }
-    if (!data.jobExperiences) {
-      data.jobExperiences = [];
+    if (!data.jobExperiences || data.jobExperiences.length === 0) {
+      data.jobExperiences = INITIAL_JOB_EXPERIENCES;
     }
-    if (!data.hobbies) {
-      data.hobbies = [];
+    if (!data.hobbies || data.hobbies.length === 0) {
+      data.hobbies = INITIAL_HOBBIES;
     }
-    if (!data.certifications) {
-      data.certifications = [];
+    if (!data.certifications || data.certifications.length === 0) {
+      data.certifications = INITIAL_CERTIFICATIONS;
     }
-    if (!data.languages) {
-      data.languages = [];
+    if (!data.languages || data.languages.length === 0) {
+      data.languages = INITIAL_LANGUAGES;
     }
-    if (!data.services) {
-      data.services = [];
+    if (!data.services || data.services.length === 0) {
+      data.services = INITIAL_PROFILE.services;
     }
-    if (!data.tools) {
-      data.tools = [];
+    if (!data.tools || data.tools.length === 0) {
+      data.tools = INITIAL_PROFILE.tools;
     }
     return data;
   },
@@ -729,7 +1074,20 @@ export const Storage = {
   setPhotos: (photos: Array<{ id: string; url: string; title: string; subtitle?: string; tag?: string }>) =>
     saveToStorage(STORAGE_KEYS.PHOTOS, photos),
 
-  getResume: (): ResumeDocument => loadFromStorage(STORAGE_KEYS.RESUME, INITIAL_RESUME),
+  getResume: (): ResumeDocument => {
+    const loaded = loadFromStorage<ResumeDocument>(STORAGE_KEYS.RESUME, INITIAL_RESUME);
+    if (!loaded || !loaded.summary || !loaded.summary.trim() || !loaded.skills || loaded.skills.length === 0) {
+      saveToStorage(STORAGE_KEYS.RESUME, DEFAULT_ATS_RESUME);
+      return DEFAULT_ATS_RESUME;
+    }
+    // ensure all sections are populated
+    if (!loaded.contact) loaded.contact = DEFAULT_ATS_RESUME.contact;
+    if (!loaded.projects || loaded.projects.length === 0) loaded.projects = DEFAULT_ATS_RESUME.projects;
+    if (!loaded.certifications || loaded.certifications.length === 0) loaded.certifications = DEFAULT_ATS_RESUME.certifications;
+    if (!loaded.additionalInfo || loaded.additionalInfo.length === 0) loaded.additionalInfo = DEFAULT_ATS_RESUME.additionalInfo;
+    if (!loaded.skillsByCategory || loaded.skillsByCategory.length === 0) loaded.skillsByCategory = DEFAULT_ATS_RESUME.skillsByCategory;
+    return loaded;
+  },
   setResume: (resume: ResumeDocument) => saveToStorage(STORAGE_KEYS.RESUME, resume),
 
   getQuotes: (): QuoteItem[] => {

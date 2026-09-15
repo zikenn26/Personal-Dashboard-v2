@@ -69,72 +69,108 @@ export const PortfolioResumeSheet: React.FC<PortfolioResumeSheetProps> = ({
   const handleCopyMarkdown = () => {
     Sound.click(soundEnabled);
 
-    let md = `# ${profile.name || 'Professional Portfolio'}\n`;
-    if (profile.title) md += `**${profile.title}**\n\n`;
-    md += `📍 Location: ${profile.location || 'India'} | ✉️ Email: ${profile.contactEmail || ''} | 📞 Phone: ${profile.phone || ''}\n`;
-    md += `🌐 Website: ${profile.website || ''} | 💼 LinkedIn: ${profile.linkedin || ''} | 🐙 GitHub: ${profile.github || ''}\n\n`;
+    const name = profile.name || resume.contact?.name || 'GULSHAN KUMAR NAYAK';
+    const phone = profile.phone || resume.contact?.phone || '+91-7304838209';
+    const email = profile.contactEmail || resume.contact?.email || 'gulnayak1206@gmail.com';
+    const github = profile.github || resume.contact?.github || 'https://github.com';
+    const linkedin = profile.linkedin || resume.contact?.linkedin || 'https://linkedin.com';
+    const summary = profile.professionalSummary || profile.bio || resume.summary || '';
 
-    if (profile.professionalSummary || profile.bio) {
-      md += `## Professional Summary\n${profile.professionalSummary || profile.bio}\n\n`;
+    let md = `# ${name}\n\n`;
+    md += `Phone: ${phone} | Email: ${email} | GitHub: ${github} | LinkedIn: ${linkedin}\n\n`;
+
+    if (summary) {
+      md += `## SUMMARY\n${summary}\n\n`;
     }
 
+    // Skills
+    md += `## SKILLS\n`;
+    if (resume.skillsByCategory && resume.skillsByCategory.length > 0) {
+      resume.skillsByCategory.forEach((sc) => {
+        md += `- **${sc.category}**: ${sc.items.join(', ')}\n`;
+      });
+    } else if (skills.length > 0) {
+      skills.forEach((sc) => {
+        md += `- **${sc.category}**: ${sc.skills.map((s) => s.name).join(', ')}\n`;
+      });
+    }
+    md += `\n`;
+
+    // Education
+    if (educationRecords.length > 0) {
+      md += `## EDUCATION\n`;
+      educationRecords.forEach((e) => {
+        md += `### ${e.institution}\n`;
+        md += `${e.degree} | CGPA/Score: ${e.score} | ${e.year}\n\n`;
+      });
+    }
+
+    // Experience
     if (jobExperiences.length > 0) {
-      md += `## Work Experience\n`;
+      md += `## EXPERIENCE\n`;
       jobExperiences.forEach((j) => {
-        md += `### ${j.role} – ${j.company} (${j.startDate} – ${j.endDate || 'Present'})\n`;
-        if (j.location) md += `*${j.location}* | *${j.employmentType || 'Full-time'}*\n\n`;
-        if (j.description) md += `${j.description}\n\n`;
+        md += `### ${j.role}, ${j.company} (${j.startDate}${j.endDate ? ` – ${j.endDate}` : ''})\n`;
         if (j.keyAchievements && j.keyAchievements.length > 0) {
           j.keyAchievements.forEach((ach) => {
             md += `- ${ach}\n`;
           });
-          md += `\n`;
+        } else if (j.description) {
+          md += `- ${j.description}\n`;
         }
         if (j.techStack && j.techStack.length > 0) {
-          md += `*Tech Stack:* ${j.techStack.join(', ')}\n\n`;
+          md += `*Tech Stack:* ${j.techStack.join(', ')}\n`;
         }
+        md += `\n`;
       });
     }
 
-    if (educationRecords.length > 0) {
-      md += `## Education & Academics\n`;
-      educationRecords.forEach((e) => {
-        md += `### ${e.degree} – ${e.institution}\n`;
-        md += `*Tier:* ${e.levelTitle || e.level} | *Year:* ${e.year} | *Score:* **${e.score}**\n`;
-        if (e.boardOrUniversity) md += `*Board/University:* ${e.boardOrUniversity}\n`;
-        if (e.specialization) md += `*Specialization:* ${e.specialization}\n`;
-        if (e.highlights && e.highlights.length > 0) {
-          e.highlights.forEach((h) => {
-            md += `- ${h}\n`;
+    // Projects
+    const resumeProjects = resume.projects || [];
+    const displayProjects = resumeProjects.length > 0 ? resumeProjects : projects.map(p => ({
+      title: p.title,
+      subtitle: p.tagLine,
+      period: '2024–2025',
+      description: p.description,
+      techStack: p.techStack || p.tech,
+      points: [p.description],
+    }));
+
+    if (displayProjects.length > 0) {
+      md += `## PROJECTS\n`;
+      displayProjects.forEach((p) => {
+        md += `### ${p.title} ${p.period ? `(${p.period})` : ''}\n`;
+        if (p.techStack && p.techStack.length > 0) {
+          md += `*Tech Stack:* ${p.techStack.join(', ')}\n`;
+        }
+        if (p.points && p.points.length > 0) {
+          p.points.forEach((pt) => {
+            md += `- ${pt}\n`;
           });
+        } else if (p.description) {
+          md += `- ${p.description}\n`;
         }
         md += `\n`;
       });
     }
 
-    if (skills.length > 0) {
-      md += `## Technical Skills\n`;
-      skills.forEach((sc) => {
-        md += `**${sc.category}:** ${sc.skills.map((s) => s.name).join(', ')}\n\n`;
+    // Certifications
+    const certs = resume.certifications || profile.certifications || [];
+    if (certs.length > 0) {
+      md += `## CERTIFICATIONS\n`;
+      certs.forEach((c) => {
+        const cName = typeof c === 'string' ? c : c.name;
+        const cIssuer = typeof c === 'object' && c.issuer ? ` – ${c.issuer}` : '';
+        md += `- ${cName}${cIssuer}\n`;
       });
+      md += `\n`;
     }
 
-    if (projects.length > 0) {
-      md += `## Key Projects\n`;
-      projects.forEach((p) => {
-        md += `### ${p.title}\n${p.description}\n`;
-        const techList = p.techStack || p.tech;
-        if (techList && techList.length > 0) md += `*Tech:* ${techList.join(', ')}\n`;
-        const live = p.liveUrl || p.link;
-        if (live) md += `*Demo:* ${live}\n`;
-        md += `\n`;
-      });
-    }
-
-    if (hobbies.length > 0) {
-      md += `## Hobbies & Interests\n`;
-      hobbies.forEach((h) => {
-        md += `- **${h.title}** (${h.category}): ${h.description}\n`;
+    // Additional Info
+    const addInfo = resume.additionalInfo || [];
+    if (addInfo.length > 0) {
+      md += `## ADDITIONAL INFORMATION\n`;
+      addInfo.forEach((info) => {
+        md += `- ${info}\n`;
       });
       md += `\n`;
     }
@@ -241,142 +277,176 @@ export const PortfolioResumeSheet: React.FC<PortfolioResumeSheetProps> = ({
       {/* Formatted Printable Resume Paper */}
       <div
         id="printable-resume-sheet"
-        className="max-w-4xl mx-auto p-8 sm:p-12 rounded-3xl bg-white dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#334155] shadow-xl space-y-8 print:border-none print:shadow-none print:p-0 print:m-0"
+        className="max-w-4xl mx-auto p-8 sm:p-12 rounded-3xl bg-white dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#334155] shadow-xl space-y-6 print:border-none print:shadow-none print:p-0 print:m-0 font-sans"
       >
-        {/* Resume Header */}
-        <div className="border-b-2 border-[#111827] dark:border-white pb-6 space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
-            <div>
-              <h1 className="workspace-heading font-black text-[#111827] dark:text-white tracking-tight uppercase">
-                {profile.name || 'Your Name'}
-              </h1>
-              <p className="text-sm sm:text-base font-bold text-[#6366F1] dark:text-[#818CF8] mt-0.5">
-                {profile.title || 'Professional Title'}
-              </p>
-            </div>
+        {/* Resume Header - Centered ATS Format */}
+        <div className="text-center pb-4 border-b-2 border-[#111827] dark:border-white space-y-2">
+          <h1 className="text-2xl sm:text-3xl font-black text-[#111827] dark:text-white tracking-wider uppercase">
+            {profile.name || resume.contact?.name || 'GULSHAN KUMAR NAYAK'}
+          </h1>
 
-            {profile.availabilityStatus && (
-              <span className="text-xs font-bold px-3 py-1 rounded-full bg-[#EEF2FF] dark:bg-[#312E81] text-[#6366F1] dark:text-[#A5B4FC] self-start sm:self-auto">
-                {profile.availabilityStatus}
-              </span>
-            )}
-          </div>
-
-          {/* Contact Details Strip */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-[#4B5563] dark:text-[#9CA3AF] font-medium pt-1">
-            {profile.location && (
-              <span className="flex items-center gap-1">
-                <MapPin className="w-3.5 h-3.5 text-[#6366F1]" />
-                <span>{profile.location}</span>
-              </span>
-            )}
-            {profile.contactEmail && (
-              <a
-                href={`mailto:${profile.contactEmail}`}
-                className="flex items-center gap-1 hover:text-[#6366F1] transition-colors"
-              >
-                <Mail className="w-3.5 h-3.5 text-[#6366F1]" />
-                <span>{profile.contactEmail}</span>
+          {/* Contact Strip */}
+          <div className="flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-xs text-[#374151] dark:text-[#CBD5E1] font-medium">
+            <span>
+              <strong className="text-[#111827] dark:text-white">Phone:</strong>{' '}
+              <a href={`tel:${profile.phone || resume.contact?.phone || '+91-7304838209'}`} className="hover:text-[#6366F1]">
+                {profile.phone || resume.contact?.phone || '+91-7304838209'}
               </a>
-            )}
-            {profile.phone && (
-              <a
-                href={`tel:${profile.phone}`}
-                className="flex items-center gap-1 hover:text-[#6366F1] transition-colors"
-              >
-                <Phone className="w-3.5 h-3.5 text-[#6366F1]" />
-                <span>{profile.phone}</span>
+            </span>
+            <span className="text-[#9CA3AF]">•</span>
+            <span>
+              <strong className="text-[#111827] dark:text-white">Email:</strong>{' '}
+              <a href={`mailto:${profile.contactEmail || resume.contact?.email || 'gulnayak1206@gmail.com'}`} className="hover:text-[#6366F1]">
+                {profile.contactEmail || resume.contact?.email || 'gulnayak1206@gmail.com'}
               </a>
-            )}
-            {profile.website && (
+            </span>
+            <span className="text-[#9CA3AF]">•</span>
+            <span>
+              <strong className="text-[#111827] dark:text-white">GitHub:</strong>{' '}
               <a
-                href={profile.website}
+                href={profile.github || resume.contact?.github || 'https://github.com'}
                 target="_blank"
                 rel="noreferrer"
-                className="flex items-center gap-1 hover:text-[#6366F1] transition-colors"
+                className="text-[#6366F1] dark:text-[#818CF8] hover:underline"
               >
-                <Globe className="w-3.5 h-3.5 text-[#6366F1]" />
-                <span>{profile.website.replace(/^https?:\/\//, '')}</span>
+                {profile.github || resume.contact?.github || 'https://github.com'}
               </a>
-            )}
-            {profile.linkedin && (
+            </span>
+            <span className="text-[#9CA3AF]">•</span>
+            <span>
+              <strong className="text-[#111827] dark:text-white">LinkedIn:</strong>{' '}
               <a
-                href={profile.linkedin.startsWith('http') ? profile.linkedin : `https://${profile.linkedin}`}
+                href={profile.linkedin || resume.contact?.linkedin || 'https://linkedin.com'}
                 target="_blank"
                 rel="noreferrer"
-                className="flex items-center gap-1 hover:text-[#6366F1] transition-colors"
+                className="text-[#6366F1] dark:text-[#818CF8] hover:underline"
               >
-                <Linkedin className="w-3.5 h-3.5 text-[#6366F1]" />
-                <span>LinkedIn</span>
+                {profile.linkedin || resume.contact?.linkedin || 'https://linkedin.com'}
               </a>
-            )}
-            {profile.github && (
-              <a
-                href={profile.github.startsWith('http') ? profile.github : `https://${profile.github}`}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1 hover:text-[#6366F1] transition-colors"
-              >
-                <Github className="w-3.5 h-3.5 text-[#6366F1]" />
-                <span>GitHub</span>
-              </a>
+            </span>
+            {(profile.location || resume.contact?.location) && (
+              <>
+                <span className="text-[#9CA3AF]">•</span>
+                <span>{profile.location || resume.contact?.location}</span>
+              </>
             )}
           </div>
         </div>
 
-        {/* 1. Professional Summary */}
-        {(profile.professionalSummary || profile.bio) && (
-          <div className="space-y-2">
-            <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2 pb-1 border-b border-[#E5E7EB] dark:border-[#334155]">
-              <Sparkles className="w-3.5 h-3.5 text-[#6366F1]" />
-              <span>Professional Summary</span>
-            </h2>
-            <p className="text-xs sm:text-sm text-[#374151] dark:text-[#D1D5DB] leading-relaxed">
-              {profile.professionalSummary || profile.bio}
-            </p>
+        {/* 1. SUMMARY */}
+        <div className="space-y-1.5">
+          <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white pb-1 border-b border-[#E5E7EB] dark:border-[#334155] flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-[#6366F1]" />
+            <span>SUMMARY</span>
+          </h2>
+          <p className="text-xs text-[#374151] dark:text-[#D1D5DB] leading-relaxed text-justify">
+            {profile.professionalSummary || profile.bio || resume.summary ||
+              'Passionate and goal-driven Information Technology student with a strong academic foundation and hands-on experience in backend development, full-stack applications, Data Science and Analytics, and AI-integrated systems. Skilled in a wide range of technologies including Java, Spring Boot, React, Python, Networking, Power BI, Generative AI, LLM, and APIs. Strong problem solving skills, leadership qualities, and commitment to continuous learning and development.'}
+          </p>
+        </div>
+
+        {/* 2. SKILLS */}
+        <div className="space-y-2">
+          <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white pb-1 border-b border-[#E5E7EB] dark:border-[#334155] flex items-center gap-1.5">
+            <Code2 className="w-3.5 h-3.5 text-[#6366F1]" />
+            <span>SKILLS</span>
+          </h2>
+
+          <div className="space-y-1.5 text-xs text-[#374151] dark:text-[#D1D5DB]">
+            {resume.skillsByCategory && resume.skillsByCategory.length > 0 ? (
+              resume.skillsByCategory.map((cat, idx) => (
+                <div key={idx} className="flex flex-col sm:flex-row sm:items-baseline gap-1">
+                  <span className="font-bold text-[#111827] dark:text-white sm:w-56 shrink-0">
+                    {cat.category}:
+                  </span>
+                  <span className="leading-relaxed">{cat.items.join(', ')}</span>
+                </div>
+              ))
+            ) : skills.length > 0 ? (
+              skills.map((cat, idx) => (
+                <div key={idx} className="flex flex-col sm:flex-row sm:items-baseline gap-1">
+                  <span className="font-bold text-[#111827] dark:text-white sm:w-56 shrink-0">
+                    {cat.category}:
+                  </span>
+                  <span className="leading-relaxed">{cat.skills.map((s) => s.name).join(', ')}</span>
+                </div>
+              ))
+            ) : (
+              <p className="text-xs text-[#6B7280]">No skills loaded</p>
+            )}
           </div>
-        )}
+        </div>
 
-        {/* 2. Professional Experience & Jobs */}
+        {/* 3. EDUCATION */}
+        <div className="space-y-3">
+          <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white pb-1 border-b border-[#E5E7EB] dark:border-[#334155] flex items-center gap-1.5">
+            <GraduationCap className="w-3.5 h-3.5 text-[#6366F1]" />
+            <span>EDUCATION</span>
+          </h2>
+
+          <div className="space-y-2.5">
+            {educationRecords.map((edu) => (
+              <div key={edu.id} className="space-y-0.5">
+                <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1">
+                  <span className="text-xs font-bold text-[#111827] dark:text-white">
+                    {edu.institution}
+                  </span>
+                  <span className="text-[11px] font-mono text-[#6B7280] dark:text-[#9CA3AF] shrink-0">
+                    {edu.year}
+                  </span>
+                </div>
+                <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1 text-xs text-[#4B5563] dark:text-[#CBD5E1]">
+                  <span>
+                    {edu.degree}
+                    {edu.specialization && <span> – {edu.specialization}</span>}
+                  </span>
+                  <span className="font-bold text-[#111827] dark:text-white">
+                    CGPA / Score: {edu.score}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 4. EXPERIENCE */}
         {jobExperiences.length > 0 && (
-          <div className="space-y-4">
-            <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2 pb-1 border-b border-[#E5E7EB] dark:border-[#334155]">
+          <div className="space-y-3">
+            <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white pb-1 border-b border-[#E5E7EB] dark:border-[#334155] flex items-center gap-1.5">
               <Briefcase className="w-3.5 h-3.5 text-[#6366F1]" />
-              <span>Professional Experience</span>
+              <span>EXPERIENCE</span>
             </h2>
 
-            <div className="space-y-4">
+            <div className="space-y-3">
               {jobExperiences.map((job) => (
-                <div key={job.id} className="space-y-1.5">
+                <div key={job.id} className="space-y-1">
                   <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1">
-                    <h3 className="text-sm font-bold text-[#111827] dark:text-white">
+                    <div className="text-xs font-bold text-[#111827] dark:text-white">
                       <span>{job.role}</span>
                       <span className="text-[#6366F1] dark:text-[#818CF8]"> • {job.company}</span>
-                    </h3>
-                    <span className="text-xs text-[#6B7280] dark:text-[#9CA3AF] font-mono shrink-0">
-                      {job.startDate} – {job.endDate || 'Present'} {job.location ? `| ${job.location}` : ''}
+                    </div>
+                    <span className="text-[11px] font-mono text-[#6B7280] dark:text-[#9CA3AF] shrink-0">
+                      {job.startDate} – {job.endDate || 'Present'}
                     </span>
                   </div>
 
-                  {job.description && (
-                    <p className="text-xs text-[#4B5563] dark:text-[#D1D5DB] leading-relaxed">
-                      {job.description}
-                    </p>
-                  )}
-
-                  {job.keyAchievements && job.keyAchievements.length > 0 && (
-                    <ul className="list-disc list-inside space-y-1 text-xs text-[#374151] dark:text-[#D1D5DB] pt-1">
+                  {job.keyAchievements && job.keyAchievements.length > 0 ? (
+                    <ul className="list-disc list-inside space-y-1 text-xs text-[#374151] dark:text-[#D1D5DB]">
                       {job.keyAchievements.map((ach, idx) => (
                         <li key={idx} className="leading-relaxed">
                           <span className="-ml-1">{ach}</span>
                         </li>
                       ))}
                     </ul>
-                  )}
+                  ) : job.description ? (
+                    <p className="text-xs text-[#4B5563] dark:text-[#D1D5DB] leading-relaxed">
+                      {job.description}
+                    </p>
+                  ) : null}
 
                   {job.techStack && job.techStack.length > 0 && (
-                    <p className="text-[11px] text-[#6B7280] dark:text-[#9CA3AF] pt-1">
-                      <span className="font-bold text-[#374151] dark:text-[#CBD5E1]">Technologies:</span>{' '}
+                    <p className="text-[11px] text-[#6B7280] dark:text-[#9CA3AF] pt-0.5">
+                      <strong className="text-[#374151] dark:text-[#CBD5E1]">Technologies:</strong>{' '}
                       {job.techStack.join(', ')}
                     </p>
                   )}
@@ -386,131 +456,142 @@ export const PortfolioResumeSheet: React.FC<PortfolioResumeSheetProps> = ({
           </div>
         )}
 
-        {/* 3. Education & Schooling (Matriculation, Intermediate, Graduation, Postgraduation) */}
-        {educationRecords.length > 0 && (
-          <div className="space-y-4">
-            <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2 pb-1 border-b border-[#E5E7EB] dark:border-[#334155]">
-              <GraduationCap className="w-3.5 h-3.5 text-[#6366F1]" />
-              <span>Education &amp; Academic Qualifications</span>
-            </h2>
+        {/* 5. PROJECTS */}
+        <div className="space-y-3">
+          <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white pb-1 border-b border-[#E5E7EB] dark:border-[#334155] flex items-center gap-1.5">
+            <Award className="w-3.5 h-3.5 text-[#6366F1]" />
+            <span>PROJECTS</span>
+          </h2>
 
-            <div className="space-y-3.5">
-              {educationRecords.map((edu) => (
-                <div key={edu.id} className="space-y-1">
+          <div className="space-y-3">
+            {resume.projects && resume.projects.length > 0 ? (
+              resume.projects.map((proj, idx) => (
+                <div key={idx} className="space-y-1">
                   <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-bold text-[#111827] dark:text-white">
-                        {edu.degree}
-                      </span>
-                      <span className="text-xs text-[#6366F1] font-semibold">
-                        ({edu.levelTitle || edu.level})
-                      </span>
+                    <div className="text-xs font-bold text-[#111827] dark:text-white">
+                      <span>{proj.title}</span>
+                      {proj.subtitle && (
+                        <span className="text-[#6B7280] dark:text-[#9CA3AF] font-normal">
+                          {' '}
+                          – {proj.subtitle}
+                        </span>
+                      )}
                     </div>
-
-                    <div className="flex items-center gap-2 text-xs font-mono shrink-0">
-                      <span className="px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-200 dark:border-emerald-800">
-                        Score: {edu.score}
+                    {proj.period && (
+                      <span className="text-[11px] font-mono text-[#6B7280] dark:text-[#9CA3AF] shrink-0">
+                        {proj.period}
                       </span>
-                      <span className="text-[#6B7280] dark:text-[#9CA3AF]">{edu.year}</span>
-                    </div>
+                    )}
                   </div>
 
-                  <p className="text-xs font-medium text-[#4B5563] dark:text-[#9CA3AF]">
-                    <span className="text-[#111827] dark:text-white font-semibold">{edu.institution}</span>
-                    {edu.boardOrUniversity && <span> • {edu.boardOrUniversity}</span>}
-                    {edu.location && <span> • {edu.location}</span>}
-                    {edu.specialization && <span> • Specialization: {edu.specialization}</span>}
-                  </p>
+                  {proj.techStack && proj.techStack.length > 0 && (
+                    <p className="text-[11px] text-[#6366F1] dark:text-[#818CF8] font-medium">
+                      <strong className="text-[#374151] dark:text-[#CBD5E1]">Tech Stack:</strong>{' '}
+                      {proj.techStack.join(', ')}
+                    </p>
+                  )}
 
-                  {edu.highlights && edu.highlights.length > 0 && (
-                    <ul className="list-disc list-inside space-y-0.5 text-xs text-[#4B5563] dark:text-[#D1D5DB] pt-0.5">
-                      {edu.highlights.map((h, i) => (
-                        <li key={i}>
-                          <span className="-ml-1">{h}</span>
+                  {proj.points && proj.points.length > 0 ? (
+                    <ul className="list-disc list-inside space-y-0.5 text-xs text-[#374151] dark:text-[#D1D5DB]">
+                      {proj.points.map((pt, pIdx) => (
+                        <li key={pIdx} className="leading-relaxed">
+                          <span className="-ml-1">{pt}</span>
                         </li>
                       ))}
                     </ul>
-                  )}
+                  ) : proj.description ? (
+                    <p className="text-xs text-[#374151] dark:text-[#D1D5DB] leading-relaxed">
+                      {proj.description}
+                    </p>
+                  ) : null}
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 4. Skills Matrix */}
-        {skills.length > 0 && (
-          <div className="space-y-3">
-            <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2 pb-1 border-b border-[#E5E7EB] dark:border-[#334155]">
-              <Code2 className="w-3.5 h-3.5 text-[#6366F1]" />
-              <span>Technical &amp; Professional Skills</span>
-            </h2>
-
-            <div className="space-y-2">
-              {skills.map((sc, idx) => (
-                <div key={idx} className="text-xs flex flex-col sm:flex-row sm:items-baseline gap-1">
-                  <span className="font-bold text-[#111827] dark:text-white sm:w-36 shrink-0">
-                    {sc.category}:
-                  </span>
-                  <span className="text-[#4B5563] dark:text-[#D1D5DB] leading-relaxed">
-                    {sc.skills.map((s) => `${s.name} (${s.experience || 'Proficient'})`).join(' • ')}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 5. Key Featured Projects */}
-        {projects.length > 0 && (
-          <div className="space-y-3">
-            <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2 pb-1 border-b border-[#E5E7EB] dark:border-[#334155]">
-              <Sparkles className="w-3.5 h-3.5 text-[#6366F1]" />
-              <span>Key Projects &amp; Software</span>
-            </h2>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {projects.slice(0, 4).map((p) => {
-                const live = p.liveUrl || p.link;
-                const techList述 = p.techStack || p.tech;
-                return (
-                  <div key={p.id} className="p-3 rounded-xl bg-[#F8FAFC] dark:bg-[#1E293B]/70 border border-[#E2E8F0] dark:border-[#334155] space-y-1">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-xs font-bold text-[#111827] dark:text-white">
-                        {p.title}
-                      </h3>
-                      {live && (
-                        <a
-                          href={live}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-[10px] text-[#6366F1] font-semibold flex items-center gap-0.5 hover:underline"
-                        >
-                          <span>Demo</span>
-                          <ExternalLink className="w-2.5 h-2.5" />
-                        </a>
+              ))
+            ) : projects.length > 0 ? (
+              projects.map((p) => (
+                <div key={p.id} className="space-y-1">
+                  <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1">
+                    <div className="text-xs font-bold text-[#111827] dark:text-white">
+                      <span>{p.title}</span>
+                      {p.tagLine && (
+                        <span className="text-[#6B7280] dark:text-[#9CA3AF] font-normal">
+                          {' '}
+                          – {p.tagLine}
+                        </span>
                       )}
                     </div>
-                    <p className="text-[11px] text-[#4B5563] dark:text-[#9CA3AF] line-clamp-2 leading-relaxed">
-                      {p.description}
-                    </p>
-                    {techList述 && techList述.length > 0 && (
-                      <p className="text-[10px] font-mono text-[#6366F1] dark:text-[#818CF8]">
-                        {techList述.join(', ')}
-                      </p>
-                    )}
                   </div>
+
+                  {p.techStack && p.techStack.length > 0 && (
+                    <p className="text-[11px] text-[#6366F1] dark:text-[#818CF8] font-medium">
+                      <strong className="text-[#374151] dark:text-[#CBD5E1]">Tech Stack:</strong>{' '}
+                      {p.techStack.join(', ')}
+                    </p>
+                  )}
+
+                  <p className="text-xs text-[#374151] dark:text-[#D1D5DB] leading-relaxed">
+                    {p.description}
+                  </p>
+                </div>
+              ))
+            ) : null}
+          </div>
+        </div>
+
+        {/* 6. CERTIFICATIONS */}
+        {((resume.certifications && resume.certifications.length > 0) ||
+          (profile.certifications && profile.certifications.length > 0)) && (
+          <div className="space-y-2">
+            <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white pb-1 border-b border-[#E5E7EB] dark:border-[#334155] flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-[#6366F1]" />
+              <span>CERTIFICATIONS</span>
+            </h2>
+
+            <ul className="list-disc list-inside space-y-1 text-xs text-[#374151] dark:text-[#D1D5DB]">
+              {(resume.certifications && resume.certifications.length > 0
+                ? resume.certifications
+                : profile.certifications || []
+              ).map((cert, idx) => {
+                const cName = typeof cert === 'string' ? cert : cert.name;
+                const cIssuer = typeof cert === 'object' && cert.issuer ? ` – ${cert.issuer}` : '';
+                const cYear = typeof cert === 'object' && cert.year ? ` (${cert.year})` : '';
+                return (
+                  <li key={idx} className="leading-relaxed">
+                    <span className="-ml-1">
+                      <strong className="text-[#111827] dark:text-white">{cName}</strong>
+                      {cIssuer}
+                      {cYear}
+                    </span>
+                  </li>
                 );
               })}
-            </div>
+            </ul>
           </div>
         )}
 
-        {/* 6. Hobbies & Extracurricular Pursuits */}
-        {hobbies.length > 0 && (
+        {/* 7. ADDITIONAL INFORMATION */}
+        {resume.additionalInfo && resume.additionalInfo.length > 0 && (
           <div className="space-y-2">
-            <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2 pb-1 border-b border-[#E5E7EB] dark:border-[#334155]">
+            <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white pb-1 border-b border-[#E5E7EB] dark:border-[#334155] flex items-center gap-1.5">
+              <Check className="w-3.5 h-3.5 text-emerald-500" />
+              <span>ADDITIONAL INFORMATION</span>
+            </h2>
+
+            <ul className="list-disc list-inside space-y-1 text-xs text-[#374151] dark:text-[#D1D5DB]">
+              {resume.additionalInfo.map((info, idx) => (
+                <li key={idx} className="leading-relaxed">
+                  <span className="-ml-1">{info}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* 8. Hobbies & Extracurricular Pursuits (Display if present) */}
+        {hobbies.length > 0 && (
+          <div className="space-y-2 pt-1 print:hidden">
+            <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-1.5 pb-1 border-b border-[#E5E7EB] dark:border-[#334155]">
               <Heart className="w-3.5 h-3.5 text-rose-500" />
-              <span>Hobbies &amp; Personal Interests</span>
+              <span>Personal Interests &amp; Hobbies</span>
             </h2>
 
             <div className="flex flex-wrap items-center gap-2 pt-1">

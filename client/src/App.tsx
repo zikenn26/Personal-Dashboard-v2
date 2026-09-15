@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence, type Variants } from 'motion/react';
 import { Storage, STORAGE_KEYS, getScopedKey } from './utils/storage';
 import { Sound } from './utils/audio';
 import { triggerConfetti } from './utils/confetti';
@@ -131,7 +132,34 @@ import {
   Trash2,
 } from 'lucide-react';
 
+// Framer Motion Page Transition Variants for Main Content View Area
+const pageTransitionVariants: Variants = {
+  initial: {
+    opacity: 0,
+    y: 10,
+  },
+  animate: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.22,
+      ease: [0.16, 1, 0.3, 1] as const, // fluid easeOut
+    },
+  },
+  exit: {
+    opacity: 0,
+    y: -8,
+    transition: {
+      duration: 0.16,
+      ease: 'easeIn',
+    },
+  },
+};
+
 export default function App() {
+  // Reference to main scrollable container to reset scroll position on page transition
+  const mainScrollRef = useRef<HTMLElement>(null);
+
   // Current logged in user (initialized first to ensure user-scoped storage keys are ready)
   const authRequest = new URLSearchParams(window.location.search).get('auth');
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => Auth.getCurrentUser());
@@ -165,6 +193,13 @@ export default function App() {
   // 2. Navigation & Sidebar State
   const [activeView, setActiveView] = useState<MainNavView>('home');
   const [mediaInitialTab, setMediaInitialTab] = useState<string>('all');
+
+  // Smoothly reset view canvas scroll position on view switch
+  useEffect(() => {
+    if (mainScrollRef.current) {
+      mainScrollRef.current.scrollTo({ top: 0, behavior: 'instant' });
+    }
+  }, [activeView]);
 
   // Sidebar behavior: Manual Collapse/Expand with bottom toggle button (no auto-collapse)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
@@ -2141,27 +2176,36 @@ export default function App() {
           )}
 
           {/* Main Document Canvas View */}
-          <main className="flex-1 h-full overflow-y-auto min-h-0 workspace-canvas bg-white dark:bg-[#0F172A] p-2 sm:p-4 lg:p-6">
+          <main ref={mainScrollRef} className="flex-1 h-full overflow-y-auto min-h-0 workspace-canvas bg-white dark:bg-[#0F172A] p-2 sm:p-4 lg:p-6">
             <div className="max-w-6xl mx-auto space-y-4 pb-12">
-              {/* Universal Return to Dashboard Shortcut for all sub-views */}
-              {activeView !== 'home' && (
-                <div className="pt-2 pb-1.5">
-                  <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-[#F7F7F5] dark:bg-[#1F2937] border border-[#EDECE9] dark:border-[#374151] shadow-2xs">
-                    <button
-                      type="button"
-                      onClick={() => handleNavigate('home')}
-                      className="flex items-center gap-2.5 text-xs text-[#6366F1] dark:text-[#818CF8] hover:text-[#4F46E5] dark:hover:text-[#A5B4FC] font-semibold cursor-pointer group transition-colors"
-                    >
-                      <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
-                      <span>Return to Home / Today</span>
-                    </button>
-                    <span className="flex items-center gap-2 text-xs font-medium text-[#787774] dark:text-[#9CA3AF]">
-                      <span className="text-sm">{currentNav.emoji}</span>
-                      <span className="font-semibold text-[#37352F] dark:text-white">{currentNav.label}</span>
-                    </span>
-                  </div>
-                </div>
-              )}
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={activeView}
+                  variants={pageTransitionVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  className="w-full space-y-4"
+                >
+                  {/* Universal Return to Dashboard Shortcut for all sub-views */}
+                  {activeView !== 'home' && (
+                    <div className="pt-2 pb-1.5">
+                      <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-[#F7F7F5] dark:bg-[#1F2937] border border-[#EDECE9] dark:border-[#374151] shadow-2xs">
+                        <button
+                          type="button"
+                          onClick={() => handleNavigate('home')}
+                          className="flex items-center gap-2.5 text-xs text-[#6366F1] dark:text-[#818CF8] hover:text-[#4F46E5] dark:hover:text-[#A5B4FC] font-semibold cursor-pointer group transition-colors"
+                        >
+                          <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
+                          <span>Return to Home / Today</span>
+                        </button>
+                        <span className="flex items-center gap-2 text-xs font-medium text-[#787774] dark:text-[#9CA3AF]">
+                          <span className="text-sm">{currentNav.emoji}</span>
+                          <span className="font-semibold text-[#37352F] dark:text-white">{currentNav.label}</span>
+                        </span>
+                      </div>
+                    </div>
+                  )}
 
               {/* VIEW 0: Interactive Dynamic Notion Home Dashboard */}
               {activeView === 'home' && (
@@ -2381,6 +2425,8 @@ export default function App() {
                   soundEnabled={settings.soundEnabled}
                 />
               )}
+                </motion.div>
+              </AnimatePresence>
             </div>
           </main>
         </div>

@@ -10,6 +10,7 @@ import {
   EducationRecord,
   JobExperience,
   HobbyItem,
+  CertificationItem,
 } from '../types';
 import { Sound } from '../utils/audio';
 import { STOCK_IMAGES } from '../assets/stockImages';
@@ -136,10 +137,18 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
   const [newSkillInput, setNewSkillInput] = useState<{ [categoryIdx: number]: string }>({});
   const [newHobbyTitle, setNewHobbyTitle] = useState('');
   const [newHobbyEmoji, setNewHobbyEmoji] = useState('💡');
+  const [newCertName, setNewCertName] = useState('');
+  const [newCertIssuer, setNewCertIssuer] = useState('');
+  const [newCertYear, setNewCertYear] = useState('');
+  const [newInfoText, setNewInfoText] = useState('');
 
   const educationRecords = profile.educationRecords || [];
   const jobExperiences = profile.jobExperiences || [];
   const hobbies = profile.hobbies || [];
+  const certifications = (resume.certifications && resume.certifications.length > 0)
+    ? resume.certifications
+    : (profile.certifications || []);
+  const additionalInfo = resume.additionalInfo || [];
 
   const resumeSheetRef = useRef<HTMLDivElement>(null);
 
@@ -522,6 +531,84 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
     onUpdateProfile({
       ...profile,
       hobbies: hobbies.filter((h) => h.id !== id),
+    });
+    Sound.click(soundEnabled);
+  };
+
+  // Add Certification Inline
+  const handleAddCertInline = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCertName.trim()) return;
+    const currentCerts: CertificationItem[] = (profile.certifications || certifications).map((c, i) => ({
+      id: (c as any).id || `cert-${Date.now()}-${i}`,
+      name: c.name,
+      issuer: c.issuer,
+      year: c.year,
+      link: c.link,
+    }));
+    const newCert: CertificationItem = {
+      id: `cert-${Date.now()}`,
+      name: newCertName.trim(),
+      issuer: newCertIssuer.trim() || undefined,
+      year: newCertYear.trim() || undefined,
+    };
+    const updated = [...currentCerts, newCert];
+    onUpdateResume({
+      ...resume,
+      certifications: updated,
+    });
+    onUpdateProfile({
+      ...profile,
+      certifications: updated,
+    });
+    setNewCertName('');
+    setNewCertIssuer('');
+    setNewCertYear('');
+    Sound.success(soundEnabled);
+  };
+
+  // Remove Certification Inline
+  const handleRemoveCertInline = (idx: number) => {
+    const currentCerts: CertificationItem[] = (profile.certifications || certifications).map((c, i) => ({
+      id: (c as any).id || `cert-${Date.now()}-${i}`,
+      name: c.name,
+      issuer: c.issuer,
+      year: c.year,
+      link: c.link,
+    }));
+    const updated = [...currentCerts];
+    updated.splice(idx, 1);
+    onUpdateResume({
+      ...resume,
+      certifications: updated,
+    });
+    onUpdateProfile({
+      ...profile,
+      certifications: updated,
+    });
+    Sound.click(soundEnabled);
+  };
+
+  // Add Additional Info Inline
+  const handleAddInfoInline = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newInfoText.trim()) return;
+    const updated = [...additionalInfo, newInfoText.trim()];
+    onUpdateResume({
+      ...resume,
+      additionalInfo: updated,
+    });
+    setNewInfoText('');
+    Sound.success(soundEnabled);
+  };
+
+  // Remove Additional Info Inline
+  const handleRemoveInfoInline = (idx: number) => {
+    const updated = [...additionalInfo];
+    updated.splice(idx, 1);
+    onUpdateResume({
+      ...resume,
+      additionalInfo: updated,
     });
     Sound.click(soundEnabled);
   };
@@ -1565,7 +1652,128 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
           </div>
         )}
 
-        {/* 6. HOBBIES & PERSONAL INTERESTS */}
+        {/* 6. CERTIFICATIONS */}
+        <div className="space-y-2">
+          <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2">
+            <Sparkles className="w-3.5 h-3.5 text-[#6366F1]" />
+            <span>CERTIFICATIONS</span>
+          </h2>
+
+          <div className="space-y-1.5 pt-1">
+            {certifications.map((c, idx) => {
+              const cName = typeof c === 'string' ? c : c.name;
+              const cIssuer = typeof c === 'object' && c.issuer ? ` – ${c.issuer}` : '';
+              const cYear = typeof c === 'object' && c.year ? ` (${c.year})` : '';
+              return (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between text-xs text-[#374151] dark:text-[#D1D5DB]"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#6366F1]" />
+                    <strong className="text-[#111827] dark:text-white">{cName}</strong>
+                    {cIssuer}
+                    {cYear}
+                  </span>
+                  {isInlineEditMode && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveCertInline(idx)}
+                      className="text-[#9CA3AF] hover:text-rose-500 p-0.5 cursor-pointer ml-2"
+                      title="Remove Certification"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+
+            {isInlineEditMode && (
+              <form onSubmit={handleAddCertInline} className="flex flex-wrap items-center gap-1.5 pt-1">
+                <input
+                  type="text"
+                  value={newCertName}
+                  onChange={(e) => setNewCertName(e.target.value)}
+                  placeholder="Certification Name (e.g. AWS ML)..."
+                  className="px-2.5 py-1 rounded-lg border text-xs bg-white dark:bg-[#1F2937] grow min-w-[140px]"
+                />
+                <input
+                  type="text"
+                  value={newCertIssuer}
+                  onChange={(e) => setNewCertIssuer(e.target.value)}
+                  placeholder="Issuer (e.g. Amazon)..."
+                  className="px-2.5 py-1 rounded-lg border text-xs bg-white dark:bg-[#1F2937] w-36"
+                />
+                <input
+                  type="text"
+                  value={newCertYear}
+                  onChange={(e) => setNewCertYear(e.target.value)}
+                  placeholder="Year (e.g. 2024)..."
+                  className="px-2 py-1 rounded-lg border text-xs bg-white dark:bg-[#1F2937] w-24"
+                />
+                <button
+                  type="submit"
+                  className="px-3 py-1 rounded-lg bg-[#6366F1] text-white text-xs font-bold hover:bg-[#4F46E5] cursor-pointer"
+                >
+                  Add Cert
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+
+        {/* 7. ADDITIONAL INFORMATION */}
+        <div className="space-y-2">
+          <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2">
+            <Check className="w-3.5 h-3.5 text-emerald-500" />
+            <span>ADDITIONAL INFORMATION</span>
+          </h2>
+
+          <div className="space-y-1.5 pt-1">
+            {additionalInfo.map((info, idx) => (
+              <div
+                key={idx}
+                className="flex items-center justify-between text-xs text-[#374151] dark:text-[#D1D5DB]"
+              >
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  <span>{info}</span>
+                </span>
+                {isInlineEditMode && (
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveInfoInline(idx)}
+                    className="text-[#9CA3AF] hover:text-rose-500 p-0.5 cursor-pointer ml-2"
+                    title="Remove Bullet"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            ))}
+
+            {isInlineEditMode && (
+              <form onSubmit={handleAddInfoInline} className="flex items-center gap-1.5 pt-1">
+                <input
+                  type="text"
+                  value={newInfoText}
+                  onChange={(e) => setNewInfoText(e.target.value)}
+                  placeholder="Add skill or statement (e.g. Fast learner, excellent communication)..."
+                  className="px-2.5 py-1 rounded-lg border text-xs bg-white dark:bg-[#1F2937] grow"
+                />
+                <button
+                  type="submit"
+                  className="px-3 py-1 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 cursor-pointer"
+                >
+                  Add
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+
+        {/* 8. HOBBIES & PERSONAL INTERESTS */}
         <div className="space-y-2">
           <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2">
             <Heart className="w-3.5 h-3.5 text-rose-500" />
