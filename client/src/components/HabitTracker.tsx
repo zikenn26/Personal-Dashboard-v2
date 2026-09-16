@@ -4,22 +4,15 @@ import {
   Plus,
   Trash2,
   Sparkles,
-  RotateCcw,
   Check,
-  Calendar,
-  History,
-  TrendingUp,
-  ChevronDown,
-  ChevronUp,
   ChevronLeft,
   ChevronRight,
-  Search,
+  Calendar,
+  Trophy,
   CheckCircle2,
-  CalendarDays,
-  Clock,
-  ArrowRight,
-  Edit3,
-  ExternalLink,
+  TrendingUp,
+  X,
+  RotateCcw,
 } from 'lucide-react';
 import { HabitItem, HabitWeekRecord, HabitActivityLog } from '../types';
 import { Sound } from '../utils/audio';
@@ -30,7 +23,6 @@ import {
   formatWeekRange,
   getWeekDaysInfo,
 } from '../utils/habitWeekManager';
-import { HabitStreakChart } from './HabitStreakChart';
 
 export interface HabitTrackerProps {
   habits: HabitItem[];
@@ -39,7 +31,7 @@ export interface HabitTrackerProps {
   onToggleHabitDay: (habitId: string, dayIndex: number) => void;
   onAddHabit: (title: string, category: string, icon: string, color: string) => void;
   onDeleteHabit: (habitId: string) => void;
-  onResetWeek: () => void;
+  onResetWeek?: () => void;
   onSimulateMondayRollover?: () => void;
   onToggleHistoricalHabitDay?: (weekId: string, habitId: string, dayIndex: number) => void;
   onAddHistoricalHabit?: (weekId: string, title: string, category: string, icon: string, color: string) => void;
@@ -54,29 +46,22 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
   onToggleHabitDay,
   onAddHabit,
   onDeleteHabit,
-  onResetWeek,
-  onSimulateMondayRollover,
   onToggleHistoricalHabitDay,
   onAddHistoricalHabit,
   onDeleteHistoricalHabit,
   soundEnabled,
 }) => {
-  const [activeTab, setActiveTab] = useState<'current' | 'analytics' | 'history'>('current');
-  const [historySubTab, setHistorySubTab] = useState<'weeks' | 'activities'>('weeks');
-  const [expandedWeekId, setExpandedWeekId] = useState<string | null>(null);
-  const [activitySearch, setActivitySearch] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
-
-  // Historical Week Selector state
+  // Historical Week Selector state: 'current' or specific weekId
   const [selectedWeekId, setSelectedWeekId] = useState<string>('current');
 
+  // Add Habit modal state
   const [showAddModal, setShowAddModal] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newCategory, setNewCategory] = useState('Health');
   const [newIcon, setNewIcon] = useState('⚡');
-  const [newColor, setNewColor] = useState('#3b82f6');
+  const [newColor, setNewColor] = useState('#6366F1');
 
-  // Compute current Monday & week days info
+  // Compute current Monday & week info
   const currentMonday = getMondayOfWeek();
   const currentWeekLabel = formatWeekRange(currentMonday);
   const daysInfo = getWeekDaysInfo(currentMonday);
@@ -91,7 +76,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
     return habitHistory.find((w) => w.id === selectedWeekId) || null;
   }, [isViewingPastWeek, selectedWeekId, habitHistory]);
 
-  // Active habits list depending on whether we are on the current week or a past week
+  // Active habits list depending on whether we are on current week or a past week
   const activeHabits: HabitItem[] = useMemo(() => {
     if (isViewingPastWeek && selectedPastWeekRecord) {
       return selectedPastWeekRecord.habits || [];
@@ -105,7 +90,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
       try {
         const monday = new Date(selectedPastWeekRecord.weekStart);
         return getWeekDaysInfo(monday);
-      } catch (e) {
+      } catch {
         return daysInfo;
       }
     }
@@ -149,7 +134,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
     }
   };
 
-  // Toggle habit day (handles both current week & historical weeks!)
+  // Toggle habit day (handles both current week & historical weeks)
   const handleToggle = (habitId: string, dayIndex: number, currentlyDone: boolean) => {
     Sound.toggle(soundEnabled);
     if (!currentlyDone) {
@@ -171,7 +156,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
     }
   };
 
-  // Add habit (handles both current week & historical weeks!)
+  // Add habit (handles both current week & historical weeks)
   const handleAddHabit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
@@ -195,7 +180,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
     setShowAddModal(false);
   };
 
-  // Delete habit (handles both current week & historical weeks!)
+  // Delete habit (handles both current week & historical weeks)
   const handleDeleteHabitItem = (habitId: string) => {
     Sound.click(soundEnabled);
     if (isViewingPastWeek && selectedWeekId !== 'current') {
@@ -216,899 +201,551 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
   const weeklyCompletionRate =
     maxWeeklyChecks > 0 ? Math.round((totalWeeklyChecks / maxWeeklyChecks) * 100) : 0;
 
-  const todayCompletedCount = habits.filter((h) => h.completedDays[currentDayIndex]).length;
-  const todayRate = habits.length > 0 ? Math.round((todayCompletedCount / habits.length) * 100) : 0;
+  // Compute daily completion breakdown for the weekly trend bar
+  const dailyCompletions = useMemo(() => {
+    return Array.from({ length: 7 }, (_, dayIdx) => {
+      const doneCount = activeHabits.filter((h) => h.completedDays[dayIdx]).length;
+      const totalCount = activeHabits.length;
+      const rate = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+      return {
+        dayIdx,
+        dayName: DAYS_OF_WEEK[dayIdx],
+        doneCount,
+        totalCount,
+        rate,
+      };
+    });
+  }, [activeHabits]);
 
-  // Historical aggregated statistics
-  const totalArchivedWeeks = habitHistory.length;
-  const totalHistoricalActivities = habitHistory.reduce((acc, r) => acc + (r.totalDone || 0), 0);
-  const avgHistoricalRate =
-    totalArchivedWeeks > 0
-      ? Math.round(
-          habitHistory.reduce((acc, r) => acc + (r.completionRate || 0), 0) / totalArchivedWeeks
-        )
-      : 0;
+  // ==================== STREAKS OF THE ENTIRE JOURNEY ====================
+  const journeyStats = useMemo(() => {
+    const activeDates = new Set<string>();
 
-  // Filter historical activities
-  const allHistoricalActivities = useMemo(() => {
-    let list: HabitActivityLog[] = [...habitActivities];
+    // 1. Current week active dates
+    const monday = getMondayOfWeek();
+    habits.forEach((h) => {
+      h.completedDays.forEach((done, idx) => {
+        if (done) {
+          const d = new Date(monday);
+          d.setDate(monday.getDate() + idx);
+          activeDates.add(d.toISOString().slice(0, 10));
+        }
+      });
+    });
+
+    // 2. Historical weeks active dates & check-ins
+    let historicalDoneChecks = 0;
+    let historicalPossibleChecks = 0;
+
     habitHistory.forEach((wk) => {
-      if (wk.activities && wk.activities.length > 0) {
-        wk.activities.forEach((act) => {
-          if (!list.some((existing) => existing.id === act.id)) {
-            list.push(act);
-          }
-        });
+      historicalDoneChecks += (wk.totalDone || 0);
+      historicalPossibleChecks += (wk.totalPossible || (wk.habits ? wk.habits.length * 7 : 0));
+      if (wk.habits && Array.isArray(wk.habits)) {
+        try {
+          const wkMon = new Date(wk.weekStart);
+          wk.habits.forEach((h) => {
+            if (Array.isArray(h.completedDays)) {
+              h.completedDays.forEach((done, idx) => {
+                if (done) {
+                  const d = new Date(wkMon);
+                  d.setDate(wkMon.getDate() + idx);
+                  activeDates.add(d.toISOString().slice(0, 10));
+                }
+              });
+            }
+          });
+        } catch {
+          // Ignore parse errors
+        }
       }
     });
-    return list.sort((a, b) => b.timestamp - a.timestamp);
-  }, [habitActivities, habitHistory]);
 
-  const filteredActivities = useMemo(() => {
-    return allHistoricalActivities.filter((act) => {
-      const matchSearch =
-        act.habitTitle.toLowerCase().includes(activitySearch.toLowerCase()) ||
-        act.category.toLowerCase().includes(activitySearch.toLowerCase()) ||
-        act.dayName.toLowerCase().includes(activitySearch.toLowerCase()) ||
-        act.date.includes(activitySearch);
-
-      const matchCategory =
-        selectedCategory === 'all' ||
-        act.category.toLowerCase() === selectedCategory.toLowerCase();
-
-      return matchSearch && matchCategory;
+    // 3. Activity logs fallback
+    habitActivities.forEach((act) => {
+      if (act.completed && act.date) {
+        activeDates.add(act.date);
+      }
     });
-  }, [allHistoricalActivities, activitySearch, selectedCategory]);
+
+    // Current week checks
+    const currentWeekDone = habits.reduce(
+      (acc, h) => acc + h.completedDays.filter(Boolean).length,
+      0
+    );
+    const currentWeekPossible = habits.length * 7;
+    const totalChecksAcrossJourney = historicalDoneChecks + currentWeekDone;
+    const totalPossibleChecks = historicalPossibleChecks + currentWeekPossible;
+    const journeyConsistency =
+      totalPossibleChecks > 0
+        ? Math.round((totalChecksAcrossJourney / totalPossibleChecks) * 100)
+        : currentWeekPossible > 0
+        ? Math.round((currentWeekDone / currentWeekPossible) * 100)
+        : 0;
+
+    // 4. Calculate longest streak across journey
+    const sortedDates = Array.from(activeDates).sort();
+    let bestStreak = 0;
+    let tempStreak = 0;
+    let prevDate: Date | null = null;
+
+    sortedDates.forEach((dStr) => {
+      const cur = new Date(dStr + 'T00:00:00');
+      if (!prevDate) {
+        tempStreak = 1;
+      } else {
+        const diffDays = Math.round((cur.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24));
+        if (diffDays === 1) {
+          tempStreak += 1;
+        } else if (diffDays > 1) {
+          tempStreak = 1;
+        }
+      }
+      if (tempStreak > bestStreak) {
+        bestStreak = tempStreak;
+      }
+      prevDate = cur;
+    });
+
+    // 5. Calculate current ongoing streak
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayStr = today.toISOString().slice(0, 10);
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().slice(0, 10);
+
+    let currentStreak = 0;
+    if (activeDates.has(todayStr) || activeDates.has(yesterdayStr)) {
+      const startCheck = activeDates.has(todayStr) ? today : yesterday;
+      let d = new Date(startCheck);
+      while (activeDates.has(d.toISOString().slice(0, 10))) {
+        currentStreak += 1;
+        d.setDate(d.getDate() - 1);
+      }
+    }
+
+    if (currentStreak > bestStreak) {
+      bestStreak = currentStreak;
+    }
+
+    return {
+      currentStreak: Math.max(currentStreak, activeDates.size > 0 ? 1 : 0),
+      bestStreak: Math.max(bestStreak, currentStreak, activeDates.size > 0 ? 1 : 0),
+      totalChecks: totalChecksAcrossJourney,
+      consistency: journeyConsistency,
+      totalActiveDays: activeDates.size,
+    };
+  }, [habits, habitHistory, habitActivities]);
 
   return (
     <div className="space-y-6">
-      {/* Top Header Card with Tabs & Actions */}
-      <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        {/* Navigation Tabs */}
-        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-[#F3F4F6] dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#334155] overflow-x-auto">
-          <button
-            type="button"
-            onClick={() => {
-              Sound.click(soundEnabled);
-              setActiveTab('current');
-            }}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-              activeTab === 'current'
-                ? 'bg-white dark:bg-[#1E293B] text-[#111827] dark:text-white shadow-2xs'
-                : 'text-[#6B7280] dark:text-[#9CA3AF] hover:text-[#111827] dark:hover:text-white'
-            }`}
-          >
-            <Calendar className="w-3.5 h-3.5 text-[#6366F1]" />
-            <span>Habit Matrix</span>
-            {isViewingPastWeek && (
-              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-            )}
-          </button>
+      {/* ========================================================================= */}
+      {/* 1. HERO TILE: STREAKS & STATS OF THE ENTIRE JOURNEY                       */}
+      {/* ========================================================================= */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#1E1B4B] via-[#0F172A] to-[#090D16] border border-indigo-900/50 p-6 sm:p-7 shadow-xl text-white">
+        {/* Subtle Ambient Glow */}
+        <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-0 left-10 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
 
-          <button
-            type="button"
-            onClick={() => {
-              Sound.click(soundEnabled);
-              setActiveTab('analytics');
-            }}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-              activeTab === 'analytics'
-                ? 'bg-white dark:bg-[#1E293B] text-[#111827] dark:text-white shadow-2xs'
-                : 'text-[#6B7280] dark:text-[#9CA3AF] hover:text-[#111827] dark:hover:text-white'
-            }`}
-          >
-            <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
-            <span>Momentum Graph</span>
-          </button>
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          {/* Left: Journey Brand & Streak Showcase */}
+          <div className="flex items-center gap-4 sm:gap-5">
+            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center shadow-lg shadow-orange-500/25 shrink-0">
+              <Flame className="w-8 h-8 sm:w-9 sm:h-9 text-white fill-white animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs uppercase font-bold tracking-widest text-amber-400">
+                  Lifetime Journey Streaks
+                </span>
+                <span className="px-2 py-0.5 text-[10px] font-extrabold rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                  All-Time
+                </span>
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-2.5 mt-0.5">
+                <span>{journeyStats.currentStreak} Days</span>
+                <span className="text-base sm:text-lg font-medium text-slate-300">Active Streak</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Consistent habit building across all recorded weeks and daily check-ins
+              </p>
+            </div>
+          </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              Sound.click(soundEnabled);
-              setActiveTab('history');
-            }}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-              activeTab === 'history'
-                ? 'bg-white dark:bg-[#1E293B] text-[#111827] dark:text-white shadow-2xs'
-                : 'text-[#6B7280] dark:text-[#9CA3AF] hover:text-[#111827] dark:hover:text-white'
-            }`}
-          >
-            <History className="w-3.5 h-3.5 text-amber-500" />
-            <span>Past Archives</span>
-            {totalArchivedWeeks > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300">
-                {totalArchivedWeeks}
-              </span>
-            )}
-          </button>
-        </div>
+          {/* Right: Key Streak & Journey Tiles Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 shrink-0">
+            {/* Longest / Best Streak */}
+            <div className="p-3.5 rounded-2xl bg-white/5 backdrop-blur-md border border-white/10 hover:border-white/20 transition-all">
+              <div className="flex items-center gap-1.5 text-slate-400 text-xs font-semibold mb-1">
+                <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                <span>Best Streak</span>
+              </div>
+              <div className="text-xl sm:text-2xl font-black text-white">
+                {journeyStats.bestStreak} <span className="text-xs font-normal text-slate-400">Days</span>
+              </div>
+            </div>
 
-        {/* Right Actions */}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              Sound.click(soundEnabled);
-              setShowAddModal(true);
-            }}
-            className="px-3.5 py-1.5 text-xs font-semibold bg-[#6366F1] hover:bg-[#4F46E5] text-white rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>{isViewingPastWeek ? 'Add Habit to Past Week' : 'New Habit'}</span>
-          </button>
+            {/* Total Check-ins of Entire Journey */}
+            <div className="p-3.5 rounded-2xl bg-white/5 backdrop-blur-md border border-white/10 hover:border-white/20 transition-all">
+              <div className="flex items-center gap-1.5 text-slate-400 text-xs font-semibold mb-1">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Total Check-ins</span>
+              </div>
+              <div className="text-xl sm:text-2xl font-black text-white">
+                {journeyStats.totalChecks} <span className="text-xs font-normal text-slate-400">Done</span>
+              </div>
+            </div>
+
+            {/* Consistency Rate */}
+            <div className="col-span-2 sm:col-span-1 p-3.5 rounded-2xl bg-white/5 backdrop-blur-md border border-white/10 hover:border-white/20 transition-all">
+              <div className="flex items-center gap-1.5 text-slate-400 text-xs font-semibold mb-1">
+                <TrendingUp className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Consistency</span>
+              </div>
+              <div className="text-xl sm:text-2xl font-black text-white">
+                {journeyStats.consistency}%
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* ==================== HABIT MATRIX VIEW (Current OR Selected Previous Week) ==================== */}
-      {activeTab === 'current' && (
-        <div className="space-y-4">
-          {/* Week Selector & Historical Notice Bar */}
-          <div className="p-3.5 rounded-2xl bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-            {/* Navigation Buttons + Dropdown */}
-            <div className="flex items-center gap-2 w-full md:w-auto">
+      {/* ========================================================================= */}
+      {/* 2. WEEK SELECTOR & MODIFICATION CONTROLS                                  */}
+      {/* ========================================================================= */}
+      <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* Week Navigation Buttons & Dropdown Selector */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center rounded-xl border border-[#E5E7EB] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0F172A] p-1">
               <button
                 type="button"
                 onClick={handlePrevWeek}
                 disabled={currentWeekIdx >= availableWeeks.length - 1}
-                className="p-1.5 sm:p-2 rounded-xl border border-[#E5E7EB] dark:border-[#374151] hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer text-[#374151] dark:text-[#D1D5DB]"
-                title="Go to Previous Week"
+                className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-[#1E293B] text-[#4B5563] dark:text-[#9CA3AF] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                title="View previous week"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
 
-              <div className="flex-1 md:flex-initial min-w-[220px]">
-                <select
-                  value={selectedWeekId}
-                  onChange={(e) => {
-                    Sound.click(soundEnabled);
-                    setSelectedWeekId(e.target.value);
-                  }}
-                  className="w-full px-3 py-1.5 rounded-xl bg-[#F9FAFB] dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#374151] text-xs font-bold text-[#111827] dark:text-white cursor-pointer"
-                >
-                  <option value="current">⚡ Current Week ({currentWeekLabel})</option>
-                  {habitHistory.map((wk) => (
-                    <option key={wk.id} value={wk.id}>
-                      📅 {wk.label} • {wk.completionRate}% Done ({wk.habits.length} habits)
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* Direct Week Selector Dropdown */}
+              <select
+                value={selectedWeekId}
+                onChange={(e) => {
+                  Sound.click(soundEnabled);
+                  setSelectedWeekId(e.target.value);
+                }}
+                className="bg-transparent text-xs sm:text-sm font-bold text-[#111827] dark:text-white px-2 py-1 outline-none cursor-pointer"
+              >
+                <option value="current">⚡ Current Week ({currentWeekLabel})</option>
+                {habitHistory.map((past) => (
+                  <option key={past.id} value={past.id}>
+                    📅 {past.label} ({past.completionRate}% Done)
+                  </option>
+                ))}
+              </select>
 
               <button
                 type="button"
                 onClick={handleNextWeek}
-                disabled={selectedWeekId === 'current' || currentWeekIdx <= 0}
-                className="p-1.5 sm:p-2 rounded-xl border border-[#E5E7EB] dark:border-[#374151] hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer text-[#374151] dark:text-[#D1D5DB]"
-                title="Go forward toward Current Week"
+                disabled={currentWeekIdx <= 0}
+                className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-[#1E293B] text-[#4B5563] dark:text-[#9CA3AF] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                title="View next week"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Status Indicator & Return Button */}
-            <div className="flex items-center gap-2 justify-between md:justify-end">
-              {isViewingPastWeek ? (
-                <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-xs font-bold flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-amber-500" />
-                    <span>Editing Past Week</span>
-                  </span>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      Sound.click(soundEnabled);
-                      setSelectedWeekId('current');
-                    }}
-                    className="px-3 py-1 text-xs font-bold rounded-xl bg-[#6366F1] hover:bg-[#4F46E5] text-white transition-colors cursor-pointer shadow-2xs"
-                  >
-                    Jump to Current Week
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                    <span>Current Active Week</span>
-                  </span>
-
-                  {onSimulateMondayRollover && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        Sound.click(soundEnabled);
-                        onSimulateMondayRollover();
-                      }}
-                      className="px-2.5 py-1 text-[11px] font-semibold text-[#4F46E5] dark:text-[#818CF8] hover:bg-indigo-50 dark:hover:bg-indigo-950/50 rounded-xl border border-indigo-200 dark:border-indigo-800 transition-colors cursor-pointer"
-                      title="Archive current week and simulate a fresh Monday reset"
-                    >
-                      Simulate Monday Reset
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Historical Editing Banner when viewing a previous week */}
-          {isViewingPastWeek && (
-            <div className="p-3 rounded-xl bg-gradient-to-r from-amber-50/90 via-amber-50/50 to-orange-50/80 dark:from-amber-950/50 dark:via-[#1E293B] dark:to-orange-950/40 border border-amber-200 dark:border-amber-800/80 flex items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2.5">
-                <span className="text-base shrink-0">✏️</span>
-                <div>
-                  <p className="font-bold text-amber-900 dark:text-amber-100">
-                    Editing Habits for Week: <span className="underline">{activeWeekLabel}</span>
-                  </p>
-                  <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5">
-                    Click any day checkbox (Mon–Sun) to toggle completions. You can also add or delete habits for this past week. All changes update your archived statistics and momentum graphs automatically.
-                  </p>
-                </div>
-              </div>
-
+            {/* Quick jump to current week if on past week */}
+            {isViewingPastWeek && (
               <button
                 type="button"
                 onClick={() => {
                   Sound.click(soundEnabled);
                   setSelectedWeekId('current');
                 }}
-                className="shrink-0 text-xs font-bold text-amber-800 dark:text-amber-200 hover:underline cursor-pointer"
+                className="px-3 py-1.5 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-xs font-bold border border-amber-300 dark:border-amber-700 hover:bg-amber-200 transition-colors flex items-center gap-1.5 cursor-pointer"
               >
-                Back to Current
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Return to Current Week</span>
               </button>
-            </div>
-          )}
+            )}
+          </div>
 
-          {/* Quick Routine KPI Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="p-3 rounded-xl bg-[#F9FAFB] dark:bg-[#1E293B]/60 border border-[#E5E7EB] dark:border-[#334155]">
-              <span className="text-[10px] uppercase font-bold tracking-wider text-[#9CA3AF] block">
-                {isViewingPastWeek ? 'Week Completion Rate' : "Today's Completion"}
-              </span>
-              <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-lg font-bold text-[#111827] dark:text-white">
-                  {isViewingPastWeek
-                    ? `${weeklyCompletionRate}%`
-                    : `${todayCompletedCount}/${habits.length}`}
-                </span>
-                <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                  {isViewingPastWeek ? `${totalWeeklyChecks} done` : `${todayRate}%`}
-                </span>
-              </div>
-            </div>
+          {/* Add Habit Button */}
+          <button
+            type="button"
+            onClick={() => {
+              Sound.click(soundEnabled);
+              setShowAddModal(true);
+            }}
+            className="px-4 py-2 rounded-xl bg-[#6366F1] hover:bg-[#4F46E5] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer transition-all shadow-sm shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Habit {isViewingPastWeek ? 'to Past Week' : ''}</span>
+          </button>
+        </div>
 
-            <div className="p-3 rounded-xl bg-[#F9FAFB] dark:bg-[#1E293B]/60 border border-[#E5E7EB] dark:border-[#334155]">
-              <span className="text-[10px] uppercase font-bold tracking-wider text-[#9CA3AF] block">
-                Week Total Checks
+        {/* Informative Banner when editing previous week */}
+        {isViewingPastWeek && (
+          <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span>
+                <strong>Modifying Past Week:</strong> You can retroactively check, uncheck, add, or delete habits for {activeWeekLabel}. All streak records and stats update instantly.
               </span>
-              <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-lg font-bold text-[#111827] dark:text-white">
-                  {totalWeeklyChecks}
-                </span>
-                <span className="text-xs text-[#9CA3AF]">/ {maxWeeklyChecks} checks</span>
-              </div>
             </div>
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-200/80 dark:bg-amber-800/80 text-amber-900 dark:text-amber-100 shrink-0">
+              Past Archive Active
+            </span>
+          </div>
+        )}
 
-            <div className="p-3 rounded-xl bg-[#F9FAFB] dark:bg-[#1E293B]/60 border border-[#E5E7EB] dark:border-[#334155]">
-              <span className="text-[10px] uppercase font-bold tracking-wider text-[#9CA3AF] block">
-                Target Achievement
+        {/* ========================================================================= */}
+        {/* 3. WEEKLY TREND BAR & DAILY BREAKDOWN                                     */}
+        {/* ========================================================================= */}
+        <div className="pt-2 border-t border-[#F3F4F6] dark:border-[#334155] space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-[#6366F1]" />
+              <span className="text-xs font-bold text-[#111827] dark:text-white uppercase tracking-wider">
+                Weekly Trend: {activeWeekLabel}
               </span>
-              <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-lg font-bold text-[#6366F1] dark:text-[#818CF8]">
-                  {weeklyCompletionRate}%
-                </span>
-                <span className="text-xs text-[#9CA3AF]">
-                  {weeklyCompletionRate >= 80 ? 'Mastery' : 'In Progress'}
-                </span>
-              </div>
             </div>
-
-            <div className="p-3 rounded-xl bg-[#F9FAFB] dark:bg-[#1E293B]/60 border border-[#E5E7EB] dark:border-[#334155]">
-              <span className="text-[10px] uppercase font-bold tracking-wider text-[#9CA3AF] block">
-                Week Status
-              </span>
-              <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-sm font-bold text-[#111827] dark:text-white">
-                  {isViewingPastWeek ? 'Archived Record' : 'Active Cycle'}
-                </span>
-                <span className="text-xs text-indigo-600 dark:text-indigo-400 font-medium">
-                  {activeHabits.length} habits
-                </span>
-              </div>
+            <div className="flex items-center gap-2 text-xs font-bold text-[#4B5563] dark:text-[#9CA3AF]">
+              <span className="text-[#6366F1] font-black">{weeklyCompletionRate}%</span>
+              <span>Routine Achieved</span>
+              <span>({totalWeeklyChecks} of {maxWeeklyChecks} checks)</span>
             </div>
           </div>
 
-          {/* Habit Matrix Container */}
-          <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] shadow-xs space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-[#F3F4F6] dark:border-[#334155]">
-              <div>
-                <h3 className="text-sm font-bold text-[#111827] dark:text-white">
-                  {isViewingPastWeek
-                    ? `Archived Routine Matrix (${activeWeekLabel})`
-                    : 'Weekly Routine Matrix'}
-                </h3>
-                <p className="text-[11px] text-[#6B7280] dark:text-[#9CA3AF]">
-                  {isViewingPastWeek
-                    ? 'Click on any day checkbox to retroactively edit or log habit completion.'
-                    : 'Track each daily routine from Monday through Sunday.'}
-                </p>
-              </div>
+          {/* Full-width completion progress bar */}
+          <div className="w-full h-3 rounded-full bg-[#F3F4F6] dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#334155] overflow-hidden p-0.5">
+            <div
+              className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-full transition-all duration-500"
+              style={{ width: `${weeklyCompletionRate}%` }}
+            />
+          </div>
 
-              {isViewingPastWeek && (
+          {/* Daily Trend Mini-Cards (Mon - Sun) */}
+          <div className="grid grid-cols-7 gap-1.5 sm:gap-2 pt-1">
+            {dailyCompletions.map((d) => {
+              const isToday = !isViewingPastWeek && d.dayIdx === currentDayIndex;
+              return (
+                <div
+                  key={d.dayIdx}
+                  className={`p-2 rounded-xl text-center border transition-all ${
+                    isToday
+                      ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700'
+                      : 'bg-[#F9FAFB] dark:bg-[#0F172A]/50 border-[#E5E7EB] dark:border-[#334155]'
+                  }`}
+                >
+                  <div className="text-[10px] sm:text-xs font-bold text-[#6B7280] dark:text-[#9CA3AF]">
+                    {d.dayName}
+                  </div>
+                  <div className="text-xs sm:text-sm font-black text-[#111827] dark:text-white mt-0.5">
+                    {d.doneCount}/{d.totalCount}
+                  </div>
+                  <div className="text-[9px] font-semibold text-[#9CA3AF] mt-0.5">
+                    {d.rate}%
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ========================================================================= */}
+        {/* 4. WEEKLY HABIT MATRIX TABLE                                              */}
+        {/* ========================================================================= */}
+        <div className="pt-2 border-t border-[#F3F4F6] dark:border-[#334155] overflow-x-auto">
+          <div className="min-w-[650px] space-y-2">
+            {/* Table Header */}
+            <div className="grid grid-cols-12 gap-2 pb-2 border-b border-[#F3F4F6] dark:border-[#334155] text-xs font-bold text-[#6B7280] dark:text-[#9CA3AF]">
+              <div className="col-span-5 pl-2">Habit Routine</div>
+              <div className="col-span-7 grid grid-cols-7 gap-1 text-center">
+                {activeDaysInfo.map((day, idx) => {
+                  const isToday = !isViewingPastWeek && idx === currentDayIndex;
+                  return (
+                    <div
+                      key={idx}
+                      className={`p-1 rounded-lg ${
+                        isToday
+                          ? 'bg-indigo-50 dark:bg-indigo-950/50 text-[#6366F1] font-black'
+                          : ''
+                      }`}
+                    >
+                      <div className="text-[11px]">{day.name}</div>
+                      <div className="text-[10px] text-[#9CA3AF] font-mono">{day.dateStr.slice(-2)}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Table Habit Rows */}
+            {activeHabits.length === 0 ? (
+              <div className="py-12 text-center text-xs text-[#9CA3AF] space-y-3">
+                <p>No habits logged for this week.</p>
                 <button
                   type="button"
                   onClick={() => setShowAddModal(true)}
-                  className="px-2.5 py-1 text-xs font-bold rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-colors cursor-pointer flex items-center gap-1"
+                  className="px-4 py-2 rounded-xl bg-[#6366F1] text-white text-xs font-bold cursor-pointer hover:bg-[#4F46E5] inline-flex items-center gap-1.5"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>Add Habit to This Week</span>
+                  <span>Create First Habit</span>
                 </button>
-              )}
-            </div>
-
-            {/* Matrix Table */}
-            <div className="overflow-x-auto pb-2">
-              <div className="min-w-[620px] space-y-2">
-                {/* Table Header: Days of the week */}
-                <div className="grid grid-cols-12 gap-1.5 text-center text-[11px] font-semibold text-[#6B7280] dark:text-[#9CA3AF] pb-1 border-b border-[#F3F4F6] dark:border-[#334155]">
-                  <div className="col-span-5 text-left pl-2">HABIT ROUTINE</div>
-                  {activeDaysInfo.map((day, idx) => {
-                    const isWeekend = idx >= 5;
-                    return (
-                      <div
-                        key={day.dateStr}
-                        className={`col-span-1 p-1 rounded-lg ${
-                          !isViewingPastWeek && day.isToday
-                            ? 'bg-[#EEF2FF] dark:bg-[#1E1B4B] text-[#6366F1] dark:text-[#818CF8] font-bold ring-2 ring-indigo-400 dark:ring-indigo-600 shadow-2xs'
-                            : isWeekend
-                            ? 'text-red-500 font-extrabold bg-red-50/60 dark:bg-red-950/30'
-                            : ''
-                        }`}
-                        title={`${day.formattedDate}${!isViewingPastWeek && day.isToday ? ' (TODAY)' : ''}`}
-                      >
-                        <div>{day.name}</div>
-                        <div className="text-[8px] font-mono opacity-80 mt-0.5">
-                          {day.dateStr.split('-')[2]}
-                        </div>
-                        {!isViewingPastWeek && day.isToday && (
-                          <div className="text-[7px] text-[#6366F1] dark:text-[#818CF8] font-extrabold tracking-tighter">
-                            TODAY
+              </div>
+            ) : (
+              activeHabits.map((habit) => {
+                const habitDoneCount = habit.completedDays.filter(Boolean).length;
+                return (
+                  <div
+                    key={habit.id}
+                    className="grid grid-cols-12 gap-2 items-center p-2.5 rounded-xl hover:bg-[#F9FAFB] dark:hover:bg-[#0F172A] transition-colors border border-transparent hover:border-[#E5E7EB] dark:hover:border-[#334155]"
+                  >
+                    {/* Left: Habit Info */}
+                    <div className="col-span-5 flex items-center justify-between pr-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="text-xl shrink-0">{habit.icon || '⚡'}</span>
+                        <div className="min-w-0">
+                          <h4 className="text-xs sm:text-sm font-bold text-[#111827] dark:text-white truncate">
+                            {habit.title}
+                          </h4>
+                          <div className="flex items-center gap-2 text-[10px] text-[#6B7280] dark:text-[#9CA3AF]">
+                            <span>{habit.category}</span>
+                            <span>•</span>
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                              {habitDoneCount}/7 this week
+                            </span>
                           </div>
-                        )}
+                        </div>
                       </div>
-                    );
-                  })}
-                </div>
 
-                {/* Habit Rows */}
-                <div className="space-y-2 pt-1">
-                  {activeHabits.length === 0 ? (
-                    <div className="p-8 text-center bg-[#F9FAFB] dark:bg-[#0F172A]/40 rounded-xl border border-dashed border-[#E5E7EB] dark:border-[#374151]">
-                      <Flame className="w-8 h-8 text-amber-500 mx-auto mb-2 opacity-80" />
-                      <h4 className="text-sm font-bold text-[#111827] dark:text-white">
-                        No habits recorded for this week
-                      </h4>
-                      <p className="text-xs text-[#6B7280] dark:text-[#9CA3AF] max-w-sm mx-auto mt-1 mb-3">
-                        {isViewingPastWeek
-                          ? 'This archived week currently has no habits listed. Click below to add a habit to this week.'
-                          : 'Start fresh by creating your weekly habits. Check off each day and see your momentum build automatically.'}
-                      </p>
+                      {/* Delete button */}
                       <button
                         type="button"
-                        onClick={() => setShowAddModal(true)}
-                        className="px-3.5 py-1.5 text-xs font-semibold bg-[#6366F1] hover:bg-[#4F46E5] text-white rounded-xl transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                        onClick={() => handleDeleteHabitItem(habit.id)}
+                        className="text-[#9CA3AF] hover:text-rose-500 p-1 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer shrink-0"
+                        title="Delete habit"
                       >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Add Habit</span>
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
-                  ) : (
-                    activeHabits.map((habit) => (
-                      <div
-                        key={habit.id}
-                        className="grid grid-cols-12 gap-1.5 items-center p-2.5 rounded-xl bg-[#F9FAFB] dark:bg-[#0F172A]/60 border border-[#E5E7EB] dark:border-[#374151] group hover:border-[#D1D5DB] dark:hover:border-[#4B5563] transition-colors"
-                      >
-                        {/* Habit Title & Icon */}
-                        <div className="col-span-5 flex items-center justify-between pr-2 min-w-0">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-base shrink-0">{habit.icon}</span>
-                            <div className="min-w-0">
-                              <p className="text-xs font-semibold text-[#111827] dark:text-[#E5E7EB] truncate">
-                                {habit.title}
-                              </p>
-                              <div className="flex items-center gap-1.5 text-[10px] text-[#9CA3AF]">
-                                <span className="font-mono text-amber-500 font-semibold flex items-center gap-0.5">
-                                  🔥 {habit.streak}d streak
-                                </span>
-                                <span>• {habit.category}</span>
-                              </div>
-                            </div>
-                          </div>
 
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteHabitItem(habit.id)}
-                            className="opacity-0 group-hover:opacity-100 p-1 text-[#9CA3AF] hover:text-rose-500 transition-opacity rounded cursor-pointer"
-                            title="Delete habit"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-
-                        {/* 7 Day Checkboxes */}
-                        {habit.completedDays.map((isDone, dayIdx) => {
-                          const day = activeDaysInfo[dayIdx] || daysInfo[dayIdx];
-                          return (
-                            <div key={dayIdx} className="col-span-1 flex justify-center">
-                              <button
-                                type="button"
-                                onClick={() => handleToggle(habit.id, dayIdx, isDone)}
-                                className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
-                                  isDone
-                                    ? 'bg-[#6366F1] hover:bg-[#4F46E5] text-white shadow-2xs scale-100'
-                                    : !isViewingPastWeek && day?.isToday
-                                    ? 'border-2 border-dashed border-[#818CF8] bg-white dark:bg-[#111827] hover:bg-[#EEF2FF] dark:hover:bg-[#1E1B4B]'
-                                    : 'border border-[#E5E7EB] dark:border-[#374151] bg-white dark:bg-[#111827] hover:bg-[#F3F4F6] dark:hover:bg-[#1F2937]'
-                                }`}
-                                title={`${habit.title} - ${day?.formattedDate || DAYS_OF_WEEK[dayIdx]}`}
-                              >
-                                {isDone && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Footer Stats & Reset Options */}
-            <div className="pt-3 border-t border-[#F3F4F6] dark:border-[#334155] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-[#9CA3AF]">
-              <div className="flex items-center gap-2">
-                <div className="w-28 h-2 rounded-full bg-[#F3F4F6] dark:bg-[#1F2937] overflow-hidden">
-                  <div
-                    className="h-full bg-[#6366F1] rounded-full transition-all duration-300"
-                    style={{ width: `${weeklyCompletionRate}%` }}
-                  />
-                </div>
-                <span className="font-semibold text-[#4B5563] dark:text-[#9CA3AF]">
-                  {weeklyCompletionRate}% Routine Achieved
-                </span>
-              </div>
-
-              {!isViewingPastWeek && (
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      Sound.click(soundEnabled);
-                      onResetWeek();
-                    }}
-                    className="flex items-center gap-1 text-[#9CA3AF] hover:text-[#111827] dark:hover:text-white transition-colors cursor-pointer text-xs"
-                    title="Reset current week checkboxes"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    <span>Manual Week Reset</span>
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Integrated Enhanced Momentum Graph */}
-            <div className="pt-2 border-t border-[#F3F4F6] dark:border-[#334155]">
-              <HabitStreakChart
-                habits={habits}
-                habitHistory={habitHistory}
-                habitActivities={habitActivities}
-                soundEnabled={soundEnabled}
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ==================== MOMENTUM GRAPH & ANALYTICS VIEW ==================== */}
-      {activeTab === 'analytics' && (
-        <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] shadow-xs">
-          <HabitStreakChart
-            habits={habits}
-            habitHistory={habitHistory}
-            habitActivities={habitActivities}
-            soundEnabled={soundEnabled}
-          />
-        </div>
-      )}
-
-      {/* ==================== PAST RECORDS & ARCHIVES VIEW ==================== */}
-      {activeTab === 'history' && (
-        <div className="space-y-4">
-          {/* Sub-Tabs: Weekly Bundles vs Chronological Activities */}
-          <div className="flex items-center justify-between gap-3 p-1 rounded-xl bg-[#F3F4F6] dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#334155] w-fit">
-            <button
-              type="button"
-              onClick={() => {
-                Sound.click(soundEnabled);
-                setHistorySubTab('weeks');
-              }}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                historySubTab === 'weeks'
-                  ? 'bg-white dark:bg-[#1E293B] text-[#111827] dark:text-white shadow-2xs'
-                  : 'text-[#6B7280] dark:text-[#9CA3AF]'
-              }`}
-            >
-              <CalendarDays className="w-3.5 h-3.5 text-amber-500" />
-              <span>Weekly Archived Bundles ({totalArchivedWeeks})</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                Sound.click(soundEnabled);
-                setHistorySubTab('activities');
-              }}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                historySubTab === 'activities'
-                  ? 'bg-white dark:bg-[#1E293B] text-[#111827] dark:text-white shadow-2xs'
-                  : 'text-[#6B7280] dark:text-[#9CA3AF]'
-              }`}
-            >
-              <History className="w-3.5 h-3.5 text-indigo-500" />
-              <span>All Logged Check-ins ({allHistoricalActivities.length})</span>
-            </button>
-          </div>
-
-          {/* SUB-VIEW 1: Weekly Archived Bundles (Editable!) */}
-          {historySubTab === 'weeks' && (
-            <div className="space-y-3">
-              {habitHistory.length === 0 ? (
-                <div className="p-8 text-center bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] space-y-2">
-                  <Calendar className="w-8 h-8 text-[#9CA3AF] mx-auto opacity-70" />
-                  <h4 className="text-sm font-bold text-[#111827] dark:text-white">
-                    No Archived Weeks Yet
-                  </h4>
-                  <p className="text-xs text-[#6B7280] dark:text-[#9CA3AF] max-w-sm mx-auto">
-                    At the end of each week (every Monday at 00:00), your habit data automatically archives here. You can also click &ldquo;Simulate Monday Reset&rdquo; anytime to archive the current week.
-                  </p>
-                </div>
-              ) : (
-                habitHistory.map((week) => {
-                  const isExpanded = expandedWeekId === week.id;
-                  return (
-                    <div
-                      key={week.id}
-                      className="rounded-2xl bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] overflow-hidden shadow-xs"
-                    >
-                      {/* Accordion Summary Row */}
-                      <div
-                        onClick={() => {
-                          Sound.click(soundEnabled);
-                          setExpandedWeekId(isExpanded ? null : week.id);
-                        }}
-                        className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer hover:bg-gray-50/70 dark:hover:bg-gray-800/30 transition-colors"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold text-sm shrink-0">
-                            {week.completionRate}%
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <h4 className="text-sm font-bold text-[#111827] dark:text-white">
-                                {week.label}
-                              </h4>
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 dark:bg-gray-800 text-[#4B5563] dark:text-[#9CA3AF]">
-                                {week.habits.length} habits
-                              </span>
-                            </div>
-                            <p className="text-xs text-[#6B7280] dark:text-[#9CA3AF] mt-0.5">
-                              {week.totalDone} of {week.totalPossible} routines achieved
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 self-end sm:self-center">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              Sound.click(soundEnabled);
-                              setSelectedWeekId(week.id);
-                              setActiveTab('current');
-                            }}
-                            className="px-2.5 py-1 text-xs font-bold text-[#6366F1] dark:text-[#818CF8] bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
-                            title="Open this past week in the main interactive tracker"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                            <span>Edit in Main Tracker</span>
-                          </button>
-
-                          <div className="p-1 text-[#9CA3AF]">
-                            {isExpanded ? (
-                              <ChevronUp className="w-4 h-4" />
-                            ) : (
-                              <ChevronDown className="w-4 h-4" />
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Expanded Matrix View of That Archived Week (Fully Interactive!) */}
-                      {isExpanded && (
-                        <div className="p-4 border-t border-[#E5E7EB] dark:border-[#334155] bg-gray-50/50 dark:bg-[#0F172A]/50 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <p className="text-[11px] font-bold text-[#4B5563] dark:text-[#9CA3AF]">
-                              Interactive check-ins for {week.label}: (Click any day to toggle)
-                            </p>
-
+                    {/* Right: 7 Checkboxes */}
+                    <div className="col-span-7 grid grid-cols-7 gap-1">
+                      {habit.completedDays.map((isDone, dayIdx) => {
+                        const day = activeDaysInfo[dayIdx];
+                        const isToday = !isViewingPastWeek && dayIdx === currentDayIndex;
+                        return (
+                          <div key={dayIdx} className="flex justify-center">
                             <button
                               type="button"
-                              onClick={() => {
-                                Sound.click(soundEnabled);
-                                setSelectedWeekId(week.id);
-                                setShowAddModal(true);
-                              }}
-                              className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+                              onClick={() => handleToggle(habit.id, dayIdx, isDone)}
+                              className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                                isDone
+                                  ? 'bg-[#6366F1] text-white shadow-xs scale-100'
+                                  : isToday
+                                  ? 'border-2 border-indigo-400 dark:border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/30 hover:bg-indigo-100'
+                                  : 'border border-[#E5E7EB] dark:border-[#374151] bg-white dark:bg-[#111827] hover:bg-[#F3F4F6] dark:hover:bg-[#1F2937]'
+                              }`}
+                              title={`${habit.title} - ${day?.formattedDate || DAYS_OF_WEEK[dayIdx]}`}
                             >
-                              <Plus className="w-3.5 h-3.5" />
-                              <span>Add Habit to this Week</span>
+                              {isDone && <Check className="w-4 h-4 stroke-[3]" />}
                             </button>
                           </div>
-
-                          <div className="overflow-x-auto">
-                            <div className="min-w-[500px] space-y-2">
-                              <div className="grid grid-cols-12 gap-1 text-center text-[10px] uppercase font-bold text-[#9CA3AF] pb-1 border-b border-[#E5E7EB] dark:border-[#334155]">
-                                <div className="col-span-5 text-left pl-2">Habit</div>
-                                {DAYS_OF_WEEK.map((d, i) => (
-                                  <div
-                                    key={d}
-                                    className={`col-span-1 ${i >= 5 ? 'text-red-500 font-bold' : ''}`}
-                                  >
-                                    {d}
-                                  </div>
-                                ))}
-                              </div>
-
-                              {week.habits.map((h) => {
-                                const doneCount = h.completedDays.filter(Boolean).length;
-                                return (
-                                  <div
-                                    key={h.id}
-                                    className="grid grid-cols-12 gap-1 items-center p-2 rounded-xl bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] group"
-                                  >
-                                    <div className="col-span-5 flex items-center justify-between pr-2 min-w-0">
-                                      <div className="flex items-center gap-1.5 truncate">
-                                        <span>{h.icon}</span>
-                                        <span className="text-xs font-semibold text-[#111827] dark:text-white truncate">
-                                          {h.title}
-                                        </span>
-                                        <span className="text-[10px] text-[#9CA3AF]">
-                                          ({doneCount}/7)
-                                        </span>
-                                      </div>
-
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          Sound.click(soundEnabled);
-                                          if (onDeleteHistoricalHabit) {
-                                            onDeleteHistoricalHabit(week.id, h.id);
-                                          }
-                                        }}
-                                        className="opacity-0 group-hover:opacity-100 p-1 text-[#9CA3AF] hover:text-rose-500 transition-opacity rounded cursor-pointer"
-                                        title="Delete from this past week"
-                                      >
-                                        <Trash2 className="w-3 h-3" />
-                                      </button>
-                                    </div>
-
-                                    {h.completedDays.map((done, idx) => (
-                                      <div key={idx} className="col-span-1 flex justify-center">
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            Sound.toggle(soundEnabled);
-                                            if (onToggleHistoricalHabitDay) {
-                                              onToggleHistoricalHabitDay(week.id, h.id, idx);
-                                            }
-                                          }}
-                                          title={`Toggle ${DAYS_OF_WEEK[idx]} for ${h.title}`}
-                                          className={`w-6 h-6 rounded-md flex items-center justify-center text-xs transition-all cursor-pointer ${
-                                            done
-                                              ? 'bg-emerald-500 hover:bg-emerald-600 text-white font-bold shadow-2xs'
-                                              : 'border border-gray-200 dark:border-gray-700 hover:border-emerald-400 text-gray-300 dark:text-gray-600'
-                                          }`}
-                                        >
-                                          {done ? '✓' : '·'}
-                                        </button>
-                                      </div>
-                                    ))}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </div>
-                      )}
+                        );
+                      })}
                     </div>
-                  );
-                })
-              )}
-            </div>
-          )}
-
-          {/* SUB-VIEW 2: All Available Activities Feed */}
-          {historySubTab === 'activities' && (
-            <div className="space-y-3">
-              {/* Search & Category Filter */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                <div className="relative flex-1">
-                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]" />
-                  <input
-                    type="text"
-                    placeholder="Search past activities by habit name, date, day..."
-                    value={activitySearch}
-                    onChange={(e) => setActivitySearch(e.target.value)}
-                    className="w-full pl-8 pr-3 py-1.5 rounded-xl text-xs bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] text-[#111827] dark:text-white focus:outline-none focus:ring-1 focus:ring-[#6366F1]"
-                  />
-                </div>
-
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      Sound.click(soundEnabled);
-                      setSelectedCategory('all');
-                    }}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
-                      selectedCategory === 'all'
-                        ? 'bg-[#6366F1] text-white'
-                        : 'bg-white dark:bg-[#1E293B] text-[#6B7280] dark:text-[#9CA3AF] border border-[#E5E7EB] dark:border-[#334155]'
-                    }`}
-                  >
-                    All
-                  </button>
-                  {['Health', 'Focus', 'Productivity', 'Daily'].map((cat) => (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => {
-                        Sound.click(soundEnabled);
-                        setSelectedCategory(cat);
-                      }}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
-                        selectedCategory === cat
-                          ? 'bg-[#6366F1] text-white'
-                          : 'bg-white dark:bg-[#1E293B] text-[#6B7280] dark:text-[#9CA3AF] border border-[#E5E7EB] dark:border-[#334155]'
-                      }`}
-                    >
-                      {cat}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Activities List */}
-              <div className="space-y-2">
-                {filteredActivities.length === 0 ? (
-                  <div className="p-8 text-center bg-white dark:bg-[#1E293B] rounded-2xl border border-[#E5E7EB] dark:border-[#334155] space-y-1">
-                    <p className="text-xs font-bold text-[#111827] dark:text-white">
-                      No check-ins matched your criteria
-                    </p>
-                    <p className="text-[11px] text-[#9CA3AF]">
-                      Try clearing your search query or selecting &ldquo;All&rdquo;.
-                    </p>
                   </div>
-                ) : (
-                  filteredActivities.map((act) => (
-                    <div
-                      key={act.id}
-                      className="p-3 rounded-xl bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] flex items-center justify-between gap-3"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="text-base shrink-0">{act.icon}</span>
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold text-[#111827] dark:text-white truncate">
-                            {act.habitTitle}
-                          </p>
-                          <p className="text-[11px] text-[#9CA3AF]">
-                            {act.dayName} • {act.date} • {act.category}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold border border-emerald-200 dark:border-emerald-800">
-                          Completed ✓
-                        </span>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
+                );
+              })
+            )}
+          </div>
         </div>
-      )}
+      </div>
 
-      {/* ==================== CREATE HABIT MODAL ==================== */}
+      {/* ========================================================================= */}
+      {/* 5. ADD HABIT MODAL                                                        */}
+      {/* ========================================================================= */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
-          <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] shadow-xl p-5 space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-[#F3F4F6] dark:border-[#334155]">
-              <h3 className="text-sm font-bold text-[#111827] dark:text-white">
-                {isViewingPastWeek
-                  ? `Add Habit to ${activeWeekLabel}`
-                  : 'Create New Habit'}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-3xl bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-[#F3F4F6] dark:border-[#334155] pb-3">
+              <h3 className="text-base font-bold text-[#111827] dark:text-white flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-[#6366F1]" />
+                <span>Add Habit {isViewingPastWeek ? `(${activeWeekLabel})` : ''}</span>
               </h3>
               <button
                 type="button"
                 onClick={() => setShowAddModal(false)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs font-bold cursor-pointer"
+                className="text-[#9CA3AF] hover:text-[#111827] dark:hover:text-white p-1"
               >
-                ✕
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleAddHabit} className="space-y-3">
+            <form onSubmit={handleAddHabit} className="space-y-4">
               <div>
-                <label className="text-[11px] font-bold text-[#374151] dark:text-[#D1D5DB] block mb-1">
-                  Routine Name
+                <label className="block text-xs font-bold text-[#374151] dark:text-[#D1D5DB] mb-1">
+                  Habit Title
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Read 20 pages, 30m Workout"
+                  required
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
-                  className="w-full px-3 py-2 text-xs rounded-xl bg-[#F9FAFB] dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#374151] text-[#111827] dark:text-white focus:outline-none focus:ring-1 focus:ring-[#6366F1]"
-                  autoFocus
+                  placeholder="e.g. Morning 20m Yoga, Read 10 Pages..."
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#E5E7EB] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-xs sm:text-sm text-[#111827] dark:text-white outline-none focus:ring-2 focus:ring-[#6366F1]"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[11px] font-bold text-[#374151] dark:text-[#D1D5DB] block mb-1">
+                  <label className="block text-xs font-bold text-[#374151] dark:text-[#D1D5DB] mb-1">
                     Category
                   </label>
                   <select
                     value={newCategory}
                     onChange={(e) => setNewCategory(e.target.value)}
-                    className="w-full px-2.5 py-1.5 text-xs rounded-xl bg-[#F9FAFB] dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#374151] text-[#111827] dark:text-white cursor-pointer"
+                    className="w-full px-3 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-xs text-[#111827] dark:text-white outline-none"
                   >
                     <option value="Health">Health</option>
                     <option value="Productivity">Productivity</option>
-                    <option value="Focus">Focus</option>
-                    <option value="Daily">Daily</option>
-                    <option value="Mindset">Mindset</option>
+                    <option value="Learning">Learning</option>
+                    <option value="Mindfulness">Mindfulness</option>
+                    <option value="Fitness">Fitness</option>
+                    <option value="Creativity">Creativity</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-bold text-[#374151] dark:text-[#D1D5DB] block mb-1">
+                  <label className="block text-xs font-bold text-[#374151] dark:text-[#D1D5DB] mb-1">
                     Emoji Icon
                   </label>
                   <input
                     type="text"
                     value={newIcon}
                     onChange={(e) => setNewIcon(e.target.value)}
-                    className="w-full px-2.5 py-1.5 text-xs rounded-xl bg-[#F9FAFB] dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#374151] text-[#111827] dark:text-white text-center"
+                    className="w-full px-3 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-xs text-center text-[#111827] dark:text-white outline-none"
                   />
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#F3F4F6] dark:border-[#334155]">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-3 py-1.5 text-xs font-semibold rounded-xl text-gray-500 hover:text-gray-800 dark:hover:text-white transition-colors cursor-pointer"
+                  className="px-4 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-xs font-bold text-[#4B5563] dark:text-[#9CA3AF] hover:bg-[#F3F4F6] cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={!newTitle.trim()}
-                  className="px-4 py-1.5 text-xs font-bold rounded-xl bg-[#6366F1] hover:bg-[#4F46E5] disabled:opacity-40 text-white transition-colors cursor-pointer shadow-2xs"
+                  className="px-4 py-2 rounded-xl bg-[#6366F1] hover:bg-[#4F46E5] text-white text-xs font-bold cursor-pointer"
                 >
-                  Create Habit
+                  Save Habit
                 </button>
               </div>
             </form>

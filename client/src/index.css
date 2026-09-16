@@ -319,40 +319,208 @@
 }
 
 /* ========================================================================= */
-/* ATS RESUME PRINT & PDF EXPORT STYLES                                      */
+/* RESUME PRINT & PDF EXPORT STYLES (NO CROPPING, FULL MULTI-PAGE DOCUMENT)  */
 /* ========================================================================= */
 @media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm 12mm 10mm 12mm;
+  }
+
+  html,
   body {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
     background: #ffffff !important;
     color: #111827 !important;
+    font-size: 11pt !important;
+    line-height: 1.4 !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
 
-  /* Hide navigation, sidebars, interactive controls, toolbars, and LinkedIn header banner in print mode */
+  /* Reset layout constraints and overflow clippings on all parent wrappers */
+  #root,
+  #root > div,
+  main,
+  .workspace-canvas,
+  .max-w-6xl,
+  .min-h-screen,
+  div {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    float: none !important;
+  }
+
+  /* Hide navigation, sidebars, interactive controls, toolbars, and extraneous UI */
   nav,
   header,
   aside,
+  footer,
+  button,
   .print\:hidden,
   #linkedin-profile-card,
-  button {
+  .fixed,
+  .sticky,
+  [role="dialog"],
+  .account-menu-item {
     display: none !important;
   }
 
+  /* Printable sheet container expands to clean full width without page clipping */
   #printable-resume-sheet {
-    max-width: 100% !important;
+    display: block !important;
+    position: static !important;
     width: 100% !important;
+    max-width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
     border: none !important;
     box-shadow: none !important;
-    background: transparent !important;
+    background: #ffffff !important;
+    color: #111827 !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
   }
 
-  @page {
-    margin: 1.2cm 1.5cm;
-    size: A4 portrait;
+  /* Force high contrast dark-to-light readability for all text in print mode */
+  #printable-resume-sheet,
+  #printable-resume-sheet * {
+    color: #111827 !important;
+    background-color: transparent !important;
+    border-color: #E5E7EB !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    overflow: visible !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
   }
+
+  /* Ensure dark-mode workspace headings do NOT stay white on paper */
+  .dark .workspace-heading,
+  .dark h1.workspace-heading,
+  .dark h2.workspace-heading,
+  .dark h3.workspace-heading,
+  html.dark .workspace-heading,
+  html.dark h1.workspace-heading,
+  html.dark h2.workspace-heading,
+  :where(.dark, .dark *) .workspace-heading {
+    color: #111827 !important;
+  }
+
+  /* Preserve intentional accent colors in print */
+  #printable-resume-sheet .text-\[\#6366F1\],
+  #printable-resume-sheet .text-\[\#818CF8\],
+  #printable-resume-sheet .text-indigo-600,
+  #printable-resume-sheet .text-indigo-500 {
+    color: #4338CA !important;
+  }
+
+  #printable-resume-sheet .text-\[\#6B7280\],
+  #printable-resume-sheet .text-\[\#4B5563\],
+  #printable-resume-sheet .text-\[\#9CA3AF\],
+  #printable-resume-sheet .text-gray-500 {
+    color: #4B5563 !important;
+  }
+
+  #printable-resume-sheet .text-emerald-700,
+  #printable-resume-sheet .text-emerald-600 {
+    color: #065F46 !important;
+  }
+
+  #printable-resume-sheet .bg-emerald-50,
+  #printable-resume-sheet [class*="bg-emerald"] {
+    background-color: #ECFDF5 !important;
+    border-color: #A7F3D0 !important;
+    color: #065F46 !important;
+    border-radius: 4px !important;
+  }
+
+  /* Section heading rules: never leave orphaned headings at the bottom of a page */
+  #printable-resume-sheet h1,
+  #printable-resume-sheet h2,
+  #printable-resume-sheet h3,
+  .resume-section-heading {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  /* Prevent page cuts right in the middle of a job, education, project or skill item */
+  .resume-entry,
+  .resume-job-card,
+  .resume-edu-card,
+  .resume-project-card,
+  .resume-skill-row,
+  .resume-cert-item,
+  .resume-info-item,
+  #printable-resume-sheet .space-y-4 > div,
+  #printable-resume-sheet .space-y-5 > div {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Project cards layout in print */
+  .resume-projects-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+    width: 100% !important;
+  }
+
+  .resume-project-card {
+    border: 1px solid #E5E7EB !important;
+    background-color: #F9FAFB !important;
+    padding: 10px !important;
+    border-radius: 8px !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Category title width in skills section for clean print wrapping */
+  .resume-skill-cat {
+    width: 130px !important;
+    min-width: 130px !important;
+    max-width: 130px !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* SVG icons sizing */
+  #printable-resume-sheet svg {
+    flex-shrink: 0 !important;
+  }
+}
+
+/* PDF EXPORT FALLBACK HELPER STYLES */
+.pdf-exporting-target,
+.pdf-exporting-target * {
+  color: #111827 !important;
+  background-color: transparent !important;
+  border-color: #E5E7EB !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+.pdf-exporting-target {
+  background-color: #ffffff !important;
+}
+.pdf-exporting-target .text-\[\#6366F1\],
+.pdf-exporting-target .text-\[\#818CF8\] {
+  color: #4338CA !important;
+}
+.pdf-exporting-target .text-\[\#6B7280\],
+.pdf-exporting-target .text-\[\#4B5563\],
+.pdf-exporting-target .text-\[\#9CA3AF\] {
+  color: #4B5563 !important;
+}
+.pdf-exporting-target .bg-emerald-50,
+.pdf-exporting-target [class*="bg-emerald"] {
+  background-color: #ECFDF5 !important;
+  border-color: #A7F3D0 !important;
+  color: #065F46 !important;
 }
 
 /* PREFERS-REDUCED-MOTION SUPPORT */

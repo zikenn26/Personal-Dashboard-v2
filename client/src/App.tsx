@@ -2369,7 +2369,7 @@ export default function App() {
                 >
                   {/* Universal Return to Dashboard Shortcut for all sub-views */}
                   {activeView !== 'home' && (
-                    <div className="pt-2 pb-1.5">
+                    <div className="pt-2 pb-1.5 print:hidden">
                       <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-[#F7F7F5] dark:bg-[#1F2937] border border-[#EDECE9] dark:border-[#374151] shadow-2xs">
                         <button
                           type="button"

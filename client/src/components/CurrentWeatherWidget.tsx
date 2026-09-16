@@ -34,7 +34,7 @@ interface WeatherData {
   timestamp: number;
 }
 
-// Fallback coordinates mapped by prominent regions if geolocation is not granted
+// Fallback coordinates mapped by prominent regions if geolocation has not yet been granted
 const TIMEZONE_CITY_MAP: Record<string, { name: string; lat: number; lon: number }> = {
   'America/New_York': { name: 'New York', lat: 40.7128, lon: -74.006 },
   'America/Chicago': { name: 'Chicago', lat: 41.8781, lon: -87.6298 },
@@ -44,7 +44,7 @@ const TIMEZONE_CITY_MAP: Record<string, { name: string; lat: number; lon: number
   'Europe/Paris': { name: 'Paris', lat: 48.8566, lon: 2.3522 },
   'Europe/Berlin': { name: 'Berlin', lat: 52.52, lon: 13.405 },
   'Asia/Kolkata': { name: 'New Delhi', lat: 28.6139, lon: 77.209 },
-  'Asia/Calcutta': { name: 'Mumbai', lat: 19.076, lon: 72.8777 },
+  'Asia/Calcutta': { name: 'New Delhi', lat: 28.6139, lon: 77.209 },
   'Asia/Dubai': { name: 'Dubai', lat: 25.2048, lon: 55.2708 },
   'Asia/Singapore': { name: 'Singapore', lat: 1.3521, lon: 103.8198 },
   'Asia/Tokyo': { name: 'Tokyo', lat: 35.6762, lon: 139.6503 },
@@ -107,6 +107,31 @@ function getWeatherDetails(code: number, isDay: boolean): {
 }
 
 const STORAGE_CACHE_KEY = 'lifeos_current_weather_cache';
+const SAVED_LOCATION_STORAGE_KEY = 'lifeos_user_saved_location';
+
+interface SavedLocationData {
+  lat: number;
+  lon: number;
+  cityName?: string;
+  timestamp: number;
+  isUserAllowed: boolean;
+}
+
+// Safely get user's previously permitted location
+function getSavedUserLocation(): SavedLocationData | null {
+  try {
+    const raw = localStorage.getItem(SAVED_LOCATION_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed.lat === 'number' && typeof parsed.lon === 'number' && parsed.isUserAllowed) {
+        return parsed;
+      }
+    }
+  } catch {
+    // Ignore storage parse errors
+  }
+  return null;
+}
 
 export const CurrentWeatherWidget: React.FC<CurrentWeatherWidgetProps> = ({ soundEnabled = false }) => {
   const [weather, setWeather] = useState<WeatherData | null>(() => {
@@ -114,9 +139,12 @@ export const CurrentWeatherWidget: React.FC<CurrentWeatherWidgetProps> = ({ soun
       const saved = localStorage.getItem(STORAGE_CACHE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        // If cached less than 45 minutes ago, use it immediately
+        // If cached less than 45 minutes ago and not default Mumbai when a saved location exists, use it
         if (Date.now() - parsed.timestamp < 45 * 60 * 1000) {
-          return parsed;
+          const userSaved = getSavedUserLocation();
+          if (!userSaved || !userSaved.cityName || parsed.cityName === userSaved.cityName) {
+            return parsed;
+          }
         }
       }
     } catch {
@@ -150,7 +178,7 @@ export const CurrentWeatherWidget: React.FC<CurrentWeatherWidgetProps> = ({ soun
   };
 
   // Fetch weather data from Open-Meteo external API
-  const fetchWeather = useCallback(async (lat: number, lon: number, locationName?: string) => {
+  const fetchWeather = useCallback(async (lat: number, lon: number, locationName?: string, isUserGps = false) => {
     try {
       setErrorMsg(null);
       const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,wind_speed_10m&timezone=auto`;
@@ -187,6 +215,24 @@ export const CurrentWeatherWidget: React.FC<CurrentWeatherWidgetProps> = ({ soun
         resolvedCity = parts[parts.length - 1].replace(/_/g, ' ');
       }
 
+      const finalCity = resolvedCity || 'My Location';
+
+      // If this was from user device GPS or allowed location, permanently save it for future application visits!
+      if (isUserGps) {
+        try {
+          const locToSave: SavedLocationData = {
+            lat,
+            lon,
+            cityName: finalCity,
+            timestamp: Date.now(),
+            isUserAllowed: true,
+          };
+          localStorage.setItem(SAVED_LOCATION_STORAGE_KEY, JSON.stringify(locToSave));
+        } catch (e) {
+          console.warn('Failed to save user location to storage', e);
+        }
+      }
+
       const freshWeather: WeatherData = {
         temperature: current.temperature_2m,
         apparentTemperature: current.apparent_temperature,
@@ -194,7 +240,7 @@ export const CurrentWeatherWidget: React.FC<CurrentWeatherWidgetProps> = ({ soun
         windSpeed: current.wind_speed_10m,
         weatherCode: current.weather_code,
         isDay: current.is_day === 1,
-        cityName: resolvedCity || 'My Location',
+        cityName: finalCity,
         timestamp: Date.now(),
       };
 
@@ -209,33 +255,46 @@ export const CurrentWeatherWidget: React.FC<CurrentWeatherWidgetProps> = ({ soun
     }
   }, []);
 
-  // Request location from browser or fallback to timezone region
+  // Request location from browser or use saved location from previous visits
   const requestLocationAndWeather = useCallback(() => {
     setIsRefreshing(true);
 
+    const savedLoc = getSavedUserLocation();
+
+    // 1. If user has previously allowed device location, use it immediately so it never reverts to Mumbai
+    if (savedLoc) {
+      fetchWeather(savedLoc.lat, savedLoc.lon, savedLoc.cityName, true);
+    }
+
+    // 2. Request current device location from browser to update coordinates
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const { latitude, longitude } = position.coords;
-          fetchWeather(latitude, longitude);
+          // Store and fetch with fresh GPS coordinates
+          fetchWeather(latitude, longitude, undefined, true);
         },
         (geoError) => {
           console.warn('Geolocation denied or timed out:', geoError.message);
-          // Fallback to timezone based coordinates
-          const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-          const fallback = TIMEZONE_CITY_MAP[tz] || {
-            name: tz.split('/').pop()?.replace(/_/g, ' ') || 'Current Location',
-            lat: 40.7128,
-            lon: -74.006,
-          };
-          fetchWeather(fallback.lat, fallback.lon, fallback.name);
+          // If we already loaded savedLoc, do nothing (keep saved user location!)
+          if (!getSavedUserLocation()) {
+            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            const fallback = TIMEZONE_CITY_MAP[tz] || {
+              name: 'My Location',
+              lat: 28.6139,
+              lon: 77.209,
+            };
+            fetchWeather(fallback.lat, fallback.lon, fallback.name, false);
+          } else {
+            setIsRefreshing(false);
+          }
         },
-        { timeout: 7000, enableHighAccuracy: false }
+        { timeout: 8000, enableHighAccuracy: true }
       );
-    } else {
+    } else if (!savedLoc) {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const fallback = TIMEZONE_CITY_MAP[tz] || { name: 'New York', lat: 40.7128, lon: -74.006 };
-      fetchWeather(fallback.lat, fallback.lon, fallback.name);
+      const fallback = TIMEZONE_CITY_MAP[tz] || { name: 'My Location', lat: 28.6139, lon: 77.209 };
+      fetchWeather(fallback.lat, fallback.lon, fallback.name, false);
     }
   }, [fetchWeather]);
 

@@ -155,7 +155,13 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
   // Print Handler
   const handlePrint = () => {
     Sound.click(soundEnabled);
-    window.print();
+    if (isInlineEditMode) {
+      setIsInlineEditMode(false);
+    }
+    setTimeout(() => {
+      window.focus();
+      window.print();
+    }, 150);
   };
 
   // High Quality PDF Download via html2canvas & jsPDF
@@ -166,38 +172,49 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
 
     try {
       setIsExportingPDF(true);
+      const wasEditing = isInlineEditMode;
+      if (wasEditing) setIsInlineEditMode(false);
 
-      // Temporarily ensure light styling and clean borders for capture
+      // Temporarily attach high-contrast export styling class
+      element.classList.add('pdf-exporting-target');
+      await new Promise((resolve) => setTimeout(resolve, 80));
+
       const canvas = await html2canvas(element, {
-        scale: 2.5, // 2.5x resolution for ultra-sharp vector-like text
+        scale: 2, // 2x crisp resolution
         useCORS: true,
         allowTaint: true,
         backgroundColor: '#ffffff',
         logging: false,
-        windowWidth: 1200,
+        scrollX: 0,
+        scrollY: 0,
       });
+
+      element.classList.remove('pdf-exporting-target');
+      if (wasEditing) setIsInlineEditMode(true);
 
       const imgData = canvas.toDataURL('image/jpeg', 0.98);
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
 
-      const imgWidth = pdfWidth;
-      const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+      // Maintain standard 8mm print margin
+      const margin = 8;
+      const contentWidth = pdfWidth - margin * 2;
+      const contentHeight = (canvas.height * contentWidth) / canvas.width;
 
-      let heightLeft = imgHeight;
-      let position = 0;
+      let heightLeft = contentHeight;
+      let position = margin;
 
       // First Page
-      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
-      heightLeft -= pdfHeight;
+      pdf.addImage(imgData, 'JPEG', margin, position, contentWidth, contentHeight, undefined, 'FAST');
+      heightLeft -= (pdfHeight - margin * 2);
 
       // Additional pages if needed
       while (heightLeft > 0) {
-        position = heightLeft - imgHeight;
+        position = heightLeft - contentHeight + margin;
         pdf.addPage();
-        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
-        heightLeft -= pdfHeight;
+        pdf.addImage(imgData, 'JPEG', margin, position, contentWidth, contentHeight, undefined, 'FAST');
+        heightLeft -= (pdfHeight - margin * 2);
       }
 
       const cleanFileName = (profile.name || 'User_Resume')
@@ -214,6 +231,7 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
       window.print();
     } finally {
       setIsExportingPDF(false);
+      element.classList.remove('pdf-exporting-target');
     }
   };
 
@@ -628,7 +646,7 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
   const coverSrc = profile.staticCoverImage || STOCK_IMAGES.workspaceCover;
 
   return (
-    <div className="min-h-screen py-4 px-2 sm:px-4 lg:px-6 space-y-6">
+    <div className="min-h-screen py-4 px-2 sm:px-4 lg:px-6 space-y-6 print:min-h-0 print:py-0 print:px-0 print:space-y-0">
       {/* 1. LINKEDIN-STYLE PROFILE HEADER CARD (Interactive banner, avatar, headline, quick actions) */}
       <div
         id="linkedin-profile-card"
@@ -705,7 +723,7 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
               </span>
             </div>
 
-            {/* LinkedIn Header Action Buttons */}
+            {/* Header Action Buttons */}
             <div className="flex flex-wrap items-center gap-2">
               {/* Direct PDF Download */}
               <button
@@ -727,6 +745,17 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
                 )}
               </button>
 
+              {/* Print */}
+              <button
+                type="button"
+                onClick={handlePrint}
+                className="px-3.5 py-2 rounded-xl bg-white dark:bg-[#1F2937] border border-[#E5E7EB] dark:border-[#374151] hover:border-[#6366F1] text-xs font-bold text-[#374151] dark:text-[#CBD5E1] transition-all flex items-center gap-1.5 cursor-pointer"
+                title="Print or Save as PDF"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Print</span>
+              </button>
+
               {/* Toggle Inline Edit Mode */}
               <button
                 type="button"
@@ -741,7 +770,7 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
                 }`}
               >
                 <Edit3 className="w-3.5 h-3.5 text-current" />
-                <span>{isInlineEditMode ? 'Editing Active (ON)' : 'Edit Resume'}</span>
+                <span>{isInlineEditMode ? 'Done Editing' : 'Edit Resume'}</span>
               </button>
 
               {/* Edit Details Modal */}
@@ -764,23 +793,18 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
                 className="px-3.5 py-2 rounded-xl bg-white dark:bg-[#1F2937] border border-[#E5E7EB] dark:border-[#374151] hover:border-[#6366F1] text-xs font-semibold text-[#374151] dark:text-[#CBD5E1] transition-all flex items-center gap-1.5 cursor-pointer"
               >
                 <Sliders className="w-3.5 h-3.5 text-[#6366F1]" />
-                <span>Edit Modal</span>
+                <span>Edit Profile</span>
               </button>
             </div>
           </div>
 
-          {/* LinkedIn Identity Info */}
+          {/* Profile Identity Info */}
           <div className="space-y-2">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="workspace-heading font-black text-[#111827] dark:text-white tracking-tight">
-                    {profile.name || 'Personal Workspace'}
-                  </h1>
-                  <span className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-[#6366F1] dark:text-[#818CF8] text-[10px] font-bold">
-                    PRO
-                  </span>
-                </div>
+                <h1 className="workspace-heading font-black text-[#111827] dark:text-white tracking-tight">
+                  {profile.name || 'Personal Workspace'}
+                </h1>
                 {profile.title && (
                   <p className="text-sm font-semibold text-[#374151] dark:text-[#CBD5E1] pt-0.5">
                     {profile.title}
@@ -788,7 +812,7 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
                 )}
               </div>
 
-              {/* Company & Education Chips (LinkedIn style) */}
+              {/* Company & Education Chips */}
               {(profile.currentCompany || (profile.educationRecords && profile.educationRecords.length > 0)) && (
                 <div className="flex flex-col gap-1 text-xs text-[#4B5563] dark:text-[#9CA3AF]">
                   {profile.currentCompany && (
@@ -843,139 +867,15 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
                 </a>
               )}
             </div>
-
-            {/* Open to Work Badge */}
-            <div className="pt-2">
-              <div className="p-3 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
-                    Open to Work • Full-Stack Software Engineering &amp; Architecture Roles
-                  </span>
-                </div>
-                <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 hidden sm:inline">
-                  Hybrid / Remote
-                </span>
-              </div>
-            </div>
           </div>
         </div>
       </div>
 
-      {/* 2. TOP ACTION TOOLBAR (Print, Copy, Export, Direct Edit Toggle) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-white dark:bg-[#111827] border border-[#E5E7EB] dark:border-[#1F2937] shadow-2xs print:hidden max-w-4xl mx-auto">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-[#6366F1] flex items-center justify-center font-bold">
-            <FileText className="w-4 h-4" />
-          </div>
-          <div>
-            <h2 className="text-xs font-bold text-[#111827] dark:text-white flex items-center gap-2">
-              <span>ATS Resume &amp; Curriculum Vitae</span>
-              <span className="text-[10px] font-mono px-2 py-0.2 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 font-semibold">
-                Direct Edit Ready
-              </span>
-            </h2>
-            <p className="text-[11px] text-[#6B7280] dark:text-[#9CA3AF]">
-              {isInlineEditMode
-                ? 'Editing mode is active: click any field directly in the resume below to edit text in real-time.'
-                : 'Click "Edit Resume" or any field below to update details, then download your high-res PDF.'}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Direct PDF Download */}
-          <button
-            type="button"
-            onClick={handleDownloadPDF}
-            disabled={isExportingPDF}
-            className="px-3.5 py-1.5 rounded-xl bg-[#6366F1] hover:bg-[#4F46E5] text-white text-xs font-bold shadow-xs hover:shadow-md transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-          >
-            {isExportingPDF ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>Exporting...</span>
-              </>
-            ) : (
-              <>
-                <Download className="w-3.5 h-3.5" />
-                <span>Download PDF</span>
-              </>
-            )}
-          </button>
-
-          {/* Print / Save PDF */}
-          <button
-            type="button"
-            onClick={handlePrint}
-            className="px-3 py-1.5 rounded-xl bg-white dark:bg-[#1F2937] border border-[#E5E7EB] dark:border-[#374151] hover:border-[#6366F1] text-xs font-semibold text-[#374151] dark:text-[#CBD5E1] transition-all flex items-center gap-1.5 cursor-pointer"
-          >
-            <Printer className="w-3.5 h-3.5" />
-            <span>Print</span>
-          </button>
-
-          {/* Toggle Direct Inline Edit */}
-          <button
-            type="button"
-            onClick={() => {
-              Sound.click(soundEnabled);
-              setIsInlineEditMode(!isInlineEditMode);
-            }}
-            className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
-              isInlineEditMode
-                ? 'bg-amber-500 text-white border-amber-600'
-                : 'bg-white dark:bg-[#1F2937] border-[#E5E7EB] dark:border-[#374151] text-[#374151] dark:text-[#CBD5E1] hover:border-[#6366F1]'
-            }`}
-          >
-            <Edit2 className="w-3.5 h-3.5 text-current" />
-            <span>{isInlineEditMode ? 'Done Editing' : 'Direct Edit'}</span>
-          </button>
-
-          {/* Copy Markdown */}
-          <button
-            type="button"
-            onClick={handleCopyMarkdown}
-            className="px-3 py-1.5 rounded-xl bg-white dark:bg-[#1F2937] border border-[#E5E7EB] dark:border-[#374151] hover:border-[#6366F1] text-xs font-semibold text-[#374151] dark:text-[#CBD5E1] transition-all flex items-center gap-1.5 cursor-pointer"
-          >
-            {copiedSuccess ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-emerald-500" />
-                <span className="text-emerald-600 font-bold">Copied!</span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-3.5 h-3.5 text-[#6366F1]" />
-                <span>Markdown</span>
-              </>
-            )}
-          </button>
-
-          {/* Export JSON */}
-          <button
-            type="button"
-            onClick={handleDownloadJSON}
-            className="px-3 py-1.5 rounded-xl bg-white dark:bg-[#1F2937] border border-[#E5E7EB] dark:border-[#374151] hover:border-[#6366F1] text-xs font-semibold text-[#374151] dark:text-[#CBD5E1] transition-all flex items-center gap-1.5 cursor-pointer"
-          >
-            {downloadSuccess ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-emerald-500" />
-                <span className="text-emerald-600 font-bold">Exported!</span>
-              </>
-            ) : (
-              <>
-                <Download className="w-3.5 h-3.5 text-[#6366F1]" />
-                <span>JSON</span>
-              </>
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* 3. MAIN ATS RESUME DOCUMENT SHEET (Inline Editable + Capture Target for PDF) */}
+      {/* 2. MAIN CURRICULUM VITAE & PORTFOLIO DOCUMENT SHEET (Inline Editable + Capture Target for PDF) */}
       <div
         id="printable-resume-sheet"
         ref={resumeSheetRef}
-        className={`max-w-4xl mx-auto p-6 sm:p-10 rounded-3xl bg-white dark:bg-[#111827] border shadow-sm space-y-7 transition-all print:border-none print:shadow-none print:p-0 print:m-0 ${
+        className={`max-w-4xl mx-auto p-6 sm:p-10 rounded-3xl bg-white dark:bg-[#111827] border shadow-sm space-y-7 transition-all print:border-none print:shadow-none print:p-0 print:m-0 print:max-w-none print:w-full print:bg-white print:text-[#111827] ${
           isInlineEditMode
             ? 'border-amber-400 dark:border-amber-500 ring-2 ring-amber-400/20'
             : 'border-[#E5E7EB] dark:border-[#1F2937]'
@@ -1149,9 +1049,9 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
         </div>
 
         {/* 1. PROFESSIONAL SUMMARY */}
-        <div className="space-y-2 group">
+        <div className="space-y-2 group resume-section">
           <div className="flex items-center justify-between">
-            <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2">
+            <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2 resume-section-heading">
               <Sparkles className="w-3.5 h-3.5 text-[#6366F1]" />
               <span>PROFESSIONAL SUMMARY</span>
             </h2>
@@ -1179,16 +1079,16 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
               className="w-full text-xs sm:text-sm text-[#111827] dark:text-white leading-relaxed bg-amber-50/50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 p-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-400"
             />
           ) : (
-            <p className="text-xs sm:text-sm text-[#374151] dark:text-[#D1D5DB] leading-relaxed">
+            <p className="text-xs sm:text-sm text-[#374151] dark:text-[#D1D5DB] leading-relaxed break-words">
               {summaryText}
             </p>
           )}
         </div>
 
         {/* 2. PROFESSIONAL EXPERIENCE */}
-        <div className="space-y-4">
+        <div className="space-y-4 resume-section">
           <div className="flex items-center justify-between">
-            <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2">
+            <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2 resume-section-heading">
               <Briefcase className="w-3.5 h-3.5 text-[#6366F1]" />
               <span>PROFESSIONAL EXPERIENCE</span>
             </h2>
@@ -1207,7 +1107,7 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
 
           <div className="space-y-5">
             {jobExperiences.map((job) => (
-              <div key={job.id} className="space-y-1.5 group relative">
+              <div key={job.id} className="space-y-1.5 group relative resume-entry resume-job-card">
                 {/* Header Row */}
                 <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1">
                   {isInlineEditMode ? (
@@ -1379,9 +1279,9 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
         </div>
 
         {/* 3. EDUCATION & ACADEMIC QUALIFICATIONS */}
-        <div className="space-y-4">
+        <div className="space-y-4 resume-section">
           <div className="flex items-center justify-between">
-            <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2">
+            <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2 resume-section-heading">
               <GraduationCap className="w-3.5 h-3.5 text-[#6366F1]" />
               <span>EDUCATION &amp; ACADEMIC QUALIFICATIONS</span>
             </h2>
@@ -1400,7 +1300,7 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
 
           <div className="space-y-4">
             {educationRecords.map((edu) => (
-              <div key={edu.id} className="space-y-1 group relative">
+              <div key={edu.id} className="space-y-1 group relative resume-entry resume-edu-card">
                 <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1">
                   {isInlineEditMode ? (
                     <div className="flex flex-wrap items-center gap-2 flex-1">
@@ -1492,9 +1392,9 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
         </div>
 
         {/* 4. TECHNICAL SKILLS & PROFICIENCIES */}
-        <div className="space-y-3">
+        <div className="space-y-3 resume-section">
           <div className="flex items-center justify-between">
-            <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2">
+            <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2 resume-section-heading">
               <Code2 className="w-3.5 h-3.5 text-[#6366F1]" />
               <span>TECHNICAL SKILLS &amp; PROFICIENCIES</span>
             </h2>
@@ -1504,9 +1404,9 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
             {skills.map((sc, catIdx) => (
               <div
                 key={catIdx}
-                className="text-xs flex flex-col sm:flex-row sm:items-baseline gap-1.5"
+                className="text-xs flex flex-col sm:flex-row sm:items-baseline gap-1.5 resume-entry resume-skill-row"
               >
-                <span className="font-bold text-[#111827] dark:text-white sm:w-44 shrink-0">
+                <span className="font-bold text-[#111827] dark:text-white sm:w-44 shrink-0 resume-skill-cat">
                   {sc.category}:
                 </span>
 
@@ -1566,9 +1466,9 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
 
         {/* 5. FEATURED PROJECTS & SOFTWARE */}
         {projects.length > 0 && (
-          <div className="space-y-3">
+          <div className="space-y-3 resume-section">
             <div className="flex items-center justify-between">
-              <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2">
+              <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2 resume-section-heading">
                 <FolderGit2 className="w-3.5 h-3.5 text-[#6366F1]" />
                 <span>KEY PROJECTS &amp; SOFTWARE</span>
               </h2>
@@ -1585,7 +1485,7 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 resume-projects-grid">
               {projects.map((p) => {
                 const live = p.liveUrl || p.link;
                 const github = p.githubUrl;
@@ -1593,7 +1493,7 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
                 return (
                   <div
                     key={p.id}
-                    className="p-3.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B]/70 border border-[#E2E8F0] dark:border-[#334155] space-y-1.5 group relative"
+                    className="p-3.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B]/70 border border-[#E2E8F0] dark:border-[#334155] space-y-1.5 group relative resume-entry resume-project-card"
                   >
                     <div className="flex items-center justify-between">
                       <h3 className="text-xs font-bold text-[#111827] dark:text-white">
@@ -1636,12 +1536,12 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
                       </div>
                     </div>
 
-                    <p className="text-xs text-[#4B5563] dark:text-[#9CA3AF] leading-relaxed">
+                    <p className="text-xs text-[#4B5563] dark:text-[#9CA3AF] leading-relaxed break-words">
                       {p.description}
                     </p>
 
                     {techList && techList.length > 0 && (
-                      <p className="text-[10px] font-mono text-[#6366F1] dark:text-[#818CF8] pt-0.5">
+                      <p className="text-[10px] font-mono text-[#6366F1] dark:text-[#818CF8] pt-0.5 break-words">
                         {techList.join(', ')}
                       </p>
                     )}
@@ -1653,8 +1553,8 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
         )}
 
         {/* 6. CERTIFICATIONS */}
-        <div className="space-y-2">
-          <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2">
+        <div className="space-y-2 resume-section">
+          <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2 resume-section-heading">
             <Sparkles className="w-3.5 h-3.5 text-[#6366F1]" />
             <span>CERTIFICATIONS</span>
           </h2>
@@ -1667,7 +1567,7 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
               return (
                 <div
                   key={idx}
-                  className="flex items-center justify-between text-xs text-[#374151] dark:text-[#D1D5DB]"
+                  className="flex items-center justify-between text-xs text-[#374151] dark:text-[#D1D5DB] resume-entry resume-cert-item"
                 >
                   <span className="flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#6366F1]" />
@@ -1724,8 +1624,8 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
         </div>
 
         {/* 7. ADDITIONAL INFORMATION */}
-        <div className="space-y-2">
-          <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2">
+        <div className="space-y-2 resume-section">
+          <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2 resume-section-heading">
             <Check className="w-3.5 h-3.5 text-emerald-500" />
             <span>ADDITIONAL INFORMATION</span>
           </h2>
@@ -1734,7 +1634,7 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
             {additionalInfo.map((info, idx) => (
               <div
                 key={idx}
-                className="flex items-center justify-between text-xs text-[#374151] dark:text-[#D1D5DB]"
+                className="flex items-center justify-between text-xs text-[#374151] dark:text-[#D1D5DB] resume-entry resume-info-item"
               >
                 <span className="flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
@@ -1774,8 +1674,8 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
         </div>
 
         {/* 8. HOBBIES & PERSONAL INTERESTS */}
-        <div className="space-y-2">
-          <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2">
+        <div className="space-y-2 resume-section">
+          <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2 resume-section-heading">
             <Heart className="w-3.5 h-3.5 text-rose-500" />
             <span>HOBBIES &amp; PERSONAL INTERESTS</span>
           </h2>
@@ -1784,7 +1684,7 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
             {hobbies.map((h) => (
               <span
                 key={h.id}
-                className="px-3 py-1 rounded-xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] text-xs text-[#374151] dark:text-[#D1D5DB] flex items-center gap-1.5"
+                className="px-3 py-1 rounded-xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] text-xs text-[#374151] dark:text-[#D1D5DB] flex items-center gap-1.5 resume-entry"
               >
                 <span>{h.icon || '✨'}</span>
                 <span className="font-semibold">{h.title}</span>
