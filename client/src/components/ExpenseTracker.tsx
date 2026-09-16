@@ -40,6 +40,7 @@ import {
   ShieldCheck,
   AlertTriangle,
   ArrowUpDown,
+  CalendarRange,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -65,6 +66,7 @@ import { Sound } from '../utils/audio';
 import { triggerConfetti } from '../utils/confetti';
 import { ExcelImportModal } from './ExcelImportModal';
 import { ExpenseDistributionSection } from './ExpenseDistributionSection';
+import { DateRangePicker, type DateRange } from './DateRangePicker';
 
 interface ExpenseTrackerProps {
   expenses: ExpenseItem[];
@@ -589,7 +591,9 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     showToast('All spending transactions have been completely cleared.');
   };
 
-  const [activeFilter, setActiveFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'today' | 'week' | 'month' | 'custom'>('all');
+  const [customDateRange, setCustomDateRange] = useState<DateRange>({ startDate: '', endDate: '' });
+  const [modalDateRange, setModalDateRange] = useState<DateRange>({ startDate: '', endDate: '' });
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc' | 'name-asc'>('date-desc');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -604,7 +608,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   // Automatically reset pagination to page 1 whenever any filter or search changes
   useEffect(() => {
     setTxCurrentPage(1);
-  }, [searchQuery, selectedCategoryFilter, activeFilter, selectedYear, selectedMonthIndex, selectedSheetFilter, sortBy]);
+  }, [searchQuery, selectedCategoryFilter, activeFilter, customDateRange, selectedYear, selectedMonthIndex, selectedSheetFilter, sortBy]);
 
   // Quick Preset Custom Modal
   const [showCustomPresetModal, setShowCustomPresetModal] = useState<boolean>(false);
@@ -958,6 +962,17 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       });
     } else if (activeFilter === 'month') {
       list = list.filter((e) => (e.date || '').startsWith(selectedPrefix));
+    } else if (activeFilter === 'custom') {
+      if (customDateRange.startDate && customDateRange.endDate) {
+        list = list.filter((e) => {
+          if (!e.date) return false;
+          return e.date >= customDateRange.startDate && e.date <= customDateRange.endDate;
+        });
+      } else if (customDateRange.startDate) {
+        list = list.filter((e) => (e.date || '') >= customDateRange.startDate);
+      } else if (customDateRange.endDate) {
+        list = list.filter((e) => (e.date || '') <= customDateRange.endDate);
+      }
     }
 
     const sortFn = (a: ExpenseItem, b: ExpenseItem) => {
@@ -982,6 +997,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     // Sort all filtered transactions first
     list.sort(sortFn);
     const totalFilteredCount = list.length;
+    const filteredTotalAmount = list.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
     const totalPages = Math.max(1, Math.ceil(totalFilteredCount / TX_PAGE_SIZE));
     const safePage = Math.min(Math.max(1, txCurrentPage), totalPages);
     const startIndex = (safePage - 1) * TX_PAGE_SIZE;
@@ -1012,13 +1028,14 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       Earlier: groups.Earlier,
       isEmpty: visibleSlice.length === 0,
       totalFilteredCount,
+      filteredTotalAmount,
       displayedCount: visibleSlice.length,
       currentPage: safePage,
       totalPages,
       startIndex,
       endIndex,
     };
-  }, [currentExpenses, searchQuery, selectedCategoryFilter, activeFilter, selectedYear, selectedMonthIndex, selectedSheetFilter, expenseRenderTick, sortBy, txCurrentPage]);
+  }, [currentExpenses, searchQuery, selectedCategoryFilter, activeFilter, customDateRange, selectedYear, selectedMonthIndex, selectedSheetFilter, expenseRenderTick, sortBy, txCurrentPage]);
 
   // Count of imported items in database
   const importedCount = useMemo(() => {
@@ -1030,6 +1047,16 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     let list = [...expenses];
     if (modalCategoryFilter !== 'all') {
       list = list.filter((e) => e.category.toLowerCase() === modalCategoryFilter.toLowerCase());
+    }
+    if (modalDateRange.startDate && modalDateRange.endDate) {
+      list = list.filter((e) => {
+        if (!e.date) return false;
+        return e.date >= modalDateRange.startDate && e.date <= modalDateRange.endDate;
+      });
+    } else if (modalDateRange.startDate) {
+      list = list.filter((e) => (e.date || '') >= modalDateRange.startDate);
+    } else if (modalDateRange.endDate) {
+      list = list.filter((e) => (e.date || '') <= modalDateRange.endDate);
     }
     list.sort((a, b) => {
       if (modalSortBy === 'date-desc') {
@@ -1050,7 +1077,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       return 0;
     });
     return list;
-  }, [expenses, modalCategoryFilter, modalSortBy]);
+  }, [expenses, modalCategoryFilter, modalSortBy, modalDateRange]);
 
   const getCategoryBadge = (category: string) => {
     const cat = EXPENSE_CATEGORIES.find((c) => c.name.toLowerCase() === category.toLowerCase());
@@ -1466,6 +1493,9 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                   onClick={() => {
                     Sound.click(soundEnabled);
                     setActiveFilter(filterKey);
+                    if (filterKey !== 'all') {
+                      setCustomDateRange({ startDate: '', endDate: '' });
+                    }
                   }}
                   className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                     activeFilter === filterKey
@@ -1482,6 +1512,24 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                     : `${MONTH_NAMES[selectedMonthIndex]}`}
                 </button>
               ))}
+
+              {/* Date Range Picker Component */}
+              <DateRangePicker
+                dateRange={customDateRange}
+                isActive={activeFilter === 'custom'}
+                onChange={(range) => {
+                  Sound.click(soundEnabled);
+                  setCustomDateRange(range);
+                  setActiveFilter('custom');
+                  setTxCurrentPage(1);
+                }}
+                onClear={() => {
+                  Sound.click(soundEnabled);
+                  setCustomDateRange({ startDate: '', endDate: '' });
+                  setActiveFilter('all');
+                  setTxCurrentPage(1);
+                }}
+              />
 
               <div className="h-4 w-px bg-gray-200 dark:bg-gray-700 mx-1 shrink-0" />
 
@@ -1528,6 +1576,39 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
 
             {/* Transaction Items (Grouped by Today, Yesterday, Earlier) */}
             <div className="space-y-4 pt-1">
+              {/* Active Date Range Filter Banner */}
+              {activeFilter === 'custom' && (customDateRange.startDate || customDateRange.endDate) && (
+                <div className="flex items-center justify-between p-2.5 px-3 rounded-xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-xs text-purple-900 dark:text-purple-200">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <CalendarRange className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                    <span className="truncate">
+                      Filtering spending by date range:{' '}
+                      <strong className="font-bold text-purple-700 dark:text-purple-300">
+                        {customDateRange.startDate && customDateRange.endDate
+                          ? `${customDateRange.startDate} to ${customDateRange.endDate}`
+                          : customDateRange.startDate
+                          ? `From ${customDateRange.startDate}`
+                          : `Until ${customDateRange.endDate}`}
+                      </strong>{' '}
+                      ({groupedTransactions.totalFilteredCount} transactions, Total: ${groupedTransactions.filteredTotalAmount.toFixed(2)})
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      Sound.click(soundEnabled);
+                      setCustomDateRange({ startDate: '', endDate: '' });
+                      setActiveFilter('all');
+                      setTxCurrentPage(1);
+                    }}
+                    className="flex items-center gap-1 text-xs font-bold text-purple-700 dark:text-purple-300 hover:underline cursor-pointer shrink-0 ml-2"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>Clear Date Filter</span>
+                  </button>
+                </div>
+              )}
+
               {selectedCategoryFilter !== 'all' && (
                 <div className="flex items-center justify-between p-2.5 px-3 rounded-xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-xs text-purple-900 dark:text-purple-200">
                   <div className="flex items-center gap-2 min-w-0">
@@ -2515,23 +2596,40 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
 
             {/* Modal Filter & Sort Toolbar */}
             <div className="px-4 py-2.5 bg-gray-50/70 dark:bg-[#151C28] border-b border-[#E5E7EB] dark:border-[#2D3748] flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5">
-                <Filter className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                <select
-                  value={modalCategoryFilter}
-                  onChange={(e) => {
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Filter className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                  <select
+                    value={modalCategoryFilter}
+                    onChange={(e) => {
+                      Sound.click(soundEnabled);
+                      setModalCategoryFilter(e.target.value);
+                    }}
+                    className="px-2.5 py-1 rounded-full text-xs font-semibold bg-white dark:bg-[#1E293B] text-[#37352F] dark:text-white border border-[#E5E7EB] dark:border-[#2D3748] outline-none cursor-pointer"
+                  >
+                    <option value="all">All Categories</option>
+                    {EXPENSE_CATEGORIES.map((c) => (
+                      <option key={c.name} value={c.name}>
+                        {c.icon} {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <DateRangePicker
+                  dateRange={modalDateRange}
+                  isActive={Boolean(modalDateRange.startDate || modalDateRange.endDate)}
+                  onChange={(range) => {
                     Sound.click(soundEnabled);
-                    setModalCategoryFilter(e.target.value);
+                    setModalDateRange(range);
                   }}
-                  className="px-2.5 py-1 rounded-full text-xs font-semibold bg-white dark:bg-[#1E293B] text-[#37352F] dark:text-white border border-[#E5E7EB] dark:border-[#2D3748] outline-none cursor-pointer"
-                >
-                  <option value="all">All Categories</option>
-                  {EXPENSE_CATEGORIES.map((c) => (
-                    <option key={c.name} value={c.name}>
-                      {c.icon} {c.name}
-                    </option>
-                  ))}
-                </select>
+                  onClear={() => {
+                    Sound.click(soundEnabled);
+                    setModalDateRange({ startDate: '', endDate: '' });
+                  }}
+                  compact
+                  align="left"
+                />
               </div>
 
               <div className="flex items-center gap-1.5 ml-auto">

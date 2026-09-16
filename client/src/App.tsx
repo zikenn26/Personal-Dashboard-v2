@@ -1665,14 +1665,22 @@ export default function App() {
           {/* Left: Sidebar Toggle, Mobile Menu & Notion Breadcrumb Navigation */}
           <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
             {/* Desktop Sidebar Toggle Button */}
-            <button
+            <motion.button
               type="button"
+              id="btn-desktop-sidebar-toggle"
               onClick={handleToggleSidebar}
-              className="hidden md:flex p-1.5 rounded-lg text-[#787774] dark:text-[#9CA3AF] hover:bg-[#F1F1EF] dark:hover:bg-[#1F2937] hover:text-[#37352F] dark:hover:text-white cursor-pointer transition-colors shrink-0"
+              whileTap={{ scale: 0.92 }}
+              className="hidden md:flex items-center justify-center p-1.5 rounded-lg text-[#787774] dark:text-[#9CA3AF] hover:bg-[#F1F1EF] dark:hover:bg-[#1F2937] hover:text-[#37352F] dark:hover:text-white cursor-pointer transition-colors shrink-0"
               title={!isSidebarCollapsed ? 'Collapse sidebar (⌘\\)' : 'Expand sidebar (⌘\\)'}
             >
-              {!isSidebarCollapsed ? <ChevronLeft className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
-            </button>
+              <motion.div
+                animate={{ rotate: isSidebarCollapsed ? 180 : 0 }}
+                transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+                className="flex items-center justify-center"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </motion.div>
+            </motion.button>
 
             {/* Mobile Sidebar Toggle Button */}
             <button
@@ -1992,33 +2000,46 @@ export default function App() {
         {/* ===================================================================== */}
         <div className="flex-1 flex overflow-hidden min-h-0">
           {/* Desktop Left Sidebar: Pinned Home/Today at top, categorized nav, Collapse button at bottom */}
-          <aside
-            className={`hidden md:flex h-full bg-[#F7F7F5] dark:bg-[#111827] border-r border-[#EDECE9] dark:border-[#1E293B] flex-col justify-between shrink-0 select-none transition-all duration-200 ease-in-out z-20 overflow-y-auto overflow-x-hidden ${
-              !isSidebarCollapsed ? 'w-60 p-3.5' : 'w-16 p-2 items-center'
-            }`}
+          <motion.aside
+            initial={false}
+            animate={{
+              width: isSidebarCollapsed ? 68 : 240,
+            }}
+            transition={{
+              type: 'spring',
+              stiffness: 380,
+              damping: 32,
+              mass: 0.8,
+            }}
+            className="hidden md:flex h-full bg-[#F7F7F5] dark:bg-[#111827] border-r border-[#EDECE9] dark:border-[#1E293B] flex-col justify-between shrink-0 select-none z-20 overflow-y-auto overflow-x-hidden p-3"
           >
             <div className="space-y-4 w-full">
               {/* App Brand Header */}
-              {!isSidebarCollapsed ? (
-                <button type="button" onClick={() => handleNavigate('home')} className="flex items-center gap-2.5 px-2 py-1.5 text-left cursor-pointer hover:opacity-80 transition-opacity">
-                  <div className="w-7 h-7 rounded-xl bg-purple-600 dark:bg-purple-500 text-white flex items-center justify-center font-black text-sm shadow-xs shrink-0">
-                    ✨
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <span className="text-base font-extrabold text-[#37352F] dark:text-white tracking-tight block truncate">
-                      Personal Dashboard
-                    </span>
-                  </div>
-                </button>
-              ) : (
-                <div
-                  onClick={() => handleNavigate('home')}
-                  className="w-9 h-9 rounded-xl bg-purple-600 dark:bg-purple-500 text-white flex items-center justify-center font-black text-sm shadow-xs mx-auto cursor-pointer hover:opacity-90 transition-opacity"
-                  title="Personal Dashboard Home"
-                >
+              <button
+                type="button"
+                onClick={() => handleNavigate('home')}
+                className="flex items-center gap-2.5 px-1 py-1 text-left cursor-pointer hover:opacity-80 transition-opacity w-full overflow-hidden"
+                title="Personal Dashboard Home"
+              >
+                <div className="w-8 h-8 rounded-xl bg-purple-600 dark:bg-purple-500 text-white flex items-center justify-center font-black text-sm shadow-xs shrink-0">
                   ✨
                 </div>
-              )}
+                <AnimatePresence initial={false}>
+                  {!isSidebarCollapsed && (
+                    <motion.div
+                      initial={{ opacity: 0, x: -8, width: 0 }}
+                      animate={{ opacity: 1, x: 0, width: 'auto' }}
+                      exit={{ opacity: 0, x: -8, width: 0 }}
+                      transition={{ duration: 0.18, ease: 'easeInOut' }}
+                      className="min-w-0 flex-1 overflow-hidden whitespace-nowrap"
+                    >
+                      <span className="text-base font-extrabold text-[#37352F] dark:text-white tracking-tight block truncate">
+                        Personal Dashboard
+                      </span>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </button>
 
               {/* PINNED: HOME / TODAY ITEM */}
               <div className="w-full">
@@ -2031,23 +2052,33 @@ export default function App() {
                         key={item.id}
                         type="button"
                         onClick={() => handleNavigate(item.id)}
-                        className={`w-full flex items-center rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                          !isSidebarCollapsed ? 'justify-between px-3 py-2.5' : 'justify-center p-2.5'
-                        } ${
+                        className={`w-full flex items-center rounded-xl text-xs font-semibold transition-colors cursor-pointer px-2.5 py-2 overflow-hidden ${
                           isActive
                             ? 'bg-[#EEF2FF] dark:bg-[#1E1B4B] text-[#6366F1] dark:text-[#818CF8] font-bold shadow-2xs border border-[#C7D2FE] dark:border-[#374151]'
                             : 'text-[#37352F] dark:text-[#D1D5DB] hover:bg-[#F1F1EF] dark:hover:bg-[#1F2937]/50'
                         }`}
                         title={item.label}
                       >
-                        <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-5 h-5 flex items-center justify-center shrink-0">
                           {item.id === 'assistant' ? (
                             <BrandLogo size={18} className="rounded-xs shrink-0" />
                           ) : (
-                            <span className="text-base shrink-0">{item.emoji}</span>
+                            <span className="text-base leading-none">{item.emoji}</span>
                           )}
-                          {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
                         </div>
+                        <AnimatePresence initial={false}>
+                          {!isSidebarCollapsed && (
+                            <motion.div
+                              initial={{ opacity: 0, x: -6, width: 0 }}
+                              animate={{ opacity: 1, x: 0, width: 'auto' }}
+                              exit={{ opacity: 0, x: -6, width: 0 }}
+                              transition={{ duration: 0.18, ease: 'easeInOut' }}
+                              className="flex items-center justify-between min-w-0 flex-1 ml-2.5 overflow-hidden whitespace-nowrap"
+                            >
+                              <span className="truncate">{item.label}</span>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </button>
                     );
                   })}
@@ -2055,11 +2086,21 @@ export default function App() {
 
               {/* GROUP: PLAN */}
               <div className="space-y-1 w-full">
-                {!isSidebarCollapsed && (
-                  <span className="text-[10px] uppercase font-bold text-[#787774] dark:text-[#9CA3AF] tracking-wider px-2 block">
-                    PLAN
-                  </span>
-                )}
+                <AnimatePresence initial={false}>
+                  {!isSidebarCollapsed && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.18, ease: 'easeInOut' }}
+                      className="overflow-hidden"
+                    >
+                      <span className="text-[10px] uppercase font-bold text-[#787774] dark:text-[#9CA3AF] tracking-wider px-2 block py-0.5">
+                        PLAN
+                      </span>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
                 {navItems
                   .filter((i) => i.group === 'plan')
                   .map((item) => {
@@ -2069,29 +2110,39 @@ export default function App() {
                         key={item.id}
                         type="button"
                         onClick={() => handleNavigate(item.id)}
-                        className={`w-full flex items-center rounded-xl text-xs font-medium transition-all cursor-pointer ${
-                          !isSidebarCollapsed ? 'justify-between px-2.5 py-1.5' : 'justify-center p-2'
-                        } ${
+                        className={`w-full flex items-center rounded-xl text-xs font-medium transition-colors cursor-pointer px-2.5 py-1.5 overflow-hidden ${
                           isActive
                             ? 'bg-[#EEF2FF] dark:bg-[#1E1B4B] text-[#6366F1] dark:text-[#818CF8] font-semibold shadow-2xs border border-[#C7D2FE] dark:border-[#374151]'
                             : 'text-[#37352F] dark:text-[#D1D5DB] hover:bg-[#F1F1EF] dark:hover:bg-[#1F2937]/50'
                         }`}
                         title={item.label}
                       >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <span className="text-base shrink-0">{item.emoji}</span>
-                          {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
+                        <div className="w-5 h-5 flex items-center justify-center shrink-0">
+                          <span className="text-base leading-none">{item.emoji}</span>
                         </div>
-                        {!isSidebarCollapsed && item.badge && (
-                          <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-[#EEF2FF] dark:bg-[#312E81] text-[#6366F1] dark:text-[#A5B4FC]">
-                            {item.badge}
-                          </span>
-                        )}
-                        {!isSidebarCollapsed && item.count !== undefined && !item.badge && (
-                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-md bg-white dark:bg-[#111827] text-[#787774] dark:text-[#9CA3AF] border border-[#EDECE9] dark:border-[#374151]">
-                            {item.count}
-                          </span>
-                        )}
+                        <AnimatePresence initial={false}>
+                          {!isSidebarCollapsed && (
+                            <motion.div
+                              initial={{ opacity: 0, x: -6, width: 0 }}
+                              animate={{ opacity: 1, x: 0, width: 'auto' }}
+                              exit={{ opacity: 0, x: -6, width: 0 }}
+                              transition={{ duration: 0.18, ease: 'easeInOut' }}
+                              className="flex items-center justify-between min-w-0 flex-1 ml-2.5 overflow-hidden whitespace-nowrap"
+                            >
+                              <span className="truncate">{item.label}</span>
+                              {item.badge && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-[#EEF2FF] dark:bg-[#312E81] text-[#6366F1] dark:text-[#A5B4FC] shrink-0 ml-1.5">
+                                  {item.badge}
+                                </span>
+                              )}
+                              {item.count !== undefined && !item.badge && (
+                                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-md bg-white dark:bg-[#111827] text-[#787774] dark:text-[#9CA3AF] border border-[#EDECE9] dark:border-[#374151] shrink-0 ml-1.5">
+                                  {item.count}
+                                </span>
+                              )}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </button>
                     );
                   })}
@@ -2099,11 +2150,21 @@ export default function App() {
 
               {/* GROUP: LIFE */}
               <div className="space-y-1 w-full">
-                {!isSidebarCollapsed && (
-                  <span className="text-[10px] uppercase font-bold text-[#787774] dark:text-[#9CA3AF] tracking-wider px-2 block">
-                    LIFE
-                  </span>
-                )}
+                <AnimatePresence initial={false}>
+                  {!isSidebarCollapsed && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.18, ease: 'easeInOut' }}
+                      className="overflow-hidden"
+                    >
+                      <span className="text-[10px] uppercase font-bold text-[#787774] dark:text-[#9CA3AF] tracking-wider px-2 block py-0.5">
+                        LIFE
+                      </span>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
                 {navItems
                   .filter((i) => i.group === 'life')
                   .map((item) => {
@@ -2113,24 +2174,34 @@ export default function App() {
                         key={item.id}
                         type="button"
                         onClick={() => handleNavigate(item.id)}
-                        className={`w-full flex items-center rounded-xl text-xs font-medium transition-all cursor-pointer ${
-                          !isSidebarCollapsed ? 'justify-between px-2.5 py-1.5' : 'justify-center p-2'
-                        } ${
+                        className={`w-full flex items-center rounded-xl text-xs font-medium transition-colors cursor-pointer px-2.5 py-1.5 overflow-hidden ${
                           isActive
                             ? 'bg-[#EEF2FF] dark:bg-[#1E1B4B] text-[#6366F1] dark:text-[#818CF8] font-semibold shadow-2xs border border-[#C7D2FE] dark:border-[#374151]'
                             : 'text-[#37352F] dark:text-[#D1D5DB] hover:bg-[#F1F1EF] dark:hover:bg-[#1F2937]/50'
                         }`}
                         title={item.label}
                       >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <span className="text-base shrink-0">{item.emoji}</span>
-                          {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
+                        <div className="w-5 h-5 flex items-center justify-center shrink-0">
+                          <span className="text-base leading-none">{item.emoji}</span>
                         </div>
-                        {!isSidebarCollapsed && item.count !== undefined && (
-                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-md bg-white dark:bg-[#111827] text-[#787774] dark:text-[#9CA3AF] border border-[#EDECE9] dark:border-[#374151]">
-                            {item.count}
-                          </span>
-                        )}
+                        <AnimatePresence initial={false}>
+                          {!isSidebarCollapsed && (
+                            <motion.div
+                              initial={{ opacity: 0, x: -6, width: 0 }}
+                              animate={{ opacity: 1, x: 0, width: 'auto' }}
+                              exit={{ opacity: 0, x: -6, width: 0 }}
+                              transition={{ duration: 0.18, ease: 'easeInOut' }}
+                              className="flex items-center justify-between min-w-0 flex-1 ml-2.5 overflow-hidden whitespace-nowrap"
+                            >
+                              <span className="truncate">{item.label}</span>
+                              {item.count !== undefined && (
+                                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-md bg-white dark:bg-[#111827] text-[#787774] dark:text-[#9CA3AF] border border-[#EDECE9] dark:border-[#374151] shrink-0 ml-1.5">
+                                  {item.count}
+                                </span>
+                              )}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </button>
                     );
                   })}
@@ -2138,11 +2209,21 @@ export default function App() {
 
               {/* GROUP: WORKFOLIO */}
               <div className="space-y-1 w-full">
-                {!isSidebarCollapsed && (
-                  <span className="text-[10px] uppercase font-bold text-[#787774] dark:text-[#9CA3AF] tracking-wider px-2 block">
-                    WORKFOLIO
-                  </span>
-                )}
+                <AnimatePresence initial={false}>
+                  {!isSidebarCollapsed && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.18, ease: 'easeInOut' }}
+                      className="overflow-hidden"
+                    >
+                      <span className="text-[10px] uppercase font-bold text-[#787774] dark:text-[#9CA3AF] tracking-wider px-2 block py-0.5">
+                        WORKFOLIO
+                      </span>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
                 {navItems
                   .filter((i) => i.group === 'work')
                   .map((item) => {
@@ -2152,24 +2233,34 @@ export default function App() {
                         key={item.id}
                         type="button"
                         onClick={() => handleNavigate(item.id)}
-                        className={`w-full flex items-center rounded-xl text-xs font-medium transition-all cursor-pointer ${
-                          !isSidebarCollapsed ? 'justify-between px-2.5 py-1.5' : 'justify-center p-2'
-                        } ${
+                        className={`w-full flex items-center rounded-xl text-xs font-medium transition-colors cursor-pointer px-2.5 py-1.5 overflow-hidden ${
                           isActive
                             ? 'bg-[#EEF2FF] dark:bg-[#1E1B4B] text-[#6366F1] dark:text-[#818CF8] font-semibold shadow-2xs border border-[#C7D2FE] dark:border-[#374151]'
                             : 'text-[#37352F] dark:text-[#D1D5DB] hover:bg-[#F1F1EF] dark:hover:bg-[#1F2937]/50'
                         }`}
                         title={item.label}
                       >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <span className="text-base shrink-0">{item.emoji}</span>
-                          {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
+                        <div className="w-5 h-5 flex items-center justify-center shrink-0">
+                          <span className="text-base leading-none">{item.emoji}</span>
                         </div>
-                        {!isSidebarCollapsed && item.count !== undefined && (
-                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-md bg-white dark:bg-[#111827] text-[#787774] dark:text-[#9CA3AF] border border-[#EDECE9] dark:border-[#374151]">
-                            {item.count}
-                          </span>
-                        )}
+                        <AnimatePresence initial={false}>
+                          {!isSidebarCollapsed && (
+                            <motion.div
+                              initial={{ opacity: 0, x: -6, width: 0 }}
+                              animate={{ opacity: 1, x: 0, width: 'auto' }}
+                              exit={{ opacity: 0, x: -6, width: 0 }}
+                              transition={{ duration: 0.18, ease: 'easeInOut' }}
+                              className="flex items-center justify-between min-w-0 flex-1 ml-2.5 overflow-hidden whitespace-nowrap"
+                            >
+                              <span className="truncate">{item.label}</span>
+                              {item.count !== undefined && (
+                                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-md bg-white dark:bg-[#111827] text-[#787774] dark:text-[#9CA3AF] border border-[#EDECE9] dark:border-[#374151] shrink-0 ml-1.5">
+                                  {item.count}
+                                </span>
+                              )}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </button>
                     );
                   })}
@@ -2177,11 +2268,21 @@ export default function App() {
 
               {/* GROUP: MONEY */}
               <div className="space-y-1 w-full">
-                {!isSidebarCollapsed && (
-                  <span className="text-[10px] uppercase font-bold text-[#787774] dark:text-[#9CA3AF] tracking-wider px-2 block">
-                    MONEY
-                  </span>
-                )}
+                <AnimatePresence initial={false}>
+                  {!isSidebarCollapsed && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.18, ease: 'easeInOut' }}
+                      className="overflow-hidden"
+                    >
+                      <span className="text-[10px] uppercase font-bold text-[#787774] dark:text-[#9CA3AF] tracking-wider px-2 block py-0.5">
+                        MONEY
+                      </span>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
                 {navItems
                   .filter((i) => i.group === 'money')
                   .map((item) => {
@@ -2191,24 +2292,34 @@ export default function App() {
                         key={item.id}
                         type="button"
                         onClick={() => handleNavigate(item.id)}
-                        className={`w-full flex items-center rounded-xl text-xs font-medium transition-all cursor-pointer ${
-                          !isSidebarCollapsed ? 'justify-between px-2.5 py-1.5' : 'justify-center p-2'
-                        } ${
+                        className={`w-full flex items-center rounded-xl text-xs font-medium transition-colors cursor-pointer px-2.5 py-1.5 overflow-hidden ${
                           isActive
                             ? 'bg-[#EEF2FF] dark:bg-[#1E1B4B] text-[#6366F1] dark:text-[#818CF8] font-semibold shadow-2xs border border-[#C7D2FE] dark:border-[#374151]'
                             : 'text-[#37352F] dark:text-[#D1D5DB] hover:bg-[#F1F1EF] dark:hover:bg-[#1F2937]/50'
                         }`}
                         title={item.label}
                       >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <span className="text-base shrink-0">{item.emoji}</span>
-                          {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
+                        <div className="w-5 h-5 flex items-center justify-center shrink-0">
+                          <span className="text-base leading-none">{item.emoji}</span>
                         </div>
-                        {!isSidebarCollapsed && item.count !== undefined && (
-                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-md bg-white dark:bg-[#111827] text-[#787774] dark:text-[#9CA3AF] border border-[#EDECE9] dark:border-[#374151]">
-                            {item.count}
-                          </span>
-                        )}
+                        <AnimatePresence initial={false}>
+                          {!isSidebarCollapsed && (
+                            <motion.div
+                              initial={{ opacity: 0, x: -6, width: 0 }}
+                              animate={{ opacity: 1, x: 0, width: 'auto' }}
+                              exit={{ opacity: 0, x: -6, width: 0 }}
+                              transition={{ duration: 0.18, ease: 'easeInOut' }}
+                              className="flex items-center justify-between min-w-0 flex-1 ml-2.5 overflow-hidden whitespace-nowrap"
+                            >
+                              <span className="truncate">{item.label}</span>
+                              {item.count !== undefined && (
+                                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-md bg-white dark:bg-[#111827] text-[#787774] dark:text-[#9CA3AF] border border-[#EDECE9] dark:border-[#374151] shrink-0 ml-1.5">
+                                  {item.count}
+                                </span>
+                              )}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </button>
                     );
                   })}
@@ -2216,11 +2327,21 @@ export default function App() {
 
               {/* GROUP: PRIVATE */}
               <div className="space-y-1 w-full">
-                {!isSidebarCollapsed && (
-                  <span className="text-[10px] uppercase font-bold text-[#787774] dark:text-[#9CA3AF] tracking-wider px-2 block">
-                    PRIVATE
-                  </span>
-                )}
+                <AnimatePresence initial={false}>
+                  {!isSidebarCollapsed && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.18, ease: 'easeInOut' }}
+                      className="overflow-hidden"
+                    >
+                      <span className="text-[10px] uppercase font-bold text-[#787774] dark:text-[#9CA3AF] tracking-wider px-2 block py-0.5">
+                        PRIVATE
+                      </span>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
                 {navItems
                   .filter((i) => i.group === 'private')
                   .map((item) => {
@@ -2230,52 +2351,75 @@ export default function App() {
                         key={item.id}
                         type="button"
                         onClick={() => handleNavigate(item.id)}
-                        className={`w-full flex items-center rounded-xl text-xs font-medium transition-all cursor-pointer ${
-                          !isSidebarCollapsed ? 'justify-between px-2.5 py-1.5' : 'justify-center p-2'
-                        } ${
+                        className={`w-full flex items-center rounded-xl text-xs font-medium transition-colors cursor-pointer px-2.5 py-1.5 overflow-hidden ${
                           isActive
                             ? 'bg-[#EEF2FF] dark:bg-[#1E1B4B] text-[#6366F1] dark:text-[#818CF8] font-semibold shadow-2xs border border-[#C7D2FE] dark:border-[#374151]'
                             : 'text-[#37352F] dark:text-[#D1D5DB] hover:bg-[#F1F1EF] dark:hover:bg-[#1F2937]/50'
                         }`}
                         title={item.label}
                       >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <span className="text-base shrink-0">{item.emoji}</span>
-                          {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
+                        <div className="w-5 h-5 flex items-center justify-center shrink-0">
+                          <span className="text-base leading-none">{item.emoji}</span>
                         </div>
-                        {!isSidebarCollapsed && item.count !== undefined && (
-                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-md bg-white dark:bg-[#111827] text-[#787774] dark:text-[#9CA3AF] border border-[#EDECE9] dark:border-[#374151]">
-                            {item.count}
-                          </span>
-                        )}
+                        <AnimatePresence initial={false}>
+                          {!isSidebarCollapsed && (
+                            <motion.div
+                              initial={{ opacity: 0, x: -6, width: 0 }}
+                              animate={{ opacity: 1, x: 0, width: 'auto' }}
+                              exit={{ opacity: 0, x: -6, width: 0 }}
+                              transition={{ duration: 0.18, ease: 'easeInOut' }}
+                              className="flex items-center justify-between min-w-0 flex-1 ml-2.5 overflow-hidden whitespace-nowrap"
+                            >
+                              <span className="truncate">{item.label}</span>
+                              {item.count !== undefined && (
+                                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-md bg-white dark:bg-[#111827] text-[#787774] dark:text-[#9CA3AF] border border-[#EDECE9] dark:border-[#374151] shrink-0 ml-1.5">
+                                  {item.count}
+                                </span>
+                              )}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </button>
                     );
                   })}
               </div>
             </div>
 
-{/* Sidebar Footer: Dedicated Collapse Toggle Button */}
+            {/* Sidebar Footer: Dedicated Collapse Toggle Button */}
             <div className="pt-3 border-t border-[#EDECE9] dark:border-[#1F2937] w-full">
-              <button
+              <motion.button
                 type="button"
                 id="btn-sidebar-collapse-toggle"
                 onClick={handleToggleSidebar}
-                className={`w-full flex items-center rounded-xl text-xs font-medium text-[#787774] dark:text-[#9CA3AF] hover:text-[#37352F] dark:hover:text-white hover:bg-[#F1F1EF] dark:hover:bg-[#1F2937]/50 transition-colors cursor-pointer ${
-                  !isSidebarCollapsed ? 'gap-2 px-2.5 py-2' : 'justify-center p-2'
-                }`}
+                whileTap={{ scale: 0.96 }}
+                className="w-full flex items-center rounded-xl text-xs font-medium text-[#787774] dark:text-[#9CA3AF] hover:text-[#37352F] dark:hover:text-white hover:bg-[#F1F1EF] dark:hover:bg-[#1F2937]/50 transition-colors cursor-pointer px-2.5 py-2 overflow-hidden"
                 title={!isSidebarCollapsed ? 'Collapse sidebar (⌘\\)' : 'Expand sidebar (⌘\\)'}
               >
-                {!isSidebarCollapsed ? (
-                  <>
+                <div className="w-5 h-5 flex items-center justify-center shrink-0">
+                  <motion.div
+                    animate={{ rotate: isSidebarCollapsed ? 180 : 0 }}
+                    transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+                    className="flex items-center justify-center"
+                  >
                     <ChevronLeft className="w-4 h-4 stroke-[2]" />
-                    <span>Collapse</span>
-                  </>
-                ) : (
-                  <ChevronRight className="w-4 h-4 stroke-[2]" />
-                )}
-              </button>
+                  </motion.div>
+                </div>
+                <AnimatePresence initial={false}>
+                  {!isSidebarCollapsed && (
+                    <motion.span
+                      initial={{ opacity: 0, x: -6, width: 0 }}
+                      animate={{ opacity: 1, x: 0, width: 'auto' }}
+                      exit={{ opacity: 0, x: -6, width: 0 }}
+                      transition={{ duration: 0.18, ease: 'easeInOut' }}
+                      className="ml-2.5 overflow-hidden whitespace-nowrap font-medium text-[#787774] dark:text-[#9CA3AF]"
+                    >
+                      Collapse
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </motion.button>
             </div>
-          </aside>
+          </motion.aside>
 
           {/* Mobile Navigation Drawer */}
           {isMobileSidebarOpen && (
