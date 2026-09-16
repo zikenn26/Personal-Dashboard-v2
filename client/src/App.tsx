@@ -61,6 +61,8 @@ import {
   checkAndRollOverHabits,
   getMondayOfWeek,
   getWeekId,
+  formatDateIso,
+  formatWeekRange,
   getWeekDaysInfo,
   archiveCurrentWeekRecord,
   DAYS_OF_WEEK,
@@ -829,6 +831,67 @@ export default function App() {
     };
   }, []);
 
+  // Data migration & sanitization:
+  // 1. Remove any redundant history entry matching the current active week
+  // 2. Ensure M.Tech NIT Raipur CGPA is updated to 8.55 CGPA in both profile and resume
+  useEffect(() => {
+    // 1. Habit History Sanitization
+    const currentMonday = getMondayOfWeek();
+    const currentWeekId = getWeekId(currentMonday);
+    const currentWeekLabel = formatWeekRange(currentMonday);
+    const sanitizedHistory = habitHistory.filter(
+      (w) =>
+        w.id !== `week-${currentWeekId}` &&
+        w.id !== currentWeekId &&
+        w.weekStart !== currentWeekId &&
+        w.label?.trim().toLowerCase() !== currentWeekLabel?.trim().toLowerCase() &&
+        !(Boolean(w.label?.toLowerCase().includes('sep 14')) && Boolean(currentWeekLabel?.toLowerCase().includes('sep 14')))
+    );
+    if (sanitizedHistory.length !== habitHistory.length) {
+      setHabitHistory(sanitizedHistory);
+      Storage.setHabitHistory(sanitizedHistory);
+    }
+
+    // 2. Profile Education M.Tech Result Update to 8.55 CGPA
+    let profileUpdated = false;
+    const updatedEdu = profile.educationRecords?.map((edu) => {
+      if (
+        (edu.id === 'edu-nit-raipur' ||
+          edu.degree?.toLowerCase().includes('m.tech') ||
+          edu.institution?.toLowerCase().includes('raipur')) &&
+        (edu.score === '8.18 CGPA' || edu.score === '8.18')
+      ) {
+        profileUpdated = true;
+        return { ...edu, score: '8.55 CGPA' };
+      }
+      return edu;
+    });
+    if (profileUpdated && updatedEdu) {
+      const nextProf = { ...profile, educationRecords: updatedEdu };
+      setProfile(nextProf);
+      Storage.setProfile(nextProf);
+    }
+
+    // 3. ATS Resume Education M.Tech Result Update to 8.55 CGPA
+    let resumeUpdated = false;
+    const updatedResumeEdu = resume.education?.map((edu) => {
+      if (
+        (edu.school?.toLowerCase().includes('raipur') ||
+          edu.degree?.toLowerCase().includes('m.tech')) &&
+        (edu.score === '8.18 CGPA' || edu.score === '8.18')
+      ) {
+        resumeUpdated = true;
+        return { ...edu, score: '8.55 CGPA' };
+      }
+      return edu;
+    });
+    if (resumeUpdated && updatedResumeEdu) {
+      const nextResume = { ...resume, education: updatedResumeEdu };
+      setResume(nextResume);
+      Storage.setResume(nextResume);
+    }
+  }, []);
+
   // Habit Handlers
   const handleToggleHabitDay = (habitId: string, dayIndex: number) => {
     Sound.click(settings.soundEnabled);
@@ -923,17 +986,32 @@ export default function App() {
     Storage.setHabits(updated);
   };
 
-  // Simulates or forces a clean Monday rollover: archives the current week into past records
+  // Simulates or forces a clean Monday rollover: archives the previous week into past records
   // and starts the habit routine fresh.
   const handleSimulateMondayRollover = () => {
     Sound.success(settings.soundEnabled);
     triggerConfetti();
     const currentMonday = getMondayOfWeek();
-    const weekId = habitActiveWeek || getWeekId(currentMonday);
+    const currentWeekId = getWeekId(currentMonday);
+    const currentWeekLabel = formatWeekRange(currentMonday);
 
-    // Archive current week
-    const archivedWeek = archiveCurrentWeekRecord(habits, weekId, habitActivities);
-    const updatedHistory = [archivedWeek, ...habitHistory.filter((h) => h.id !== archivedWeek.id)];
+    // Archive the prior week (7 days ago) to avoid duplicating the current active week
+    const prevMonday = new Date(currentMonday);
+    prevMonday.setDate(currentMonday.getDate() - 7);
+    const prevWeekId = formatDateIso(prevMonday);
+
+    const archivedWeek = archiveCurrentWeekRecord(habits, prevWeekId, habitActivities);
+    const updatedHistory = [
+      archivedWeek,
+      ...habitHistory.filter(
+        (h) =>
+          h.id !== archivedWeek.id &&
+          h.weekStart !== prevWeekId &&
+          h.weekStart !== currentWeekId &&
+          h.id !== `week-${currentWeekId}` &&
+          h.label?.trim().toLowerCase() !== currentWeekLabel?.trim().toLowerCase()
+      ),
+    ];
 
     // Reset habits fresh for the new week
     const freshHabits = habits.map((h) => ({

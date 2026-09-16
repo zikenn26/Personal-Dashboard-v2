@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Flame,
   Plus,
@@ -20,6 +20,7 @@ import { triggerConfetti } from '../utils/confetti';
 import {
   DAYS_OF_WEEK,
   getMondayOfWeek,
+  getWeekId,
   formatWeekRange,
   getWeekDaysInfo,
 } from '../utils/habitWeekManager';
@@ -64,7 +65,31 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
   // Compute current Monday & week info
   const currentMonday = getMondayOfWeek();
   const currentWeekLabel = formatWeekRange(currentMonday);
+  const currentWeekId = getWeekId(currentMonday);
   const daysInfo = getWeekDaysInfo(currentMonday);
+
+  // Filter out any historical week that refers to the current week to eliminate redundancy and keep consistency
+  const validPastWeeks = useMemo(() => {
+    return habitHistory.filter((w) => {
+      if (!w) return false;
+      const isSameId = w.id === `week-${currentWeekId}` || w.id === currentWeekId;
+      const isSameStart = w.weekStart === currentWeekId;
+      const isSameLabel =
+        w.label?.trim().toLowerCase() === currentWeekLabel?.trim().toLowerCase() ||
+        (Boolean(w.label?.toLowerCase().includes('sep 14')) && Boolean(currentWeekLabel?.toLowerCase().includes('sep 14')));
+      return !isSameId && !isSameStart && !isSameLabel;
+    });
+  }, [habitHistory, currentWeekId, currentWeekLabel]);
+
+  // If selectedWeekId is no longer in validPastWeeks, fallback to 'current'
+  useEffect(() => {
+    if (selectedWeekId !== 'current') {
+      const exists = validPastWeeks.some((w) => w.id === selectedWeekId);
+      if (!exists) {
+        setSelectedWeekId('current');
+      }
+    }
+  }, [selectedWeekId, validPastWeeks]);
 
   // Compute current day of week index (0=Mon ... 6=Sun)
   const currentDayIndex = (new Date().getDay() + 6) % 7;
@@ -73,8 +98,8 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
   const isViewingPastWeek = selectedWeekId !== 'current';
   const selectedPastWeekRecord = useMemo(() => {
     if (!isViewingPastWeek) return null;
-    return habitHistory.find((w) => w.id === selectedWeekId) || null;
-  }, [isViewingPastWeek, selectedWeekId, habitHistory]);
+    return validPastWeeks.find((w) => w.id === selectedWeekId) || null;
+  }, [isViewingPastWeek, selectedWeekId, validPastWeeks]);
 
   // Active habits list depending on whether we are on current week or a past week
   const activeHabits: HabitItem[] = useMemo(() => {
@@ -109,14 +134,14 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
   const availableWeeks = useMemo(() => {
     return [
       { id: 'current', label: currentWeekLabel, isCurrent: true, completionRate: 0 },
-      ...habitHistory.map((w) => ({
+      ...validPastWeeks.map((w) => ({
         id: w.id,
         label: w.label,
         isCurrent: false,
         completionRate: w.completionRate,
       })),
     ];
-  }, [currentWeekLabel, habitHistory]);
+  }, [currentWeekLabel, validPastWeeks]);
 
   const currentWeekIdx = availableWeeks.findIndex((w) => w.id === selectedWeekId);
 
@@ -237,7 +262,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
     let historicalDoneChecks = 0;
     let historicalPossibleChecks = 0;
 
-    habitHistory.forEach((wk) => {
+    validPastWeeks.forEach((wk) => {
       historicalDoneChecks += (wk.totalDone || 0);
       historicalPossibleChecks += (wk.totalPossible || (wk.habits ? wk.habits.length * 7 : 0));
       if (wk.habits && Array.isArray(wk.habits)) {
@@ -335,7 +360,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
       consistency: journeyConsistency,
       totalActiveDays: activeDates.size,
     };
-  }, [habits, habitHistory, habitActivities]);
+  }, [habits, validPastWeeks, habitActivities]);
 
   return (
     <div className="space-y-6">
@@ -438,7 +463,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                 className="bg-transparent text-xs sm:text-sm font-bold text-[#111827] dark:text-white px-2 py-1 outline-none cursor-pointer"
               >
                 <option value="current">⚡ Current Week ({currentWeekLabel})</option>
-                {habitHistory.map((past) => (
+                {validPastWeeks.map((past) => (
                   <option key={past.id} value={past.id}>
                     📅 {past.label} ({past.completionRate}% Done)
                   </option>

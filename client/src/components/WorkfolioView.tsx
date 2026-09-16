@@ -13,9 +13,11 @@ import {
   CertificationItem,
 } from '../types';
 import { Sound } from '../utils/audio';
+import { DEFAULT_ATS_RESUME } from '../utils/storage';
 import { STOCK_IMAGES } from '../assets/stockImages';
 import { CoverPickerModal } from './CoverPickerModal';
 import { AvatarPickerModal } from './AvatarPickerModal';
+import { ResumeDocumentSheet } from './ResumeDocumentSheet';
 import {
   FileText,
   Printer,
@@ -142,13 +144,57 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
   const [newCertYear, setNewCertYear] = useState('');
   const [newInfoText, setNewInfoText] = useState('');
 
-  const educationRecords = profile.educationRecords || [];
-  const jobExperiences = profile.jobExperiences || [];
+  const [showOptionalHobbies, setShowOptionalHobbies] = useState(false);
+
+  const educationRecords: EducationRecord[] = (profile.educationRecords && profile.educationRecords.length > 0)
+    ? profile.educationRecords
+    : (DEFAULT_ATS_RESUME.education || []).map((e, idx) => ({
+        id: `default-edu-${idx}`,
+        level: (idx === 0 ? 'postgraduation' : 'graduation') as any,
+        levelTitle: idx === 0 ? "Master's Degree" : "Bachelor's Degree",
+        degree: e.degree,
+        institution: e.school,
+        year: e.year,
+        score: e.score || '',
+        location: e.location,
+        specialization: e.specialization,
+        highlights: e.highlights,
+      }));
+
+  const jobExperiences: JobExperience[] = (profile.jobExperiences && profile.jobExperiences.length > 0)
+    ? profile.jobExperiences
+    : (DEFAULT_ATS_RESUME.experiences || []).map((exp, idx) => ({
+        id: `default-job-${idx}`,
+        role: exp.role,
+        company: exp.company,
+        startDate: exp.period,
+        endDate: exp.period,
+        description: exp.details || '',
+        keyAchievements: exp.achievements || [],
+        techStack: exp.techStack || [],
+      }));
+
   const hobbies = profile.hobbies || [];
+
   const certifications = (resume.certifications && resume.certifications.length > 0)
     ? resume.certifications
-    : (profile.certifications || []);
-  const additionalInfo = resume.additionalInfo || [];
+    : ((profile.certifications && profile.certifications.length > 0)
+        ? profile.certifications
+        : DEFAULT_ATS_RESUME.certifications);
+
+  const additionalInfo = (resume.additionalInfo && resume.additionalInfo.length > 0)
+    ? resume.additionalInfo
+    : DEFAULT_ATS_RESUME.additionalInfo;
+
+  const skillsCategories = (resume.skillsByCategory && resume.skillsByCategory.length > 0)
+    ? resume.skillsByCategory
+    : (skills && skills.length > 0
+        ? skills.map(sc => ({ category: sc.category, items: sc.skills.map(s => s.name) }))
+        : (DEFAULT_ATS_RESUME.skillsByCategory || []));
+
+  const resumeProjects = (resume.projects && resume.projects.length > 0)
+    ? resume.projects
+    : DEFAULT_ATS_RESUME.projects;
 
   const resumeSheetRef = useRef<HTMLDivElement>(null);
 
@@ -631,6 +677,27 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
     Sound.click(soundEnabled);
   };
 
+  // Update Resume Project Inline
+  const handleUpdateResumeProjectInline = (pIdx: number, partial: any) => {
+    const updated = [...resumeProjects];
+    updated[pIdx] = { ...updated[pIdx], ...partial };
+    onUpdateResume({
+      ...resume,
+      projects: updated,
+    });
+  };
+
+  // Delete Resume Project Inline
+  const handleDeleteResumeProject = (pIdx: number) => {
+    const updated = [...resumeProjects];
+    updated.splice(pIdx, 1);
+    onUpdateResume({
+      ...resume,
+      projects: updated,
+    });
+    Sound.click(soundEnabled);
+  };
+
   const displayName = profile.name || 'GULSHAN KUMAR NAYAK';
   const displaySubtitle = profile.handle
     ? profile.handle.replace('@', '')
@@ -640,7 +707,8 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
   const summaryText =
     profile.professionalSummary ||
     profile.bio ||
-    'Dedicated Software Engineer with proven expertise in engineering performant web systems, intuitive interfaces, and distributed software architectures. Eager to solve complex challenges with clean code and modern tooling.';
+    resume.summary ||
+    DEFAULT_ATS_RESUME.summary;
 
   const avatarSrc = profile.avatarUrl || STOCK_IMAGES.avatar;
   const coverSrc = profile.staticCoverImage || STOCK_IMAGES.workspaceCover;
@@ -871,865 +939,30 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
         </div>
       </div>
 
-      {/* 2. MAIN CURRICULUM VITAE & PORTFOLIO DOCUMENT SHEET (Inline Editable + Capture Target for PDF) */}
-      <div
-        id="printable-resume-sheet"
-        ref={resumeSheetRef}
-        className={`max-w-4xl mx-auto p-6 sm:p-10 rounded-3xl bg-white dark:bg-[#111827] border shadow-sm space-y-7 transition-all print:border-none print:shadow-none print:p-0 print:m-0 print:max-w-none print:w-full print:bg-white print:text-[#111827] ${
-          isInlineEditMode
-            ? 'border-amber-400 dark:border-amber-500 ring-2 ring-amber-400/20'
-            : 'border-[#E5E7EB] dark:border-[#1F2937]'
-        }`}
-      >
-        {/* Document Header (Editable Name, Subtitle, Contact Details) */}
-        <div className="space-y-2 relative group">
-          <div className="flex items-center justify-between">
-            {isInlineEditMode ? (
-              <input
-                type="text"
-                value={profile.name}
-                onChange={(e) => handleInlineProfileChange('name', e.target.value)}
-                placeholder="FULL NAME"
-                className="text-lg sm:text-xl font-black text-[#111827] dark:text-white tracking-tight uppercase bg-amber-50/50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 px-2 py-1 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-amber-400"
-              />
-            ) : (
-              <h1 className="workspace-heading font-black text-[#111827] dark:text-white tracking-tight uppercase">
-                {displayName}
-              </h1>
-            )}
-
-            <button
-              type="button"
-              onClick={() => {
-                Sound.click(soundEnabled);
-                setIsInlineEditMode(!isInlineEditMode);
-              }}
-              className="text-[#9CA3AF] hover:text-[#6366F1] p-1.5 rounded-lg hover:bg-[#F3F4F6] dark:hover:bg-[#1F2937] transition-colors print:hidden shrink-0"
-              title="Toggle Direct Edit Mode"
-            >
-              <Edit2 className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Subtitle / Title */}
-          {isInlineEditMode ? (
-            <input
-              type="text"
-              value={profile.handle?.replace('@', '') || ''}
-              onChange={(e) =>
-                handleInlineProfileChange(
-                  'handle',
-                  e.target.value ? `@${e.target.value.replace(/^@/, '')}` : ''
-                )
-              }
-              placeholder="Subtitle / Handle (e.g. Gulshan)"
-              className="text-sm font-bold text-[#6366F1] dark:text-[#818CF8] bg-amber-50/50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 px-2 py-0.5 rounded-lg w-full max-w-md focus:outline-none focus:ring-2 focus:ring-amber-400"
-            />
-          ) : (
-            <p className="text-sm font-bold text-[#6366F1] dark:text-[#818CF8]">
-              {displaySubtitle}
-            </p>
-          )}
-
-          {/* Contact Strip */}
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-[#4B5563] dark:text-[#9CA3AF] font-medium pt-1">
-            {/* Location */}
-            {isInlineEditMode ? (
-              <div className="flex items-center gap-1 bg-amber-50/50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 px-2 py-0.5 rounded-md">
-                <MapPin className="w-3 h-3 text-[#6366F1]" />
-                <input
-                  type="text"
-                  value={profile.location || ''}
-                  onChange={(e) => handleInlineProfileChange('location', e.target.value)}
-                  placeholder="Location"
-                  className="text-xs bg-transparent focus:outline-none text-[#111827] dark:text-white"
-                />
-              </div>
-            ) : (
-              <span className="flex items-center gap-1.5">
-                <MapPin className="w-3.5 h-3.5 text-[#6366F1]" />
-                <span>{displayLocation}</span>
-              </span>
-            )}
-
-            {/* Email */}
-            {isInlineEditMode ? (
-              <div className="flex items-center gap-1 bg-amber-50/50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 px-2 py-0.5 rounded-md">
-                <Mail className="w-3 h-3 text-[#6366F1]" />
-                <input
-                  type="email"
-                  value={profile.contactEmail || ''}
-                  onChange={(e) => handleInlineProfileChange('contactEmail', e.target.value)}
-                  placeholder="Email"
-                  className="text-xs bg-transparent focus:outline-none text-[#111827] dark:text-white"
-                />
-              </div>
-            ) : (
-              <a
-                href={`mailto:${displayEmail}`}
-                className="flex items-center gap-1.5 hover:text-[#6366F1] transition-colors"
-              >
-                <Mail className="w-3.5 h-3.5 text-[#6366F1]" />
-                <span>{displayEmail}</span>
-              </a>
-            )}
-
-            {/* Phone */}
-            {isInlineEditMode ? (
-              <div className="flex items-center gap-1 bg-amber-50/50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 px-2 py-0.5 rounded-md">
-                <Phone className="w-3 h-3 text-[#6366F1]" />
-                <input
-                  type="text"
-                  value={profile.phone || ''}
-                  onChange={(e) => handleInlineProfileChange('phone', e.target.value)}
-                  placeholder="Phone"
-                  className="text-xs bg-transparent focus:outline-none text-[#111827] dark:text-white"
-                />
-              </div>
-            ) : profile.phone ? (
-              <a
-                href={`tel:${profile.phone}`}
-                className="flex items-center gap-1.5 hover:text-[#6366F1] transition-colors"
-              >
-                <Phone className="w-3.5 h-3.5 text-[#6366F1]" />
-                <span>{profile.phone}</span>
-              </a>
-            ) : null}
-
-            {/* LinkedIn */}
-            {isInlineEditMode ? (
-              <div className="flex items-center gap-1 bg-amber-50/50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 px-2 py-0.5 rounded-md">
-                <Linkedin className="w-3 h-3 text-[#6366F1]" />
-                <input
-                  type="text"
-                  value={profile.linkedin || ''}
-                  onChange={(e) => handleInlineProfileChange('linkedin', e.target.value)}
-                  placeholder="LinkedIn URL"
-                  className="text-xs bg-transparent focus:outline-none text-[#111827] dark:text-white"
-                />
-              </div>
-            ) : profile.linkedin ? (
-              <a
-                href={profile.linkedin.startsWith('http') ? profile.linkedin : `https://${profile.linkedin}`}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1.5 hover:text-[#6366F1] transition-colors"
-              >
-                <Linkedin className="w-3.5 h-3.5 text-[#6366F1]" />
-                <span>LinkedIn</span>
-              </a>
-            ) : null}
-
-            {/* GitHub */}
-            {isInlineEditMode ? (
-              <div className="flex items-center gap-1 bg-amber-50/50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 px-2 py-0.5 rounded-md">
-                <Github className="w-3 h-3 text-[#6366F1]" />
-                <input
-                  type="text"
-                  value={profile.github || ''}
-                  onChange={(e) => handleInlineProfileChange('github', e.target.value)}
-                  placeholder="GitHub URL"
-                  className="text-xs bg-transparent focus:outline-none text-[#111827] dark:text-white"
-                />
-              </div>
-            ) : profile.github ? (
-              <a
-                href={profile.github.startsWith('http') ? profile.github : `https://${profile.github}`}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1.5 hover:text-[#6366F1] transition-colors"
-              >
-                <Github className="w-3.5 h-3.5 text-[#6366F1]" />
-                <span>GitHub</span>
-              </a>
-            ) : null}
-          </div>
-
-          <div className="border-b border-[#E5E7EB] dark:border-[#1F2937] pt-2" />
-        </div>
-
-        {/* 1. PROFESSIONAL SUMMARY */}
-        <div className="space-y-2 group resume-section">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2 resume-section-heading">
-              <Sparkles className="w-3.5 h-3.5 text-[#6366F1]" />
-              <span>PROFESSIONAL SUMMARY</span>
-            </h2>
-            <button
-              type="button"
-              onClick={() => {
-                Sound.click(soundEnabled);
-                setIsInlineEditMode(!isInlineEditMode);
-              }}
-              className="text-[#9CA3AF] hover:text-[#6366F1] opacity-0 group-hover:opacity-100 transition-opacity p-1 print:hidden"
-              title="Edit Summary"
-            >
-              <Edit2 className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {isInlineEditMode ? (
-            <textarea
-              value={summaryText}
-              onChange={(e) => {
-                handleInlineProfileChange('professionalSummary', e.target.value);
-                handleInlineProfileChange('bio', e.target.value);
-              }}
-              rows={4}
-              className="w-full text-xs sm:text-sm text-[#111827] dark:text-white leading-relaxed bg-amber-50/50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 p-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-400"
-            />
-          ) : (
-            <p className="text-xs sm:text-sm text-[#374151] dark:text-[#D1D5DB] leading-relaxed break-words">
-              {summaryText}
-            </p>
-          )}
-        </div>
-
-        {/* 2. PROFESSIONAL EXPERIENCE */}
-        <div className="space-y-4 resume-section">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2 resume-section-heading">
-              <Briefcase className="w-3.5 h-3.5 text-[#6366F1]" />
-              <span>PROFESSIONAL EXPERIENCE</span>
-            </h2>
-            <button
-              type="button"
-              onClick={() => {
-                Sound.click(soundEnabled);
-                setShowJobModal(true);
-              }}
-              className="text-xs text-[#6366F1] font-semibold hover:underline flex items-center gap-1 print:hidden cursor-pointer"
-            >
-              <Plus className="w-3 h-3" />
-              <span>Add Position</span>
-            </button>
-          </div>
-
-          <div className="space-y-5">
-            {jobExperiences.map((job) => (
-              <div key={job.id} className="space-y-1.5 group relative resume-entry resume-job-card">
-                {/* Header Row */}
-                <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1">
-                  {isInlineEditMode ? (
-                    <div className="flex flex-wrap items-center gap-2 flex-1">
-                      <input
-                        type="text"
-                        value={job.role}
-                        onChange={(e) => handleUpdateJobInline(job.id, { role: e.target.value })}
-                        placeholder="Job Title"
-                        className="text-sm font-bold text-[#111827] dark:text-white bg-amber-50/50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 px-2 py-0.5 rounded-md focus:outline-none"
-                      />
-                      <span className="text-[#6366F1]">•</span>
-                      <input
-                        type="text"
-                        value={job.company}
-                        onChange={(e) => handleUpdateJobInline(job.id, { company: e.target.value })}
-                        placeholder="Company Name"
-                        className="text-sm font-bold text-[#6366F1] dark:text-[#818CF8] bg-amber-50/50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 px-2 py-0.5 rounded-md focus:outline-none"
-                      />
-                    </div>
-                  ) : (
-                    <h3 className="text-sm font-bold text-[#111827] dark:text-white flex items-center gap-1.5">
-                      <span>{job.role}</span>
-                      <span className="text-[#6366F1] dark:text-[#818CF8]">• {job.company}</span>
-                    </h3>
-                  )}
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    {isInlineEditMode ? (
-                      <div className="flex items-center gap-1 text-xs font-mono">
-                        <input
-                          type="text"
-                          value={job.startDate}
-                          onChange={(e) => handleUpdateJobInline(job.id, { startDate: e.target.value })}
-                          placeholder="Start"
-                          className="w-20 bg-amber-50/50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 px-1 py-0.5 rounded text-center text-xs"
-                        />
-                        <span>–</span>
-                        <input
-                          type="text"
-                          value={job.endDate}
-                          onChange={(e) => handleUpdateJobInline(job.id, { endDate: e.target.value })}
-                          placeholder="End"
-                          className="w-20 bg-amber-50/50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 px-1 py-0.5 rounded text-center text-xs"
-                        />
-                        <input
-                          type="text"
-                          value={job.location || ''}
-                          onChange={(e) => handleUpdateJobInline(job.id, { location: e.target.value })}
-                          placeholder="Location"
-                          className="w-24 bg-amber-50/50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 px-1 py-0.5 rounded text-xs"
-                        />
-                      </div>
-                    ) : (
-                      <span className="text-xs text-[#6B7280] dark:text-[#9CA3AF] font-mono">
-                        {job.startDate} – {job.endDate || 'Present'}
-                        {job.location ? ` | ${job.location}` : ''}
-                      </span>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteJob(job.id)}
-                      className="text-[#9CA3AF] hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 print:hidden cursor-pointer"
-                      title="Delete Experience"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Description */}
-                {isInlineEditMode ? (
-                  <textarea
-                    value={job.description}
-                    onChange={(e) => handleUpdateJobInline(job.id, { description: e.target.value })}
-                    rows={2}
-                    placeholder="Brief description of the role..."
-                    className="w-full text-xs text-[#111827] dark:text-white bg-amber-50/50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 p-1.5 rounded-lg focus:outline-none"
-                  />
-                ) : (
-                  job.description && (
-                    <p className="text-xs text-[#4B5563] dark:text-[#D1D5DB] leading-relaxed">
-                      {job.description}
-                    </p>
-                  )
-                )}
-
-                {/* Achievements List */}
-                <div className="space-y-1 pt-0.5">
-                  {job.keyAchievements?.map((ach, idx) => (
-                    <div key={idx} className="flex items-start gap-1.5 text-xs">
-                      <span className="text-[#6366F1] font-bold mt-0.5">•</span>
-                      {isInlineEditMode ? (
-                        <div className="flex items-center gap-1.5 flex-1">
-                          <input
-                            type="text"
-                            value={ach}
-                            onChange={(e) => {
-                              const newAch = [...(job.keyAchievements || [])];
-                              newAch[idx] = e.target.value;
-                              handleUpdateJobInline(job.id, { keyAchievements: newAch });
-                            }}
-                            className="flex-1 text-xs text-[#111827] dark:text-white bg-amber-50/50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 px-2 py-0.5 rounded focus:outline-none"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteJobAchievement(job.id, idx)}
-                            className="text-[#9CA3AF] hover:text-rose-500 p-0.5 cursor-pointer"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-[#374151] dark:text-[#D1D5DB] leading-relaxed">
-                          {ach}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-
-                  {isInlineEditMode && (
-                    <button
-                      type="button"
-                      onClick={() => handleAddJobAchievement(job.id)}
-                      className="text-[11px] text-[#6366F1] hover:underline font-semibold flex items-center gap-1 pt-1 cursor-pointer"
-                    >
-                      <Plus className="w-3 h-3" />
-                      <span>Add Achievement Bullet</span>
-                    </button>
-                  )}
-                </div>
-
-                {/* Tech Stack */}
-                {isInlineEditMode ? (
-                  <div className="pt-1 flex items-center gap-1.5">
-                    <span className="text-[11px] font-bold text-[#374151] dark:text-[#CBD5E1]">
-                      Technologies:
-                    </span>
-                    <input
-                      type="text"
-                      value={job.techStack?.join(', ') || ''}
-                      onChange={(e) =>
-                        handleUpdateJobInline(job.id, {
-                          techStack: e.target.value
-                            .split(',')
-                            .map((t) => t.trim())
-                            .filter(Boolean),
-                        })
-                      }
-                      placeholder="React, TypeScript, Node.js"
-                      className="flex-1 text-xs text-[#111827] dark:text-white bg-amber-50/50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 px-2 py-0.5 rounded focus:outline-none"
-                    />
-                  </div>
-                ) : (
-                  job.techStack &&
-                  job.techStack.length > 0 && (
-                    <p className="text-[11px] text-[#6B7280] dark:text-[#9CA3AF] pt-1">
-                      <span className="font-bold text-[#374151] dark:text-[#CBD5E1]">
-                        Technologies:
-                      </span>{' '}
-                      {job.techStack.join(', ')}
-                    </p>
-                  )
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* 3. EDUCATION & ACADEMIC QUALIFICATIONS */}
-        <div className="space-y-4 resume-section">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2 resume-section-heading">
-              <GraduationCap className="w-3.5 h-3.5 text-[#6366F1]" />
-              <span>EDUCATION &amp; ACADEMIC QUALIFICATIONS</span>
-            </h2>
-            <button
-              type="button"
-              onClick={() => {
-                Sound.click(soundEnabled);
-                setShowEduModal(true);
-              }}
-              className="text-xs text-[#6366F1] font-semibold hover:underline flex items-center gap-1 print:hidden cursor-pointer"
-            >
-              <Plus className="w-3 h-3" />
-              <span>Add Record</span>
-            </button>
-          </div>
-
-          <div className="space-y-4">
-            {educationRecords.map((edu) => (
-              <div key={edu.id} className="space-y-1 group relative resume-entry resume-edu-card">
-                <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1">
-                  {isInlineEditMode ? (
-                    <div className="flex flex-wrap items-center gap-2 flex-1">
-                      <input
-                        type="text"
-                        value={edu.degree}
-                        onChange={(e) => handleUpdateEduInline(edu.id, { degree: e.target.value })}
-                        placeholder="Degree Name"
-                        className="text-sm font-bold text-[#111827] dark:text-white bg-amber-50/50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 px-2 py-0.5 rounded focus:outline-none"
-                      />
-                      <input
-                        type="text"
-                        value={edu.levelTitle || edu.level}
-                        onChange={(e) => handleUpdateEduInline(edu.id, { levelTitle: e.target.value })}
-                        placeholder="Level Title"
-                        className="text-xs text-[#6366F1] font-semibold bg-amber-50/50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 px-2 py-0.5 rounded focus:outline-none"
-                      />
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-bold text-[#111827] dark:text-white">
-                        {edu.degree}
-                      </span>
-                      <span className="text-xs text-[#6366F1] font-semibold">
-                        ({edu.levelTitle || edu.level})
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-2 text-xs font-mono shrink-0">
-                    {isInlineEditMode ? (
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="text"
-                          value={edu.score}
-                          onChange={(e) => handleUpdateEduInline(edu.id, { score: e.target.value })}
-                          placeholder="Score"
-                          className="w-20 px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-bold border border-emerald-300 text-xs"
-                        />
-                        <input
-                          type="text"
-                          value={edu.year}
-                          onChange={(e) => handleUpdateEduInline(edu.id, { year: e.target.value })}
-                          placeholder="Year"
-                          className="w-24 bg-amber-50/50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 px-1 py-0.5 rounded text-xs"
-                        />
-                      </div>
-                    ) : (
-                      <>
-                        <span className="px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-200 dark:border-emerald-800">
-                          Score: {edu.score}
-                        </span>
-                        <span className="text-[#6B7280] dark:text-[#9CA3AF]">{edu.year}</span>
-                      </>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteEdu(edu.id)}
-                      className="text-[#9CA3AF] hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 print:hidden cursor-pointer"
-                      title="Delete Record"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                {isInlineEditMode ? (
-                  <input
-                    type="text"
-                    value={edu.institution}
-                    onChange={(e) => handleUpdateEduInline(edu.id, { institution: e.target.value })}
-                    placeholder="Institution / University Name"
-                    className="w-full text-xs text-[#111827] dark:text-white bg-amber-50/50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 px-2 py-0.5 rounded focus:outline-none"
-                  />
-                ) : (
-                  <p className="text-xs font-medium text-[#4B5563] dark:text-[#9CA3AF]">
-                    <span className="text-[#111827] dark:text-white font-semibold">
-                      {edu.institution}
-                    </span>
-                    {edu.boardOrUniversity && <span> • {edu.boardOrUniversity}</span>}
-                    {edu.location && <span> • {edu.location}</span>}
-                    {edu.specialization && <span> • Specialization: {edu.specialization}</span>}
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* 4. TECHNICAL SKILLS & PROFICIENCIES */}
-        <div className="space-y-3 resume-section">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2 resume-section-heading">
-              <Code2 className="w-3.5 h-3.5 text-[#6366F1]" />
-              <span>TECHNICAL SKILLS &amp; PROFICIENCIES</span>
-            </h2>
-          </div>
-
-          <div className="space-y-2 pt-1">
-            {skills.map((sc, catIdx) => (
-              <div
-                key={catIdx}
-                className="text-xs flex flex-col sm:flex-row sm:items-baseline gap-1.5 resume-entry resume-skill-row"
-              >
-                <span className="font-bold text-[#111827] dark:text-white sm:w-44 shrink-0 resume-skill-cat">
-                  {sc.category}:
-                </span>
-
-                <div className="flex flex-wrap items-center gap-1.5 flex-1">
-                  {sc.skills.map((s, sIdx) => (
-                    <span
-                      key={sIdx}
-                      className="inline-flex items-center gap-1 text-[#4B5563] dark:text-[#D1D5DB]"
-                    >
-                      <span>{s.name}</span>
-                      {isInlineEditMode && (
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveSkillInline(catIdx, sIdx)}
-                          className="text-[#9CA3AF] hover:text-rose-500 p-0.5 cursor-pointer"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      )}
-                      {sIdx < sc.skills.length - 1 && !isInlineEditMode && (
-                        <span className="text-[#9CA3AF]">•</span>
-                      )}
-                    </span>
-                  ))}
-
-                  {isInlineEditMode && (
-                    <div className="inline-flex items-center gap-1">
-                      <input
-                        type="text"
-                        value={newSkillInput[catIdx] || ''}
-                        onChange={(e) =>
-                          setNewSkillInput({ ...newSkillInput, [catIdx]: e.target.value })
-                        }
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleAddSkillInline(catIdx);
-                          }
-                        }}
-                        placeholder="+ Skill (Press Enter)"
-                        className="text-[11px] bg-amber-50/50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 px-1.5 py-0.5 rounded w-32 focus:outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleAddSkillInline(catIdx)}
-                        className="px-1.5 py-0.5 rounded bg-[#6366F1] text-white text-[10px] font-bold cursor-pointer"
-                      >
-                        Add
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* 5. FEATURED PROJECTS & SOFTWARE */}
-        {projects.length > 0 && (
-          <div className="space-y-3 resume-section">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2 resume-section-heading">
-                <FolderGit2 className="w-3.5 h-3.5 text-[#6366F1]" />
-                <span>KEY PROJECTS &amp; SOFTWARE</span>
-              </h2>
-              <button
-                type="button"
-                onClick={() => {
-                  Sound.click(soundEnabled);
-                  setShowProjectModal(true);
-                }}
-                className="text-xs text-[#6366F1] font-semibold hover:underline flex items-center gap-1 print:hidden cursor-pointer"
-              >
-                <Plus className="w-3 h-3" />
-                <span>Add Project</span>
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 resume-projects-grid">
-              {projects.map((p) => {
-                const live = p.liveUrl || p.link;
-                const github = p.githubUrl;
-                const techList = p.techStack || p.tech;
-                return (
-                  <div
-                    key={p.id}
-                    className="p-3.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B]/70 border border-[#E2E8F0] dark:border-[#334155] space-y-1.5 group relative resume-entry resume-project-card"
-                  >
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-xs font-bold text-[#111827] dark:text-white">
-                        {p.title}
-                      </h3>
-                      <div className="flex items-center gap-2">
-                        {live && (
-                          <a
-                            href={live}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-[11px] text-[#6366F1] font-semibold flex items-center gap-0.5 hover:underline"
-                          >
-                            <span>Demo</span>
-                            <ExternalLink className="w-2.5 h-2.5" />
-                          </a>
-                        )}
-                        {github && (
-                          <a
-                            href={github}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-[11px] text-[#4B5563] dark:text-[#9CA3AF] flex items-center gap-0.5 hover:underline"
-                          >
-                            <Github className="w-2.5 h-2.5" />
-                            <span>Code</span>
-                          </a>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            Sound.click(soundEnabled);
-                            onDeleteProject(p.id);
-                          }}
-                          className="text-[#9CA3AF] hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 print:hidden cursor-pointer"
-                          title="Delete Project"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                    </div>
-
-                    <p className="text-xs text-[#4B5563] dark:text-[#9CA3AF] leading-relaxed break-words">
-                      {p.description}
-                    </p>
-
-                    {techList && techList.length > 0 && (
-                      <p className="text-[10px] font-mono text-[#6366F1] dark:text-[#818CF8] pt-0.5 break-words">
-                        {techList.join(', ')}
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* 6. CERTIFICATIONS */}
-        <div className="space-y-2 resume-section">
-          <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2 resume-section-heading">
-            <Sparkles className="w-3.5 h-3.5 text-[#6366F1]" />
-            <span>CERTIFICATIONS</span>
-          </h2>
-
-          <div className="space-y-1.5 pt-1">
-            {certifications.map((c, idx) => {
-              const cName = typeof c === 'string' ? c : c.name;
-              const cIssuer = typeof c === 'object' && c.issuer ? ` – ${c.issuer}` : '';
-              const cYear = typeof c === 'object' && c.year ? ` (${c.year})` : '';
-              return (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between text-xs text-[#374151] dark:text-[#D1D5DB] resume-entry resume-cert-item"
-                >
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#6366F1]" />
-                    <strong className="text-[#111827] dark:text-white">{cName}</strong>
-                    {cIssuer}
-                    {cYear}
-                  </span>
-                  {isInlineEditMode && (
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveCertInline(idx)}
-                      className="text-[#9CA3AF] hover:text-rose-500 p-0.5 cursor-pointer ml-2"
-                      title="Remove Certification"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-
-            {isInlineEditMode && (
-              <form onSubmit={handleAddCertInline} className="flex flex-wrap items-center gap-1.5 pt-1">
-                <input
-                  type="text"
-                  value={newCertName}
-                  onChange={(e) => setNewCertName(e.target.value)}
-                  placeholder="Certification Name (e.g. AWS ML)..."
-                  className="px-2.5 py-1 rounded-lg border text-xs bg-white dark:bg-[#1F2937] grow min-w-[140px]"
-                />
-                <input
-                  type="text"
-                  value={newCertIssuer}
-                  onChange={(e) => setNewCertIssuer(e.target.value)}
-                  placeholder="Issuer (e.g. Amazon)..."
-                  className="px-2.5 py-1 rounded-lg border text-xs bg-white dark:bg-[#1F2937] w-36"
-                />
-                <input
-                  type="text"
-                  value={newCertYear}
-                  onChange={(e) => setNewCertYear(e.target.value)}
-                  placeholder="Year (e.g. 2024)..."
-                  className="px-2 py-1 rounded-lg border text-xs bg-white dark:bg-[#1F2937] w-24"
-                />
-                <button
-                  type="submit"
-                  className="px-3 py-1 rounded-lg bg-[#6366F1] text-white text-xs font-bold hover:bg-[#4F46E5] cursor-pointer"
-                >
-                  Add Cert
-                </button>
-              </form>
-            )}
-          </div>
-        </div>
-
-        {/* 7. ADDITIONAL INFORMATION */}
-        <div className="space-y-2 resume-section">
-          <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2 resume-section-heading">
-            <Check className="w-3.5 h-3.5 text-emerald-500" />
-            <span>ADDITIONAL INFORMATION</span>
-          </h2>
-
-          <div className="space-y-1.5 pt-1">
-            {additionalInfo.map((info, idx) => (
-              <div
-                key={idx}
-                className="flex items-center justify-between text-xs text-[#374151] dark:text-[#D1D5DB] resume-entry resume-info-item"
-              >
-                <span className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  <span>{info}</span>
-                </span>
-                {isInlineEditMode && (
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveInfoInline(idx)}
-                    className="text-[#9CA3AF] hover:text-rose-500 p-0.5 cursor-pointer ml-2"
-                    title="Remove Bullet"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            ))}
-
-            {isInlineEditMode && (
-              <form onSubmit={handleAddInfoInline} className="flex items-center gap-1.5 pt-1">
-                <input
-                  type="text"
-                  value={newInfoText}
-                  onChange={(e) => setNewInfoText(e.target.value)}
-                  placeholder="Add skill or statement (e.g. Fast learner, excellent communication)..."
-                  className="px-2.5 py-1 rounded-lg border text-xs bg-white dark:bg-[#1F2937] grow"
-                />
-                <button
-                  type="submit"
-                  className="px-3 py-1 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 cursor-pointer"
-                >
-                  Add
-                </button>
-              </form>
-            )}
-          </div>
-        </div>
-
-        {/* 8. HOBBIES & PERSONAL INTERESTS */}
-        <div className="space-y-2 resume-section">
-          <h2 className="text-xs font-black uppercase tracking-wider text-[#111827] dark:text-white flex items-center gap-2 resume-section-heading">
-            <Heart className="w-3.5 h-3.5 text-rose-500" />
-            <span>HOBBIES &amp; PERSONAL INTERESTS</span>
-          </h2>
-
-          <div className="flex flex-wrap items-center gap-2 pt-1">
-            {hobbies.map((h) => (
-              <span
-                key={h.id}
-                className="px-3 py-1 rounded-xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] text-xs text-[#374151] dark:text-[#D1D5DB] flex items-center gap-1.5 resume-entry"
-              >
-                <span>{h.icon || '✨'}</span>
-                <span className="font-semibold">{h.title}</span>
-                {h.passionLevel && (
-                  <span className="text-[10px] text-[#9CA3AF]">({h.passionLevel})</span>
-                )}
-                {isInlineEditMode && (
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveHobbyInline(h.id)}
-                    className="text-[#9CA3AF] hover:text-rose-500 ml-1 p-0.5 cursor-pointer"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </span>
-            ))}
-
-            {isInlineEditMode && (
-              <form onSubmit={handleAddHobbyInline} className="flex items-center gap-1">
-                <input
-                  type="text"
-                  value={newHobbyEmoji}
-                  onChange={(e) => setNewHobbyEmoji(e.target.value)}
-                  className="w-9 px-1 py-0.5 rounded-lg border text-center text-xs bg-white dark:bg-[#1F2937]"
-                  placeholder="Emoji"
-                />
-                <input
-                  type="text"
-                  value={newHobbyTitle}
-                  onChange={(e) => setNewHobbyTitle(e.target.value)}
-                  placeholder="New Hobby Title..."
-                  className="px-2 py-0.5 rounded-lg border text-xs bg-white dark:bg-[#1F2937]"
-                />
-                <button
-                  type="submit"
-                  className="px-2 py-0.5 rounded-lg bg-[#6366F1] text-white text-xs font-bold"
-                >
-                  Add
-                </button>
-              </form>
-            )}
-          </div>
-        </div>
-      </div>
+      {/* 2. MAIN CURRICULUM VITAE & PORTFOLIO DOCUMENT SHEET (Exact PDF Format + Inline Editable + Capture Target for PDF) */}
+      <ResumeDocumentSheet
+        resumeSheetRef={resumeSheetRef}
+        profile={profile}
+        resume={resume}
+        skills={skills}
+        soundEnabled={soundEnabled}
+        isInlineEditMode={isInlineEditMode}
+        setIsInlineEditMode={setIsInlineEditMode}
+        onUpdateProfile={onUpdateProfile}
+        onUpdateResume={onUpdateResume}
+        onAddEducationModal={() => {
+          Sound.click(soundEnabled);
+          setShowEduModal(true);
+        }}
+        onAddJobModal={() => {
+          Sound.click(soundEnabled);
+          setShowJobModal(true);
+        }}
+        onAddProjectModal={() => {
+          Sound.click(soundEnabled);
+          setShowProjectModal(true);
+        }}
+      />
 
       {/* MODAL 1: Edit Profile / Header Details Modal */}
       {showProfileModal && (

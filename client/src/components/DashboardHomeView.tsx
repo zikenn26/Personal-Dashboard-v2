@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { motion } from 'motion/react';
 import {
   UserProfile,
   TodoItem,
@@ -451,13 +452,18 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
   }, [expenses]);
 
   return (
-    <div className="space-y-3.5 pb-8 animate-in fade-in duration-300">
+    <div className="space-y-3.5 pb-8">
       {/* ========================================================================= */}
       {/* 1. GREETING & HERO HEADER WITH REDUCED QUOTE TILE & FLIP CLOCK */}
       {/* ========================================================================= */}
       <div className="space-y-2.5 pb-0">
         {/* Greeting Header with Compact Weather Widget */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+        >
           <div>
             <h1 className="workspace-heading font-extrabold text-[#37352F] dark:text-white tracking-tight flex items-center gap-2 flex-wrap">
               <span>{greeting}, {profile.name}!</span>
@@ -468,15 +474,23 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
             </p>
           </div>
 
-          <div className="self-start sm:self-auto shrink-0">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.4, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
+            className="self-start sm:self-auto shrink-0"
+          >
             <CurrentWeatherWidget soundEnabled={soundEnabled} />
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
 
         {/* Side-by-Side: 2x Quote Tile + 3/4th Size Date & Clock Tile */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
           {/* Quote Tile (expanded horizontal span: 8 cols on lg, 9 on xl) */}
-          <div
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
             onMouseEnter={() => setIsQuoteAutoPlay(false)}
             onMouseLeave={() => setIsQuoteAutoPlay(true)}
             className="grid-tile lg:col-span-8 xl:col-span-9 relative px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-2xl bg-[#F8FAFC] dark:bg-[#23324C] border border-[#EDECE9] dark:border-[#334155] shadow-xs flex flex-col justify-between gap-2 transition-all group"
@@ -639,16 +653,19 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
                 </form>
               </div>
             )}
-          </div>
+          </motion.div>
 
           {/* Date & Clock Tile (3/4th size: 4 cols on lg, 3 on xl) */}
-          <div
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, delay: 0.14, ease: [0.16, 1, 0.3, 1] }}
             className={`grid-tile lg:col-span-4 xl:col-span-3 px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#23324C] border border-[#EDECE9] dark:border-[#334155] shadow-xs flex flex-col justify-between transition-all duration-300 ${
               isAlarmRinging ? 'alarm-tile-pulse' : ''
             }`}
           >
             <FlipClock onRingingChange={setIsAlarmRinging} />
-          </div>
+          </motion.div>
         </div>
       </div>
 

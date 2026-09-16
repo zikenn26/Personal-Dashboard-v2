@@ -507,6 +507,15 @@
 .pdf-exporting-target {
   background-color: #ffffff !important;
 }
+.pdf-exporting-target .resume-section-header-bar,
+.pdf-exporting-target [class*="resume-section-header-bar"],
+.pdf-exporting-target [class*="bg-[#E8EDF2]"],
+.pdf-exporting-target [class*="bg-[#EAEFF5]"] {
+  background-color: #E8EDF2 !important;
+  color: #0F172A !important;
+  -webkit-print-color-adjust: exact !important;
+  print-color-adjust: exact !important;
+}
 .pdf-exporting-target .text-\[\#6366F1\],
 .pdf-exporting-target .text-\[\#818CF8\] {
   color: #4338CA !important;
@@ -521,6 +530,18 @@
   background-color: #ECFDF5 !important;
   border-color: #A7F3D0 !important;
   color: #065F46 !important;
+}
+
+@media print {
+  .resume-section-header-bar,
+  [class*="resume-section-header-bar"],
+  [class*="bg-[#E8EDF2]"],
+  [class*="bg-[#EAEFF5]"] {
+    background-color: #E8EDF2 !important;
+    color: #0F172A !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
 }
 
 /* PREFERS-REDUCED-MOTION SUPPORT */

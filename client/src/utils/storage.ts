@@ -32,6 +32,7 @@ import {
 import { STOCK_IMAGES } from '../assets/stockImages';
 import { decryptJson, encryptJson, isEncryptedPayload, EncryptedPayload } from './crypto';
 import { INITIAL_USER_EXAMS } from '../data/defaultExams';
+import { getMondayOfWeek, getWeekId, formatWeekRange } from './habitWeekManager';
 
 export const STORAGE_KEYS = {
   TODOS: 'notion_os_v4_todos',
@@ -117,7 +118,7 @@ export const INITIAL_EDUCATION_RECORDS: EducationRecord[] = [
     boardOrUniversity: 'NIT Raipur',
     location: 'Raipur, Chhattisgarh, India',
     year: '2024–2026',
-    score: '8.18 CGPA',
+    score: '8.55 CGPA',
     specialization: 'Information Technology',
     highlights: ['Advanced Distributed Systems, AI Architectures & Data Engineering'],
   },
@@ -708,7 +709,7 @@ export const DEFAULT_ATS_RESUME: ResumeDocument = {
       school: 'National Institute of Technology Raipur, Chhattisgarh',
       degree: 'M.Tech in Information Technology',
       year: '2024–2026',
-      score: '8.18 CGPA',
+      score: '8.55 CGPA',
       location: 'Raipur, Chhattisgarh',
       specialization: 'Information Technology',
       highlights: ['Advanced Distributed Systems, AI Architectures & Data Engineering'],
@@ -740,42 +741,42 @@ export const DEFAULT_ATS_RESUME: ResumeDocument = {
   ],
   projects: [
     {
-      title: 'My Exam Dashboard – Full Stack Application',
-      subtitle: 'Exam Management Platform with AI & Real-time Updates',
+      title: 'My Exam Dashboard– Full Stack Application',
+      subtitle: 'Exam management platform with AI-powered features, real-time updates, and intelligent chatbot assistance.',
       period: '2025',
       description:
         'Developed a full-stack system with JWT-based authentication, complete CRUD operations for exams and categories, and responsive UI with dark/light mode. Integrated AI-powered ChatBot, real-time exam news, live countdown timers and smart recommendations for users.',
       techStack: ['Next.js', 'React.js', 'Node.js', 'Tailwind CSS', 'JWT', 'RESTful APIs', 'Gemini API'],
       points: [
+        'Tools & technologies used: Next.js, React.js, Node.js, Tailwind CSS, JWT, RESTful APIs, Gemini API.',
         'Developed a full-stack system with JWT-based authentication, complete CRUD operations for exams and categories, and responsive UI with dark/light mode.',
-        'Integrated AI-powered ChatBot, real-time exam news, live countdown timers and smart personalized recommendations.',
-        'Engineered responsive layouts and optimized REST endpoints with resilient client-side state handling.',
+        'AI-powered ChatBot, real-time exam news, live countdown timers and smart recommendations for users.',
       ],
     },
     {
       title: 'Cross-Functional Data Analytics Initiative',
-      subtitle: 'Enterprise BI Solutions & Executive Dashboards',
+      subtitle: 'Tech Stack: Power BI, SQL, MS Excel, Microsoft Office Suite',
       period: '2025',
       description:
         'Integrated academic, research, and open-source data to create cross-domain analytics solutions using DAX calculations supported by robust data pipelines with SQL and Power BI tools.',
       techStack: ['Power BI', 'SQL', 'MS Excel', 'Microsoft Office Suite', 'DAX'],
       points: [
-        'Integrated academic, research, and open-source data to create cross-domain analytics solutions using DAX calculations supported by robust data pipelines with SQL and Power BI tools.',
-        'Developed dynamic dashboards and reports in Power BI to present insights and enable decision-making across multiple domains.',
-        'Authored clear project documentation in Word and PowerPoint, demonstrating adaptability to evolving requirements.',
+        'Integrated academic, research, and open-source data to create cross-domain analytics solutions using DAX calculations supported by robust data pipelines with SQL and Power BI tools',
+        'Developed dynamic dashboards and reports in Power BI to present insights and enable decision-making across multiple domains',
+        'Authored clear project documentation in Word, PowerPoint, demonstrating adaptability to evolving requirements',
       ],
     },
     {
       title: 'Real-Time Pothole and Lane Detection System',
-      subtitle: 'Computer Vision & Deep Learning for Autonomous Driving',
+      subtitle: 'Tech Stack: Python, OpenCV, PyTorch, YOLOv8, Torchvision',
       period: '2024',
       description:
         'Developed a computer vision system to enhance autonomous driving safety by detecting road potholes and lane markings in real time.',
       techStack: ['Python', 'OpenCV', 'PyTorch', 'YOLOv8', 'Torchvision'],
       points: [
-        'Developed a computer vision system to enhance autonomous driving safety by detecting road potholes and lane markings in real time.',
-        'Utilized Python, OpenCV, and PyTorch, implementing YOLOv8 and Torchvision for deep learning-based detection.',
-        'Achieved 80% accuracy in road damage detection on custom datasets, and integrated robust lane detection using OpenCV line detection and perspective transformation techniques.',
+        'Developed a computer vision system to enhance autonomous driving safety by detecting road potholes and lane markings in real time',
+        'Utilized Python, OpenCV, and PyTorch, implementing YOLOv8 and Torchvision for deep learning-based detection',
+        'Achieved 80% accuracy in road damage detection on custom datasets, and integrated robust lane detection using OpenCV line detection and perspective transformation techniques',
       ],
     },
   ],
@@ -788,7 +789,6 @@ export const DEFAULT_ATS_RESUME: ResumeDocument = {
   additionalInfo: [
     'Fast learner—comfortable mastering new technologies according to the project needs.',
     'Excellent written and verbal communication skills.',
-    'Strong analytical thinking, problem solving, and cross-functional team collaboration.',
   ],
 };
 
@@ -858,7 +858,22 @@ export const Storage = {
   getHabits: (): HabitItem[] => loadFromStorage(STORAGE_KEYS.HABITS, INITIAL_HABITS),
   setHabits: (items: HabitItem[]) => saveToStorage(STORAGE_KEYS.HABITS, items),
 
-  getHabitHistory: (): HabitWeekRecord[] => loadFromStorage(STORAGE_KEYS.HABIT_HISTORY, []),
+  getHabitHistory: (): HabitWeekRecord[] => {
+    const raw = loadFromStorage<HabitWeekRecord[]>(STORAGE_KEYS.HABIT_HISTORY, []);
+    if (!Array.isArray(raw)) return [];
+    const currentMonday = getMondayOfWeek();
+    const currentWeekId = getWeekId(currentMonday);
+    const currentWeekLabel = formatWeekRange(currentMonday);
+    return raw.filter((w) => {
+      if (!w) return false;
+      const isSameId = w.id === `week-${currentWeekId}` || w.id === currentWeekId;
+      const isSameStart = w.weekStart === currentWeekId;
+      const isSameLabel =
+        w.label?.trim().toLowerCase() === currentWeekLabel?.trim().toLowerCase() ||
+        (w.label?.toLowerCase().includes('sep 14') && currentWeekLabel?.toLowerCase().includes('sep 14'));
+      return !isSameId && !isSameStart && !isSameLabel;
+    });
+  },
   setHabitHistory: (items: HabitWeekRecord[]) => saveToStorage(STORAGE_KEYS.HABIT_HISTORY, items),
 
   getHabitActiveWeek: (): string => loadFromStorage(STORAGE_KEYS.HABIT_ACTIVE_WEEK, ''),
@@ -993,6 +1008,18 @@ export const Storage = {
     }
     if (!data.educationRecords || data.educationRecords.length === 0) {
       data.educationRecords = INITIAL_EDUCATION_RECORDS;
+    } else {
+      data.educationRecords = data.educationRecords.map((edu) => {
+        if (
+          (edu.id === 'edu-nit-raipur' ||
+            edu.degree?.toLowerCase().includes('m.tech') ||
+            edu.institution?.toLowerCase().includes('raipur')) &&
+          (edu.score === '8.18 CGPA' || edu.score === '8.18')
+        ) {
+          return { ...edu, score: '8.55 CGPA' };
+        }
+        return edu;
+      });
     }
     if (!data.jobExperiences || data.jobExperiences.length === 0) {
       data.jobExperiences = INITIAL_JOB_EXPERIENCES;
@@ -1086,6 +1113,18 @@ export const Storage = {
     if (!loaded.certifications || loaded.certifications.length === 0) loaded.certifications = DEFAULT_ATS_RESUME.certifications;
     if (!loaded.additionalInfo || loaded.additionalInfo.length === 0) loaded.additionalInfo = DEFAULT_ATS_RESUME.additionalInfo;
     if (!loaded.skillsByCategory || loaded.skillsByCategory.length === 0) loaded.skillsByCategory = DEFAULT_ATS_RESUME.skillsByCategory;
+    if (loaded.education && Array.isArray(loaded.education)) {
+      loaded.education = loaded.education.map((edu) => {
+        if (
+          (edu.school?.toLowerCase().includes('raipur') ||
+            edu.degree?.toLowerCase().includes('m.tech')) &&
+          (edu.score === '8.18 CGPA' || edu.score === '8.18')
+        ) {
+          return { ...edu, score: '8.55 CGPA' };
+        }
+        return edu;
+      });
+    }
     return loaded;
   },
   setResume: (resume: ResumeDocument) => saveToStorage(STORAGE_KEYS.RESUME, resume),

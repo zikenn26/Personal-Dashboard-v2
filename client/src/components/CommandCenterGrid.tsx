@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { motion } from 'motion/react';
 import {
   TodoItem,
   HabitItem,
@@ -837,7 +838,12 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
   return (
     <div className="space-y-4 select-none" ref={containerRef}>
       {/* Top Header Bar with Reset Layout */}
-      <div className="flex items-center justify-between gap-3 flex-wrap px-1">
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, delay: 0.16, ease: [0.16, 1, 0.3, 1] }}
+        className="flex items-center justify-between gap-3 flex-wrap px-1"
+      >
         <div className="flex items-center gap-2 text-xs font-semibold text-[#787774] dark:text-[#9CA3AF]">
           <LayoutGrid className="w-4 h-4 text-[#6366F1]" />
           <span className="text-[#37352F] dark:text-white font-bold tracking-tight text-sm">
@@ -858,7 +864,7 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
           <RotateCcw className="w-3.5 h-3.5 text-[#6366F1]" />
           <span>Reset Layout</span>
         </button>
-      </div>
+      </motion.div>
 
       {/* Responsive Multi-Column Packing Grid */}
       <div
@@ -898,8 +904,21 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
                 dropIndicator.rowIdx === rowIdx &&
                 dropIndicator.position === 'bottom';
 
+              // Staggered entrance animation delay based on column & row order
+              const staggerDelay = 0.18 + colIndex * 0.07 + rowIdx * 0.06;
+
               return (
-                <div key={widgetId} className="w-full flex flex-col gap-2">
+                <motion.div
+                  key={widgetId}
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    duration: 0.45,
+                    delay: staggerDelay,
+                    ease: [0.16, 1, 0.3, 1],
+                  }}
+                  className="w-full flex flex-col gap-2"
+                >
                   {/* Top Drop Indicator Line */}
                   {showTopIndicator && (
                     <div className="h-1.5 bg-[#6366F1] dark:bg-[#818CF8] rounded-full mx-2 shadow-md ring-2 ring-indigo-300 dark:ring-indigo-700 animate-pulse transition-all" />
@@ -922,7 +941,7 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
                   {showBottomIndicator && (
                     <div className="h-1.5 bg-[#6366F1] dark:bg-[#818CF8] rounded-full mx-2 shadow-md ring-2 ring-indigo-300 dark:ring-indigo-700 animate-pulse transition-all" />
                   )}
-                </div>
+                </motion.div>
               );
             })}
 
