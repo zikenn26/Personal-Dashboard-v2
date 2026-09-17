@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence, type Variants } from 'motion/react';
 import { Storage, STORAGE_KEYS, getScopedKey } from './utils/storage';
 import { Sound } from './utils/audio';
@@ -230,6 +230,20 @@ export default function App() {
   const [isZikennPopupOpen, setIsZikennPopupOpen] = useState(false);
   const [isGlobalVoiceModalOpen, setIsGlobalVoiceModalOpen] = useState(false);
   const [isGlobalVoiceActive, setIsGlobalVoiceActive] = useState(false);
+  const [isVoiceCommandProcessed, setIsVoiceCommandProcessed] = useState(false);
+  const voiceCommandTimerRef = useRef<any>(null);
+
+  const handleVoiceCommandExecuted = useCallback((_cmdText: string) => {
+    setIsVoiceCommandProcessed(true);
+    if (voiceCommandTimerRef.current) clearTimeout(voiceCommandTimerRef.current);
+    voiceCommandTimerRef.current = setTimeout(() => {
+      setIsVoiceCommandProcessed(false);
+    }, 3600);
+  }, []);
+
+  const handleVoiceListeningChange = useCallback((listening: boolean) => {
+    setIsGlobalVoiceActive(listening);
+  }, []);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isCommandMappingModalOpen, setIsCommandMappingModalOpen] = useState(false);
@@ -3002,17 +3016,24 @@ export default function App() {
           >
             {isGlobalVoiceActive || isGlobalVoiceModalOpen ? (
               <div className="flex items-center gap-2">
-                {/* Framer Motion Waveform Visualizer indicating active listening */}
+                {/* Framer Motion Waveform Visualizer indicating active listening or command processed */}
                 <WaveformVisualizer
                   isActive={true}
                   barCount={5}
                   size="sm"
-                  colorTheme="cyan"
+                  colorTheme={isVoiceCommandProcessed ? 'emerald' : 'cyan'}
+                  isProcessed={isVoiceCommandProcessed}
                 />
-                <span className="text-xs font-bold text-cyan-200 tracking-wide flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-cyan-300 animate-ping inline-block" />
-                  Listening
-                </span>
+                {isVoiceCommandProcessed ? (
+                  <span className="text-xs font-bold text-emerald-300 tracking-wide flex items-center gap-1.5 animate-in fade-in">
+                    ✓ Executed
+                  </span>
+                ) : (
+                  <span className="text-xs font-bold text-cyan-200 tracking-wide flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-cyan-300 animate-ping inline-block" />
+                    Listening
+                  </span>
+                )}
               </div>
             ) : (
               <>
@@ -3050,7 +3071,8 @@ export default function App() {
         isOpen={isGlobalVoiceModalOpen}
         onClose={() => setIsGlobalVoiceModalOpen(false)}
         onNavigate={handleNavigate}
-        onListeningChange={(listening) => setIsGlobalVoiceActive(listening)}
+        onListeningChange={handleVoiceListeningChange}
+        onCommandExecuted={handleVoiceCommandExecuted}
         onOpenCommandMappings={() => setIsCommandMappingModalOpen(true)}
       />
 

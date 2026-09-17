@@ -13,6 +13,7 @@ import {
   Zap,
   Send,
   RotateCcw,
+  Check,
 } from 'lucide-react';
 import {
   matchCommandTrigger,
@@ -22,6 +23,7 @@ import {
   sendGeminiMessage,
   speakTextWithGemini,
   stopGeminiSpeech,
+  transcribeAudioWithGemini,
 } from '../services/geminiService';
 import { Sound } from '../utils/audio';
 import { WaveformVisualizer } from './WaveformVisualizer';
@@ -32,9 +34,10 @@ interface GeminiLiveVoiceModalProps {
   onNavigate?: (view: any, tabOrFilter?: string) => void;
   onListeningChange?: (isListening: boolean) => void;
   onOpenCommandMappings?: () => void;
+  onCommandExecuted?: (commandText: string) => void;
 }
 
-type LiveVoiceStatus = 'connecting' | 'listening' | 'speaking' | 'processing' | 'error';
+type LiveVoiceStatus = 'listening' | 'speaking' | 'processing' | 'error';
 
 const SAMPLE_COMMANDS = [
   'log breakfast 150',
@@ -51,33 +54,114 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
   onNavigate,
   onListeningChange,
   onOpenCommandMappings,
+  onCommandExecuted,
 }) => {
   const [status, setStatus] = useState<LiveVoiceStatus>('listening');
   const [volume, setVolume] = useState<number>(0);
   const [userTranscript, setUserTranscript] = useState<string>('');
+  const [interimTranscript, setInterimTranscript] = useState<string>('');
   const [modelTranscript, setModelTranscript] = useState<string>('');
   const [executedTools, setExecutedTools] = useState<Array<{ name: string; chip: string; id: string }>>([]);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isSpeechSupported, setIsSpeechSupported] = useState<boolean>(true);
   const [manualInput, setManualInput] = useState<string>('');
 
-  // Audio Context & Recognition refs
+  // Subtle visual indicator state when voice input is successfully processed
+  const [isCommandProcessed, setIsCommandProcessed] = useState<boolean>(false);
+  const [lastProcessedMessage, setLastProcessedMessage] = useState<string>('');
+
+  // Stable refs for callbacks to prevent re-render teardown cycles
+  const onListeningChangeRef = useRef(onListeningChange);
+  onListeningChangeRef.current = onListeningChange;
+
+  const onNavigateRef = useRef(onNavigate);
+  onNavigateRef.current = onNavigate;
+
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  const onCommandExecutedRef = useRef(onCommandExecuted);
+  onCommandExecutedRef.current = onCommandExecuted;
+
+  // Audio & Speech references
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const recognitionRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
   const executedPhraseRef = useRef<Set<string>>(new Set());
   const silenceTimerRef = useRef<any>(null);
+  const successIndicatorTimerRef = useRef<any>(null);
   const latestTranscriptRef = useRef<string>('');
+  const isSpeakingRef = useRef<boolean>(false);
+  const isMutedRef = useRef<boolean>(false);
+  isMutedRef.current = isMuted;
 
-  // Sync listening state to parent component (for floating button waveform)
+  // Sync listening state to parent component
   useEffect(() => {
-    if (onListeningChange) {
-      onListeningChange(isOpen && (status === 'listening' || status === 'connecting') && !isMuted);
+    if (onListeningChangeRef.current) {
+      const active = isOpen && (status === 'listening' || isCommandProcessed) && !isMuted;
+      onListeningChangeRef.current(active);
     }
-  }, [isOpen, status, isMuted, onListeningChange]);
+  }, [isOpen, status, isMuted, isCommandProcessed]);
+
+  // Mark command as processed with visual indicator transition
+  const triggerCommandProcessedIndicator = useCallback((message: string) => {
+    setIsCommandProcessed(true);
+    setLastProcessedMessage(message);
+    if (successIndicatorTimerRef.current) {
+      clearTimeout(successIndicatorTimerRef.current);
+    }
+    successIndicatorTimerRef.current = setTimeout(() => {
+      setIsCommandProcessed(false);
+    }, 3600);
+  }, []);
+
+  // Stop all audio & recognition
+  const stopAllAudio = useCallback(() => {
+    stopGeminiSpeech();
+    isSpeakingRef.current = false;
+
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onend = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.stop();
+      } catch {}
+      recognitionRef.current = null;
+    }
+
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {}
+      mediaRecorderRef.current = null;
+    }
+
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current = null;
+    }
+
+    if (audioCtxRef.current) {
+      audioCtxRef.current.close().catch(() => {});
+      audioCtxRef.current = null;
+    }
+  }, []);
 
   // Execute a command trigger
   const handleExecuteTrigger = useCallback(
@@ -108,26 +192,33 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
             },
           ]);
 
+          // Visual indicator on WaveformVisualizer & modal
+          triggerCommandProcessedIndicator(res.message);
+          onCommandExecutedRef.current?.(rawText);
+
           setModelTranscript(res.message);
           setStatus('speaking');
+          isSpeakingRef.current = true;
 
           // Vocal confirmation
           await speakTextWithGemini(res.message, 'Zephyr', () => {
+            isSpeakingRef.current = false;
             setStatus('listening');
           });
 
-          if (match.mapping.actionType === 'navigate_view' && onNavigate && res.details?.view) {
-            onNavigate(res.details.view);
+          if (match.mapping.actionType === 'navigate_view' && onNavigateRef.current && res.details?.view) {
+            onNavigateRef.current(res.details.view);
           }
           return true;
         }
       } catch (err) {
         console.error('Failed to execute command trigger:', err);
       }
+      isSpeakingRef.current = false;
       setStatus('listening');
       return false;
     },
-    [onNavigate]
+    [triggerCommandProcessedIndicator]
   );
 
   // Send query to AI Secretary / Gemini if not a custom trigger
@@ -157,56 +248,129 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
               },
             ]);
           }
+          // Visual confirmation on WaveformVisualizer
+          triggerCommandProcessedIndicator(response.reply || 'Action completed');
+          onCommandExecutedRef.current?.(prompt);
         }
 
         const reply = response.reply || 'Command completed.';
         setModelTranscript(reply);
         setStatus('speaking');
+        isSpeakingRef.current = true;
 
         await speakTextWithGemini(reply, 'Zephyr', () => {
+          isSpeakingRef.current = false;
           setStatus('listening');
         });
       } catch (err: any) {
         console.warn('AI processing error:', err);
+        isSpeakingRef.current = false;
         setStatus('listening');
       }
     },
-    []
+    [triggerCommandProcessedIndicator]
   );
 
-  // Stop all audio & recognition
-  const stopAllAudio = useCallback(() => {
-    stopGeminiSpeech();
+  // Helper to restart speech recognition without tearing down the audio stream
+  const restartSpeechRecognition = useCallback(() => {
+    if (!isOpen || isMutedRef.current || isSpeakingRef.current) return;
 
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = null;
-    }
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
 
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.onend = null;
-        recognitionRef.current.onerror = null;
-        recognitionRef.current.stop();
-      } catch {}
-      recognitionRef.current = null;
-    }
+    try {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.onresult = null;
+          recognitionRef.current.onend = null;
+          recognitionRef.current.onerror = null;
+          recognitionRef.current.stop();
+        } catch {}
+      }
 
-    if (animFrameRef.current) {
-      cancelAnimationFrame(animFrameRef.current);
-      animFrameRef.current = null;
-    }
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+      recognition.maxAlternatives = 1;
 
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
-      mediaStreamRef.current = null;
-    }
+      recognition.onstart = () => {
+        if (!isSpeakingRef.current) {
+          setStatus('listening');
+        }
+        setErrorMessage(null);
+      };
 
-    if (audioCtxRef.current) {
-      audioCtxRef.current.close().catch(() => {});
-      audioCtxRef.current = null;
+      recognition.onresult = (event: any) => {
+        if (isMutedRef.current || isSpeakingRef.current) return;
+
+        // Iterate through all results to build cumulative transcript
+        let finalStr = '';
+        let interimStr = '';
+
+        for (let i = 0; i < event.results.length; ++i) {
+          const item = event.results[i];
+          if (item.isFinal) {
+            finalStr += item[0].transcript + ' ';
+          } else {
+            interimStr += item[0].transcript;
+          }
+        }
+
+        const fullText = (finalStr + interimStr).trim();
+        if (fullText) {
+          latestTranscriptRef.current = fullText;
+          setUserTranscript(fullText);
+          setInterimTranscript(interimStr.trim());
+          Sound.voiceRegistered(true);
+
+          // Check if it matches a custom voice trigger
+          handleExecuteTrigger(fullText).then((matched) => {
+            if (matched) {
+              if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+            } else {
+              // Debounce silence timer for general AI prompt
+              if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+              silenceTimerRef.current = setTimeout(() => {
+                if (latestTranscriptRef.current && !isSpeakingRef.current) {
+                  handleAiFallback(latestTranscriptRef.current);
+                }
+              }, 1800);
+            }
+          });
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn('Speech recognition status:', event.error);
+        if (event.error === 'not-allowed') {
+          setErrorMessage('Microphone access was denied. Please allow microphone permissions.');
+          setStatus('error');
+        } else if (event.error === 'network') {
+          setErrorMessage('Speech service network issue. You can still type below or use quick actions.');
+        } else if (event.error === 'audio-capture') {
+          setErrorMessage('Microphone device busy or unavailable.');
+        }
+      };
+
+      recognition.onend = () => {
+        // Automatically restart speech recognition after brief pause
+        if (isOpen && !isMutedRef.current && !isSpeakingRef.current) {
+          setTimeout(() => {
+            if (isOpen && !isMutedRef.current && !isSpeakingRef.current) {
+              restartSpeechRecognition();
+            }
+          }, 300);
+        }
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (e) {
+      console.warn('SpeechRecognition start skipped:', e);
     }
-  }, []);
+  }, [isOpen, handleExecuteTrigger, handleAiFallback]);
 
   // Initialize Speech Recognition & Microphone Volume Monitor
   const startVoiceEngine = useCallback(() => {
@@ -239,143 +403,98 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                 sum += dataArray[i];
               }
               const avg = sum / dataArray.length;
-              setVolume(Math.min(1, avg / 80));
+              // Smooth normalized volume
+              setVolume(Math.min(1, avg / 70));
               animFrameRef.current = requestAnimationFrame(updateVolume);
             };
             updateVolume();
+
+            // Setup MediaRecorder fallback if browser SpeechRecognition is absent
+            const SpeechRecognition =
+              (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+            if (!SpeechRecognition && typeof MediaRecorder !== 'undefined') {
+              try {
+                const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+                audioChunksRef.current = [];
+                mr.ondataavailable = (e) => {
+                  if (e.data.size > 0) audioChunksRef.current.push(e.data);
+                };
+                mr.onstop = async () => {
+                  if (audioChunksRef.current.length > 0) {
+                    const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                    audioChunksRef.current = [];
+                    const reader = new FileReader();
+                    reader.onloadend = async () => {
+                      const base64 = (reader.result as string).split(',')[1];
+                      if (base64) {
+                        const transcript = await transcribeAudioWithGemini(base64, 'audio/webm');
+                        if (transcript && transcript.trim()) {
+                          setUserTranscript(transcript.trim());
+                          latestTranscriptRef.current = transcript.trim();
+                          handleExecuteTrigger(transcript.trim()).then((matched) => {
+                            if (!matched) handleAiFallback(transcript.trim());
+                          });
+                        }
+                      }
+                    };
+                    reader.readAsDataURL(blob);
+                  }
+                };
+                mediaRecorderRef.current = mr;
+                mr.start(3000); // 3-second slices
+              } catch (mrErr) {
+                console.warn('MediaRecorder fallback setup:', mrErr);
+              }
+            }
           } catch (e) {
             console.warn('AudioContext visualization setup skipped:', e);
           }
         })
         .catch((err) => {
-          console.warn('Microphone permission check:', err);
+          console.warn('Microphone permission error:', err);
           if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-            setErrorMessage('Microphone access is blocked. Please allow microphone permissions in your browser address bar.');
+            setErrorMessage('Microphone access blocked. Please enable microphone permissions in your browser bar.');
           }
         });
     }
 
-    // 2. Client-side Speech Recognition
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    // 2. Start Speech Recognition
+    restartSpeechRecognition();
+  }, [stopAllAudio, restartSpeechRecognition, handleExecuteTrigger, handleAiFallback]);
 
-    if (!SpeechRecognition) {
-      setIsSpeechSupported(false);
-      setErrorMessage('Browser Speech Recognition not supported in this browser. You can type commands below.');
-      return;
-    }
-
-    setIsSpeechSupported(true);
-
-    try {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = 'en-US';
-      recognition.maxAlternatives = 1;
-
-      recognition.onstart = () => {
-        setStatus('listening');
-        setErrorMessage(null);
-      };
-
-      recognition.onresult = (event: any) => {
-        if (isMuted) return;
-
-        let interim = '';
-        let final = '';
-
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          const item = event.results[i];
-          if (item.isFinal) {
-            final += item[0].transcript + ' ';
-          } else {
-            interim += item[0].transcript;
-          }
-        }
-
-        const fullText = (final + interim).trim();
-        if (fullText) {
-          latestTranscriptRef.current = fullText;
-          setUserTranscript(fullText);
-          Sound.voiceRegistered(true);
-
-          // Test for custom command mappings immediately
-          handleExecuteTrigger(fullText).then((matched) => {
-            if (matched) {
-              if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-            } else {
-              // Reset debounce silence timer for general AI prompt
-              if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-              silenceTimerRef.current = setTimeout(() => {
-                if (latestTranscriptRef.current) {
-                  handleAiFallback(latestTranscriptRef.current);
-                }
-              }, 1600);
-            }
-          });
-        }
-      };
-
-      recognition.onerror = (event: any) => {
-        console.warn('Speech recognition warning:', event.error);
-        if (event.error === 'not-allowed') {
-          setErrorMessage('Microphone access was denied. Please allow microphone access in your browser settings.');
-          setStatus('error');
-        } else if (event.error === 'no-speech') {
-          // Normal silence, keep listening
-        }
-      };
-
-      recognition.onend = () => {
-        // Auto-restart if modal is still open and not muted
-        if (isOpen && !isMuted) {
-          setTimeout(() => {
-            if (isOpen && !isMuted) {
-              try {
-                recognition.start();
-              } catch {}
-            }
-          }, 250);
-        }
-      };
-
-      recognitionRef.current = recognition;
-      recognition.start();
-    } catch (err: any) {
-      console.error('Failed to initialize speech recognition:', err);
-      setErrorMessage(err?.message || 'Could not start voice recognition.');
-      setStatus('error');
-    }
-  }, [isOpen, isMuted, stopAllAudio, handleExecuteTrigger, handleAiFallback]);
-
-  // Modal open/close lifecycle
+  // Primary lifecycle: triggers only when modal is opened or closed
   useEffect(() => {
     if (!isOpen) {
       stopAllAudio();
-      onListeningChange?.(false);
       return;
     }
 
     setErrorMessage(null);
     setUserTranscript('');
+    setInterimTranscript('');
     setModelTranscript('');
     setExecutedTools([]);
     setIsMuted(false);
+    setIsCommandProcessed(false);
+    setLastProcessedMessage('');
     executedPhraseRef.current.clear();
     latestTranscriptRef.current = '';
+    isSpeakingRef.current = false;
 
     startVoiceEngine();
 
     return () => {
       stopAllAudio();
-      onListeningChange?.(false);
+      if (successIndicatorTimerRef.current) {
+        clearTimeout(successIndicatorTimerRef.current);
+      }
     };
-  }, [isOpen, startVoiceEngine, stopAllAudio, onListeningChange]);
+  }, [isOpen, startVoiceEngine, stopAllAudio]);
 
   const handleToggleMute = () => {
     const next = !isMuted;
     setIsMuted(next);
+    isMutedRef.current = next;
     if (next) {
       if (recognitionRef.current) {
         try {
@@ -383,13 +502,15 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
         } catch {}
       }
     } else {
-      startVoiceEngine();
+      restartSpeechRecognition();
     }
   };
 
   const handleInterrupt = () => {
     stopGeminiSpeech();
+    isSpeakingRef.current = false;
     setStatus('listening');
+    restartSpeechRecognition();
   };
 
   const handleManualSubmit = (e?: React.FormEvent) => {
@@ -432,20 +553,32 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
           {/* Header */}
           <div className="flex items-center justify-between pb-4 border-b border-white/10">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-400">
-                <Radio className="w-5 h-5 animate-pulse text-indigo-400" />
+              <div className={`w-9 h-9 rounded-2xl flex items-center justify-center transition-colors duration-300 ${
+                isCommandProcessed
+                  ? 'bg-emerald-500/20 border border-emerald-400/40 text-emerald-400'
+                  : 'bg-indigo-500/20 border border-indigo-400/30 text-indigo-400'
+              }`}>
+                {isCommandProcessed ? (
+                  <Check className="w-5 h-5 text-emerald-400 animate-in zoom-in" />
+                ) : (
+                  <Radio className="w-5 h-5 animate-pulse text-indigo-400" />
+                )}
               </div>
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-base font-bold tracking-tight text-white flex items-center gap-1.5">
-                    Voice Commands & Assistant
+                    Voice Assistant & Commands
                   </h2>
-                  <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                    Live Active
+                  <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full transition-colors duration-300 ${
+                    isCommandProcessed
+                      ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-400/50'
+                      : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+                  }`}>
+                    {isCommandProcessed ? 'Command Processed' : 'Microphone Live'}
                   </span>
                 </div>
                 <p className="text-xs text-gray-400">
-                  Real-time speech recognition, instant trigger execution & AI
+                  Continuous speech recognition, instant command matching & AI
                 </p>
               </div>
             </div>
@@ -462,7 +595,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                   title="Manage Voice Command Mappings"
                 >
                   <Zap className="w-3.5 h-3.5 text-amber-400" />
-                  <span className="hidden sm:inline">Custom Triggers</span>
+                  <span className="hidden sm:inline">Triggers</span>
                 </button>
               )}
 
@@ -482,7 +615,9 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
             {/* Outer Pulsing Wave Rings */}
             <div
               className={`absolute rounded-full transition-all duration-300 pointer-events-none ${
-                status === 'speaking'
+                isCommandProcessed
+                  ? 'bg-emerald-500/25 animate-pulse'
+                  : status === 'speaking'
                   ? 'bg-purple-500/25 animate-ping'
                   : status === 'listening'
                   ? 'bg-cyan-500/20 animate-pulse'
@@ -495,7 +630,9 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
             />
             <div
               className={`absolute rounded-full transition-all duration-150 pointer-events-none ${
-                status === 'speaking'
+                isCommandProcessed
+                  ? 'bg-emerald-400/30 blur-md'
+                  : status === 'speaking'
                   ? 'bg-purple-400/30 blur-md'
                   : status === 'listening'
                   ? 'bg-cyan-400/30 blur-md'
@@ -510,11 +647,13 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
             {/* Core Orb Button */}
             <motion.button
               type="button"
-              onClick={handleInterrupt}
+              onClick={status === 'speaking' ? handleInterrupt : undefined}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               className={`relative z-10 w-24 h-24 rounded-full flex flex-col items-center justify-center shadow-2xl transition-all duration-300 cursor-pointer ${
-                status === 'speaking'
+                isCommandProcessed
+                  ? 'bg-gradient-to-tr from-emerald-600 via-teal-600 to-green-500 shadow-emerald-500/50 ring-4 ring-emerald-400/60'
+                  : status === 'speaking'
                   ? 'bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-500 shadow-purple-500/40'
                   : status === 'listening'
                   ? 'bg-gradient-to-tr from-indigo-600 via-cyan-600 to-blue-500 shadow-indigo-500/40'
@@ -523,7 +662,14 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                   : 'bg-rose-900 shadow-rose-900/40'
               }`}
             >
-              {status === 'speaking' ? (
+              {isCommandProcessed ? (
+                <>
+                  <Check className="w-8 h-8 text-white animate-in zoom-in" strokeWidth={3} />
+                  <span className="text-[10px] uppercase font-bold tracking-wider mt-1 text-white">
+                    Executed
+                  </span>
+                </>
+              ) : status === 'speaking' ? (
                 <>
                   <Volume2 className="w-8 h-8 text-white animate-bounce" />
                   <span className="text-[10px] uppercase font-bold tracking-wider mt-1 text-white/90">
@@ -554,37 +700,41 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
               )}
             </motion.button>
 
-            {/* Waveform Visualizer indicating active microphone */}
+            {/* Enhanced Waveform Visualizer with dynamic color shift & subtle success indicator */}
             <div className="mt-3 flex items-center justify-center">
               <WaveformVisualizer
-                isActive={status === 'listening' && !isMuted}
+                isActive={(status === 'listening' || status === 'speaking' || isCommandProcessed) && !isMuted}
                 volume={volume}
                 barCount={7}
                 size="md"
-                colorTheme="cyan"
+                colorTheme={isCommandProcessed ? 'emerald' : 'cyan'}
+                isProcessed={isCommandProcessed}
+                showSuccessBadge={true}
               />
             </div>
 
             {/* Status Text Label */}
             <div className="mt-3 text-center px-4">
-              {status === 'listening' && (
+              {isCommandProcessed ? (
+                <p className="text-xs text-emerald-300 font-semibold flex items-center justify-center gap-1.5 animate-in fade-in">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 inline-block" />
+                  {lastProcessedMessage || 'Command processed successfully!'}
+                </p>
+              ) : status === 'listening' ? (
                 <p className="text-xs text-cyan-300 font-medium">
                   {isMuted
                     ? 'Microphone muted. Click Unmute to speak.'
-                    : 'Listening... Speak a command (e.g. "log breakfast 150" or "add task review math")'}
+                    : 'Listening... Speak a command or question anytime.'}
                 </p>
-              )}
-              {status === 'speaking' && (
+              ) : status === 'speaking' ? (
                 <p className="text-xs text-purple-300">
-                  Assistant speaking. Click orb or button to interrupt.
+                  Assistant speaking. Click the orb to interrupt.
                 </p>
-              )}
-              {status === 'processing' && (
+              ) : status === 'processing' ? (
                 <p className="text-xs text-amber-300 animate-pulse">
                   Executing command & updating your dashboard...
                 </p>
-              )}
-              {status === 'error' && (
+              ) : (
                 <div className="flex items-center justify-center gap-2">
                   <p className="text-xs text-rose-400">
                     {errorMessage || 'Voice service encountered an issue.'}
@@ -618,20 +768,48 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
               </div>
             )}
 
-            {/* User Speech Transcription with Live Update */}
-            {userTranscript ? (
-              <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-gray-200">
-                <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block mb-0.5 flex items-center justify-between">
-                  <span>You said</span>
-                  <span className="text-[9px] text-cyan-300/80 font-normal">Real-Time Transcription</span>
+            {/* User Speech Transcription with Live Dynamic Feedback */}
+            <div className={`p-3 rounded-2xl border transition-all duration-300 ${
+              isCommandProcessed
+                ? 'bg-emerald-950/30 border-emerald-500/40 shadow-xs shadow-emerald-500/20'
+                : userTranscript
+                ? 'bg-white/5 border-white/15'
+                : 'bg-white/5 border-white/10'
+            }`}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                  <span className={`w-2 h-2 rounded-full ${
+                    isCommandProcessed
+                      ? 'bg-emerald-400'
+                      : userTranscript
+                      ? 'bg-cyan-400 animate-pulse'
+                      : 'bg-gray-500'
+                  }`} />
+                  <span className={isCommandProcessed ? 'text-emerald-400' : 'text-cyan-400'}>
+                    {isCommandProcessed
+                      ? 'Command Executed'
+                      : userTranscript
+                      ? 'Live Speech Transcription'
+                      : 'Speech Recognition'}
+                  </span>
                 </span>
-                <p className="font-mono text-xs text-white">“{userTranscript}”</p>
+                {interimTranscript && (
+                  <span className="text-[9px] text-cyan-300/80 font-normal italic animate-pulse">
+                    hearing you...
+                  </span>
+                )}
               </div>
-            ) : (
-              <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-gray-400 text-center">
-                <p className="italic">Say anything aloud or try a quick command below</p>
-              </div>
-            )}
+
+              {userTranscript ? (
+                <p className="font-mono text-xs sm:text-sm text-white leading-relaxed font-medium">
+                  “{userTranscript}”
+                </p>
+              ) : (
+                <p className="text-gray-400 text-xs italic">
+                  Say something aloud like “log breakfast 150” or “open expenses”...
+                </p>
+              )}
+            </div>
 
             {/* Model Speech Transcription */}
             {modelTranscript && (
@@ -658,6 +836,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                   type="button"
                   onClick={() => {
                     setUserTranscript(cmd);
+                    latestTranscriptRef.current = cmd;
                     handleExecuteTrigger(cmd);
                   }}
                   className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] text-gray-300 hover:text-white border border-white/10 hover:border-indigo-400/40 transition-colors cursor-pointer text-left"
