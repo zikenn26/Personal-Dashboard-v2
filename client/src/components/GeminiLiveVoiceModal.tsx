@@ -61,6 +61,9 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
   const [micError, setMicError] = useState<string | null>(null);
   const [fallbackCommandText, setFallbackCommandText] = useState<string>('');
 
+  // Live microphone audio input level (0-100) for real-time visual feedback
+  const [audioLevel, setAudioLevel] = useState<number>(0);
+
   // Refs for tracking active audio and speech instances
   const isMicActiveRef = useRef<boolean>(false);
   isMicActiveRef.current = isMicActive;
@@ -68,8 +71,12 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
   const transcriptContainerRef = useRef<HTMLDivElement | null>(null);
 
   const recognitionRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioBlobChunksRef = useRef<Blob[]>([]);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const animationFrameIdRef = useRef<number | null>(null);
   const pcmProcessorRef = useRef<ScriptProcessorNode | null>(null);
   const pcmChunksRef = useRef<Float32Array[]>([]);
   const latestTranscriptRef = useRef<string>('');
@@ -86,6 +93,12 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
 
   // Cleanup helper to stop all audio streams & recognition
   const stopAudioTracks = useCallback(() => {
+    if (animationFrameIdRef.current) {
+      cancelAnimationFrame(animationFrameIdRef.current);
+      animationFrameIdRef.current = null;
+    }
+    setAudioLevel(0);
+
     if (recognitionRef.current) {
       try {
         recognitionRef.current.onresult = null;
@@ -96,6 +109,15 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
       recognitionRef.current = null;
     }
 
+    if (mediaRecorderRef.current) {
+      try {
+        if (mediaRecorderRef.current.state !== 'inactive') {
+          mediaRecorderRef.current.stop();
+        }
+      } catch {}
+      mediaRecorderRef.current = null;
+    }
+
     if (pcmProcessorRef.current) {
       try {
         pcmProcessorRef.current.disconnect();
@@ -103,7 +125,6 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
       } catch {}
       pcmProcessorRef.current = null;
     }
-    pcmChunksRef.current = [];
 
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach((track) => track.stop());
@@ -218,13 +239,31 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
 
     setIsMicActive(false);
     onListeningChangeRef.current?.(false);
+    setAudioLevel(0);
     Sound.voiceRegistered(true);
 
     const speechText = (latestTranscriptRef.current || liveTranscript || interimText).trim();
 
-    // Stop audio capture first
+    // Snapshot recorded audio before stopping tracks
+    let recordedBlob: Blob | null = null;
+    let pcmSnapshot: Float32Array[] = [...pcmChunksRef.current];
+    const sampleRate = audioCtxRef.current?.sampleRate || 44100;
+
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.requestData();
+      } catch {}
+    }
+
+    if (audioBlobChunksRef.current.length > 0) {
+      const recordedMime = mediaRecorderRef.current?.mimeType || 'audio/webm';
+      recordedBlob = new Blob(audioBlobChunksRef.current, { type: recordedMime });
+    }
+
+    // Now stop audio capture safely
     stopAudioTracks();
 
+    // 1. If Web Speech produced text, execute immediately
     if (speechText) {
       setIsProcessing(true);
       await executeCommand(speechText);
@@ -232,21 +271,40 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
       return;
     }
 
-    // If Web Speech did not yield text, check if we have recorded PCM frames
-    if (pcmChunksRef.current.length > 0) {
-      setIsProcessing(true);
+    // 2. Fallback to Gemini Transcribe if Web Speech was silent
+    setIsProcessing(true);
+
+    // Try MediaRecorder Blob first
+    if (recordedBlob && recordedBlob.size > 200) {
       try {
-        const chunks = [...pcmChunksRef.current];
-        pcmChunksRef.current = [];
+        const base64 = await blobToBase64(recordedBlob);
+        if (base64) {
+          const mimeType = recordedBlob.type.split(';')[0] || 'audio/webm';
+          const transcript = await transcribeAudioWithGemini(base64, mimeType);
+          if (transcript && transcript.trim()) {
+            const clean = transcript.trim();
+            setLiveTranscript(clean);
+            setInterimText('');
+            await executeCommand(clean);
+            isExecutingRef.current = false;
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('MediaRecorder Gemini transcription error:', e);
+      }
+    }
 
+    // Try PCM WAV fallback
+    if (pcmSnapshot.length > 0) {
+      try {
         let totalSamples = 0;
-        for (const c of chunks) totalSamples += c.length;
+        for (const c of pcmSnapshot) totalSamples += c.length;
 
-        const sampleRate = audioCtxRef.current?.sampleRate || 44100;
-        if (totalSamples >= sampleRate * 0.3) {
+        if (totalSamples >= sampleRate * 0.2) {
           const fullPcm = new Float32Array(totalSamples);
           let offset = 0;
-          for (const c of chunks) {
+          for (const c of pcmSnapshot) {
             fullPcm.set(c, offset);
             offset += c.length;
           }
@@ -260,6 +318,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
             if (transcript && transcript.trim()) {
               const clean = transcript.trim();
               setLiveTranscript(clean);
+              setInterimText('');
               await executeCommand(clean);
               isExecutingRef.current = false;
               return;
@@ -267,11 +326,11 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
           }
         }
       } catch (e) {
-        console.warn('Audio transcription error:', e);
+        console.warn('PCM WAV Gemini transcription error:', e);
       }
     }
 
-    // Nothing was spoken
+    // Nothing was spoken or detected
     await executeCommand('');
     isExecutingRef.current = false;
   }, [liveTranscript, interimText, stopAudioTracks, executeCommand]);
@@ -283,8 +342,11 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     setMicError(null);
     setLiveTranscript('');
     setInterimText('');
+    setAudioLevel(0);
     latestTranscriptRef.current = '';
     isExecutingRef.current = false;
+    audioBlobChunksRef.current = [];
+    pcmChunksRef.current = [];
 
     // Check if getUserMedia is supported
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -295,7 +357,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     }
 
     try {
-      // 1. Setup AudioContext & PCM recording
+      // 1. Request microphone access
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -306,89 +368,154 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
 
       mediaStreamRef.current = stream;
 
+      // 2. Setup AudioContext, AnalyserNode for volume meter & PCM processor
       const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioCtxClass) {
         const audioCtx = new AudioCtxClass();
         audioCtxRef.current = audioCtx;
+        if (audioCtx.state === 'suspended') {
+          await audioCtx.resume();
+        }
+
         const source = audioCtx.createMediaStreamSource(stream);
 
-        const processor = audioCtx.createScriptProcessor(4096, 1, 1);
-        pcmProcessorRef.current = processor;
-        pcmChunksRef.current = [];
+        // Real-time audio volume visualizer analyser
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.6;
+        source.connect(analyser);
+        analyserRef.current = analyser;
 
-        processor.onaudioprocess = (e) => {
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+
+        const updateAudioLevel = () => {
           if (!isMicActiveRef.current) return;
-          const channelData = e.inputBuffer.getChannelData(0);
-          const copy = new Float32Array(channelData.length);
-          copy.set(channelData);
-          pcmChunksRef.current.push(copy);
-
-          // Keep up to 10 seconds of audio
-          const maxChunks = Math.ceil((audioCtx.sampleRate * 10) / 4096);
-          if (pcmChunksRef.current.length > maxChunks) {
-            pcmChunksRef.current.splice(0, pcmChunksRef.current.length - maxChunks);
+          analyser.getByteFrequencyData(dataArray);
+          let sum = 0;
+          for (let i = 0; i < bufferLength; i++) {
+            sum += dataArray[i];
           }
+          const average = sum / bufferLength;
+          // Scale 0-100
+          const level = Math.min(100, Math.round((average / 110) * 100));
+          setAudioLevel(level);
+          animationFrameIdRef.current = requestAnimationFrame(updateAudioLevel);
         };
+        animationFrameIdRef.current = requestAnimationFrame(updateAudioLevel);
 
-        source.connect(processor);
-        const silenceGain = audioCtx.createGain();
-        silenceGain.gain.value = 0;
-        processor.connect(silenceGain);
-        silenceGain.connect(audioCtx.destination);
+        // PCM recording processor for raw audio fallback
+        try {
+          const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+          pcmProcessorRef.current = processor;
+
+          processor.onaudioprocess = (e) => {
+            if (!isMicActiveRef.current) return;
+            const channelData = e.inputBuffer.getChannelData(0);
+            const copy = new Float32Array(channelData.length);
+            copy.set(channelData);
+            pcmChunksRef.current.push(copy);
+
+            // Keep up to 12 seconds of audio
+            const maxChunks = Math.ceil((audioCtx.sampleRate * 12) / 4096);
+            if (pcmChunksRef.current.length > maxChunks) {
+              pcmChunksRef.current.splice(0, pcmChunksRef.current.length - maxChunks);
+            }
+          };
+
+          source.connect(processor);
+          const silenceGain = audioCtx.createGain();
+          silenceGain.gain.value = 0;
+          processor.connect(silenceGain);
+          silenceGain.connect(audioCtx.destination);
+        } catch (procErr) {
+          console.warn('ScriptProcessor init warning:', procErr);
+        }
       }
 
-      // 2. Setup Web Speech Recognition
+      // 3. Setup MediaRecorder for high-reliability audio capture
+      if (typeof MediaRecorder !== 'undefined') {
+        let preferredMime = '';
+        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+          preferredMime = 'audio/webm;codecs=opus';
+        } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+          preferredMime = 'audio/webm';
+        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+          preferredMime = 'audio/mp4';
+        } else if (MediaRecorder.isTypeSupported('audio/wav')) {
+          preferredMime = 'audio/wav';
+        }
+
+        try {
+          const recorder = preferredMime
+            ? new MediaRecorder(stream, { mimeType: preferredMime })
+            : new MediaRecorder(stream);
+
+          recorder.ondataavailable = (event) => {
+            if (event.data && event.data.size > 0) {
+              audioBlobChunksRef.current.push(event.data);
+            }
+          };
+
+          recorder.start(250); // Slice every 250ms
+          mediaRecorderRef.current = recorder;
+        } catch (recErr) {
+          console.warn('MediaRecorder start warning:', recErr);
+        }
+      }
+
+      // 4. Setup Web Speech Recognition
       const SpeechRecognition =
         (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
       if (SpeechRecognition) {
-        const rec = new SpeechRecognition();
-        rec.continuous = true;
-        rec.interimResults = true;
-        rec.lang = 'en-US';
+        try {
+          const rec = new SpeechRecognition();
+          rec.continuous = true;
+          rec.interimResults = true;
+          rec.lang = 'en-US';
 
-        rec.onresult = (event: any) => {
-          let accumulated = '';
-          let interim = '';
+          rec.onresult = (event: any) => {
+            let finalTranscript = '';
+            let interimTranscript = '';
 
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            const transcriptChunk = event.results[i][0].transcript;
-            if (event.results[i].isFinal) {
-              accumulated += transcriptChunk;
-            } else {
-              interim += transcriptChunk;
+            for (let i = 0; i < event.results.length; ++i) {
+              const res = event.results[i];
+              if (res.isFinal) {
+                finalTranscript += res[0].transcript + ' ';
+              } else {
+                interimTranscript += res[0].transcript;
+              }
             }
-          }
 
-          const fullText = (accumulated || interim || '').trim();
-          if (fullText) {
-            latestTranscriptRef.current = fullText;
-          }
+            const combined = (finalTranscript + interimTranscript).trim();
+            if (combined) {
+              latestTranscriptRef.current = combined;
+            }
 
-          if (accumulated) {
-            setLiveTranscript(accumulated);
-            setInterimText('');
-          } else if (interim) {
-            setInterimText(interim);
-          }
-        };
+            if (finalTranscript.trim()) {
+              setLiveTranscript(finalTranscript.trim());
+            }
+            setInterimText(interimTranscript.trim());
+          };
 
-        rec.onerror = (event: any) => {
-          if (event.error !== 'no-speech' && event.error !== 'aborted') {
+          rec.onerror = (event: any) => {
             console.warn('SpeechRecognition warning:', event.error);
-          }
-        };
+          };
 
-        rec.onend = () => {
-          if (isMicActiveRef.current) {
-            try {
-              rec.start();
-            } catch {}
-          }
-        };
+          rec.onend = () => {
+            if (isMicActiveRef.current) {
+              try {
+                rec.start();
+              } catch {}
+            }
+          };
 
-        rec.start();
-        recognitionRef.current = rec;
+          rec.start();
+          recognitionRef.current = rec;
+        } catch (recInitErr) {
+          console.warn('SpeechRecognition init error:', recInitErr);
+        }
       }
 
       setIsMicActive(true);
@@ -618,19 +745,33 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
             </div>
 
             {/* Mic State Action Prompt */}
-            <p className="mt-4 text-xs font-medium text-center">
+            <div className="mt-4 flex flex-col items-center gap-1 text-center min-h-[36px]">
               {isProcessing ? (
-                <span className="text-amber-300 animate-pulse">Executing command...</span>
-              ) : isMicActive ? (
-                <span className="text-rose-300 font-semibold">
-                  Listening... Tap mic to execute
+                <span className="text-amber-300 text-xs font-semibold animate-pulse flex items-center gap-1.5">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Processing voice command...
                 </span>
+              ) : isMicActive ? (
+                audioLevel > 5 ? (
+                  <span className="text-emerald-300 text-xs font-bold flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 animate-pulse">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                    Hearing voice ({audioLevel}%) — Tap mic to finish & execute
+                  </span>
+                ) : (
+                  <span className="text-rose-300 text-xs font-semibold flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping" />
+                    Listening... Speak now, then tap mic to execute
+                  </span>
+                )
               ) : isSpeaking ? (
-                <span className="text-purple-300">Speaking response...</span>
+                <span className="text-purple-300 text-xs font-medium flex items-center gap-1.5">
+                  <Volume2 className="w-3.5 h-3.5 animate-bounce" />
+                  Speaking response...
+                </span>
               ) : (
-                <span className="text-gray-400">Tap mic to speak</span>
+                <span className="text-gray-400 text-xs font-medium">Tap mic to speak command</span>
               )}
-            </p>
+            </div>
           </div>
 
           {/* Dedicated Live Transcript Display Area */}
@@ -644,21 +785,48 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
               </div>
 
               {isMicActive ? (
-                <div className="flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-300 text-[11px] font-semibold">
-                  <div className="flex items-center gap-0.5 h-2.5">
-                    <span className="w-1 h-2.5 bg-rose-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
-                    <span className="w-1 h-3.5 bg-rose-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
-                    <span className="w-1 h-2 bg-rose-400 rounded-full animate-bounce" />
+                <div
+                  className={`flex items-center gap-2 px-2.5 py-1 rounded-full border text-[11px] font-semibold transition-colors ${
+                    audioLevel > 5
+                      ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                      : 'bg-rose-500/20 border-rose-500/40 text-rose-300'
+                  }`}
+                >
+                  <div className="flex items-end gap-0.5 h-3.5">
+                    <span
+                      className={`w-1 rounded-full transition-all duration-75 ${
+                        audioLevel > 5 ? 'bg-emerald-400' : 'bg-rose-400'
+                      }`}
+                      style={{
+                        height: `${Math.max(4, Math.min(14, audioLevel > 5 ? (audioLevel * 0.14) + 4 : 5))}px`,
+                      }}
+                    />
+                    <span
+                      className={`w-1 rounded-full transition-all duration-75 ${
+                        audioLevel > 5 ? 'bg-emerald-400' : 'bg-rose-400'
+                      }`}
+                      style={{
+                        height: `${Math.max(4, Math.min(14, audioLevel > 5 ? (audioLevel * 0.18) + 6 : 9))}px`,
+                      }}
+                    />
+                    <span
+                      className={`w-1 rounded-full transition-all duration-75 ${
+                        audioLevel > 5 ? 'bg-emerald-400' : 'bg-rose-400'
+                      }`}
+                      style={{
+                        height: `${Math.max(4, Math.min(14, audioLevel > 5 ? (audioLevel * 0.14) + 4 : 5))}px`,
+                      }}
+                    />
                   </div>
-                  <span>LISTENING</span>
+                  <span>{audioLevel > 5 ? 'HEARING VOICE' : 'LISTENING'}</span>
                 </div>
               ) : isProcessing ? (
                 <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[11px] font-semibold animate-pulse">
                   PROCESSING
                 </span>
               ) : liveTranscript ? (
-                <span className="text-[11px] font-medium text-gray-400">
-                  Captured
+                <span className="text-[11px] font-medium text-emerald-400 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" /> Captured
                 </span>
               ) : null}
             </div>
@@ -668,7 +836,9 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
               ref={transcriptContainerRef}
               className={`relative min-h-[130px] max-h-[190px] overflow-y-auto p-4 sm:p-5 rounded-2xl transition-all duration-200 border ${
                 isMicActive
-                  ? 'bg-gradient-to-b from-[#0F141C] to-[#0A0D14] border-rose-500/40 ring-2 ring-rose-500/20 shadow-inner'
+                  ? audioLevel > 5
+                    ? 'bg-gradient-to-b from-[#0B1A14] to-[#0A1210] border-emerald-500/50 ring-2 ring-emerald-500/30 shadow-inner'
+                    : 'bg-gradient-to-b from-[#140F14] to-[#0D0A0E] border-rose-500/40 ring-2 ring-rose-500/20 shadow-inner'
                   : 'bg-[#0B0F15] border-white/10 shadow-inner'
               }`}
             >
@@ -683,7 +853,11 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                     )}
                     ”
                     {isMicActive && (
-                      <span className="inline-block w-2.5 h-5 ml-1.5 align-middle bg-rose-400 animate-pulse rounded-sm" />
+                      <span
+                        className={`inline-block w-2.5 h-5 ml-1.5 align-middle animate-pulse rounded-sm ${
+                          audioLevel > 5 ? 'bg-emerald-400' : 'bg-rose-400'
+                        }`}
+                      />
                     )}
                   </p>
                 </div>
@@ -691,12 +865,25 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                 <div className="h-full min-h-[90px] flex flex-col items-center justify-center text-center p-2">
                   {isMicActive ? (
                     <div className="flex flex-col items-center gap-1.5">
-                      <p className="text-lg sm:text-xl font-medium text-rose-300 animate-pulse">
-                        Listening... speak your command now
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        Words appear here in large real-time text
-                      </p>
+                      {audioLevel > 5 ? (
+                        <>
+                          <p className="text-lg sm:text-xl font-semibold text-emerald-300">
+                            Hearing your voice...
+                          </p>
+                          <p className="text-xs text-emerald-400/80">
+                            Transcribing words in real-time
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-lg sm:text-xl font-medium text-rose-300 animate-pulse">
+                            Listening... speak your command now
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            Words appear here in large real-time text
+                          </p>
+                        </>
+                      )}
                     </div>
                   ) : (
                     <div className="flex flex-col items-center gap-1">
