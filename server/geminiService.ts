@@ -289,17 +289,32 @@ export async function handleGeminiTranscribe(req: Request, res: Response) {
       },
     };
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-transcribe",
-      contents: {
-        parts: [
-          audioPart,
-          { text: "Transcribe this spoken audio exactly. Return only the transcription text without commentary." },
-        ],
-      },
-    });
+    let transcript = "";
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-transcribe",
+        contents: {
+          parts: [
+            audioPart,
+            { text: "Transcribe this spoken audio exactly. Return only the transcription text without commentary." },
+          ],
+        },
+      });
+      transcript = (response.text || "").trim();
+    } catch (modelErr: any) {
+      console.warn("gemini-3.5-transcribe fallback to gemini-3.8-flash:", modelErr?.message);
+      const fallbackResponse = await ai.models.generateContent({
+        model: "gemini-3.8-flash",
+        contents: {
+          parts: [
+            audioPart,
+            { text: "Transcribe this spoken audio exactly into text. Return only the words spoken, nothing else." },
+          ],
+        },
+      });
+      transcript = (fallbackResponse.text || "").trim();
+    }
 
-    const transcript = (response.text || "").trim();
     res.json({ transcript });
   } catch (err: any) {
     console.error("Gemini Transcribe Error:", err);

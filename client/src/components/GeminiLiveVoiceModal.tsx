@@ -14,6 +14,8 @@ import {
   Send,
   RotateCcw,
   Check,
+  Loader2,
+  Activity,
 } from 'lucide-react';
 import {
   matchCommandTrigger,
@@ -66,6 +68,13 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [manualInput, setManualInput] = useState<string>('');
 
+  // Microphone active state for "Speak Now" indicator
+  const [isMicActive, setIsMicActive] = useState<boolean>(false);
+
+  // Processing toast state when sending command to LLM
+  const [isSendingToLlm, setIsSendingToLlm] = useState<boolean>(false);
+  const [processingPrompt, setProcessingPrompt] = useState<string>('');
+
   // Subtle visual indicator state when voice input is successfully processed
   const [isCommandProcessed, setIsCommandProcessed] = useState<boolean>(false);
   const [lastProcessedMessage, setLastProcessedMessage] = useState<string>('');
@@ -90,10 +99,12 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
   const animFrameRef = useRef<number | null>(null);
   const recognitionRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  const recordedBlobsRef = useRef<Blob[]>([]);
 
-  const executedPhraseRef = useRef<Set<string>>(new Set());
+  // Voice Activity Detection (VAD) tracker
+  const isSpeakingDetectedRef = useRef<boolean>(false);
   const silenceTimerRef = useRef<any>(null);
+  const lastSpeechTimestampRef = useRef<number>(0);
   const successIndicatorTimerRef = useRef<any>(null);
   const latestTranscriptRef = useRef<string>('');
   const isSpeakingRef = useRef<boolean>(false);
@@ -112,6 +123,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
   const triggerCommandProcessedIndicator = useCallback((message: string) => {
     setIsCommandProcessed(true);
     setLastProcessedMessage(message);
+    setIsSendingToLlm(false);
     if (successIndicatorTimerRef.current) {
       clearTimeout(successIndicatorTimerRef.current);
     }
@@ -120,10 +132,12 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     }, 3600);
   }, []);
 
-  // Stop all audio & recognition
+  // Stop all audio & recognition cleanly
   const stopAllAudio = useCallback(() => {
     stopGeminiSpeech();
     isSpeakingRef.current = false;
+    setIsMicActive(false);
+    setIsSendingToLlm(false);
 
     if (silenceTimerRef.current) {
       clearTimeout(silenceTimerRef.current);
@@ -166,18 +180,17 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
   // Execute a command trigger
   const handleExecuteTrigger = useCallback(
     async (rawText: string) => {
-      const match = matchCommandTrigger(rawText);
-      if (!match) return false;
+      const trimmed = rawText.trim();
+      if (!trimmed) return false;
 
-      const triggerKey = `${match.mapping.id}-${rawText.toLowerCase().trim()}`;
-      if (executedPhraseRef.current.has(triggerKey)) {
-        return true; // already handled
-      }
-      executedPhraseRef.current.add(triggerKey);
+      const match = matchCommandTrigger(trimmed);
+      if (!match) return false;
 
       try {
         Sound.voiceProcessing(true);
         setStatus('processing');
+        setIsSendingToLlm(true);
+        setProcessingPrompt(trimmed);
 
         const res = await executeCommandMapping(match.mapping, match.extractedParams);
         if (res.success) {
@@ -194,7 +207,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
 
           // Visual indicator on WaveformVisualizer & modal
           triggerCommandProcessedIndicator(res.message);
-          onCommandExecutedRef.current?.(rawText);
+          onCommandExecutedRef.current?.(trimmed);
 
           setModelTranscript(res.message);
           setStatus('speaking');
@@ -214,6 +227,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
       } catch (err) {
         console.error('Failed to execute command trigger:', err);
       }
+      setIsSendingToLlm(false);
       isSpeakingRef.current = false;
       setStatus('listening');
       return false;
@@ -225,11 +239,12 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
   const handleAiFallback = useCallback(
     async (text: string) => {
       const prompt = text.trim();
-      if (!prompt || executedPhraseRef.current.has(prompt.toLowerCase())) return;
-      executedPhraseRef.current.add(prompt.toLowerCase());
+      if (!prompt) return;
 
       try {
         setStatus('processing');
+        setIsSendingToLlm(true);
+        setProcessingPrompt(prompt);
         Sound.voiceProcessing(true);
 
         const response = await sendGeminiMessage({
@@ -251,12 +266,15 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
           // Visual confirmation on WaveformVisualizer
           triggerCommandProcessedIndicator(response.reply || 'Action completed');
           onCommandExecutedRef.current?.(prompt);
+        } else {
+          triggerCommandProcessedIndicator('Response generated');
         }
 
         const reply = response.reply || 'Command completed.';
         setModelTranscript(reply);
         setStatus('speaking');
         isSpeakingRef.current = true;
+        setIsSendingToLlm(false);
 
         await speakTextWithGemini(reply, 'Zephyr', () => {
           isSpeakingRef.current = false;
@@ -264,6 +282,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
         });
       } catch (err: any) {
         console.warn('AI processing error:', err);
+        setIsSendingToLlm(false);
         isSpeakingRef.current = false;
         setStatus('listening');
       }
@@ -271,7 +290,50 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     [triggerCommandProcessedIndicator]
   );
 
-  // Helper to restart speech recognition without tearing down the audio stream
+  // Transcribe recorded audio slice from MediaRecorder via Gemini
+  const transcribeRecordedSlice = useCallback(async () => {
+    if (recordedBlobsRef.current.length === 0) return;
+    const blob = new Blob(recordedBlobsRef.current, { type: 'audio/webm' });
+    recordedBlobsRef.current = [];
+
+    // Only process if blob has audio content (> 2KB)
+    if (blob.size < 2048) return;
+
+    try {
+      setIsSendingToLlm(true);
+      setProcessingPrompt('Transcribing voice audio...');
+
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64 = (reader.result as string)?.split(',')[1];
+        if (base64) {
+          const transcript = await transcribeAudioWithGemini(base64, 'audio/webm');
+          if (transcript && transcript.trim()) {
+            const cleanText = transcript.trim();
+            setUserTranscript(cleanText);
+            setInterimTranscript('');
+            latestTranscriptRef.current = cleanText;
+
+            // Trigger command execution
+            const matched = await handleExecuteTrigger(cleanText);
+            if (!matched) {
+              await handleAiFallback(cleanText);
+            }
+          } else {
+            setIsSendingToLlm(false);
+          }
+        } else {
+          setIsSendingToLlm(false);
+        }
+      };
+      reader.readAsDataURL(blob);
+    } catch (e) {
+      console.warn('Fallback audio transcription error:', e);
+      setIsSendingToLlm(false);
+    }
+  }, [handleExecuteTrigger, handleAiFallback]);
+
+  // Restart speech recognition instance safely
   const restartSpeechRecognition = useCallback(() => {
     if (!isOpen || isMutedRef.current || isSpeakingRef.current) return;
 
@@ -299,13 +361,13 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
         if (!isSpeakingRef.current) {
           setStatus('listening');
         }
+        setIsMicActive(true);
         setErrorMessage(null);
       };
 
       recognition.onresult = (event: any) => {
         if (isMutedRef.current || isSpeakingRef.current) return;
 
-        // Iterate through all results to build cumulative transcript
         let finalStr = '';
         let interimStr = '';
 
@@ -325,7 +387,10 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
           setInterimTranscript(interimStr.trim());
           Sound.voiceRegistered(true);
 
-          // Check if it matches a custom voice trigger
+          // Clear any pending audio recorder slice since Web Speech is capturing text
+          recordedBlobsRef.current = [];
+
+          // Check for immediate custom voice triggers
           handleExecuteTrigger(fullText).then((matched) => {
             if (matched) {
               if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
@@ -336,7 +401,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                 if (latestTranscriptRef.current && !isSpeakingRef.current) {
                   handleAiFallback(latestTranscriptRef.current);
                 }
-              }, 1800);
+              }, 1600);
             }
           });
         }
@@ -345,17 +410,17 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
       recognition.onerror = (event: any) => {
         console.warn('Speech recognition status:', event.error);
         if (event.error === 'not-allowed') {
-          setErrorMessage('Microphone access was denied. Please allow microphone permissions.');
+          setErrorMessage('Microphone access blocked. Please allow mic permissions.');
           setStatus('error');
         } else if (event.error === 'network') {
-          setErrorMessage('Speech service network issue. You can still type below or use quick actions.');
+          // If browser speech service fails, MediaRecorder fallback will automatically handle voice
+          console.info('Switching to direct Gemini audio transcription fallback.');
         } else if (event.error === 'audio-capture') {
           setErrorMessage('Microphone device busy or unavailable.');
         }
       };
 
       recognition.onend = () => {
-        // Automatically restart speech recognition after brief pause
         if (isOpen && !isMutedRef.current && !isSpeakingRef.current) {
           setTimeout(() => {
             if (isOpen && !isMutedRef.current && !isSpeakingRef.current) {
@@ -372,16 +437,18 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     }
   }, [isOpen, handleExecuteTrigger, handleAiFallback]);
 
-  // Initialize Speech Recognition & Microphone Volume Monitor
+  // Initialize Speech Recognition & Microphone Volume Monitor with Dual Engine Fallback
   const startVoiceEngine = useCallback(() => {
     stopAllAudio();
 
-    // 1. Microphone level monitoring (for animated waveform)
+    // 1. Microphone level monitoring and continuous MediaRecorder capture
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       navigator.mediaDevices
         .getUserMedia({ audio: true })
         .then((stream) => {
           mediaStreamRef.current = stream;
+          setIsMicActive(true);
+
           try {
             const AudioContextClass =
               window.AudioContext || (window as any).webkitAudioContext;
@@ -394,7 +461,26 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
             source.connect(analyser);
             analyserRef.current = analyser;
 
+            // Start continuous MediaRecorder to ensure speech is recorded regardless of browser SpeechRecognition
+            if (typeof MediaRecorder !== 'undefined') {
+              try {
+                const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+                recordedBlobsRef.current = [];
+                mr.ondataavailable = (e) => {
+                  if (e.data && e.data.size > 0) {
+                    recordedBlobsRef.current.push(e.data);
+                  }
+                };
+                mr.start(1000); // 1-second chunks
+                mediaRecorderRef.current = mr;
+              } catch (mrErr) {
+                console.warn('MediaRecorder init error:', mrErr);
+              }
+            }
+
             const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+            // Volume analysis loop & Voice Activity Detection (VAD)
             const updateVolume = () => {
               if (!analyserRef.current) return;
               analyserRef.current.getByteFrequencyData(dataArray);
@@ -403,64 +489,46 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                 sum += dataArray[i];
               }
               const avg = sum / dataArray.length;
-              // Smooth normalized volume
-              setVolume(Math.min(1, avg / 70));
+              const normalizedVol = Math.min(1, avg / 65);
+              setVolume(normalizedVol);
+
+              // Voice Activity Detection
+              const now = Date.now();
+              if (normalizedVol > 0.05 && !isSpeakingRef.current && !isMutedRef.current) {
+                isSpeakingDetectedRef.current = true;
+                lastSpeechTimestampRef.current = now;
+              } else if (
+                isSpeakingDetectedRef.current &&
+                now - lastSpeechTimestampRef.current > 1200
+              ) {
+                // User spoke, and there has now been 1.2 seconds of silence!
+                isSpeakingDetectedRef.current = false;
+
+                // If Web Speech did not yield a transcript, trigger Gemini Transcribe on the recorded audio slice!
+                if (!latestTranscriptRef.current && recordedBlobsRef.current.length > 0) {
+                  transcribeRecordedSlice();
+                }
+              }
+
               animFrameRef.current = requestAnimationFrame(updateVolume);
             };
             updateVolume();
-
-            // Setup MediaRecorder fallback if browser SpeechRecognition is absent
-            const SpeechRecognition =
-              (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-            if (!SpeechRecognition && typeof MediaRecorder !== 'undefined') {
-              try {
-                const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-                audioChunksRef.current = [];
-                mr.ondataavailable = (e) => {
-                  if (e.data.size > 0) audioChunksRef.current.push(e.data);
-                };
-                mr.onstop = async () => {
-                  if (audioChunksRef.current.length > 0) {
-                    const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-                    audioChunksRef.current = [];
-                    const reader = new FileReader();
-                    reader.onloadend = async () => {
-                      const base64 = (reader.result as string).split(',')[1];
-                      if (base64) {
-                        const transcript = await transcribeAudioWithGemini(base64, 'audio/webm');
-                        if (transcript && transcript.trim()) {
-                          setUserTranscript(transcript.trim());
-                          latestTranscriptRef.current = transcript.trim();
-                          handleExecuteTrigger(transcript.trim()).then((matched) => {
-                            if (!matched) handleAiFallback(transcript.trim());
-                          });
-                        }
-                      }
-                    };
-                    reader.readAsDataURL(blob);
-                  }
-                };
-                mediaRecorderRef.current = mr;
-                mr.start(3000); // 3-second slices
-              } catch (mrErr) {
-                console.warn('MediaRecorder fallback setup:', mrErr);
-              }
-            }
           } catch (e) {
             console.warn('AudioContext visualization setup skipped:', e);
           }
         })
         .catch((err) => {
           console.warn('Microphone permission error:', err);
+          setIsMicActive(false);
           if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-            setErrorMessage('Microphone access blocked. Please enable microphone permissions in your browser bar.');
+            setErrorMessage('Microphone access blocked. Please allow microphone permissions in your browser URL bar.');
           }
         });
     }
 
-    // 2. Start Speech Recognition
+    // 2. Start Web Speech Recognition
     restartSpeechRecognition();
-  }, [stopAllAudio, restartSpeechRecognition, handleExecuteTrigger, handleAiFallback]);
+  }, [stopAllAudio, restartSpeechRecognition, transcribeRecordedSlice]);
 
   // Primary lifecycle: triggers only when modal is opened or closed
   useEffect(() => {
@@ -476,10 +544,12 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     setExecutedTools([]);
     setIsMuted(false);
     setIsCommandProcessed(false);
+    setIsSendingToLlm(false);
+    setProcessingPrompt('');
     setLastProcessedMessage('');
-    executedPhraseRef.current.clear();
     latestTranscriptRef.current = '';
     isSpeakingRef.current = false;
+    isSpeakingDetectedRef.current = false;
 
     startVoiceEngine();
 
@@ -501,8 +571,10 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
           recognitionRef.current.stop();
         } catch {}
       }
+      setIsMicActive(false);
     } else {
       restartSpeechRecognition();
+      setIsMicActive(true);
     }
   };
 
@@ -519,6 +591,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     if (!text) return;
 
     setUserTranscript(text);
+    setInterimTranscript('');
     setManualInput('');
 
     handleExecuteTrigger(text).then((matched) => {
@@ -572,9 +645,11 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                   <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full transition-colors duration-300 ${
                     isCommandProcessed
                       ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-400/50'
+                      : isMicActive
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 animate-pulse'
                       : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
                   }`}>
-                    {isCommandProcessed ? 'Command Processed' : 'Microphone Live'}
+                    {isCommandProcessed ? 'Command Processed' : isMicActive ? 'Mic Active' : 'Connecting'}
                   </span>
                 </div>
                 <p className="text-xs text-gray-400">
@@ -610,8 +685,28 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
             </div>
           </div>
 
-          {/* Central Animated Voice Orb */}
-          <div className="my-6 flex flex-col items-center justify-center relative min-h-[170px]">
+          {/* Central Animated Voice Orb Area */}
+          <div className="my-5 flex flex-col items-center justify-center relative min-h-[185px]">
+            {/* Visual 'Speak Now' Text Indicator when Microphone is Active */}
+            <AnimatePresence>
+              {isMicActive && !isMuted && status === 'listening' && !isCommandProcessed && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.85, y: -6 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.85, y: -4 }}
+                  transition={{ type: 'spring', damping: 18, stiffness: 350 }}
+                  className="mb-2.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-500/20"
+                >
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-300"></span>
+                  </span>
+                  <span className="tracking-wide uppercase text-[11px] font-extrabold">Speak Now</span>
+                  <span className="text-[10px] text-emerald-200/70 font-normal">Ready for command</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {/* Outer Pulsing Wave Rings */}
             <div
               className={`absolute rounded-full transition-all duration-300 pointer-events-none ${
@@ -656,7 +751,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                   : status === 'speaking'
                   ? 'bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-500 shadow-purple-500/40'
                   : status === 'listening'
-                  ? 'bg-gradient-to-tr from-indigo-600 via-cyan-600 to-blue-500 shadow-indigo-500/40'
+                  ? 'bg-gradient-to-tr from-indigo-600 via-cyan-600 to-blue-500 shadow-indigo-500/40 ring-2 ring-cyan-400/40'
                   : status === 'processing'
                   ? 'bg-gradient-to-tr from-amber-600 to-indigo-600 shadow-amber-500/40 animate-pulse'
                   : 'bg-rose-900 shadow-rose-900/40'
@@ -685,9 +780,9 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                 </>
               ) : status === 'processing' ? (
                 <>
-                  <Sparkles className="w-8 h-8 text-amber-200 animate-spin" />
+                  <Loader2 className="w-8 h-8 text-amber-200 animate-spin" />
                   <span className="text-[10px] uppercase font-bold tracking-wider mt-1 text-amber-100">
-                    Executing
+                    Processing
                   </span>
                 </>
               ) : (
@@ -700,7 +795,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
               )}
             </motion.button>
 
-            {/* Enhanced Waveform Visualizer with dynamic color shift & subtle success indicator */}
+            {/* Enhanced Waveform Visualizer with dynamic emerald color shift & subtle success indicator */}
             <div className="mt-3 flex items-center justify-center">
               <WaveformVisualizer
                 isActive={(status === 'listening' || status === 'speaking' || isCommandProcessed) && !isMuted}
@@ -714,7 +809,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
             </div>
 
             {/* Status Text Label */}
-            <div className="mt-3 text-center px-4">
+            <div className="mt-2 text-center px-4">
               {isCommandProcessed ? (
                 <p className="text-xs text-emerald-300 font-semibold flex items-center justify-center gap-1.5 animate-in fade-in">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 inline-block" />
@@ -724,15 +819,16 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                 <p className="text-xs text-cyan-300 font-medium">
                   {isMuted
                     ? 'Microphone muted. Click Unmute to speak.'
-                    : 'Listening... Speak a command or question anytime.'}
+                    : 'Speak naturally. Your command is captured in real-time.'}
                 </p>
               ) : status === 'speaking' ? (
                 <p className="text-xs text-purple-300">
                   Assistant speaking. Click the orb to interrupt.
                 </p>
               ) : status === 'processing' ? (
-                <p className="text-xs text-amber-300 animate-pulse">
-                  Executing command & updating your dashboard...
+                <p className="text-xs text-amber-300 animate-pulse flex items-center justify-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-spin" />
+                  Executing command & sending to LLM...
                 </p>
               ) : (
                 <div className="flex items-center justify-center gap-2">
@@ -742,7 +838,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                   <button
                     type="button"
                     onClick={startVoiceEngine}
-                    className="px-2 py-0.5 text-[10px] font-bold bg-rose-500/20 text-rose-200 rounded border border-rose-500/40 hover:bg-rose-500/30 flex items-center gap-1"
+                    className="px-2 py-0.5 text-[10px] font-bold bg-rose-500/20 text-rose-200 rounded border border-rose-500/40 hover:bg-rose-500/30 flex items-center gap-1 cursor-pointer"
                   >
                     <RotateCcw className="w-3 h-3" /> Retry
                   </button>
@@ -751,7 +847,36 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
             </div>
           </div>
 
-          {/* Real-Time Live Transcripts & Executed Tool Badges */}
+          {/* Visual 'Processing...' Toast Indicator when sending command to LLM */}
+          <AnimatePresence>
+            {(isSendingToLlm || status === 'processing') && (
+              <motion.div
+                initial={{ opacity: 0, y: 14, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                transition={{ type: 'spring', damping: 20, stiffness: 320 }}
+                className="mb-3 px-3.5 py-2.5 rounded-2xl bg-indigo-950/90 border border-indigo-400/50 shadow-xl backdrop-blur-md flex items-center gap-3 text-white"
+              >
+                <div className="w-7 h-7 rounded-xl bg-indigo-500/30 flex items-center justify-center shrink-0">
+                  <Loader2 className="w-4 h-4 text-indigo-300 animate-spin" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-indigo-200">Processing...</span>
+                    <span className="text-[9px] font-semibold text-indigo-300/90 bg-indigo-500/30 px-1.5 py-0.5 rounded-md uppercase tracking-wider">
+                      Sending to Gemini LLM
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-200 truncate font-mono mt-0.5">
+                    “{processingPrompt || userTranscript || 'Executing command...'}”
+                  </p>
+                </div>
+                <Activity className="w-4 h-4 text-indigo-400 animate-pulse shrink-0" />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Real-Time Live Transcripts & Executed Tool Badges with Smooth Slide-Up and Fade-In Animation */}
           <div className="space-y-3 min-h-[120px] max-h-[160px] overflow-y-auto pr-1 text-xs border-t border-white/10 pt-3">
             {/* Executed Tools Badges */}
             {executedTools.length > 0 && (
@@ -768,57 +893,86 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
               </div>
             )}
 
-            {/* User Speech Transcription with Live Dynamic Feedback */}
-            <div className={`p-3 rounded-2xl border transition-all duration-300 ${
-              isCommandProcessed
-                ? 'bg-emerald-950/30 border-emerald-500/40 shadow-xs shadow-emerald-500/20'
-                : userTranscript
-                ? 'bg-white/5 border-white/15'
-                : 'bg-white/5 border-white/10'
-            }`}>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                  <span className={`w-2 h-2 rounded-full ${
+            {/* Smooth Fade-In and Slide-Up Transcript Display Area */}
+            <AnimatePresence mode="wait">
+              {userTranscript || interimTranscript ? (
+                <motion.div
+                  key="active-user-transcript"
+                  initial={{ opacity: 0, y: 14, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -10, scale: 0.98 }}
+                  transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                  className={`p-3 rounded-2xl border transition-all duration-300 ${
                     isCommandProcessed
-                      ? 'bg-emerald-400'
-                      : userTranscript
-                      ? 'bg-cyan-400 animate-pulse'
-                      : 'bg-gray-500'
-                  }`} />
-                  <span className={isCommandProcessed ? 'text-emerald-400' : 'text-cyan-400'}>
-                    {isCommandProcessed
-                      ? 'Command Executed'
-                      : userTranscript
-                      ? 'Live Speech Transcription'
-                      : 'Speech Recognition'}
-                  </span>
-                </span>
-                {interimTranscript && (
-                  <span className="text-[9px] text-cyan-300/80 font-normal italic animate-pulse">
-                    hearing you...
-                  </span>
-                )}
-              </div>
+                      ? 'bg-emerald-950/30 border-emerald-500/40 shadow-xs shadow-emerald-500/20'
+                      : 'bg-white/5 border-white/15'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                      <span className={`w-2 h-2 rounded-full ${
+                        isCommandProcessed
+                          ? 'bg-emerald-400'
+                          : 'bg-cyan-400 animate-pulse'
+                      }`} />
+                      <span className={isCommandProcessed ? 'text-emerald-400' : 'text-cyan-400'}>
+                        {isCommandProcessed
+                          ? 'Command Executed'
+                          : 'Real-Time Transcript (Being sent to LLM)'}
+                      </span>
+                    </span>
+                    {interimTranscript && (
+                      <span className="text-[9px] text-cyan-300/90 font-normal italic flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping inline-block" />
+                        Listening live...
+                      </span>
+                    )}
+                  </div>
 
-              {userTranscript ? (
-                <p className="font-mono text-xs sm:text-sm text-white leading-relaxed font-medium">
-                  “{userTranscript}”
-                </p>
+                  <p className="font-mono text-xs sm:text-sm text-white leading-relaxed font-medium">
+                    “{userTranscript}”
+                    {interimTranscript && !userTranscript.endsWith(interimTranscript) && (
+                      <span className="text-cyan-300 italic opacity-90 ml-1">
+                        {interimTranscript}
+                      </span>
+                    )}
+                  </p>
+                </motion.div>
               ) : (
-                <p className="text-gray-400 text-xs italic">
-                  Say something aloud like “log breakfast 150” or “open expenses”...
-                </p>
+                <motion.div
+                  key="idle-user-transcript"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.25 }}
+                  className="p-3 rounded-2xl border border-white/10 bg-white/5 text-gray-400"
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-gray-500" />
+                      <span>Live Speech Engine</span>
+                    </span>
+                    <span className="text-[10px] text-emerald-400/80 font-medium">Mic Ready</span>
+                  </div>
+                  <p className="text-gray-400 text-xs italic">
+                    Say something aloud like “log breakfast 150”, “open habits”, or “morning coffee 80”...
+                  </p>
+                </motion.div>
               )}
-            </div>
+            </AnimatePresence>
 
             {/* Model Speech Transcription */}
             {modelTranscript && (
-              <div className="p-2.5 rounded-xl bg-indigo-950/40 border border-indigo-500/20 text-indigo-100">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-2.5 rounded-xl bg-indigo-950/40 border border-indigo-500/20 text-indigo-100"
+              >
                 <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wider block mb-0.5">
                   Assistant Response
                 </span>
                 <p>{modelTranscript}</p>
-              </div>
+              </motion.div>
             )}
           </div>
 
@@ -836,6 +990,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                   type="button"
                   onClick={() => {
                     setUserTranscript(cmd);
+                    setInterimTranscript('');
                     latestTranscriptRef.current = cmd;
                     handleExecuteTrigger(cmd);
                   }}
