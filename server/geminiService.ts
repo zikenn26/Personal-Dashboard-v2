@@ -299,34 +299,27 @@ export async function handleGeminiTranscribe(req: Request, res: Response) {
       },
     };
 
+    const promptText = "Transcribe this spoken audio exactly into text. Return only the spoken words without any commentary, quotes, or timestamps. If there is no clear speech or only silence/noise, return an empty string.";
+
     let transcript = "";
     try {
+      // First try gemini-3.8-flash which is fastest and highly accurate with audio input
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-transcribe",
-        contents: {
-          parts: [
-            audioPart,
-            { text: "Transcribe this spoken audio exactly into text. Return only the transcription words without any commentary or quotation marks. If there is no speech or only silence/background noise, return empty text." },
-          ],
-        },
+        model: "gemini-3.8-flash",
+        contents: [audioPart, promptText],
       });
       transcript = (response.text || "").trim();
-    } catch (modelErr: any) {
-      console.warn("gemini-3.5-transcribe fallback to gemini-3.8-flash:", modelErr?.message);
+    } catch (flashErr: any) {
+      console.warn("gemini-3.8-flash audio transcribe failed, trying gemini-3.5-transcribe:", flashErr?.message);
       try {
-        const fallbackResponse = await ai.models.generateContent({
-          model: "gemini-3.8-flash",
-          contents: {
-            parts: [
-              audioPart,
-              { text: "Transcribe this spoken audio exactly into text. Return only the transcription words without commentary. If there is no speech, return empty text." },
-            ],
-          },
+        const transcribeResponse = await ai.models.generateContent({
+          model: "gemini-3.5-transcribe",
+          contents: [audioPart, promptText],
         });
-        transcript = (fallbackResponse.text || "").trim();
-      } catch (fallbackErr: any) {
-        console.warn("Gemini transcription fallback also failed:", fallbackErr?.message);
-        return res.json({ transcript: "", warning: fallbackErr?.message });
+        transcript = (transcribeResponse.text || "").trim();
+      } catch (transcribeErr: any) {
+        console.warn("gemini-3.5-transcribe fallback failed:", transcribeErr?.message);
+        return res.json({ transcript: "", warning: transcribeErr?.message });
       }
     }
 

@@ -64,10 +64,19 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
   // Live microphone audio input level (0-100) for real-time visual feedback
   const [audioLevel, setAudioLevel] = useState<number>(0);
 
+  // 3-second Voice Activity Detection (VAD) state
+  const [vadRemainingSeconds, setVadRemainingSeconds] = useState<number>(3);
+  const [hasDetectedSpeech, setHasDetectedSpeech] = useState<boolean>(false);
+
+  // Subtle green flash glow state on successful command execution
+  const [isSuccessGlow, setIsSuccessGlow] = useState<boolean>(false);
+
   // Refs for tracking active audio and speech instances
   const isMicActiveRef = useRef<boolean>(false);
   isMicActiveRef.current = isMicActive;
 
+  const lastSpeechTimeRef = useRef<number>(Date.now());
+  const hasDetectedSpeechRef = useRef<boolean>(false);
   const transcriptContainerRef = useRef<HTMLDivElement | null>(null);
 
   const recognitionRef = useRef<any>(null);
@@ -170,6 +179,10 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
           };
 
           setAcknowledgment(resultAck);
+          if (res.success) {
+            setIsSuccessGlow(true);
+            setTimeout(() => setIsSuccessGlow(false), 2500);
+          }
           onCommandExecutedRef.current?.(trimmed);
 
           if (match.mapping.actionType === 'navigate_view' && onNavigateRef.current && res.details?.view) {
@@ -211,6 +224,8 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
         };
 
         setAcknowledgment(resultAck);
+        setIsSuccessGlow(true);
+        setTimeout(() => setIsSuccessGlow(false), 2500);
         onCommandExecutedRef.current?.(trimmed);
 
         setIsSpeaking(true);
@@ -232,6 +247,24 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     []
   );
 
+  // Auto-close mic when no speech is detected after 3 seconds of inactivity
+  const autoCloseInactivity = useCallback(() => {
+    if (isExecutingRef.current) return;
+    stopAudioTracks();
+    setIsMicActive(false);
+    onListeningChangeRef.current?.(false);
+    setAudioLevel(0);
+    Sound.toggle(false);
+    setLiveTranscript('');
+    setInterimText('');
+    setAcknowledgment({
+      commandText: '(No speech detected)',
+      success: false,
+      message: 'Microphone closed automatically (3-second inactivity timeout) to conserve battery.',
+      timestamp: Date.now(),
+    });
+  }, [stopAudioTracks]);
+
   // Turn off mic and process whatever was heard
   const turnOffAndExecute = useCallback(async () => {
     if (isExecutingRef.current) return;
@@ -242,18 +275,21 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     setAudioLevel(0);
     Sound.voiceRegistered(true);
 
+    // Stop MediaRecorder cleanly and wait for final chunks
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      try {
+        mediaRecorderRef.current.requestData();
+        mediaRecorderRef.current.stop();
+      } catch {}
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    }
+
     const speechText = (latestTranscriptRef.current || liveTranscript || interimText).trim();
 
     // Snapshot recorded audio before stopping tracks
     let recordedBlob: Blob | null = null;
     let pcmSnapshot: Float32Array[] = [...pcmChunksRef.current];
     const sampleRate = audioCtxRef.current?.sampleRate || 44100;
-
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      try {
-        mediaRecorderRef.current.requestData();
-      } catch {}
-    }
 
     if (audioBlobChunksRef.current.length > 0) {
       const recordedMime = mediaRecorderRef.current?.mimeType || 'audio/webm';
@@ -274,34 +310,13 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     // 2. Fallback to Gemini Transcribe if Web Speech was silent
     setIsProcessing(true);
 
-    // Try MediaRecorder Blob first
-    if (recordedBlob && recordedBlob.size > 200) {
-      try {
-        const base64 = await blobToBase64(recordedBlob);
-        if (base64) {
-          const mimeType = recordedBlob.type.split(';')[0] || 'audio/webm';
-          const transcript = await transcribeAudioWithGemini(base64, mimeType);
-          if (transcript && transcript.trim()) {
-            const clean = transcript.trim();
-            setLiveTranscript(clean);
-            setInterimText('');
-            await executeCommand(clean);
-            isExecutingRef.current = false;
-            return;
-          }
-        }
-      } catch (e) {
-        console.warn('MediaRecorder Gemini transcription error:', e);
-      }
-    }
-
-    // Try PCM WAV fallback
+    // Try PCM WAV first (16kHz 16-bit PCM is rock-solid and verified to work with Gemini)
     if (pcmSnapshot.length > 0) {
       try {
         let totalSamples = 0;
         for (const c of pcmSnapshot) totalSamples += c.length;
 
-        if (totalSamples >= sampleRate * 0.2) {
+        if (totalSamples >= sampleRate * 0.25) {
           const fullPcm = new Float32Array(totalSamples);
           let offset = 0;
           for (const c of pcmSnapshot) {
@@ -314,6 +329,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
           const base64 = await blobToBase64(wavBlob);
 
           if (base64) {
+            setLiveTranscript('Transcribing speech...');
             const transcript = await transcribeAudioWithGemini(base64, 'audio/wav');
             if (transcript && transcript.trim()) {
               const clean = transcript.trim();
@@ -327,6 +343,28 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
         }
       } catch (e) {
         console.warn('PCM WAV Gemini transcription error:', e);
+      }
+    }
+
+    // Try MediaRecorder Blob
+    if (recordedBlob && recordedBlob.size > 200) {
+      try {
+        const base64 = await blobToBase64(recordedBlob);
+        if (base64) {
+          setLiveTranscript('Transcribing speech...');
+          const mimeType = recordedBlob.type.split(';')[0] || 'audio/webm';
+          const transcript = await transcribeAudioWithGemini(base64, mimeType);
+          if (transcript && transcript.trim()) {
+            const clean = transcript.trim();
+            setLiveTranscript(clean);
+            setInterimText('');
+            await executeCommand(clean);
+            isExecutingRef.current = false;
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('MediaRecorder Gemini transcription error:', e);
       }
     }
 
@@ -347,6 +385,10 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     isExecutingRef.current = false;
     audioBlobChunksRef.current = [];
     pcmChunksRef.current = [];
+    lastSpeechTimeRef.current = Date.now();
+    hasDetectedSpeechRef.current = false;
+    setHasDetectedSpeech(false);
+    setVadRemainingSeconds(3);
 
     // Check if getUserMedia is supported
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
