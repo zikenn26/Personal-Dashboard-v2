@@ -7,6 +7,7 @@ import {
   AlertCircle,
   Loader2,
   Volume2,
+  Radio,
 } from 'lucide-react';
 import {
   matchCommandTrigger,
@@ -63,6 +64,8 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
   // Refs for tracking active audio and speech instances
   const isMicActiveRef = useRef<boolean>(false);
   isMicActiveRef.current = isMicActive;
+
+  const transcriptContainerRef = useRef<HTMLDivElement | null>(null);
 
   const recognitionRef = useRef<any>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -453,6 +456,13 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     };
   }, [isOpen, stopAudioTracks]);
 
+  // Auto-scroll transcript container as speech arrives
+  useEffect(() => {
+    if (transcriptContainerRef.current) {
+      transcriptContainerRef.current.scrollTop = transcriptContainerRef.current.scrollHeight;
+    }
+  }, [liveTranscript, interimText]);
+
   if (!isOpen) return null;
 
   return (
@@ -473,7 +483,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.94, y: 16 }}
           transition={{ type: 'spring', damping: 26, stiffness: 320 }}
-          className="relative w-full max-w-sm bg-gradient-to-b from-[#161B22] to-[#0D1117] text-white rounded-3xl shadow-2xl border border-white/10 overflow-hidden flex flex-col p-6 z-10"
+          className="relative w-full max-w-lg bg-gradient-to-b from-[#161B22] to-[#0D1117] text-white rounded-3xl shadow-2xl border border-white/10 overflow-hidden flex flex-col p-5 sm:p-6 z-10"
         >
           {/* Header: Title & Close Button */}
           <div className="flex items-center justify-between pb-3 border-b border-white/10">
@@ -623,34 +633,82 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
             </p>
           </div>
 
-          {/* Live Transcript Display */}
-          <div className="mb-4">
-            <div className="flex items-center justify-between mb-1 text-[11px] font-medium text-gray-400">
-              <span>Live Transcript</span>
-              {isMicActive && (
-                <span className="text-rose-400 flex items-center gap-1 font-semibold animate-pulse">
-                  <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
-                  Live
+          {/* Dedicated Live Transcript Display Area */}
+          <div className="mb-5 flex flex-col">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Radio className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                <span className="text-[11px] font-bold uppercase tracking-wider text-gray-300">
+                  Live Speech Transcript
                 </span>
-              )}
+              </div>
+
+              {isMicActive ? (
+                <div className="flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-300 text-[11px] font-semibold">
+                  <div className="flex items-center gap-0.5 h-2.5">
+                    <span className="w-1 h-2.5 bg-rose-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                    <span className="w-1 h-3.5 bg-rose-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                    <span className="w-1 h-2 bg-rose-400 rounded-full animate-bounce" />
+                  </div>
+                  <span>LISTENING</span>
+                </div>
+              ) : isProcessing ? (
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[11px] font-semibold animate-pulse">
+                  PROCESSING
+                </span>
+              ) : liveTranscript ? (
+                <span className="text-[11px] font-medium text-gray-400">
+                  Captured
+                </span>
+              ) : null}
             </div>
 
-            <div className="min-h-[56px] max-h-[90px] overflow-y-auto p-3 rounded-2xl bg-white/5 border border-white/10 flex items-center">
+            {/* Dedicated Transcript Container with Large Readable Typography */}
+            <div
+              ref={transcriptContainerRef}
+              className={`relative min-h-[130px] max-h-[190px] overflow-y-auto p-4 sm:p-5 rounded-2xl transition-all duration-200 border ${
+                isMicActive
+                  ? 'bg-gradient-to-b from-[#0F141C] to-[#0A0D14] border-rose-500/40 ring-2 ring-rose-500/20 shadow-inner'
+                  : 'bg-[#0B0F15] border-white/10 shadow-inner'
+              }`}
+            >
               {liveTranscript || interimText ? (
-                <p className="text-sm font-medium text-white leading-snug">
-                  “{liveTranscript}”
-                  {interimText && !liveTranscript.endsWith(interimText) && (
-                    <span className="text-rose-300 italic opacity-90 ml-1">
-                      {interimText}
-                    </span>
-                  )}
-                </p>
+                <div className="relative">
+                  <p className="text-xl sm:text-2xl font-semibold text-white tracking-tight leading-relaxed select-text">
+                    “{liveTranscript}
+                    {interimText && !liveTranscript.endsWith(interimText) && (
+                      <span className="text-rose-400 font-semibold ml-1.5 animate-pulse">
+                        {interimText}
+                      </span>
+                    )}
+                    ”
+                    {isMicActive && (
+                      <span className="inline-block w-2.5 h-5 ml-1.5 align-middle bg-rose-400 animate-pulse rounded-sm" />
+                    )}
+                  </p>
+                </div>
               ) : (
-                <p className="text-xs text-gray-500 italic">
-                  {isMicActive
-                    ? 'Speak your command now...'
-                    : 'Tap the mic and speak a command (e.g. “log breakfast 150”, “open expenses”)'}
-                </p>
+                <div className="h-full min-h-[90px] flex flex-col items-center justify-center text-center p-2">
+                  {isMicActive ? (
+                    <div className="flex flex-col items-center gap-1.5">
+                      <p className="text-lg sm:text-xl font-medium text-rose-300 animate-pulse">
+                        Listening... speak your command now
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        Words appear here in large real-time text
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-1">
+                      <p className="text-base sm:text-lg font-medium text-gray-400">
+                        Tap the microphone above to start
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        Speech will appear here in real-time as you talk
+                      </p>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>
