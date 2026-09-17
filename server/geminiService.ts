@@ -276,16 +276,26 @@ export async function handleGeminiTranscribe(req: Request, res: Response) {
       return res.status(503).json({ error: "GEMINI_API_KEY is not configured." });
     }
 
-    const { audio, mimeType = "audio/webm" } = req.body;
+    const { audio, mimeType = "audio/wav" } = req.body;
     if (!audio || typeof audio !== "string") {
       return res.status(400).json({ error: "Missing 'audio' (base64 string) in request body." });
     }
 
+    // Clean base64 string (strip data-url scheme and whitespace)
+    const cleanBase64 = audio.replace(/^data:[^;]+;base64,/, "").replace(/\s/g, "");
+    if (!cleanBase64 || cleanBase64.length < 128) {
+      return res.json({ transcript: "" });
+    }
+
+    // Sanitize MIME type (remove parameters like codecs=opus)
+    let cleanMimeType = (mimeType || "audio/wav").split(";")[0].trim().toLowerCase();
+    if (cleanMimeType === "audio/wave") cleanMimeType = "audio/wav";
+
     const ai = getGeminiClient();
     const audioPart = {
       inlineData: {
-        mimeType: mimeType || "audio/webm",
-        data: audio,
+        mimeType: cleanMimeType,
+        data: cleanBase64,
       },
     };
 
@@ -296,23 +306,28 @@ export async function handleGeminiTranscribe(req: Request, res: Response) {
         contents: {
           parts: [
             audioPart,
-            { text: "Transcribe this spoken audio exactly. Return only the transcription text without commentary." },
+            { text: "Transcribe this spoken audio exactly into text. Return only the transcription words without any commentary or quotation marks. If there is no speech or only silence/background noise, return empty text." },
           ],
         },
       });
       transcript = (response.text || "").trim();
     } catch (modelErr: any) {
       console.warn("gemini-3.5-transcribe fallback to gemini-3.8-flash:", modelErr?.message);
-      const fallbackResponse = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
-        contents: {
-          parts: [
-            audioPart,
-            { text: "Transcribe this spoken audio exactly into text. Return only the words spoken, nothing else." },
-          ],
-        },
-      });
-      transcript = (fallbackResponse.text || "").trim();
+      try {
+        const fallbackResponse = await ai.models.generateContent({
+          model: "gemini-3.8-flash",
+          contents: {
+            parts: [
+              audioPart,
+              { text: "Transcribe this spoken audio exactly into text. Return only the transcription words without commentary. If there is no speech, return empty text." },
+            ],
+          },
+        });
+        transcript = (fallbackResponse.text || "").trim();
+      } catch (fallbackErr: any) {
+        console.warn("Gemini transcription fallback also failed:", fallbackErr?.message);
+        return res.json({ transcript: "", warning: fallbackErr?.message });
+      }
     }
 
     res.json({ transcript });

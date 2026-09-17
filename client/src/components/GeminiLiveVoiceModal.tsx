@@ -29,6 +29,7 @@ import {
   stopGeminiSpeech,
   transcribeAudioWithGemini,
 } from '../services/geminiService';
+import { encodePcmToWav, downsampleTo16k, blobToBase64 } from '../utils/audioUtils';
 import { Sound } from '../utils/audio';
 import { WaveformVisualizer } from './WaveformVisualizer';
 
@@ -113,6 +114,8 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
   const recognitionRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedBlobsRef = useRef<Blob[]>([]);
+  const pcmChunksRef = useRef<Float32Array[]>([]);
+  const pcmProcessorRef = useRef<ScriptProcessorNode | null>(null);
 
   // Voice Activity Detection (VAD) tracker
   const isSpeakingDetectedRef = useRef<boolean>(false);
@@ -202,6 +205,15 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
       cancelAnimationFrame(animFrameRef.current);
       animFrameRef.current = null;
     }
+
+    if (pcmProcessorRef.current) {
+      try {
+        pcmProcessorRef.current.disconnect();
+        pcmProcessorRef.current.onaudioprocess = null;
+      } catch {}
+      pcmProcessorRef.current = null;
+    }
+    pcmChunksRef.current = [];
 
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach((t) => t.stop());
@@ -327,24 +339,49 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     [triggerCommandProcessedIndicator]
   );
 
-  // Transcribe recorded audio slice from MediaRecorder via Gemini
+  // Transcribe recorded audio slice via Gemini (using clean 16kHz PCM WAV encoding)
   const transcribeRecordedSlice = useCallback(async () => {
-    if (recordedBlobsRef.current.length === 0) return;
-    const blob = new Blob(recordedBlobsRef.current, { type: 'audio/webm' });
-    recordedBlobsRef.current = [];
+    // If PCM frames are available, encode directly into a pristine 16-bit WAV file
+    if (pcmChunksRef.current.length > 0) {
+      const chunks = [...pcmChunksRef.current];
+      pcmChunksRef.current = [];
 
-    // Only process if blob has audio content (> 2KB)
-    if (blob.size < 2048) return;
+      let totalSamples = 0;
+      for (const c of chunks) totalSamples += c.length;
 
-    try {
-      setIsSendingToLlm(true);
-      setProcessingPrompt('Transcribing voice audio...');
+      const sampleRate = audioCtxRef.current?.sampleRate || 44100;
+      // Require at least ~0.4s of audio
+      if (totalSamples < sampleRate * 0.4) return;
 
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64 = (reader.result as string)?.split(',')[1];
+      try {
+        setIsSendingToLlm(true);
+        setProcessingPrompt('Transcribing voice audio...');
+
+        const fullPcm = new Float32Array(totalSamples);
+        let offset = 0;
+        for (const c of chunks) {
+          fullPcm.set(c, offset);
+          offset += c.length;
+        }
+
+        // Quick energy check to skip pure silence
+        let energy = 0;
+        const step = 8;
+        for (let i = 0; i < fullPcm.length; i += step) {
+          energy += Math.abs(fullPcm[i]);
+        }
+        const avgEnergy = energy / (fullPcm.length / step);
+        if (avgEnergy < 0.005) {
+          setIsSendingToLlm(false);
+          return;
+        }
+
+        const pcm16k = downsampleTo16k(fullPcm, sampleRate);
+        const wavBlob = encodePcmToWav(pcm16k, 16000);
+        const base64 = await blobToBase64(wavBlob);
+
         if (base64) {
-          const transcript = await transcribeAudioWithGemini(base64, 'audio/webm');
+          const transcript = await transcribeAudioWithGemini(base64, 'audio/wav');
           if (transcript && transcript.trim()) {
             const cleanText = transcript.trim();
             setUserTranscript(cleanText);
@@ -362,11 +399,44 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
         } else {
           setIsSendingToLlm(false);
         }
-      };
-      reader.readAsDataURL(blob);
-    } catch (e) {
-      console.warn('Fallback audio transcription error:', e);
-      setIsSendingToLlm(false);
+      } catch (e) {
+        console.warn('PCM audio transcription error:', e);
+        setIsSendingToLlm(false);
+      }
+      return;
+    }
+
+    // Secondary fallback if MediaRecorder recordedBlobs exist
+    if (recordedBlobsRef.current.length > 0) {
+      const blob = new Blob(recordedBlobsRef.current, { type: 'audio/webm' });
+      recordedBlobsRef.current = [];
+      if (blob.size < 2048) return;
+
+      try {
+        setIsSendingToLlm(true);
+        setProcessingPrompt('Transcribing voice audio...');
+        const base64 = await blobToBase64(blob);
+        if (base64) {
+          const transcript = await transcribeAudioWithGemini(base64, 'audio/webm');
+          if (transcript && transcript.trim()) {
+            const cleanText = transcript.trim();
+            setUserTranscript(cleanText);
+            setInterimTranscript('');
+            latestTranscriptRef.current = cleanText;
+            const matched = await handleExecuteTrigger(cleanText);
+            if (!matched) {
+              await handleAiFallback(cleanText);
+            }
+          } else {
+            setIsSendingToLlm(false);
+          }
+        } else {
+          setIsSendingToLlm(false);
+        }
+      } catch (e) {
+        console.warn('Fallback audio transcription error:', e);
+        setIsSendingToLlm(false);
+      }
     }
   }, [handleExecuteTrigger, handleAiFallback]);
 
@@ -431,6 +501,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
 
           // Clear any pending audio recorder slice since Web Speech is capturing text
           recordedBlobsRef.current = [];
+          pcmChunksRef.current = [];
 
           // Check for immediate custom voice triggers
           handleExecuteTrigger(fullText).then((matched) => {
@@ -503,17 +574,46 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
             source.connect(analyser);
             analyserRef.current = analyser;
 
-            // Start continuous MediaRecorder to ensure speech is recorded regardless of browser SpeechRecognition
+            // Setup continuous PCM frame capture for pristine 16-bit WAV encoding
+            try {
+              const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+              pcmProcessorRef.current = processor;
+              pcmChunksRef.current = [];
+
+              processor.onaudioprocess = (e) => {
+                if (isSpeakingRef.current || isMutedRef.current || isVadTimedOutRef.current) return;
+                const channelData = e.inputBuffer.getChannelData(0);
+                const copy = new Float32Array(channelData.length);
+                copy.set(channelData);
+                pcmChunksRef.current.push(copy);
+
+                // Keep roughly the last 6 seconds of audio
+                const maxChunks = Math.ceil((audioCtx.sampleRate * 6) / 4096);
+                if (pcmChunksRef.current.length > maxChunks) {
+                  pcmChunksRef.current.splice(0, pcmChunksRef.current.length - maxChunks);
+                }
+              };
+
+              source.connect(processor);
+              const silenceGain = audioCtx.createGain();
+              silenceGain.gain.value = 0;
+              processor.connect(silenceGain);
+              silenceGain.connect(audioCtx.destination);
+            } catch (procErr) {
+              console.warn('PCM processor init warning:', procErr);
+            }
+
+            // Start continuous MediaRecorder as secondary fallback if supported
             if (typeof MediaRecorder !== 'undefined') {
               try {
-                const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+                const mr = new MediaRecorder(stream);
                 recordedBlobsRef.current = [];
                 mr.ondataavailable = (e) => {
                   if (e.data && e.data.size > 0) {
                     recordedBlobsRef.current.push(e.data);
                   }
                 };
-                mr.start(1000); // 1-second chunks
+                mr.start(1000);
                 mediaRecorderRef.current = mr;
               } catch (mrErr) {
                 console.warn('MediaRecorder init error:', mrErr);
@@ -552,7 +652,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                 isSpeakingDetectedRef.current = false;
 
                 // If Web Speech did not yield a transcript, trigger Gemini Transcribe on the recorded audio slice!
-                if (!latestTranscriptRef.current && recordedBlobsRef.current.length > 0) {
+                if (!latestTranscriptRef.current && (pcmChunksRef.current.length > 0 || recordedBlobsRef.current.length > 0)) {
                   transcribeRecordedSlice();
                 }
               } else if (
