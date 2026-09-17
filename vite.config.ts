@@ -2,9 +2,10 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
 import { defineConfig } from "vite";
+import { geminiVitePlugin } from "./server/geminiService";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), geminiVitePlugin()],
   resolve: {
     dedupe: ["react", "react-dom"],
     alias: {

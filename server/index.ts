@@ -2,6 +2,7 @@ import express from "express";
 import { createServer } from "http";
 import path from "path";
 import { fileURLToPath } from "url";
+import { registerGeminiRoutes, setupGeminiLiveWebSocket } from "./geminiService.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -9,6 +10,14 @@ const __dirname = path.dirname(__filename);
 async function startServer() {
   const app = express();
   const server = createServer(app);
+
+  app.use(express.json());
+
+  // Setup Gemini Live WebSocket server on /live
+  setupGeminiLiveWebSocket(server);
+
+  // Register Gemini Chat, Commands, TTS and Health routes on /api/gemini/*
+  registerGeminiRoutes(app);
 
   // Proxy /api/groq to Groq API backend
   app.all("/api/groq*", async (req, res) => {

@@ -19,19 +19,36 @@ import {
   ExternalLink,
   X,
   RefreshCw,
+  Mic,
+  MicOff,
+  Radio,
+  Volume2,
+  VolumeX,
+  Bot,
+  Sliders,
+  ChevronDown,
 } from 'lucide-react';
 import {
   ChatMessage,
   sendSecretaryMessage,
-  GROQ_MODEL,
-  DEFAULT_GROQ_MODEL,
   getActiveGroqModel,
   SUPPORTED_GROQ_MODELS,
   testGroqApiKey,
-  getActiveGroqKey,
 } from '../services/groqService';
+import {
+  sendGeminiMessage,
+  speakTextWithGemini,
+  stopGeminiSpeech,
+  GEMINI_MODELS,
+  GEMINI_ROLES,
+  checkGeminiHealth,
+  GeminiChatMessage,
+} from '../services/geminiService';
 import { Storage } from '../utils/storage';
+import { Sound } from '../utils/audio';
 import { BrandLogo } from './BrandLogo';
+import { GeminiLiveVoiceModal } from './GeminiLiveVoiceModal';
+import { WaveformVisualizer } from './WaveformVisualizer';
 
 interface AISecretaryWidgetProps {
   dragHandle?: React.ReactNode;
@@ -42,13 +59,16 @@ interface AISecretaryWidgetProps {
   onClosePopup?: () => void;
 }
 
-const STORAGE_KEY = 'ai_secretary_chat_history_v1';
+const STORAGE_KEY = 'ai_secretary_chat_history_v2';
+const PROVIDER_KEY = 'zikenn_ai_provider';
+const GEMINI_MODEL_KEY = 'zikenn_gemini_model';
+const GEMINI_ROLE_KEY = 'zikenn_gemini_role';
 
 const INITIAL_SUGGESTIONS = [
   'What are my pending tasks?',
-  'Analyze my spending',
-  'Check off today’s habits',
-  'Add task "Submit project report" (urgent)',
+  'Log an expense: ₹250 for lunch',
+  'Check off today’s morning habit',
+  'Add task "Complete weekly review" (urgent)',
 ];
 
 export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
@@ -59,16 +79,34 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
   isPopup = false,
   onClosePopup,
 }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+  // Engine Provider: 'gemini' (Default, with voice assist & commands) vs 'groq'
+  const [provider, setProvider] = useState<'gemini' | 'groq'>(() => {
+    return (localStorage.getItem(PROVIDER_KEY) as 'gemini' | 'groq') || 'gemini';
+  });
+
+  // Gemini Configuration State
+  const [selectedGeminiModel, setSelectedGeminiModel] = useState<string>(() => {
+    return localStorage.getItem(GEMINI_MODEL_KEY) || 'gemini-3.8-flash';
+  });
+  const [selectedRole, setSelectedRole] = useState<string>(() => {
+    return localStorage.getItem(GEMINI_ROLE_KEY) || 'chief_of_staff';
+  });
+  const [isLiveVoiceModalOpen, setIsLiveVoiceModalOpen] = useState(false);
+  const [isLiveListening, setIsLiveListening] = useState(false);
+  const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
+
+  // Voice Command Speech-to-Text State
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  // Chat Messages State
+  const [messages, setMessages] = useState<Array<ChatMessage | GeminiChatMessage>>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          const filtered = parsed.filter(
-            (m) => !m.content?.includes('Groq API Key Required')
-          );
-          if (filtered.length > 0) return filtered;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
         }
       }
     } catch {
@@ -79,7 +117,7 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
         id: 'welcome',
         role: 'assistant',
         content:
-          'Hello! I am your Personalized Zikenn AI. How can I assist you today?',
+          'Hello! I am your AI Secretary & Chief of Staff. You can speak to me using Live Voice, give voice commands, or type requests to manage your tasks, habits, and dashboard.',
         timestamp: Date.now(),
       },
     ];
@@ -90,95 +128,181 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // Groq API Key Configuration State
-  const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
+  // Settings & Keys panel
+  const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [groqKeyInput, setGroqKeyInput] = useState(() => Storage.getGroqApiKey() || '');
-  const [activeModel, setActiveModel] = useState(() => getActiveGroqModel());
-  const [showKey, setShowKey] = useState(false);
-  const [keySaved, setKeySaved] = useState(false);
-  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
-  const [testMsg, setTestMsg] = useState('');
+  const [activeGroqModel, setActiveGroqModel] = useState(() => getActiveGroqModel());
+  const [showGroqKey, setShowGroqKey] = useState(false);
+  const [groqKeySaved, setGroqKeySaved] = useState(false);
+  const [groqTestStatus, setGroqTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [groqTestMsg, setGroqTestMsg] = useState('');
 
-  const handleSaveKey = (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanKey = groqKeyInput.trim();
-    Storage.setGroqApiKey(cleanKey);
-    setKeySaved(true);
-    setTimeout(() => {
-      setKeySaved(false);
-      setIsKeyModalOpen(false);
-    }, 1500);
-  };
-
-  const handleTestKey = async () => {
-    setTestStatus('testing');
-    setTestMsg('Validating with Groq servers...');
-    const res = await testGroqApiKey(groqKeyInput);
-    if (res.success) {
-      setTestStatus('success');
-      setTestMsg(res.message);
-    } else {
-      setTestStatus('error');
-      setTestMsg(res.message);
-    }
-  };
-
-  // Save conversation history to local storage
+  // Persist chat history
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-50)));
     } catch {
       // ignore
     }
   }, [messages]);
 
-  // Auto-scroll to bottom of conversation
+  // Scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  const handleSendMessage = async (textToSend?: string) => {
-    const text = (textToSend || inputPrompt).trim();
-    if (!text || isLoading) return;
+  // Handle Voice Command Dictation (Speech Recognition)
+  const handleToggleVoiceDictation = () => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
-    setInputPrompt('');
-    setIsLoading(true);
+    if (!SpeechRecognition) {
+      alert('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
+      return;
+    }
+
+    if (isListening) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      setIsListening(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        Sound.click(true);
+      };
+
+      recognition.onresult = (event: any) => {
+        const transcript = Array.from(event.results)
+          .map((result: any) => result[0].transcript)
+          .join('');
+        setInputPrompt(transcript);
+        // Play subtle confirmation sound that speech was successfully registered
+        Sound.voiceRegistered(true);
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn('Voice command recognition error:', event.error);
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.error('Failed to start voice recognition:', err);
+      setIsListening(false);
+    }
+  };
+
+  // Handle Reading Assistant Message Aloud via Gemini TTS
+  const handleToggleSpeech = async (msgId: string, text: string) => {
+    if (speakingMsgId === msgId) {
+      stopGeminiSpeech();
+      setSpeakingMsgId(null);
+      return;
+    }
+
+    setSpeakingMsgId(msgId);
+    await speakTextWithGemini(text, 'Zephyr', () => {
+      setSpeakingMsgId(null);
+    });
+  };
+
+  // Send Message (Supports both Gemini and Groq)
+  const handleSendMessage = async (textToSend?: string) => {
+    const prompt = (textToSend !== undefined ? textToSend : inputPrompt).trim();
+    if (!prompt || isLoading) return;
+
+    // Play subtle audio feedback confirming AI begins processing
+    Sound.voiceProcessing(true);
+
+    // Stop active mic dictation if running
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    }
 
     const userMessage: ChatMessage = {
       id: 'msg-' + Date.now(),
       role: 'user',
-      content: text,
+      content: prompt,
       timestamp: Date.now(),
     };
 
-    // Optimistically show user message immediately
-    const nextHistoryWithUser = [...messages, userMessage];
-    setMessages(nextHistoryWithUser);
+    setMessages((prev) => [...prev, userMessage]);
+    setInputPrompt('');
+    setIsLoading(true);
 
     try {
-      const result = await sendSecretaryMessage(text, messages);
-      if (result.updatedHistory && result.updatedHistory.length > 0) {
-        setMessages(result.updatedHistory);
-      } else {
-        const fallbackMsg: ChatMessage = {
-          id: 'msg-reply-' + Date.now(),
+      if (provider === 'gemini') {
+        const geminiHistory: GeminiChatMessage[] = messages.map((m) => ({
+          id: m.id,
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+          timestamp: m.timestamp,
+        }));
+
+        const result = await sendGeminiMessage({
+          message: prompt,
+          history: geminiHistory,
+          model: selectedGeminiModel,
+          roleId: selectedRole,
+        });
+
+        const assistantMessage: GeminiChatMessage = {
+          id: 'gemini-' + Date.now(),
           role: 'assistant',
-          content: result.reply || 'I processed your request.',
+          content: result.reply,
           actionChips: result.actionChips,
+          modelUsed: result.model,
           timestamp: Date.now(),
         };
-        setMessages([...nextHistoryWithUser, fallbackMsg]);
+
+        setMessages((prev) => [...prev, assistantMessage]);
+      } else {
+        // Groq Fallback Engine
+        const groqHistory: ChatMessage[] = messages.map((m) => ({
+          id: m.id,
+          role: m.role as any,
+          content: m.content,
+          timestamp: m.timestamp,
+        }));
+
+        const res = await sendSecretaryMessage(prompt, groqHistory);
+
+        const assistantMessage: ChatMessage = {
+          id: 'groq-' + Date.now(),
+          role: 'assistant',
+          content: res.reply,
+          actionChips: res.actionChips,
+          timestamp: Date.now(),
+        };
+
+        setMessages((prev) => [...prev, assistantMessage]);
       }
     } catch (err: any) {
-      const errorReply: ChatMessage = {
-        id: 'msg-err-' + Date.now(),
+      const errorMessage: ChatMessage = {
+        id: 'err-' + Date.now(),
         role: 'assistant',
-        content: `⚠️ Error: ${err.message || 'Unable to connect to AI Secretary.'}`,
+        content: `Error: ${err?.message || 'Failed to process message.'}`,
         timestamp: Date.now(),
       };
-      setMessages([...nextHistoryWithUser, errorReply]);
+      setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
+      setTimeout(() => inputRef.current?.focus(), 100);
     }
   };
 
@@ -190,16 +314,41 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
   };
 
   const handleClearChat = () => {
+    stopGeminiSpeech();
+    setSpeakingMsgId(null);
     const reset: ChatMessage[] = [
       {
-        id: 'msg-reset-' + Date.now(),
+        id: 'welcome-' + Date.now(),
         role: 'assistant',
         content:
-          'Chat history cleared. I am ready for your next question or task instruction.',
+          'Chat history cleared. How can I assist you with your productivity, tasks, or study today?',
         timestamp: Date.now(),
       },
     ];
     setMessages(reset);
+  };
+
+  const handleSaveGroqKey = (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = groqKeyInput.trim();
+    Storage.setGroqApiKey(clean);
+    setGroqKeySaved(true);
+    setTimeout(() => setGroqKeySaved(false), 2000);
+  };
+
+  const handleTestGroqKey = async () => {
+    if (!groqKeyInput.trim()) return;
+    setGroqTestStatus('testing');
+    setGroqTestMsg('Validating key with Groq API...');
+    const result = await testGroqApiKey(groqKeyInput.trim());
+    if (result.success) {
+      setGroqTestStatus('success');
+      setGroqTestMsg('Key verified successfully!');
+      Storage.setGroqApiKey(groqKeyInput.trim());
+    } else {
+      setGroqTestStatus('error');
+      setGroqTestMsg(result.message || 'Key validation failed.');
+    }
   };
 
   return (
@@ -208,10 +357,17 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
         isPopup
           ? `h-full flex flex-col w-full bg-white dark:bg-[#1E293B] ${className}`
           : `grid-tile rounded-2xl bg-[#F7F7F5] dark:bg-[#23324C] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col w-full ${
-              isExpandedView ? 'h-[calc(100vh-140px)] min-h-[500px]' : 'min-h-[360px] max-h-[480px]'
+              isExpandedView ? 'h-[calc(100vh-140px)] min-h-[500px]' : 'min-h-[380px] max-h-[500px]'
             } ${className}`
       }
     >
+      {/* Live Voice Modal */}
+      <GeminiLiveVoiceModal
+        isOpen={isLiveVoiceModalOpen}
+        onClose={() => setIsLiveVoiceModalOpen(false)}
+        onNavigate={onNavigate}
+      />
+
       {/* Widget Header */}
       <div className="p-3 sm:px-3.5 pb-2.5 border-b border-[#EDECE9] dark:border-[#334155]/60 flex items-center justify-between gap-2 shrink-0 bg-[#FAF9F6] dark:bg-[#23324C]">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -222,31 +378,57 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
               <h3 className="text-xs font-bold uppercase tracking-wider text-black dark:text-white truncate">
-                Personalized Zikenn AI
+                AI Voice & Secretary
               </h3>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" title="Zikenn AI Online" />
+              <span
+                className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"
+                title="AI System Online"
+              />
             </div>
+            <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
+              {provider === 'gemini'
+                ? `${GEMINI_MODELS.find((m) => m.id === selectedGeminiModel)?.name || 'Gemini'} • Voice Ready`
+                : 'Groq Engine Active'}
+            </p>
           </div>
         </div>
 
         {/* Top Right Controls */}
         <div className="flex items-center gap-1 text-gray-500 dark:text-gray-400 shrink-0">
+          {/* Live Voice Assist Trigger Button with Waveform Visualizer */}
           <button
             type="button"
-            onClick={() => {
-              setGroqKeyInput(Storage.getGroqApiKey() || '');
-              setIsKeyModalOpen(!isKeyModalOpen);
-            }}
-            title="Configure API Key"
+            onClick={() => setIsLiveVoiceModalOpen(true)}
+            className={`px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-[11px] flex items-center gap-1.5 shadow-xs transition-all cursor-pointer hover:scale-105 active:scale-95 ${
+              isLiveListening ? 'ring-2 ring-cyan-400 shadow-cyan-500/40' : ''
+            }`}
+            title="Launch Real-Time Gemini 3.8 Live Voice Conversation"
+          >
+            {isLiveListening ? (
+              <WaveformVisualizer isActive={true} size="xs" colorTheme="cyan" barCount={4} />
+            ) : (
+              <Radio className="w-3.5 h-3.5 animate-pulse text-indigo-200" />
+            )}
+            <span className="hidden sm:inline">
+              {isLiveListening ? 'Listening...' : 'Live Voice'}
+            </span>
+          </button>
+
+          {/* Settings & Models Toggle */}
+          <button
+            type="button"
+            onClick={() => setIsConfigOpen(!isConfigOpen)}
+            title="AI Configuration & Models"
             className={`p-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1 text-xs ${
-              isKeyModalOpen
+              isConfigOpen
                 ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300'
                 : 'hover:bg-gray-200/60 dark:hover:bg-gray-800 text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400'
             }`}
           >
-            <KeyRound className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline text-[11px] font-medium">API Key</span>
+            <Sliders className="w-3.5 h-3.5" />
           </button>
+
+          {/* Clear Chat */}
           <button
             type="button"
             onClick={handleClearChat}
@@ -255,12 +437,14 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
-          {isPopup && onNavigate && (
+
+          {/* Expand to Full View */}
+          {((isPopup && onNavigate) || (!isExpandedView && !isPopup && onNavigate)) && (
             <button
               type="button"
               onClick={() => {
                 if (onClosePopup) onClosePopup();
-                onNavigate('assistant');
+                if (onNavigate) onNavigate('assistant');
               }}
               title="Expand to Full View"
               className="p-1.5 rounded-lg hover:bg-gray-200/60 dark:hover:bg-gray-800 transition-colors cursor-pointer text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400"
@@ -268,16 +452,7 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
               <Maximize2 className="w-3.5 h-3.5" />
             </button>
           )}
-          {!isExpandedView && !isPopup && onNavigate && (
-            <button
-              type="button"
-              onClick={() => onNavigate('assistant')}
-              title="Expand to Full View"
-              className="p-1.5 rounded-lg hover:bg-gray-200/60 dark:hover:bg-gray-800 transition-colors cursor-pointer text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400"
-            >
-              <Maximize2 className="w-3.5 h-3.5" />
-            </button>
-          )}
+
           {isPopup && onClosePopup && (
             <button
               type="button"
@@ -291,121 +466,198 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
         </div>
       </div>
 
-      {/* Groq API Key Configuration Drawer / Panel */}
-      {isKeyModalOpen && (
-        <div className="p-3.5 bg-indigo-50/70 dark:bg-[#1E1B4B]/50 border-b border-indigo-100 dark:border-indigo-900/50 animate-in slide-in-from-top-2 duration-150 shrink-0">
-          <div className="flex items-center justify-between mb-2">
+      {/* Model & AI Settings Configuration Drawer */}
+      {isConfigOpen && (
+        <div className="p-3.5 bg-indigo-50/70 dark:bg-[#1E1B4B]/50 border-b border-indigo-100 dark:border-indigo-900/50 animate-in slide-in-from-top-2 duration-150 shrink-0 space-y-3">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
-              <KeyRound className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              <Sliders className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
               <span className="text-xs font-bold text-indigo-900 dark:text-indigo-200">
-                Groq API Key Setup
+                AI Engine & Persona Settings
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              <a
-                href="https://console.groq.com/keys"
-                target="_blank"
-                rel="noreferrer"
-                className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-semibold"
-              >
-                <span>Get Key</span>
-                <ExternalLink className="w-2.5 h-2.5" />
-              </a>
-              <button
-                type="button"
-                onClick={() => setIsKeyModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer p-0.5"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setIsConfigOpen(false)}
+              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer p-0.5"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
 
-          <form onSubmit={handleSaveKey} className="space-y-2">
-            <div className="flex items-center gap-1.5">
-              <div className="relative flex-1">
-                <input
-                  type={showKey ? 'text' : 'password'}
-                  value={groqKeyInput}
+          {/* Engine Selector Tabs */}
+          <div className="flex gap-1.5 bg-white/60 dark:bg-black/20 p-1 rounded-xl border border-indigo-200/60 dark:border-indigo-800/40">
+            <button
+              type="button"
+              onClick={() => {
+                setProvider('gemini');
+                localStorage.setItem(PROVIDER_KEY, 'gemini');
+              }}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                provider === 'gemini'
+                  ? 'bg-indigo-600 text-white shadow-2xs'
+                  : 'text-gray-600 dark:text-gray-300 hover:bg-indigo-50/50 dark:hover:bg-white/5'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Gemini AI (Voice & Live)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setProvider('groq');
+                localStorage.setItem(PROVIDER_KEY, 'groq');
+              }}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                provider === 'groq'
+                  ? 'bg-indigo-600 text-white shadow-2xs'
+                  : 'text-gray-600 dark:text-gray-300 hover:bg-indigo-50/50 dark:hover:bg-white/5'
+              }`}
+            >
+              <Bot className="w-3.5 h-3.5" />
+              <span>Groq (Legacy)</span>
+            </button>
+          </div>
+
+          {/* Gemini Specific Controls */}
+          {provider === 'gemini' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {/* Gemini Model */}
+              <div>
+                <label className="text-[10px] font-bold text-indigo-900 dark:text-indigo-200 block mb-1">
+                  Gemini Model:
+                </label>
+                <select
+                  value={selectedGeminiModel}
                   onChange={(e) => {
-                    setGroqKeyInput(e.target.value);
-                    setTestStatus('idle');
+                    const m = e.target.value;
+                    setSelectedGeminiModel(m);
+                    localStorage.setItem(GEMINI_MODEL_KEY, m);
                   }}
-                  placeholder="Paste your Groq API key (gsk_...)"
-                  className="w-full pl-2.5 pr-8 py-1.5 rounded-lg text-xs font-mono bg-white dark:bg-[#0F172A] border border-indigo-200 dark:border-indigo-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                />
+                  className="w-full py-1.5 px-2 rounded-lg text-[11px] bg-white dark:bg-[#0F172A] border border-indigo-200 dark:border-indigo-800 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                >
+                  {GEMINI_MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} ({m.badge})
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 block truncate">
+                  {GEMINI_MODELS.find((m) => m.id === selectedGeminiModel)?.desc}
+                </span>
+              </div>
+
+              {/* Gemini Persona / System Role */}
+              <div>
+                <label className="text-[10px] font-bold text-indigo-900 dark:text-indigo-200 block mb-1">
+                  AI Persona / System Role:
+                </label>
+                <select
+                  value={selectedRole}
+                  onChange={(e) => {
+                    const r = e.target.value;
+                    setSelectedRole(r);
+                    localStorage.setItem(GEMINI_ROLE_KEY, r);
+                  }}
+                  className="w-full py-1.5 px-2 rounded-lg text-[11px] bg-white dark:bg-[#0F172A] border border-indigo-200 dark:border-indigo-800 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                >
+                  {GEMINI_ROLES.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 block truncate">
+                  {GEMINI_ROLES.find((r) => r.id === selectedRole)?.description}
+                </span>
+              </div>
+            </div>
+          ) : (
+            /* Groq Configuration Panel */
+            <form onSubmit={handleSaveGroqKey} className="space-y-2">
+              <div className="flex items-center gap-1.5">
+                <div className="relative flex-1">
+                  <input
+                    type={showGroqKey ? 'text' : 'password'}
+                    value={groqKeyInput}
+                    onChange={(e) => {
+                      setGroqKeyInput(e.target.value);
+                      setGroqTestStatus('idle');
+                    }}
+                    placeholder="Paste your Groq API key (gsk_...)"
+                    className="w-full pl-2.5 pr-8 py-1.5 rounded-lg text-xs font-mono bg-white dark:bg-[#0F172A] border border-indigo-200 dark:border-indigo-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowGroqKey(!showGroqKey)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+                  >
+                    {showGroqKey ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                  </button>
+                </div>
+
+                <button
+                  type="submit"
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer shrink-0"
+                >
+                  {groqKeySaved ? <Check className="w-3.5 h-3.5" /> : <KeyRound className="w-3.5 h-3.5" />}
+                  <span>{groqKeySaved ? 'Saved' : 'Save'}</span>
+                </button>
+
                 <button
                   type="button"
-                  onClick={() => setShowKey(!showKey)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+                  onClick={handleTestGroqKey}
+                  disabled={groqTestStatus === 'testing' || !groqKeyInput.trim()}
+                  className="px-2.5 py-1.5 bg-white dark:bg-gray-800 border border-indigo-200 dark:border-indigo-800 hover:bg-gray-50 text-indigo-700 dark:text-indigo-300 rounded-lg text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50 shrink-0"
                 >
-                  {showKey ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                  <Sparkles className="w-3 h-3 text-amber-500" />
+                  <span>{groqTestStatus === 'testing' ? '...' : 'Test'}</span>
                 </button>
               </div>
 
-              <button
-                type="submit"
-                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer shrink-0"
-              >
-                {keySaved ? <Check className="w-3.5 h-3.5" /> : <KeyRound className="w-3.5 h-3.5" />}
-                <span>{keySaved ? 'Saved' : 'Save'}</span>
-              </button>
+              {groqTestStatus !== 'idle' && (
+                <div
+                  className={`text-[10px] px-2.5 py-1 rounded-md flex items-center gap-1.5 ${
+                    groqTestStatus === 'success'
+                      ? 'bg-emerald-100/70 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                      : groqTestStatus === 'error'
+                      ? 'bg-rose-100/70 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
+                      : 'bg-indigo-100/70 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300'
+                  }`}
+                >
+                  {groqTestStatus === 'success' ? (
+                    <Check className="w-3 h-3 shrink-0 text-emerald-600" />
+                  ) : groqTestStatus === 'error' ? (
+                    <AlertCircle className="w-3 h-3 shrink-0 text-rose-600" />
+                  ) : (
+                    <RefreshCw className="w-3 h-3 shrink-0 animate-spin text-indigo-600" />
+                  )}
+                  <span className="truncate">{groqTestMsg}</span>
+                </div>
+              )}
 
-              <button
-                type="button"
-                onClick={handleTestKey}
-                disabled={testStatus === 'testing' || !groqKeyInput.trim()}
-                className="px-2.5 py-1.5 bg-white dark:bg-gray-800 border border-indigo-200 dark:border-indigo-800 hover:bg-gray-50 text-indigo-700 dark:text-indigo-300 rounded-lg text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50 shrink-0"
-                title="Verify key with Groq"
-              >
-                <Sparkles className="w-3 h-3 text-amber-500" />
-                <span>{testStatus === 'testing' ? '...' : 'Test'}</span>
-              </button>
-            </div>
-
-            {testStatus !== 'idle' && (
-              <div
-                className={`text-[10px] px-2.5 py-1 rounded-md flex items-center gap-1.5 ${
-                  testStatus === 'success'
-                    ? 'bg-emerald-100/70 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
-                    : testStatus === 'error'
-                    ? 'bg-rose-100/70 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
-                    : 'bg-indigo-100/70 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300'
-                }`}
-              >
-                {testStatus === 'success' ? (
-                  <Check className="w-3 h-3 shrink-0 text-emerald-600" />
-                ) : testStatus === 'error' ? (
-                  <AlertCircle className="w-3 h-3 shrink-0 text-rose-600" />
-                ) : (
-                  <RefreshCw className="w-3 h-3 shrink-0 animate-spin text-indigo-600" />
-                )}
-                <span className="truncate">{testMsg}</span>
+              <div className="flex items-center gap-2 pt-1 border-t border-indigo-100 dark:border-indigo-900/40">
+                <span className="text-[10px] font-semibold text-indigo-900 dark:text-indigo-200 shrink-0">
+                  Groq Model:
+                </span>
+                <select
+                  value={activeGroqModel}
+                  onChange={(e) => {
+                    const m = e.target.value;
+                    setActiveGroqModel(m);
+                    Storage.setGroqModel(m);
+                  }}
+                  className="flex-1 py-1 px-2 rounded-md text-[11px] bg-white dark:bg-[#0F172A] border border-indigo-200 dark:border-indigo-800 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                >
+                  {SUPPORTED_GROQ_MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
               </div>
-            )}
-
-            {/* Model Selector in Drawer */}
-            <div className="flex items-center gap-2 pt-1 border-t border-indigo-100 dark:border-indigo-900/40">
-              <span className="text-[10px] font-semibold text-indigo-900 dark:text-indigo-200 shrink-0">
-                Model:
-              </span>
-              <select
-                value={activeModel}
-                onChange={(e) => {
-                  const m = e.target.value;
-                  setActiveModel(m);
-                  Storage.setGroqModel(m);
-                }}
-                className="flex-1 py-1 px-2 rounded-md text-[11px] bg-white dark:bg-[#0F172A] border border-indigo-200 dark:border-indigo-800 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-              >
-                {SUPPORTED_GROQ_MODELS.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </form>
+            </form>
+          )}
         </div>
       )}
 
@@ -413,6 +665,8 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
       <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5 text-xs text-[#37352F] dark:text-gray-200">
         {messages.map((msg) => {
           const isUser = msg.role === 'user';
+          const isSpeaking = speakingMsgId === msg.id;
+
           return (
             <div
               key={msg.id}
@@ -431,7 +685,7 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
                     : 'bg-white dark:bg-[#0F172A] border border-[#E5E5E2] dark:border-[#334155] rounded-bl-xs text-[#111827] dark:text-gray-100 shadow-2xs'
                 }`}
               >
-                {/* Action Confirmation & Lazy Context Fetching Chips */}
+                {/* Action Confirmation & Context Fetching Chips */}
                 {msg.actionChips && msg.actionChips.length > 0 && (
                   <div className="flex flex-col gap-1.5 mb-2.5 pb-2 border-b border-gray-100 dark:border-gray-800/80">
                     {msg.actionChips.map((chip, idx) => {
@@ -481,18 +735,31 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
                   {msg.content}
                 </div>
 
-                {msg.content?.includes('Groq API Key Required') && (
-                  <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-800">
+                {/* Speaker TTS Read Aloud Control (Assistant messages only) */}
+                {!isUser && (
+                  <div className="mt-2 pt-1.5 border-t border-gray-100 dark:border-gray-800/80 flex items-center justify-between text-[10px] text-gray-400">
+                    <span className="font-mono text-[9px] uppercase tracking-wider text-gray-400">
+                      {(msg as any).modelUsed || (provider === 'gemini' ? 'Gemini 3.8' : 'Groq')}
+                    </span>
                     <button
                       type="button"
-                      onClick={() => {
-                        setGroqKeyInput(Storage.getGroqApiKey() || '');
-                        setIsKeyModalOpen(true);
-                      }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold text-xs transition-colors cursor-pointer shadow-2xs"
+                      onClick={() => handleToggleSpeech(msg.id, msg.content)}
+                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer ${
+                        isSpeaking ? 'text-indigo-600 dark:text-indigo-400 font-bold' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
+                      }`}
+                      title={isSpeaking ? 'Stop speaking' : 'Read aloud with Gemini TTS'}
                     >
-                      <KeyRound className="w-3.5 h-3.5" />
-                      <span>Configure Groq API Key</span>
+                      {isSpeaking ? (
+                        <>
+                          <VolumeX className="w-3 h-3 animate-pulse text-indigo-500" />
+                          <span>Stop</span>
+                        </>
+                      ) : (
+                        <>
+                          <Volume2 className="w-3 h-3" />
+                          <span>Listen</span>
+                        </>
+                      )}
                     </button>
                   </div>
                 )}
@@ -516,7 +783,9 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
             <div className="bg-white dark:bg-[#0F172A] border border-[#E5E5E2] dark:border-[#334155] rounded-xl rounded-bl-xs px-3.5 py-2.5 flex items-center gap-2 shadow-2xs">
               <Loader2 className="w-3.5 h-3.5 animate-spin text-[#6366F1] dark:text-[#818CF8]" />
               <span className="text-[11px] text-gray-500 dark:text-gray-400">
-                Fetching live context & processing...
+                {provider === 'gemini'
+                  ? 'Gemini processing command & dashboard tools...'
+                  : 'Groq processing query...'}
               </span>
             </div>
           </div>
@@ -525,7 +794,7 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Suggested Quick Prompts (Only if 2 or fewer messages, hidden on mobile for clutter-free view) */}
+      {/* Suggested Quick Prompts */}
       {messages.length <= 2 && (
         <div className="hidden sm:flex px-4 pb-2 flex-wrap gap-1.5 shrink-0">
           {INITIAL_SUGGESTIONS.map((sugg, i) => (
@@ -541,7 +810,7 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
         </div>
       )}
 
-      {/* Input Form Footer */}
+      {/* Input Form Footer with Voice Dictation */}
       <div className="p-3 sm:px-4 bg-white dark:bg-[#0F172A] border-t border-[#EDECE9] dark:border-[#334155]/60 rounded-b-2xl shrink-0">
         <form
           onSubmit={(e) => {
@@ -550,15 +819,42 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
           }}
           className="flex items-center gap-2"
         >
+          {/* Voice Command Dictation Button with Waveform Visualizer */}
+          <button
+            type="button"
+            onClick={handleToggleVoiceDictation}
+            className={`h-8 px-2 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+              isListening
+                ? 'bg-rose-600 text-white animate-pulse shadow-md shadow-rose-600/30 ring-2 ring-rose-400'
+                : 'bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/60'
+            }`}
+            title={isListening ? 'Stop voice dictation' : 'Click to speak voice command'}
+          >
+            {isListening ? (
+              <>
+                <WaveformVisualizer isActive={true} size="xs" colorTheme="white" barCount={4} />
+                <MicOff className="w-3.5 h-3.5" />
+              </>
+            ) : (
+              <Mic className="w-4 h-4" />
+            )}
+          </button>
+
           <input
             ref={inputRef}
             type="text"
             value={inputPrompt}
             onChange={(e) => setInputPrompt(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask Zikenn anything (e.g., 'Add task...', 'Analyze spending')..."
+            placeholder={
+              isListening
+                ? 'Listening to your voice command...'
+                : "Ask anything or give a command (e.g. 'Add task...', 'Log expense')..."
+            }
             disabled={isLoading}
-            className="flex-1 bg-transparent px-2.5 py-1.5 text-xs text-[#111827] dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-hidden disabled:opacity-50"
+            className={`flex-1 bg-transparent px-2.5 py-1.5 text-xs text-[#111827] dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-hidden disabled:opacity-50 ${
+              isListening ? 'font-medium text-indigo-600 dark:text-indigo-300' : ''
+            }`}
           />
 
           <button
@@ -578,11 +874,26 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
         <div className="flex items-center justify-between mt-1 px-1 text-[10px] text-gray-400 dark:text-gray-500">
           <span className="flex items-center gap-1">
             <ShieldCheck className="w-3 h-3 text-emerald-500" />
-            Vault secrets protected
+            Live Voice & Function Calling Enabled
           </span>
-          <span>Press Enter to send</span>
+          <div className="flex items-center gap-2">
+            {isListening && (
+              <span className="text-rose-500 font-semibold animate-pulse">
+                ● Recording Voice...
+              </span>
+            )}
+            <span>Press Enter to send</span>
+          </div>
         </div>
       </div>
+
+      {/* Live Voice Modal */}
+      <GeminiLiveVoiceModal
+        isOpen={isLiveVoiceModalOpen}
+        onClose={() => setIsLiveVoiceModalOpen(false)}
+        onNavigate={onNavigate}
+        onListeningChange={(listening) => setIsLiveListening(listening)}
+      />
     </div>
   );
 };

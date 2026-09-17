@@ -1,6 +1,6 @@
 {
   "name": "Personal Dashboard & Portfolio",
   "description": "Ultra-performant personal dashboard, life timeline, competitive exams hub with syllabus and book tracking, and portfolio.",
-  "requestFramePermissions": ["geolocation"],
+  "requestFramePermissions": ["geolocation", "microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

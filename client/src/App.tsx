@@ -49,6 +49,8 @@ import { QuickCaptureBar } from './components/QuickCaptureBar';
 import { BackupRestoreView } from './components/BackupRestoreView';
 import { AIAssistantView } from './components/AIAssistantView';
 import { AISecretaryWidget } from './components/AISecretaryWidget';
+import { GeminiLiveVoiceModal } from './components/GeminiLiveVoiceModal';
+import { WaveformVisualizer } from './components/WaveformVisualizer';
 import { GoalsView } from './components/GoalsView';
 import { QuotesManagerView } from './components/QuotesManagerView';
 import { ExamsSection } from './components/ExamsSection';
@@ -133,6 +135,8 @@ import {
   Sparkle,
   RotateCcw,
   Trash2,
+  Mic,
+  Radio,
 } from 'lucide-react';
 
 // Framer Motion Page Transition Variants for Main Content View Area
@@ -222,6 +226,8 @@ export default function App() {
 
   // Modals & Floating Bars
   const [isZikennPopupOpen, setIsZikennPopupOpen] = useState(false);
+  const [isGlobalVoiceModalOpen, setIsGlobalVoiceModalOpen] = useState(false);
+  const [isGlobalVoiceActive, setIsGlobalVoiceActive] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
@@ -2930,22 +2936,81 @@ export default function App() {
         </aside>
       )}
 
-      {/* Floating Round Action Button for Zikenn AI (only brand logo visible) */}
+      {/* Floating Action Buttons: Live Voice Assist & Zikenn AI */}
       {!isZikennPopupOpen && (
-        <button
-          type="button"
-          id="floating-zikenn-ai-fab"
-          onClick={() => {
-            Sound.click(settings.soundEnabled);
-            setIsZikennPopupOpen(true);
-          }}
-          className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-600 hover:from-indigo-500 hover:to-indigo-600 text-white shadow-xl hover:shadow-2xl hover:shadow-indigo-500/30 border border-white/20 dark:border-indigo-400/40 flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 cursor-pointer group focus:outline-none focus:ring-4 focus:ring-indigo-300 dark:focus:ring-indigo-800"
-          title="Chat with Personalized Zikenn AI"
-          aria-label="Open Zikenn AI"
-        >
-          <BrandLogo size={28} className="rounded-xs group-hover:scale-105 transition-transform duration-200 pointer-events-none" />
-        </button>
+        <div className="fixed bottom-6 right-6 z-40 flex items-center gap-3">
+          {/* Dedicated Live Voice Assist Button with Framer Motion Waveform Visualizer */}
+          <button
+            type="button"
+            id="floating-voice-assist-fab"
+            onClick={() => {
+              Sound.click(settings.soundEnabled);
+              setIsGlobalVoiceModalOpen(true);
+            }}
+            className={`h-14 px-4 rounded-full bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 text-white shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer group focus:outline-none focus:ring-4 focus:ring-indigo-300 dark:focus:ring-indigo-800 flex items-center gap-2.5 border ${
+              isGlobalVoiceActive || isGlobalVoiceModalOpen
+                ? 'ring-4 ring-cyan-400/80 shadow-cyan-500/50 border-cyan-300'
+                : 'border-white/20 dark:border-indigo-400/40 hover:shadow-indigo-500/30'
+            }`}
+            title={
+              isGlobalVoiceActive || isGlobalVoiceModalOpen
+                ? 'Gemini Live actively listening — click to open controls'
+                : 'Launch Real-Time Gemini 3.8 Live Voice Assist'
+            }
+            aria-label="Open Voice Assistant"
+          >
+            {isGlobalVoiceActive || isGlobalVoiceModalOpen ? (
+              <div className="flex items-center gap-2">
+                {/* Framer Motion Waveform Visualizer indicating active listening */}
+                <WaveformVisualizer
+                  isActive={true}
+                  barCount={5}
+                  size="sm"
+                  colorTheme="cyan"
+                />
+                <span className="text-xs font-bold text-cyan-200 tracking-wide flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-cyan-300 animate-ping inline-block" />
+                  Listening
+                </span>
+              </div>
+            ) : (
+              <>
+                <span className="relative flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-300 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-cyan-400"></span>
+                </span>
+                <Mic className="w-5 h-5 text-white animate-pulse" />
+                <span className="hidden sm:inline text-xs font-bold tracking-wide">
+                  Voice Assist
+                </span>
+              </>
+            )}
+          </button>
+
+          {/* Floating Round Action Button for Zikenn AI (Chat Widget) */}
+          <button
+            type="button"
+            id="floating-zikenn-ai-fab"
+            onClick={() => {
+              Sound.click(settings.soundEnabled);
+              setIsZikennPopupOpen(true);
+            }}
+            className="w-14 h-14 rounded-full bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-600 hover:from-indigo-500 hover:to-indigo-600 text-white shadow-xl hover:shadow-2xl hover:shadow-indigo-500/30 border border-white/20 dark:border-indigo-400/40 flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 cursor-pointer group focus:outline-none focus:ring-4 focus:ring-indigo-300 dark:focus:ring-indigo-800"
+            title="Chat with Personalized Zikenn AI"
+            aria-label="Open Zikenn AI"
+          >
+            <BrandLogo size={28} className="rounded-xs group-hover:scale-105 transition-transform duration-200 pointer-events-none" />
+          </button>
+        </div>
       )}
+
+      {/* Global Gemini 3.8 Live Voice Modal */}
+      <GeminiLiveVoiceModal
+        isOpen={isGlobalVoiceModalOpen}
+        onClose={() => setIsGlobalVoiceModalOpen(false)}
+        onNavigate={handleNavigate}
+        onListeningChange={(listening) => setIsGlobalVoiceActive(listening)}
+      />
 
       {/* Floating Toast Notification with Undo for Deleted Expense */}
       {expenseUndoToast && (
