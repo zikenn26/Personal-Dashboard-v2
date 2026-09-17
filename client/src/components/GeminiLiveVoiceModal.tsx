@@ -16,6 +16,8 @@ import {
   Check,
   Loader2,
   Activity,
+  Play,
+  Clock,
 } from 'lucide-react';
 import {
   matchCommandTrigger,
@@ -79,6 +81,17 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
   const [isCommandProcessed, setIsCommandProcessed] = useState<boolean>(false);
   const [lastProcessedMessage, setLastProcessedMessage] = useState<string>('');
 
+  // Voice Activity Detection (VAD) timeout state (3 seconds without speech)
+  const [isVadTimedOut, setIsVadTimedOut] = useState<boolean>(false);
+  const isVadTimedOutRef = useRef<boolean>(false);
+  isVadTimedOutRef.current = isVadTimedOut;
+
+  const isCommandProcessedRef = useRef<boolean>(false);
+  isCommandProcessedRef.current = isCommandProcessed;
+
+  const isSendingToLlmRef = useRef<boolean>(false);
+  isSendingToLlmRef.current = isSendingToLlm;
+
   // Stable refs for callbacks to prevent re-render teardown cycles
   const onListeningChangeRef = useRef(onListeningChange);
   onListeningChangeRef.current = onListeningChange;
@@ -110,6 +123,30 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
   const isSpeakingRef = useRef<boolean>(false);
   const isMutedRef = useRef<boolean>(false);
   isMutedRef.current = isMuted;
+
+  // Auto-scroll refs for transcript display area
+  const transcriptContainerRef = useRef<HTMLDivElement | null>(null);
+  const transcriptEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-scroll to bottom whenever new text or transcript content is added
+  useEffect(() => {
+    const scrollToBottom = () => {
+      if (transcriptContainerRef.current) {
+        transcriptContainerRef.current.scrollTo({
+          top: transcriptContainerRef.current.scrollHeight,
+          behavior: 'smooth',
+        });
+      }
+      if (transcriptEndRef.current) {
+        transcriptEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }
+    };
+
+    scrollToBottom();
+    // Re-check after a brief tick to account for any motion animation height changes
+    const timer = setTimeout(scrollToBottom, 60);
+    return () => clearTimeout(timer);
+  }, [userTranscript, interimTranscript, modelTranscript, executedTools]);
 
   // Sync listening state to parent component
   useEffect(() => {
@@ -386,6 +423,11 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
           setUserTranscript(fullText);
           setInterimTranscript(interimStr.trim());
           Sound.voiceRegistered(true);
+          lastSpeechTimestampRef.current = Date.now();
+          if (isVadTimedOutRef.current) {
+            setIsVadTimedOut(false);
+            isVadTimedOutRef.current = false;
+          }
 
           // Clear any pending audio recorder slice since Web Speech is capturing text
           recordedBlobsRef.current = [];
@@ -421,9 +463,9 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
       };
 
       recognition.onend = () => {
-        if (isOpen && !isMutedRef.current && !isSpeakingRef.current) {
+        if (isOpen && !isMutedRef.current && !isSpeakingRef.current && !isVadTimedOutRef.current) {
           setTimeout(() => {
-            if (isOpen && !isMutedRef.current && !isSpeakingRef.current) {
+            if (isOpen && !isMutedRef.current && !isSpeakingRef.current && !isVadTimedOutRef.current) {
               restartSpeechRecognition();
             }
           }, 300);
@@ -492,11 +534,16 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
               const normalizedVol = Math.min(1, avg / 65);
               setVolume(normalizedVol);
 
-              // Voice Activity Detection
+              // Voice Activity Detection & Inactivity Timeout (3 seconds without speech)
               const now = Date.now();
               if (normalizedVol > 0.05 && !isSpeakingRef.current && !isMutedRef.current) {
                 isSpeakingDetectedRef.current = true;
                 lastSpeechTimestampRef.current = now;
+                if (isVadTimedOutRef.current) {
+                  setIsVadTimedOut(false);
+                  isVadTimedOutRef.current = false;
+                  setIsMicActive(true);
+                }
               } else if (
                 isSpeakingDetectedRef.current &&
                 now - lastSpeechTimestampRef.current > 1200
@@ -507,6 +554,32 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                 // If Web Speech did not yield a transcript, trigger Gemini Transcribe on the recorded audio slice!
                 if (!latestTranscriptRef.current && recordedBlobsRef.current.length > 0) {
                   transcribeRecordedSlice();
+                }
+              } else if (
+                !isSpeakingDetectedRef.current &&
+                !isVadTimedOutRef.current &&
+                !isSpeakingRef.current &&
+                !isMutedRef.current &&
+                !isCommandProcessedRef.current &&
+                !isSendingToLlmRef.current &&
+                !latestTranscriptRef.current &&
+                lastSpeechTimestampRef.current > 0 &&
+                now - lastSpeechTimestampRef.current > 3000
+              ) {
+                // VAD Inactivity Timeout: Automatically pause microphone if no speech detected for > 3s
+                setIsVadTimedOut(true);
+                isVadTimedOutRef.current = true;
+                setIsMicActive(false);
+
+                if (recognitionRef.current) {
+                  try {
+                    recognitionRef.current.stop();
+                  } catch {}
+                }
+                if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                  try {
+                    mediaRecorderRef.current.pause();
+                  } catch {}
                 }
               }
 
@@ -527,8 +600,27 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     }
 
     // 2. Start Web Speech Recognition
+    lastSpeechTimestampRef.current = Date.now();
     restartSpeechRecognition();
   }, [stopAllAudio, restartSpeechRecognition, transcribeRecordedSlice]);
+
+  // Resume microphone after VAD 3-second timeout
+  const handleResumeMic = useCallback(() => {
+    setIsVadTimedOut(false);
+    isVadTimedOutRef.current = false;
+    lastSpeechTimestampRef.current = Date.now();
+    setErrorMessage(null);
+    setStatus('listening');
+    setIsMicActive(true);
+    Sound.voiceRegistered(true);
+
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'paused') {
+      try {
+        mediaRecorderRef.current.resume();
+      } catch {}
+    }
+    restartSpeechRecognition();
+  }, [restartSpeechRecognition]);
 
   // Primary lifecycle: triggers only when modal is opened or closed
   useEffect(() => {
@@ -547,9 +639,12 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     setIsSendingToLlm(false);
     setProcessingPrompt('');
     setLastProcessedMessage('');
+    setIsVadTimedOut(false);
+    isVadTimedOutRef.current = false;
     latestTranscriptRef.current = '';
     isSpeakingRef.current = false;
     isSpeakingDetectedRef.current = false;
+    lastSpeechTimestampRef.current = Date.now();
 
     startVoiceEngine();
 
@@ -562,6 +657,10 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
   }, [isOpen, startVoiceEngine, stopAllAudio]);
 
   const handleToggleMute = () => {
+    if (isVadTimedOutRef.current) {
+      handleResumeMic();
+      return;
+    }
     const next = !isMuted;
     setIsMuted(next);
     isMutedRef.current = next;
@@ -573,6 +672,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
       }
       setIsMicActive(false);
     } else {
+      lastSpeechTimestampRef.current = Date.now();
       restartSpeechRecognition();
       setIsMicActive(true);
     }
@@ -618,21 +718,60 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
         {/* Modal Window */}
         <motion.div
           initial={{ opacity: 0, scale: 0.94, y: 16 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
+          animate={{
+            opacity: 1,
+            scale: 1,
+            y: 0,
+            borderColor: isCommandProcessed
+              ? 'rgba(52, 211, 153, 0.95)'
+              : isVadTimedOut
+              ? 'rgba(245, 158, 11, 0.5)'
+              : 'rgba(99, 102, 241, 0.25)',
+            boxShadow: isCommandProcessed
+              ? '0 0 50px -5px rgba(16, 185, 129, 0.5), 0 25px 50px -12px rgba(0, 0, 0, 0.7)'
+              : isVadTimedOut
+              ? '0 0 30px -5px rgba(245, 158, 11, 0.25), 0 25px 50px -12px rgba(0, 0, 0, 0.6)'
+              : '0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 15px -3px rgba(99, 102, 241, 0.1)',
+          }}
           exit={{ opacity: 0, scale: 0.94, y: 16 }}
-          transition={{ type: 'spring', damping: 26, stiffness: 320 }}
-          className="relative w-full max-w-lg bg-gradient-to-b from-gray-900 via-[#131927] to-[#0D1117] text-white rounded-3xl shadow-2xl border border-indigo-500/20 overflow-hidden flex flex-col p-6 sm:p-8 z-10"
+          transition={{
+            type: 'spring',
+            damping: 26,
+            stiffness: 320,
+            borderColor: { duration: 0.35 },
+            boxShadow: { duration: 0.35 },
+          }}
+          className={`relative w-full max-w-lg bg-gradient-to-b from-gray-900 via-[#131927] to-[#0D1117] text-white rounded-3xl shadow-2xl border overflow-hidden flex flex-col p-6 sm:p-8 z-10 transition-colors ${
+            isCommandProcessed ? 'ring-2 ring-emerald-400/50' : ''
+          }`}
         >
+          {/* Subtle Green Flash & Glow Overlay when Command is Successfully Processed */}
+          <AnimatePresence>
+            {isCommandProcessed && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: [0, 0.85, 0.3, 0.7, 0] }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 2.8, ease: 'easeInOut' }}
+                className="pointer-events-none absolute inset-0 rounded-3xl border-2 border-emerald-400 shadow-[inset_0_0_35px_rgba(16,185,129,0.35)] z-30"
+              />
+            )}
+          </AnimatePresence>
+
           {/* Header */}
           <div className="flex items-center justify-between pb-4 border-b border-white/10">
             <div className="flex items-center gap-3">
               <div className={`w-9 h-9 rounded-2xl flex items-center justify-center transition-colors duration-300 ${
                 isCommandProcessed
                   ? 'bg-emerald-500/20 border border-emerald-400/40 text-emerald-400'
+                  : isVadTimedOut
+                  ? 'bg-amber-500/20 border border-amber-400/40 text-amber-400'
                   : 'bg-indigo-500/20 border border-indigo-400/30 text-indigo-400'
               }`}>
                 {isCommandProcessed ? (
                   <Check className="w-5 h-5 text-emerald-400 animate-in zoom-in" />
+                ) : isVadTimedOut ? (
+                  <Clock className="w-5 h-5 text-amber-400" />
                 ) : (
                   <Radio className="w-5 h-5 animate-pulse text-indigo-400" />
                 )}
@@ -645,11 +784,23 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                   <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full transition-colors duration-300 ${
                     isCommandProcessed
                       ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-400/50'
+                      : isVadTimedOut
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1'
                       : isMicActive
                       ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 animate-pulse'
                       : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
                   }`}>
-                    {isCommandProcessed ? 'Command Processed' : isMicActive ? 'Mic Active' : 'Connecting'}
+                    {isCommandProcessed ? (
+                      'Command Processed'
+                    ) : isVadTimedOut ? (
+                      <>
+                        <Clock className="w-2.5 h-2.5" /> Mic Paused (3s Silence)
+                      </>
+                    ) : isMicActive ? (
+                      'Mic Active'
+                    ) : (
+                      'Connecting'
+                    )}
                   </span>
                 </div>
                 <p className="text-xs text-gray-400">
@@ -687,9 +838,27 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
 
           {/* Central Animated Voice Orb Area */}
           <div className="my-5 flex flex-col items-center justify-center relative min-h-[185px]">
-            {/* Visual 'Speak Now' Text Indicator when Microphone is Active */}
+            {/* Visual 'Speak Now' Text Indicator or VAD 3-second Inactivity Prompt */}
             <AnimatePresence>
-              {isMicActive && !isMuted && status === 'listening' && !isCommandProcessed && (
+              {isVadTimedOut ? (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9, y: -6 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9, y: -4 }}
+                  transition={{ type: 'spring', damping: 18, stiffness: 350 }}
+                  className="mb-2.5 px-3.5 py-1.5 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-200 font-semibold text-xs flex items-center gap-2.5 shadow-lg shadow-amber-500/10"
+                >
+                  <Clock className="w-3.5 h-3.5 text-amber-300 animate-pulse shrink-0" />
+                  <span className="text-[11px]">No speech detected for 3s • Mic paused</span>
+                  <button
+                    type="button"
+                    onClick={handleResumeMic}
+                    className="ml-1 px-2.5 py-0.5 rounded-full bg-amber-400 hover:bg-amber-300 text-gray-950 font-bold text-[10px] uppercase tracking-wider transition-colors cursor-pointer flex items-center gap-1 shadow-sm"
+                  >
+                    <Play className="w-2.5 h-2.5 fill-current" /> Resume
+                  </button>
+                </motion.div>
+              ) : isMicActive && !isMuted && status === 'listening' && !isCommandProcessed ? (
                 <motion.div
                   initial={{ opacity: 0, scale: 0.85, y: -6 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -702,9 +871,9 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-300"></span>
                   </span>
                   <span className="tracking-wide uppercase text-[11px] font-extrabold">Speak Now</span>
-                  <span className="text-[10px] text-emerald-200/70 font-normal">Ready for command</span>
+                  <span className="text-[10px] text-emerald-200/70 font-normal">Auto-pauses after 3s silence</span>
                 </motion.div>
-              )}
+              ) : null}
             </AnimatePresence>
 
             {/* Outer Pulsing Wave Rings */}
@@ -712,6 +881,8 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
               className={`absolute rounded-full transition-all duration-300 pointer-events-none ${
                 isCommandProcessed
                   ? 'bg-emerald-500/25 animate-pulse'
+                  : isVadTimedOut
+                  ? 'bg-amber-500/10'
                   : status === 'speaking'
                   ? 'bg-purple-500/25 animate-ping'
                   : status === 'listening'
@@ -727,6 +898,8 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
               className={`absolute rounded-full transition-all duration-150 pointer-events-none ${
                 isCommandProcessed
                   ? 'bg-emerald-400/30 blur-md'
+                  : isVadTimedOut
+                  ? 'bg-amber-400/10 blur-sm'
                   : status === 'speaking'
                   ? 'bg-purple-400/30 blur-md'
                   : status === 'listening'
@@ -742,12 +915,14 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
             {/* Core Orb Button */}
             <motion.button
               type="button"
-              onClick={status === 'speaking' ? handleInterrupt : undefined}
+              onClick={isVadTimedOut ? handleResumeMic : status === 'speaking' ? handleInterrupt : undefined}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               className={`relative z-10 w-24 h-24 rounded-full flex flex-col items-center justify-center shadow-2xl transition-all duration-300 cursor-pointer ${
                 isCommandProcessed
                   ? 'bg-gradient-to-tr from-emerald-600 via-teal-600 to-green-500 shadow-emerald-500/50 ring-4 ring-emerald-400/60'
+                  : isVadTimedOut
+                  ? 'bg-gradient-to-tr from-amber-600 via-amber-700 to-amber-800 shadow-amber-500/40 ring-4 ring-amber-400/50'
                   : status === 'speaking'
                   ? 'bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-500 shadow-purple-500/40'
                   : status === 'listening'
@@ -762,6 +937,13 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                   <Check className="w-8 h-8 text-white animate-in zoom-in" strokeWidth={3} />
                   <span className="text-[10px] uppercase font-bold tracking-wider mt-1 text-white">
                     Executed
+                  </span>
+                </>
+              ) : isVadTimedOut ? (
+                <>
+                  <Play className="w-8 h-8 text-white fill-current animate-pulse ml-0.5" />
+                  <span className="text-[10px] uppercase font-bold tracking-wider mt-1 text-amber-200">
+                    Resume Mic
                   </span>
                 </>
               ) : status === 'speaking' ? (
@@ -798,8 +980,8 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
             {/* Enhanced Waveform Visualizer with dynamic emerald color shift & subtle success indicator */}
             <div className="mt-3 flex items-center justify-center">
               <WaveformVisualizer
-                isActive={(status === 'listening' || status === 'speaking' || isCommandProcessed) && !isMuted}
-                volume={volume}
+                isActive={(status === 'listening' || status === 'speaking' || isCommandProcessed) && !isMuted && !isVadTimedOut}
+                volume={isVadTimedOut ? 0 : volume}
                 barCount={7}
                 size="md"
                 colorTheme={isCommandProcessed ? 'emerald' : 'cyan'}
@@ -815,6 +997,20 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 inline-block" />
                   {lastProcessedMessage || 'Command processed successfully!'}
                 </p>
+              ) : isVadTimedOut ? (
+                <div className="flex flex-col items-center gap-1.5 animate-in fade-in">
+                  <p className="text-xs text-amber-300 font-medium flex items-center justify-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-amber-400" />
+                    Microphone paused after 3s of silence to improve efficiency & battery life.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleResumeMic}
+                    className="px-3.5 py-1 text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 rounded-lg border border-amber-500/40 transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  >
+                    <Mic className="w-3.5 h-3.5" /> Tap or Click to Resume Listening
+                  </button>
+                </div>
               ) : status === 'listening' ? (
                 <p className="text-xs text-cyan-300 font-medium">
                   {isMuted
@@ -877,7 +1073,10 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
           </AnimatePresence>
 
           {/* Real-Time Live Transcripts & Executed Tool Badges with Smooth Slide-Up and Fade-In Animation */}
-          <div className="space-y-3 min-h-[120px] max-h-[160px] overflow-y-auto pr-1 text-xs border-t border-white/10 pt-3">
+          <div
+            ref={transcriptContainerRef}
+            className="space-y-3 min-h-[120px] max-h-[160px] overflow-y-auto pr-1 text-xs border-t border-white/10 pt-3 scroll-smooth"
+          >
             {/* Executed Tools Badges */}
             {executedTools.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
@@ -974,6 +1173,9 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                 <p>{modelTranscript}</p>
               </motion.div>
             )}
+
+            {/* Bottom scroll anchor */}
+            <div ref={transcriptEndRef} className="h-0 w-full shrink-0" aria-hidden="true" />
           </div>
 
           {/* Sample Command Quick Trigger Chips */}
@@ -989,6 +1191,11 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                   key={idx}
                   type="button"
                   onClick={() => {
+                    if (isVadTimedOutRef.current) {
+                      setIsVadTimedOut(false);
+                      isVadTimedOutRef.current = false;
+                    }
+                    lastSpeechTimestampRef.current = Date.now();
                     setUserTranscript(cmd);
                     setInterimTranscript('');
                     latestTranscriptRef.current = cmd;
@@ -1027,13 +1234,29 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
               type="button"
               onClick={handleToggleMute}
               className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer ${
-                isMuted
+                isVadTimedOut
+                  ? 'bg-amber-500/20 text-amber-200 border border-amber-500/50 hover:bg-amber-500/30 shadow-sm'
+                  : isMuted
                   ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30'
                   : 'bg-white/10 text-gray-200 hover:bg-white/15'
               }`}
             >
-              {isMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-              <span>{isMuted ? 'Unmute Mic' : 'Mute Mic'}</span>
+              {isVadTimedOut ? (
+                <>
+                  <Play className="w-4 h-4 fill-current text-amber-300" />
+                  <span>Resume Mic</span>
+                </>
+              ) : isMuted ? (
+                <>
+                  <MicOff className="w-4 h-4" />
+                  <span>Unmute Mic</span>
+                </>
+              ) : (
+                <>
+                  <Mic className="w-4 h-4" />
+                  <span>Mute Mic</span>
+                </>
+              )}
             </button>
 
             {status === 'speaking' && (
