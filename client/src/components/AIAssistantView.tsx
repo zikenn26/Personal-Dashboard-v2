@@ -1,12 +1,17 @@
 import React from 'react';
+import { Zap } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
 import { AISecretaryWidget } from './AISecretaryWidget';
 
 interface AIAssistantViewProps {
   onNavigate: (view: any) => void;
+  onOpenCommandMappings?: () => void;
 }
 
-export const AIAssistantView: React.FC<AIAssistantViewProps> = ({ onNavigate }) => {
+export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
+  onNavigate,
+  onOpenCommandMappings,
+}) => {
   return (
     <div className="space-y-5 max-w-4xl mx-auto pb-6">
       {/* Top Heading with Official Zikenn Brand Logo */}
@@ -24,11 +29,26 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({ onNavigate }) 
             </h1>
           </div>
         </div>
+
+        {onOpenCommandMappings && (
+          <button
+            type="button"
+            onClick={onOpenCommandMappings}
+            className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-200 text-xs font-semibold flex items-center gap-1.5 transition-colors border border-amber-200/60 dark:border-amber-800/40 cursor-pointer shadow-2xs"
+          >
+            <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500/20" />
+            <span>Voice Command Mappings</span>
+          </button>
+        )}
       </div>
 
       {/* Neat, uncluttered main chat console */}
       <div className="w-full">
-        <AISecretaryWidget isExpandedView={true} onNavigate={onNavigate} />
+        <AISecretaryWidget
+          isExpandedView={true}
+          onNavigate={onNavigate}
+          onOpenCommandMappings={onOpenCommandMappings}
+        />
       </div>
     </div>
   );

@@ -21,6 +21,8 @@ import {
   Sparkle,
   Sparkles,
   ExternalLink,
+  Zap,
+  Sliders,
 } from 'lucide-react';
 import { AppSettings, AuthUser, DeviceSession } from '../types';
 import { Sound } from '../utils/audio';
@@ -47,6 +49,7 @@ interface SettingsModalProps {
   onOpenAvatarPicker?: () => void;
   onSignOut?: () => void;
   onOpenChangePassword?: () => void;
+  onOpenCommandMappings?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -64,6 +67,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onOpenAvatarPicker,
   onSignOut,
   onOpenChangePassword,
+  onOpenCommandMappings,
 }) => {
   // Master PIN state
   const [newPin, setNewPin] = useState(settings.masterPin);
@@ -637,6 +641,47 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </p>
               </div>
             </form>
+          </div>
+
+          {/* SECTION: VOICE TRIGGERS & COMMAND MAPPING */}
+          <div className="space-y-3 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500/20" />
+                <span>Voice Command Triggers &amp; Mapping</span>
+              </span>
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800/40">
+                {Storage.getCommandMappings().filter((m) => m.enabled).length} Active Triggers
+              </span>
+            </div>
+
+            <p className="text-xs text-[#6B7280] dark:text-[#9CA3AF]">
+              Define custom voice triggers (e.g., <code className="font-mono text-[11px] bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">"Log breakfast"</code>) that directly invoke functions like <code className="text-emerald-600 dark:text-emerald-400 font-mono text-[11px]">handleAddExpense</code> or <code className="text-indigo-600 dark:text-indigo-400 font-mono text-[11px]">handleAddTodo</code>.
+            </p>
+
+            <div className="p-3.5 rounded-xl border border-[#E5E7EB] dark:border-[#1F2937] bg-[#F9FAFB] dark:bg-[#1F2937]/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-1">
+                <div className="text-xs font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
+                  <Sliders className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>Manage Custom Voice Triggers</span>
+                </div>
+                <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                  Create, edit, test, and toggle voice triggers with custom amounts, categories, and actions.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  if (onOpenCommandMappings) onOpenCommandMappings();
+                }}
+                className="px-3.5 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0 justify-center"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>Configure Triggers</span>
+              </button>
+            </div>
           </div>
 
           {/* SECTION 5: BACKUP & DATA EXPORT */}

@@ -269,6 +269,44 @@ export async function handleGeminiTts(req: Request, res: Response) {
   }
 }
 
+// 3b. Audio Transcription API (gemini-3.5-transcribe)
+export async function handleGeminiTranscribe(req: Request, res: Response) {
+  try {
+    if (!isGeminiKeyConfigured()) {
+      return res.status(503).json({ error: "GEMINI_API_KEY is not configured." });
+    }
+
+    const { audio, mimeType = "audio/webm" } = req.body;
+    if (!audio || typeof audio !== "string") {
+      return res.status(400).json({ error: "Missing 'audio' (base64 string) in request body." });
+    }
+
+    const ai = getGeminiClient();
+    const audioPart = {
+      inlineData: {
+        mimeType: mimeType || "audio/webm",
+        data: audio,
+      },
+    };
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-transcribe",
+      contents: {
+        parts: [
+          audioPart,
+          { text: "Transcribe this spoken audio exactly. Return only the transcription text without commentary." },
+        ],
+      },
+    });
+
+    const transcript = (response.text || "").trim();
+    res.json({ transcript });
+  } catch (err: any) {
+    console.error("Gemini Transcribe Error:", err);
+    res.status(500).json({ error: err?.message || "Audio transcription failed." });
+  }
+}
+
 // 4. Gemini Live API WebSocket Server (gemini-3.8-live)
 export function setupGeminiLiveWebSocket(server: HttpServer) {
   const wss = new WebSocketServer({ noServer: true });
@@ -438,6 +476,7 @@ export function registerGeminiRoutes(app: any) {
   app.get("/api/gemini/health", handleGeminiHealth);
   app.post("/api/gemini/chat", handleGeminiChat);
   app.post("/api/gemini/tts", handleGeminiTts);
+  app.post("/api/gemini/transcribe", handleGeminiTranscribe);
 }
 
 // Helper for Vite dev server plugin
@@ -495,6 +534,9 @@ export function geminiVitePlugin() {
           }
           if (pathname === "/api/gemini/tts") {
             return handleGeminiTts(req, enhancedRes);
+          }
+          if (pathname === "/api/gemini/transcribe") {
+            return handleGeminiTranscribe(req, enhancedRes);
           }
         }
 

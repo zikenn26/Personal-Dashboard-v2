@@ -28,6 +28,7 @@ import {
   DayOfWeek,
   DayScheduleOverride,
   QuickAlarm,
+  CommandMapping,
 } from '../types';
 import { STOCK_IMAGES } from '../assets/stockImages';
 import { decryptJson, encryptJson, isEncryptedPayload, EncryptedPayload } from './crypto';
@@ -62,7 +63,228 @@ export const STORAGE_KEYS = {
   EXCEL_IMPORT_LOGS: 'notion_os_v4_excel_import_logs',
   ALARM: 'notion_os_v4_active_alarm',
   ALARM_SNOOZE: 'notion_os_v4_alarm_snooze_interval',
+  COMMAND_MAPPINGS: 'notion_os_v4_command_mappings',
 };
+
+export const DEFAULT_COMMAND_MAPPINGS: CommandMapping[] = [
+  {
+    id: 'cmd-1',
+    triggerPhrase: 'log breakfast',
+    actionType: 'add_expense',
+    parameters: {
+      expenseName: 'Breakfast',
+      expenseAmount: 150,
+      expenseCategory: 'Dining Out',
+    },
+    matchType: 'contains',
+    enabled: true,
+    description: 'Directly calls handleAddExpense to log ₹150 for Breakfast',
+    createdAt: 1710000000000,
+    executionCount: 0,
+  },
+  {
+    id: 'cmd-2',
+    triggerPhrase: 'log lunch',
+    actionType: 'add_expense',
+    parameters: {
+      expenseName: 'Lunch',
+      expenseAmount: 250,
+      expenseCategory: 'Dining Out',
+    },
+    matchType: 'contains',
+    enabled: true,
+    description: 'Directly calls handleAddExpense to log ₹250 for Lunch',
+    createdAt: 1710000000000,
+    executionCount: 0,
+  },
+  {
+    id: 'cmd-3',
+    triggerPhrase: 'morning coffee',
+    actionType: 'add_expense',
+    parameters: {
+      expenseName: 'Coffee',
+      expenseAmount: 80,
+      expenseCategory: 'Snacks & Coffee',
+    },
+    matchType: 'contains',
+    enabled: true,
+    description: 'Directly calls handleAddExpense to log ₹80 for Coffee',
+    createdAt: 1710000000000,
+    executionCount: 0,
+  },
+  {
+    id: 'cmd-4',
+    triggerPhrase: 'buy groceries',
+    actionType: 'add_todo',
+    parameters: {
+      todoTitle: 'Buy groceries & essential supplies',
+      todoPriority: 'medium',
+      todoCategory: 'Errands',
+      todoDueDate: 'today',
+    },
+    matchType: 'contains',
+    enabled: true,
+    description: 'Directly calls handleAddTodo to add groceries errand',
+    createdAt: 1710000000000,
+    executionCount: 0,
+  },
+  {
+    id: 'cmd-5',
+    triggerPhrase: 'workout task',
+    actionType: 'add_todo',
+    parameters: {
+      todoTitle: 'Daily workout & physical stretching',
+      todoPriority: 'high',
+      todoCategory: 'Health',
+      todoDueDate: 'today',
+    },
+    matchType: 'contains',
+    enabled: true,
+    description: 'Directly calls handleAddTodo to add daily workout task',
+    createdAt: 1710000000000,
+    executionCount: 0,
+  },
+  {
+    id: 'cmd-6',
+    triggerPhrase: 'go to expenses',
+    actionType: 'navigate_view',
+    parameters: {
+      view: 'expenses',
+    },
+    matchType: 'contains',
+    enabled: true,
+    description: 'Navigates directly to the Expense Tracker view',
+    createdAt: 1710000000000,
+    executionCount: 0,
+  },
+  {
+    id: 'cmd-7',
+    triggerPhrase: 'go to tasks',
+    actionType: 'navigate_view',
+    parameters: {
+      view: 'todos',
+    },
+    matchType: 'contains',
+    enabled: true,
+    description: 'Navigates directly to the Tasks & Todo view',
+    createdAt: 1710000000000,
+    executionCount: 0,
+  },
+  {
+    id: 'cmd-8',
+    triggerPhrase: 'add task',
+    actionType: 'add_todo',
+    parameters: {
+      todoTitle: '',
+      todoPriority: 'medium',
+      todoCategory: 'General',
+      todoDueDate: 'today',
+    },
+    matchType: 'starts_with',
+    enabled: true,
+    description: 'Directly creates a task from spoken words (e.g. "add task revise geography")',
+    createdAt: 1710000000000,
+    executionCount: 0,
+  },
+  {
+    id: 'cmd-9',
+    triggerPhrase: 'create task',
+    actionType: 'add_todo',
+    parameters: {
+      todoTitle: '',
+      todoPriority: 'medium',
+      todoCategory: 'General',
+      todoDueDate: 'today',
+    },
+    matchType: 'starts_with',
+    enabled: true,
+    description: 'Creates a new task (e.g. "create task prepare presentation")',
+    createdAt: 1710000000000,
+    executionCount: 0,
+  },
+  {
+    id: 'cmd-10',
+    triggerPhrase: 'log expense',
+    actionType: 'add_expense',
+    parameters: {
+      expenseName: '',
+      expenseAmount: 100,
+      expenseCategory: 'Dining Out',
+    },
+    matchType: 'starts_with',
+    enabled: true,
+    description: 'Logs an expense with amount & item (e.g. "log expense 350 for books")',
+    createdAt: 1710000000000,
+    executionCount: 0,
+  },
+  {
+    id: 'cmd-11',
+    triggerPhrase: 'add expense',
+    actionType: 'add_expense',
+    parameters: {
+      expenseName: '',
+      expenseAmount: 100,
+      expenseCategory: 'Dining Out',
+    },
+    matchType: 'starts_with',
+    enabled: true,
+    description: 'Logs an expense (e.g. "add expense 120 coffee")',
+    createdAt: 1710000000000,
+    executionCount: 0,
+  },
+  {
+    id: 'cmd-12',
+    triggerPhrase: 'open habits',
+    actionType: 'navigate_view',
+    parameters: {
+      view: 'habits',
+    },
+    matchType: 'contains',
+    enabled: true,
+    description: 'Navigates directly to Habits Tracker',
+    createdAt: 1710000000000,
+    executionCount: 0,
+  },
+  {
+    id: 'cmd-13',
+    triggerPhrase: 'open diary',
+    actionType: 'navigate_view',
+    parameters: {
+      view: 'diary',
+    },
+    matchType: 'contains',
+    enabled: true,
+    description: 'Navigates directly to Diary & Journal',
+    createdAt: 1710000000000,
+    executionCount: 0,
+  },
+  {
+    id: 'cmd-14',
+    triggerPhrase: 'open exams',
+    actionType: 'navigate_view',
+    parameters: {
+      view: 'exams',
+    },
+    matchType: 'contains',
+    enabled: true,
+    description: 'Navigates directly to Competitive Exams Hub',
+    createdAt: 1710000000000,
+    executionCount: 0,
+  },
+  {
+    id: 'cmd-15',
+    triggerPhrase: 'open dashboard',
+    actionType: 'navigate_view',
+    parameters: {
+      view: 'dashboard',
+    },
+    matchType: 'contains',
+    enabled: true,
+    description: 'Navigates back to the main dashboard',
+    createdAt: 1710000000000,
+    executionCount: 0,
+  },
+];
 
 export const DEFAULT_HOME_GRID_ORDER: string[] = [
   'calendar',
@@ -1257,6 +1479,42 @@ export const Storage = {
     saveToStorage(STORAGE_KEYS.ALARM_SNOOZE, mins);
   },
 
+  // Command Mapping Storage
+  getCommandMappings: (): CommandMapping[] => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.COMMAND_MAPPINGS);
+      if (!raw) {
+        localStorage.setItem(STORAGE_KEYS.COMMAND_MAPPINGS, JSON.stringify(DEFAULT_COMMAND_MAPPINGS));
+        return DEFAULT_COMMAND_MAPPINGS;
+      }
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const existingIds = new Set(parsed.map((m: any) => m.id));
+        const missing = DEFAULT_COMMAND_MAPPINGS.filter((d) => !existingIds.has(d.id));
+        if (missing.length > 0) {
+          const merged = [...parsed, ...missing];
+          localStorage.setItem(STORAGE_KEYS.COMMAND_MAPPINGS, JSON.stringify(merged));
+          return merged;
+        }
+        return parsed;
+      }
+      return DEFAULT_COMMAND_MAPPINGS;
+    } catch {
+      return DEFAULT_COMMAND_MAPPINGS;
+    }
+  },
+  setCommandMappings: (mappings: CommandMapping[]) => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.COMMAND_MAPPINGS, JSON.stringify(mappings));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('command-mappings-updated', { detail: { mappings } }));
+        window.dispatchEvent(new CustomEvent('dashboard-data-updated', { detail: { module: 'command_mappings' } }));
+      }
+    } catch (e) {
+      console.error('Failed to persist command mappings:', e);
+    }
+  },
+
   getAllDataPayload: () => {
     return {
       version: '4.0.0',
@@ -1287,6 +1545,7 @@ export const Storage = {
       schedule: Storage.getSchedule(),
       activeAlarm: Storage.getActiveAlarm(),
       alarmSnoozeInterval: Storage.getAlarmSnoozeInterval(),
+      commandMappings: Storage.getCommandMappings(),
     };
   },
 
@@ -1297,7 +1556,8 @@ export const Storage = {
         'profile', 'todos', 'habits', 'goals', 'vaultEncrypted', 'vault',
         'expenses', 'excelImportLogs', 'journal', 'media', 'achievements', 'doodles',
         'timeline', 'projects', 'skills', 'settings', 'sections',
-        'photos', 'resume', 'quotes', 'exams', 'schedule', 'version', 'activeAlarm', 'alarmSnoozeInterval'
+        'photos', 'resume', 'quotes', 'exams', 'schedule', 'version', 'activeAlarm', 'alarmSnoozeInterval',
+        'commandMappings'
       ];
       const hasKnownKey = knownKeys.some((k) => k in data && data[k] !== undefined);
       if (!hasKnownKey) return false;
@@ -1354,6 +1614,9 @@ export const Storage = {
       if ('alarmSnoozeInterval' in data && typeof data.alarmSnoozeInterval === 'number') {
         Storage.setAlarmSnoozeInterval(data.alarmSnoozeInterval);
       }
+      if (Array.isArray(data.commandMappings)) {
+        Storage.setCommandMappings(data.commandMappings);
+      }
       return true;
     } catch (err) {
       console.error('Failed to import payload:', err);
@@ -1401,5 +1664,6 @@ export const Storage = {
     Storage.setQuotes(INITIAL_QUOTES);
     Storage.setExams(INITIAL_USER_EXAMS);
     Storage.setSchedule(INITIAL_SCHEDULE);
+    Storage.setCommandMappings(DEFAULT_COMMAND_MAPPINGS);
   },
 };

@@ -128,17 +128,15 @@ export class GeminiLiveVoiceSession {
       };
 
       this.ws.onerror = (err) => {
-        console.error('[Gemini Live Client] WebSocket error:', err);
-        this.callbacks.onError?.('Failed to connect to Live Voice service.');
-        this.setStatus('error');
+        console.warn('[Gemini Live Client] WebSocket bridge warning:', err);
+        // Do not crash the entire voice session if local speech recognition is active
       };
 
       this.ws.onclose = () => {
         console.log('[Gemini Live Client] WebSocket connection closed');
-        if (this.status !== 'error') {
-          this.setStatus('idle');
+        if (this.status === 'connecting') {
+          this.setStatus('listening');
         }
-        this.cleanup();
       };
     } catch (err: any) {
       console.error('[Gemini Live Client] Start error:', err);
@@ -146,6 +144,18 @@ export class GeminiLiveVoiceSession {
       this.setStatus('error');
       this.cleanup();
     }
+  }
+
+  public sendTextMessage(text: string): boolean {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      try {
+        this.ws.send(JSON.stringify({ text }));
+        return true;
+      } catch (e) {
+        console.warn('[Gemini Live Client] Failed to send text:', e);
+      }
+    }
+    return false;
   }
 
   private startMicProcessing() {

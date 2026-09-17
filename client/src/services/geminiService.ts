@@ -300,3 +300,24 @@ export function stopGeminiSpeech() {
     window.speechSynthesis.cancel();
   }
 }
+
+export async function transcribeAudioWithGemini(
+  base64Audio: string,
+  mimeType: string = 'audio/webm'
+): Promise<string> {
+  try {
+    const res = await fetch('/api/gemini/transcribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audio: base64Audio, mimeType }),
+    });
+    if (!res.ok) {
+      throw new Error(`Transcribe returned status ${res.status}`);
+    }
+    const data = await res.json();
+    return data.transcript || '';
+  } catch (e) {
+    console.warn('Gemini Transcribe error:', e);
+    return '';
+  }
+}

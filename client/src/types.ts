@@ -660,3 +660,56 @@ export interface QuickAlarm {
   ringing?: boolean;
 }
 
+// ----------------------------------------------------
+// Custom Voice Command Mapping System
+// ----------------------------------------------------
+export type CommandActionType =
+  | 'add_expense'
+  | 'add_todo'
+  | 'add_habit'
+  | 'toggle_habit'
+  | 'navigate_view'
+  | 'add_journal'
+  | 'add_quote';
+
+export interface CommandMappingParams {
+  // For 'add_expense' (maps to handleAddExpense):
+  expenseName?: string;
+  expenseAmount?: number;
+  expenseCategory?: string;
+  // For 'add_todo' (maps to handleAddTodo):
+  todoTitle?: string;
+  todoPriority?: Priority;
+  todoCategory?: string;
+  todoDueDate?: string;
+  // For 'add_habit' (maps to handleAddHabit):
+  habitTitle?: string;
+  habitCategory?: string;
+  // For 'toggle_habit' (maps to handleToggleHabit):
+  habitId?: string;
+  // For 'navigate_view' (maps to handleNavigate):
+  view?: string;
+  // For 'add_journal' (maps to handleAddJournalEntry):
+  journalTitle?: string;
+  journalContent?: string;
+  // For 'add_quote' (maps to handleAddQuote):
+  quoteText?: string;
+  quoteAuthor?: string;
+  quoteCategory?: string;
+}
+
+export type CommandMatchType = 'exact' | 'contains' | 'starts_with';
+
+export interface CommandMapping {
+  id: string;
+  triggerPhrase: string; // e.g. "log breakfast", "bought coffee", "buy groceries"
+  actionType: CommandActionType;
+  parameters: CommandMappingParams;
+  matchType?: CommandMatchType;
+  enabled: boolean;
+  description?: string;
+  executionCount?: number;
+  lastExecutedAt?: number;
+  createdAt: number;
+}
+

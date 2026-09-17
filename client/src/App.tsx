@@ -51,6 +51,8 @@ import { AIAssistantView } from './components/AIAssistantView';
 import { AISecretaryWidget } from './components/AISecretaryWidget';
 import { GeminiLiveVoiceModal } from './components/GeminiLiveVoiceModal';
 import { WaveformVisualizer } from './components/WaveformVisualizer';
+import { CommandMappingModal } from './components/CommandMappingModal';
+import { registerAppHandlers } from './services/commandMappingService';
 import { GoalsView } from './components/GoalsView';
 import { QuotesManagerView } from './components/QuotesManagerView';
 import { ExamsSection } from './components/ExamsSection';
@@ -230,6 +232,7 @@ export default function App() {
   const [isGlobalVoiceActive, setIsGlobalVoiceActive] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isCommandMappingModalOpen, setIsCommandMappingModalOpen] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [isGlobalAvatarPickerOpen, setIsGlobalAvatarPickerOpen] = useState(false);
@@ -1678,6 +1681,39 @@ export default function App() {
     }
   };
 
+  // Register unified voice command mapping handlers to real React state functions
+  useEffect(() => {
+    registerAppHandlers({
+      onAddExpense: handleAddExpense,
+      onAddTodo: handleAddTodo,
+      onAddHabit: handleAddHabit,
+      onToggleHabit: (habitIdOrTitle: string) => {
+        const target = habits.find(
+          (h) => h.id === habitIdOrTitle || h.title.toLowerCase().includes(habitIdOrTitle.toLowerCase())
+        );
+        if (target) {
+          const todayIndex = (new Date().getDay() + 6) % 7;
+          handleToggleHabitDay(target.id, todayIndex);
+        }
+      },
+      onNavigate: handleNavigate,
+      onAddJournal: (title, content, mood, tags) => {
+        handleAddJournalEntry(title, content, mood || '⚡', tags || ['Voice']);
+      },
+      onShowToast: (msg) => {
+        console.log('[Voice Command Executed]', msg);
+      },
+    });
+  }, [
+    handleAddExpense,
+    handleAddTodo,
+    handleAddHabit,
+    habits,
+    handleToggleHabitDay,
+    handleNavigate,
+    handleAddJournalEntry,
+  ]);
+
   interface NavItem {
     id: MainNavView;
     label: string;
@@ -2647,7 +2683,10 @@ export default function App() {
 
               {/* VIEW: Personalized Zikenn AI */}
               {activeView === 'assistant' && (
-                <AIAssistantView onNavigate={handleNavigate} />
+                <AIAssistantView
+                  onNavigate={handleNavigate}
+                  onOpenCommandMappings={() => setIsCommandMappingModalOpen(true)}
+                />
               )}
 
               {/* VIEW 1: Workfolio with Resume Upload & Interactive Bio */}
@@ -2884,6 +2923,7 @@ export default function App() {
         onOpenAvatarPicker={() => setIsGlobalAvatarPickerOpen(true)}
         onSignOut={handleSignOut}
         onOpenChangePassword={() => setIsChangePasswordOpen(true)}
+        onOpenCommandMappings={() => setIsCommandMappingModalOpen(true)}
       />
 
       {/* Change Password Modal */}
@@ -2932,6 +2972,7 @@ export default function App() {
               setIsZikennPopupOpen(false);
               handleNavigate(view, tabOrFilter);
             }}
+            onOpenCommandMappings={() => setIsCommandMappingModalOpen(true)}
           />
         </aside>
       )}
@@ -3010,6 +3051,14 @@ export default function App() {
         onClose={() => setIsGlobalVoiceModalOpen(false)}
         onNavigate={handleNavigate}
         onListeningChange={(listening) => setIsGlobalVoiceActive(listening)}
+        onOpenCommandMappings={() => setIsCommandMappingModalOpen(true)}
+      />
+
+      {/* Voice Command Mapping & Custom Triggers Modal */}
+      <CommandMappingModal
+        isOpen={isCommandMappingModalOpen}
+        onClose={() => setIsCommandMappingModalOpen(false)}
+        onNavigate={handleNavigate}
       />
 
       {/* Floating Toast Notification with Undo for Deleted Expense */}

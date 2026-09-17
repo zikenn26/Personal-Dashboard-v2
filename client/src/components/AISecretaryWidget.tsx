@@ -44,6 +44,10 @@ import {
   checkGeminiHealth,
   GeminiChatMessage,
 } from '../services/geminiService';
+import {
+  matchCommandTrigger,
+  executeCommandMapping,
+} from '../services/commandMappingService';
 import { Storage } from '../utils/storage';
 import { Sound } from '../utils/audio';
 import { BrandLogo } from './BrandLogo';
@@ -57,6 +61,7 @@ interface AISecretaryWidgetProps {
   isExpandedView?: boolean;
   isPopup?: boolean;
   onClosePopup?: () => void;
+  onOpenCommandMappings?: () => void;
 }
 
 const STORAGE_KEY = 'ai_secretary_chat_history_v2';
@@ -78,6 +83,7 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
   isExpandedView = false,
   isPopup = false,
   onClosePopup,
+  onOpenCommandMappings,
 }) => {
   // Engine Provider: 'gemini' (Default, with voice assist & commands) vs 'groq'
   const [provider, setProvider] = useState<'gemini' | 'groq'>(() => {
@@ -151,6 +157,8 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
+  const latestTranscriptRef = useRef<string>('');
+
   // Handle Voice Command Dictation (Speech Recognition)
   const handleToggleVoiceDictation = () => {
     const SpeechRecognition =
@@ -170,6 +178,7 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
     }
 
     try {
+      latestTranscriptRef.current = '';
       const recognition = new SpeechRecognition();
       recognition.continuous = false;
       recognition.interimResults = true;
@@ -184,6 +193,7 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
         const transcript = Array.from(event.results)
           .map((result: any) => result[0].transcript)
           .join('');
+        latestTranscriptRef.current = transcript;
         setInputPrompt(transcript);
         // Play subtle confirmation sound that speech was successfully registered
         Sound.voiceRegistered(true);
@@ -194,8 +204,34 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
         setIsListening(false);
       };
 
-      recognition.onend = () => {
+      recognition.onend = async () => {
         setIsListening(false);
+        const spoken = latestTranscriptRef.current?.trim();
+        if (spoken) {
+          // Check if custom voice trigger matches
+          const commandMatch = matchCommandTrigger(spoken);
+          if (commandMatch) {
+            Sound.voiceProcessing(true);
+            const execResult = await executeCommandMapping(
+              commandMatch.mapping,
+              commandMatch.extractedParams
+            );
+            const assistantMessage: ChatMessage = {
+              id: 'cmd-res-' + Date.now(),
+              role: 'assistant',
+              content: `🎯 **Voice Command Executed**: "${commandMatch.mapping.triggerPhrase}"\n\n• ${execResult.message}`,
+              actionChips: execResult.actionChip ? [execResult.actionChip] : undefined,
+              timestamp: Date.now(),
+            };
+            setMessages((prev) => [...prev, assistantMessage]);
+            setInputPrompt('');
+            Sound.success(true);
+            speakTextWithGemini(`Done! ${execResult.message}`, 'Zephyr');
+          } else {
+            // Auto-send query to Zikenn AI
+            handleSendMessage(spoken);
+          }
+        }
       };
 
       recognitionRef.current = recognition;
@@ -246,6 +282,25 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
     setIsLoading(true);
 
     try {
+      // 1. Intercept configured custom voice triggers & command mappings first
+      const commandMatch = matchCommandTrigger(prompt);
+      if (commandMatch) {
+        const execResult = await executeCommandMapping(
+          commandMatch.mapping,
+          commandMatch.extractedParams
+        );
+        const assistantMessage: ChatMessage = {
+          id: 'cmd-res-' + Date.now(),
+          role: 'assistant',
+          content: `🎯 **Custom Voice Trigger Activated**: "${commandMatch.mapping.triggerPhrase}"\n\nDirectly executed \`${commandMatch.mapping.actionType}\` with your configured parameters:\n• ${execResult.message}`,
+          actionChips: execResult.actionChip ? [execResult.actionChip] : undefined,
+          timestamp: Date.now(),
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+        setIsLoading(false);
+        return;
+      }
+
       if (provider === 'gemini') {
         const geminiHistory: GeminiChatMessage[] = messages.map((m) => ({
           id: m.id,
@@ -361,13 +416,6 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
             } ${className}`
       }
     >
-      {/* Live Voice Modal */}
-      <GeminiLiveVoiceModal
-        isOpen={isLiveVoiceModalOpen}
-        onClose={() => setIsLiveVoiceModalOpen(false)}
-        onNavigate={onNavigate}
-      />
-
       {/* Widget Header */}
       <div className="p-3 sm:px-3.5 pb-2.5 border-b border-[#EDECE9] dark:border-[#334155]/60 flex items-center justify-between gap-2 shrink-0 bg-[#FAF9F6] dark:bg-[#23324C]">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -413,6 +461,18 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
               {isLiveListening ? 'Listening...' : 'Live Voice'}
             </span>
           </button>
+
+          {/* Custom Voice Triggers / Command Mappings */}
+          {onOpenCommandMappings && (
+            <button
+              type="button"
+              onClick={onOpenCommandMappings}
+              title="Voice Command Triggers & Mappings"
+              className="p-1.5 rounded-lg hover:bg-amber-100/70 dark:hover:bg-amber-950/50 transition-colors cursor-pointer text-gray-500 hover:text-amber-600 dark:hover:text-amber-400"
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-500" />
+            </button>
+          )}
 
           {/* Settings & Models Toggle */}
           <button
@@ -658,6 +718,25 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
               </div>
             </form>
           )}
+
+          {/* Quick access to Voice Command Mapping */}
+          {onOpenCommandMappings && (
+            <div className="pt-2 border-t border-indigo-100 dark:border-indigo-900/40">
+              <button
+                type="button"
+                onClick={onOpenCommandMappings}
+                className="w-full py-1.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 text-amber-800 dark:text-amber-200 text-xs font-semibold flex items-center justify-between transition-colors border border-amber-200/60 dark:border-amber-800/40 cursor-pointer shadow-2xs"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500/20" />
+                  <span>Custom Voice Triggers &amp; Command Mapping</span>
+                </span>
+                <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                  Configure →
+                </span>
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -893,6 +972,7 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
         onClose={() => setIsLiveVoiceModalOpen(false)}
         onNavigate={onNavigate}
         onListeningChange={(listening) => setIsLiveListening(listening)}
+        onOpenCommandMappings={onOpenCommandMappings}
       />
     </div>
   );
