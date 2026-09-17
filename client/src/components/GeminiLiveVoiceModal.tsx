@@ -2,22 +2,11 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Mic,
-  MicOff,
   X,
-  Sparkles,
-  Volume2,
-  VolumeX,
   CheckCircle2,
   AlertCircle,
-  Radio,
-  Zap,
-  Send,
-  RotateCcw,
-  Check,
   Loader2,
-  Activity,
-  Play,
-  Clock,
+  Volume2,
 } from 'lucide-react';
 import {
   matchCommandTrigger,
@@ -31,7 +20,6 @@ import {
 } from '../services/geminiService';
 import { encodePcmToWav, downsampleTo16k, blobToBase64 } from '../utils/audioUtils';
 import { Sound } from '../utils/audio';
-import { WaveformVisualizer } from './WaveformVisualizer';
 
 interface GeminiLiveVoiceModalProps {
   isOpen: boolean;
@@ -42,168 +30,67 @@ interface GeminiLiveVoiceModalProps {
   onCommandExecuted?: (commandText: string) => void;
 }
 
-type LiveVoiceStatus = 'listening' | 'speaking' | 'processing' | 'error';
-
-const SAMPLE_COMMANDS = [
-  'log breakfast 150',
-  'add task review notes',
-  'open expenses',
-  'open habits',
-  'morning coffee 80',
-  'open dashboard',
-];
+interface CommandAcknowledgment {
+  commandText: string;
+  success: boolean;
+  message: string;
+  timestamp: number;
+}
 
 export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
   isOpen,
   onClose,
   onNavigate,
   onListeningChange,
-  onOpenCommandMappings,
   onCommandExecuted,
 }) => {
-  const [status, setStatus] = useState<LiveVoiceStatus>('listening');
-  const [volume, setVolume] = useState<number>(0);
-  const [userTranscript, setUserTranscript] = useState<string>('');
-  const [interimTranscript, setInterimTranscript] = useState<string>('');
-  const [modelTranscript, setModelTranscript] = useState<string>('');
-  const [executedTools, setExecutedTools] = useState<Array<{ name: string; chip: string; id: string }>>([]);
-  const [isMuted, setIsMuted] = useState<boolean>(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [manualInput, setManualInput] = useState<string>('');
-
-  // Microphone active state for "Speak Now" indicator
+  // Mic state: whether active listening is on or off
   const [isMicActive, setIsMicActive] = useState<boolean>(false);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
 
-  // Processing toast state when sending command to LLM
-  const [isSendingToLlm, setIsSendingToLlm] = useState<boolean>(false);
-  const [processingPrompt, setProcessingPrompt] = useState<string>('');
+  // Live transcript state
+  const [liveTranscript, setLiveTranscript] = useState<string>('');
+  const [interimText, setInterimText] = useState<string>('');
 
-  // Subtle visual indicator state when voice input is successfully processed
-  const [isCommandProcessed, setIsCommandProcessed] = useState<boolean>(false);
-  const [lastProcessedMessage, setLastProcessedMessage] = useState<string>('');
+  // Command execution acknowledgment
+  const [acknowledgment, setAcknowledgment] = useState<CommandAcknowledgment | null>(null);
 
-  // Voice Activity Detection (VAD) timeout state (3 seconds without speech)
-  const [isVadTimedOut, setIsVadTimedOut] = useState<boolean>(false);
-  const isVadTimedOutRef = useRef<boolean>(false);
-  isVadTimedOutRef.current = isVadTimedOut;
+  // Error message if mic permission is denied
+  const [micError, setMicError] = useState<string | null>(null);
+  const [fallbackCommandText, setFallbackCommandText] = useState<string>('');
 
-  const isCommandProcessedRef = useRef<boolean>(false);
-  isCommandProcessedRef.current = isCommandProcessed;
+  // Refs for tracking active audio and speech instances
+  const isMicActiveRef = useRef<boolean>(false);
+  isMicActiveRef.current = isMicActive;
 
-  const isSendingToLlmRef = useRef<boolean>(false);
-  isSendingToLlmRef.current = isSendingToLlm;
+  const recognitionRef = useRef<any>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const pcmProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const pcmChunksRef = useRef<Float32Array[]>([]);
+  const latestTranscriptRef = useRef<string>('');
+  const isExecutingRef = useRef<boolean>(false);
 
-  // Stable refs for callbacks to prevent re-render teardown cycles
   const onListeningChangeRef = useRef(onListeningChange);
   onListeningChangeRef.current = onListeningChange;
 
   const onNavigateRef = useRef(onNavigate);
   onNavigateRef.current = onNavigate;
 
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-
   const onCommandExecutedRef = useRef(onCommandExecuted);
   onCommandExecutedRef.current = onCommandExecuted;
 
-  // Audio & Speech references
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const animFrameRef = useRef<number | null>(null);
-  const recognitionRef = useRef<any>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const recordedBlobsRef = useRef<Blob[]>([]);
-  const pcmChunksRef = useRef<Float32Array[]>([]);
-  const pcmProcessorRef = useRef<ScriptProcessorNode | null>(null);
-
-  // Voice Activity Detection (VAD) tracker
-  const isSpeakingDetectedRef = useRef<boolean>(false);
-  const silenceTimerRef = useRef<any>(null);
-  const lastSpeechTimestampRef = useRef<number>(0);
-  const successIndicatorTimerRef = useRef<any>(null);
-  const latestTranscriptRef = useRef<string>('');
-  const isSpeakingRef = useRef<boolean>(false);
-  const isMutedRef = useRef<boolean>(false);
-  isMutedRef.current = isMuted;
-
-  // Auto-scroll refs for transcript display area
-  const transcriptContainerRef = useRef<HTMLDivElement | null>(null);
-  const transcriptEndRef = useRef<HTMLDivElement | null>(null);
-
-  // Auto-scroll to bottom whenever new text or transcript content is added
-  useEffect(() => {
-    const scrollToBottom = () => {
-      if (transcriptContainerRef.current) {
-        transcriptContainerRef.current.scrollTo({
-          top: transcriptContainerRef.current.scrollHeight,
-          behavior: 'smooth',
-        });
-      }
-      if (transcriptEndRef.current) {
-        transcriptEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
-      }
-    };
-
-    scrollToBottom();
-    // Re-check after a brief tick to account for any motion animation height changes
-    const timer = setTimeout(scrollToBottom, 60);
-    return () => clearTimeout(timer);
-  }, [userTranscript, interimTranscript, modelTranscript, executedTools]);
-
-  // Sync listening state to parent component
-  useEffect(() => {
-    if (onListeningChangeRef.current) {
-      const active = isOpen && (status === 'listening' || isCommandProcessed) && !isMuted;
-      onListeningChangeRef.current(active);
-    }
-  }, [isOpen, status, isMuted, isCommandProcessed]);
-
-  // Mark command as processed with visual indicator transition
-  const triggerCommandProcessedIndicator = useCallback((message: string) => {
-    setIsCommandProcessed(true);
-    setLastProcessedMessage(message);
-    setIsSendingToLlm(false);
-    if (successIndicatorTimerRef.current) {
-      clearTimeout(successIndicatorTimerRef.current);
-    }
-    successIndicatorTimerRef.current = setTimeout(() => {
-      setIsCommandProcessed(false);
-    }, 3600);
-  }, []);
-
-  // Stop all audio & recognition cleanly
-  const stopAllAudio = useCallback(() => {
-    stopGeminiSpeech();
-    isSpeakingRef.current = false;
-    setIsMicActive(false);
-    setIsSendingToLlm(false);
-
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = null;
-    }
-
+  // Cleanup helper to stop all audio streams & recognition
+  const stopAudioTracks = useCallback(() => {
     if (recognitionRef.current) {
       try {
         recognitionRef.current.onresult = null;
-        recognitionRef.current.onend = null;
         recognitionRef.current.onerror = null;
+        recognitionRef.current.onend = null;
         recognitionRef.current.stop();
       } catch {}
       recognitionRef.current = null;
-    }
-
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      try {
-        mediaRecorderRef.current.stop();
-      } catch {}
-      mediaRecorderRef.current = null;
-    }
-
-    if (animFrameRef.current) {
-      cancelAnimationFrame(animFrameRef.current);
-      animFrameRef.current = null;
     }
 
     if (pcmProcessorRef.current) {
@@ -216,7 +103,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     pcmChunksRef.current = [];
 
     if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
       mediaStreamRef.current = null;
     }
 
@@ -226,580 +113,345 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     }
   }, []);
 
-  // Execute a command trigger
-  const handleExecuteTrigger = useCallback(
+  // Execute command handler
+  const executeCommand = useCallback(
     async (rawText: string) => {
       const trimmed = rawText.trim();
-      if (!trimmed) return false;
+      if (!trimmed) {
+        setAcknowledgment({
+          commandText: '(No speech detected)',
+          success: false,
+          message: 'No speech was detected. Tap the mic and speak your command.',
+          timestamp: Date.now(),
+        });
+        setIsProcessing(false);
+        return;
+      }
 
+      setIsProcessing(true);
+      Sound.voiceProcessing(true);
+
+      // Check if command matches registered triggers
       const match = matchCommandTrigger(trimmed);
-      if (!match) return false;
-
-      try {
-        Sound.voiceProcessing(true);
-        setStatus('processing');
-        setIsSendingToLlm(true);
-        setProcessingPrompt(trimmed);
-
-        const res = await executeCommandMapping(match.mapping, match.extractedParams);
-        if (res.success) {
+      if (match) {
+        try {
+          const res = await executeCommandMapping(match.mapping, match.extractedParams);
           Sound.success(true);
-          const chipText = res.actionChip || `✓ Executed: "${match.mapping.triggerPhrase}"`;
-          setExecutedTools((prev) => [
-            ...prev,
-            {
-              name: match.mapping.actionType,
-              chip: chipText,
-              id: 'cmd-live-' + Date.now(),
-            },
-          ]);
 
-          // Visual indicator on WaveformVisualizer & modal
-          triggerCommandProcessedIndicator(res.message);
+          const resultAck: CommandAcknowledgment = {
+            commandText: trimmed,
+            success: res.success,
+            message: res.message || (res.success ? 'Command executed successfully.' : 'Execution failed.'),
+            timestamp: Date.now(),
+          };
+
+          setAcknowledgment(resultAck);
           onCommandExecutedRef.current?.(trimmed);
-
-          setModelTranscript(res.message);
-          setStatus('speaking');
-          isSpeakingRef.current = true;
-
-          // Vocal confirmation
-          await speakTextWithGemini(res.message, 'Zephyr', () => {
-            isSpeakingRef.current = false;
-            setStatus('listening');
-          });
 
           if (match.mapping.actionType === 'navigate_view' && onNavigateRef.current && res.details?.view) {
             onNavigateRef.current(res.details.view);
           }
-          return true;
+
+          setIsSpeaking(true);
+          await speakTextWithGemini(res.message, 'Zephyr', () => {
+            setIsSpeaking(false);
+          });
+        } catch (err: any) {
+          Sound.error(true);
+          setAcknowledgment({
+            commandText: trimmed,
+            success: false,
+            message: err?.message || 'Error executing command.',
+            timestamp: Date.now(),
+          });
         }
-      } catch (err) {
-        console.error('Failed to execute command trigger:', err);
+        setIsProcessing(false);
+        return;
       }
-      setIsSendingToLlm(false);
-      isSpeakingRef.current = false;
-      setStatus('listening');
-      return false;
-    },
-    [triggerCommandProcessedIndicator]
-  );
 
-  // Send query to AI Secretary / Gemini if not a custom trigger
-  const handleAiFallback = useCallback(
-    async (text: string) => {
-      const prompt = text.trim();
-      if (!prompt) return;
-
+      // Fallback: AI Secretary
       try {
-        setStatus('processing');
-        setIsSendingToLlm(true);
-        setProcessingPrompt(prompt);
-        Sound.voiceProcessing(true);
-
         const response = await sendGeminiMessage({
-          message: prompt,
+          message: trimmed,
           history: [],
         });
 
-        if (response.actionChips && response.actionChips.length > 0) {
-          for (const chip of response.actionChips) {
-            setExecutedTools((prev) => [
-              ...prev,
-              {
-                name: 'ai_tool',
-                chip,
-                id: 'ai-chip-' + Date.now() + Math.random(),
-              },
-            ]);
-          }
-          // Visual confirmation on WaveformVisualizer
-          triggerCommandProcessedIndicator(response.reply || 'Action completed');
-          onCommandExecutedRef.current?.(prompt);
-        } else {
-          triggerCommandProcessedIndicator('Response generated');
-        }
+        const reply = response.reply || 'Command processed.';
+        Sound.success(true);
 
-        const reply = response.reply || 'Command completed.';
-        setModelTranscript(reply);
-        setStatus('speaking');
-        isSpeakingRef.current = true;
-        setIsSendingToLlm(false);
+        const resultAck: CommandAcknowledgment = {
+          commandText: trimmed,
+          success: true,
+          message: reply,
+          timestamp: Date.now(),
+        };
 
+        setAcknowledgment(resultAck);
+        onCommandExecutedRef.current?.(trimmed);
+
+        setIsSpeaking(true);
         await speakTextWithGemini(reply, 'Zephyr', () => {
-          isSpeakingRef.current = false;
-          setStatus('listening');
+          setIsSpeaking(false);
         });
       } catch (err: any) {
-        console.warn('AI processing error:', err);
-        setIsSendingToLlm(false);
-        isSpeakingRef.current = false;
-        setStatus('listening');
+        Sound.error(true);
+        setAcknowledgment({
+          commandText: trimmed,
+          success: false,
+          message: err?.message || 'Failed to process command with AI.',
+          timestamp: Date.now(),
+        });
       }
+
+      setIsProcessing(false);
     },
-    [triggerCommandProcessedIndicator]
+    []
   );
 
-  // Transcribe recorded audio slice via Gemini (using clean 16kHz PCM WAV encoding)
-  const transcribeRecordedSlice = useCallback(async () => {
-    // If PCM frames are available, encode directly into a pristine 16-bit WAV file
-    if (pcmChunksRef.current.length > 0) {
-      const chunks = [...pcmChunksRef.current];
-      pcmChunksRef.current = [];
+  // Turn off mic and process whatever was heard
+  const turnOffAndExecute = useCallback(async () => {
+    if (isExecutingRef.current) return;
+    isExecutingRef.current = true;
 
-      let totalSamples = 0;
-      for (const c of chunks) totalSamples += c.length;
-
-      const sampleRate = audioCtxRef.current?.sampleRate || 44100;
-      // Require at least ~0.4s of audio
-      if (totalSamples < sampleRate * 0.4) return;
-
-      try {
-        setIsSendingToLlm(true);
-        setProcessingPrompt('Transcribing voice audio...');
-
-        const fullPcm = new Float32Array(totalSamples);
-        let offset = 0;
-        for (const c of chunks) {
-          fullPcm.set(c, offset);
-          offset += c.length;
-        }
-
-        // Quick energy check to skip pure silence
-        let energy = 0;
-        const step = 8;
-        for (let i = 0; i < fullPcm.length; i += step) {
-          energy += Math.abs(fullPcm[i]);
-        }
-        const avgEnergy = energy / (fullPcm.length / step);
-        if (avgEnergy < 0.005) {
-          setIsSendingToLlm(false);
-          return;
-        }
-
-        const pcm16k = downsampleTo16k(fullPcm, sampleRate);
-        const wavBlob = encodePcmToWav(pcm16k, 16000);
-        const base64 = await blobToBase64(wavBlob);
-
-        if (base64) {
-          const transcript = await transcribeAudioWithGemini(base64, 'audio/wav');
-          if (transcript && transcript.trim()) {
-            const cleanText = transcript.trim();
-            setUserTranscript(cleanText);
-            setInterimTranscript('');
-            latestTranscriptRef.current = cleanText;
-
-            // Trigger command execution
-            const matched = await handleExecuteTrigger(cleanText);
-            if (!matched) {
-              await handleAiFallback(cleanText);
-            }
-          } else {
-            setIsSendingToLlm(false);
-          }
-        } else {
-          setIsSendingToLlm(false);
-        }
-      } catch (e) {
-        console.warn('PCM audio transcription error:', e);
-        setIsSendingToLlm(false);
-      }
-      return;
-    }
-
-    // Secondary fallback if MediaRecorder recordedBlobs exist
-    if (recordedBlobsRef.current.length > 0) {
-      const blob = new Blob(recordedBlobsRef.current, { type: 'audio/webm' });
-      recordedBlobsRef.current = [];
-      if (blob.size < 2048) return;
-
-      try {
-        setIsSendingToLlm(true);
-        setProcessingPrompt('Transcribing voice audio...');
-        const base64 = await blobToBase64(blob);
-        if (base64) {
-          const transcript = await transcribeAudioWithGemini(base64, 'audio/webm');
-          if (transcript && transcript.trim()) {
-            const cleanText = transcript.trim();
-            setUserTranscript(cleanText);
-            setInterimTranscript('');
-            latestTranscriptRef.current = cleanText;
-            const matched = await handleExecuteTrigger(cleanText);
-            if (!matched) {
-              await handleAiFallback(cleanText);
-            }
-          } else {
-            setIsSendingToLlm(false);
-          }
-        } else {
-          setIsSendingToLlm(false);
-        }
-      } catch (e) {
-        console.warn('Fallback audio transcription error:', e);
-        setIsSendingToLlm(false);
-      }
-    }
-  }, [handleExecuteTrigger, handleAiFallback]);
-
-  // Restart speech recognition instance safely
-  const restartSpeechRecognition = useCallback(() => {
-    if (!isOpen || isMutedRef.current || isSpeakingRef.current) return;
-
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
-
-    try {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.onresult = null;
-          recognitionRef.current.onend = null;
-          recognitionRef.current.onerror = null;
-          recognitionRef.current.stop();
-        } catch {}
-      }
-
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = 'en-US';
-      recognition.maxAlternatives = 1;
-
-      recognition.onstart = () => {
-        if (!isSpeakingRef.current) {
-          setStatus('listening');
-        }
-        setIsMicActive(true);
-        setErrorMessage(null);
-      };
-
-      recognition.onresult = (event: any) => {
-        if (isMutedRef.current || isSpeakingRef.current) return;
-
-        let finalStr = '';
-        let interimStr = '';
-
-        for (let i = 0; i < event.results.length; ++i) {
-          const item = event.results[i];
-          if (item.isFinal) {
-            finalStr += item[0].transcript + ' ';
-          } else {
-            interimStr += item[0].transcript;
-          }
-        }
-
-        const fullText = (finalStr + interimStr).trim();
-        if (fullText) {
-          latestTranscriptRef.current = fullText;
-          setUserTranscript(fullText);
-          setInterimTranscript(interimStr.trim());
-          Sound.voiceRegistered(true);
-          lastSpeechTimestampRef.current = Date.now();
-          if (isVadTimedOutRef.current) {
-            setIsVadTimedOut(false);
-            isVadTimedOutRef.current = false;
-          }
-
-          // Clear any pending audio recorder slice since Web Speech is capturing text
-          recordedBlobsRef.current = [];
-          pcmChunksRef.current = [];
-
-          // Check for immediate custom voice triggers
-          handleExecuteTrigger(fullText).then((matched) => {
-            if (matched) {
-              if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-            } else {
-              // Debounce silence timer for general AI prompt
-              if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-              silenceTimerRef.current = setTimeout(() => {
-                if (latestTranscriptRef.current && !isSpeakingRef.current) {
-                  handleAiFallback(latestTranscriptRef.current);
-                }
-              }, 1600);
-            }
-          });
-        }
-      };
-
-      recognition.onerror = (event: any) => {
-        console.warn('Speech recognition status:', event.error);
-        if (event.error === 'not-allowed') {
-          setErrorMessage('Microphone access blocked. Please allow mic permissions.');
-          setStatus('error');
-        } else if (event.error === 'network') {
-          // If browser speech service fails, MediaRecorder fallback will automatically handle voice
-          console.info('Switching to direct Gemini audio transcription fallback.');
-        } else if (event.error === 'audio-capture') {
-          setErrorMessage('Microphone device busy or unavailable.');
-        }
-      };
-
-      recognition.onend = () => {
-        if (isOpen && !isMutedRef.current && !isSpeakingRef.current && !isVadTimedOutRef.current) {
-          setTimeout(() => {
-            if (isOpen && !isMutedRef.current && !isSpeakingRef.current && !isVadTimedOutRef.current) {
-              restartSpeechRecognition();
-            }
-          }, 300);
-        }
-      };
-
-      recognitionRef.current = recognition;
-      recognition.start();
-    } catch (e) {
-      console.warn('SpeechRecognition start skipped:', e);
-    }
-  }, [isOpen, handleExecuteTrigger, handleAiFallback]);
-
-  // Initialize Speech Recognition & Microphone Volume Monitor with Dual Engine Fallback
-  const startVoiceEngine = useCallback(() => {
-    stopAllAudio();
-
-    // 1. Microphone level monitoring and continuous MediaRecorder capture
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      navigator.mediaDevices
-        .getUserMedia({ audio: true })
-        .then((stream) => {
-          mediaStreamRef.current = stream;
-          setIsMicActive(true);
-
-          try {
-            const AudioContextClass =
-              window.AudioContext || (window as any).webkitAudioContext;
-            const audioCtx = new AudioContextClass();
-            audioCtxRef.current = audioCtx;
-
-            const source = audioCtx.createMediaStreamSource(stream);
-            const analyser = audioCtx.createAnalyser();
-            analyser.fftSize = 128;
-            source.connect(analyser);
-            analyserRef.current = analyser;
-
-            // Setup continuous PCM frame capture for pristine 16-bit WAV encoding
-            try {
-              const processor = audioCtx.createScriptProcessor(4096, 1, 1);
-              pcmProcessorRef.current = processor;
-              pcmChunksRef.current = [];
-
-              processor.onaudioprocess = (e) => {
-                if (isSpeakingRef.current || isMutedRef.current || isVadTimedOutRef.current) return;
-                const channelData = e.inputBuffer.getChannelData(0);
-                const copy = new Float32Array(channelData.length);
-                copy.set(channelData);
-                pcmChunksRef.current.push(copy);
-
-                // Keep roughly the last 6 seconds of audio
-                const maxChunks = Math.ceil((audioCtx.sampleRate * 6) / 4096);
-                if (pcmChunksRef.current.length > maxChunks) {
-                  pcmChunksRef.current.splice(0, pcmChunksRef.current.length - maxChunks);
-                }
-              };
-
-              source.connect(processor);
-              const silenceGain = audioCtx.createGain();
-              silenceGain.gain.value = 0;
-              processor.connect(silenceGain);
-              silenceGain.connect(audioCtx.destination);
-            } catch (procErr) {
-              console.warn('PCM processor init warning:', procErr);
-            }
-
-            // Start continuous MediaRecorder as secondary fallback if supported
-            if (typeof MediaRecorder !== 'undefined') {
-              try {
-                const mr = new MediaRecorder(stream);
-                recordedBlobsRef.current = [];
-                mr.ondataavailable = (e) => {
-                  if (e.data && e.data.size > 0) {
-                    recordedBlobsRef.current.push(e.data);
-                  }
-                };
-                mr.start(1000);
-                mediaRecorderRef.current = mr;
-              } catch (mrErr) {
-                console.warn('MediaRecorder init error:', mrErr);
-              }
-            }
-
-            const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-            // Volume analysis loop & Voice Activity Detection (VAD)
-            const updateVolume = () => {
-              if (!analyserRef.current) return;
-              analyserRef.current.getByteFrequencyData(dataArray);
-              let sum = 0;
-              for (let i = 0; i < dataArray.length; i++) {
-                sum += dataArray[i];
-              }
-              const avg = sum / dataArray.length;
-              const normalizedVol = Math.min(1, avg / 65);
-              setVolume(normalizedVol);
-
-              // Voice Activity Detection & Inactivity Timeout (3 seconds without speech)
-              const now = Date.now();
-              if (normalizedVol > 0.05 && !isSpeakingRef.current && !isMutedRef.current) {
-                isSpeakingDetectedRef.current = true;
-                lastSpeechTimestampRef.current = now;
-                if (isVadTimedOutRef.current) {
-                  setIsVadTimedOut(false);
-                  isVadTimedOutRef.current = false;
-                  setIsMicActive(true);
-                }
-              } else if (
-                isSpeakingDetectedRef.current &&
-                now - lastSpeechTimestampRef.current > 1200
-              ) {
-                // User spoke, and there has now been 1.2 seconds of silence!
-                isSpeakingDetectedRef.current = false;
-
-                // If Web Speech did not yield a transcript, trigger Gemini Transcribe on the recorded audio slice!
-                if (!latestTranscriptRef.current && (pcmChunksRef.current.length > 0 || recordedBlobsRef.current.length > 0)) {
-                  transcribeRecordedSlice();
-                }
-              } else if (
-                !isSpeakingDetectedRef.current &&
-                !isVadTimedOutRef.current &&
-                !isSpeakingRef.current &&
-                !isMutedRef.current &&
-                !isCommandProcessedRef.current &&
-                !isSendingToLlmRef.current &&
-                !latestTranscriptRef.current &&
-                lastSpeechTimestampRef.current > 0 &&
-                now - lastSpeechTimestampRef.current > 3000
-              ) {
-                // VAD Inactivity Timeout: Automatically pause microphone if no speech detected for > 3s
-                setIsVadTimedOut(true);
-                isVadTimedOutRef.current = true;
-                setIsMicActive(false);
-
-                if (recognitionRef.current) {
-                  try {
-                    recognitionRef.current.stop();
-                  } catch {}
-                }
-                if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-                  try {
-                    mediaRecorderRef.current.pause();
-                  } catch {}
-                }
-              }
-
-              animFrameRef.current = requestAnimationFrame(updateVolume);
-            };
-            updateVolume();
-          } catch (e) {
-            console.warn('AudioContext visualization setup skipped:', e);
-          }
-        })
-        .catch((err) => {
-          console.warn('Microphone permission error:', err);
-          setIsMicActive(false);
-          if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-            setErrorMessage('Microphone access blocked. Please allow microphone permissions in your browser URL bar.');
-          }
-        });
-    }
-
-    // 2. Start Web Speech Recognition
-    lastSpeechTimestampRef.current = Date.now();
-    restartSpeechRecognition();
-  }, [stopAllAudio, restartSpeechRecognition, transcribeRecordedSlice]);
-
-  // Resume microphone after VAD 3-second timeout
-  const handleResumeMic = useCallback(() => {
-    setIsVadTimedOut(false);
-    isVadTimedOutRef.current = false;
-    lastSpeechTimestampRef.current = Date.now();
-    setErrorMessage(null);
-    setStatus('listening');
-    setIsMicActive(true);
+    setIsMicActive(false);
+    onListeningChangeRef.current?.(false);
     Sound.voiceRegistered(true);
 
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'paused') {
-      try {
-        mediaRecorderRef.current.resume();
-      } catch {}
-    }
-    restartSpeechRecognition();
-  }, [restartSpeechRecognition]);
+    const speechText = (latestTranscriptRef.current || liveTranscript || interimText).trim();
 
-  // Primary lifecycle: triggers only when modal is opened or closed
+    // Stop audio capture first
+    stopAudioTracks();
+
+    if (speechText) {
+      setIsProcessing(true);
+      await executeCommand(speechText);
+      isExecutingRef.current = false;
+      return;
+    }
+
+    // If Web Speech did not yield text, check if we have recorded PCM frames
+    if (pcmChunksRef.current.length > 0) {
+      setIsProcessing(true);
+      try {
+        const chunks = [...pcmChunksRef.current];
+        pcmChunksRef.current = [];
+
+        let totalSamples = 0;
+        for (const c of chunks) totalSamples += c.length;
+
+        const sampleRate = audioCtxRef.current?.sampleRate || 44100;
+        if (totalSamples >= sampleRate * 0.3) {
+          const fullPcm = new Float32Array(totalSamples);
+          let offset = 0;
+          for (const c of chunks) {
+            fullPcm.set(c, offset);
+            offset += c.length;
+          }
+
+          const pcm16k = downsampleTo16k(fullPcm, sampleRate);
+          const wavBlob = encodePcmToWav(pcm16k, 16000);
+          const base64 = await blobToBase64(wavBlob);
+
+          if (base64) {
+            const transcript = await transcribeAudioWithGemini(base64, 'audio/wav');
+            if (transcript && transcript.trim()) {
+              const clean = transcript.trim();
+              setLiveTranscript(clean);
+              await executeCommand(clean);
+              isExecutingRef.current = false;
+              return;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Audio transcription error:', e);
+      }
+    }
+
+    // Nothing was spoken
+    await executeCommand('');
+    isExecutingRef.current = false;
+  }, [liveTranscript, interimText, stopAudioTracks, executeCommand]);
+
+  // Turn on mic and start recording / speech recognition
+  const turnOnMic = useCallback(async () => {
+    stopGeminiSpeech();
+    setIsSpeaking(false);
+    setMicError(null);
+    setLiveTranscript('');
+    setInterimText('');
+    latestTranscriptRef.current = '';
+    isExecutingRef.current = false;
+
+    // Check if getUserMedia is supported
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setMicError('Microphone API is not supported in this browser environment.');
+      setIsMicActive(false);
+      onListeningChangeRef.current?.(false);
+      return;
+    }
+
+    try {
+      // 1. Setup AudioContext & PCM recording
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+
+      mediaStreamRef.current = stream;
+
+      const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioCtxClass) {
+        const audioCtx = new AudioCtxClass();
+        audioCtxRef.current = audioCtx;
+        const source = audioCtx.createMediaStreamSource(stream);
+
+        const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+        pcmProcessorRef.current = processor;
+        pcmChunksRef.current = [];
+
+        processor.onaudioprocess = (e) => {
+          if (!isMicActiveRef.current) return;
+          const channelData = e.inputBuffer.getChannelData(0);
+          const copy = new Float32Array(channelData.length);
+          copy.set(channelData);
+          pcmChunksRef.current.push(copy);
+
+          // Keep up to 10 seconds of audio
+          const maxChunks = Math.ceil((audioCtx.sampleRate * 10) / 4096);
+          if (pcmChunksRef.current.length > maxChunks) {
+            pcmChunksRef.current.splice(0, pcmChunksRef.current.length - maxChunks);
+          }
+        };
+
+        source.connect(processor);
+        const silenceGain = audioCtx.createGain();
+        silenceGain.gain.value = 0;
+        processor.connect(silenceGain);
+        silenceGain.connect(audioCtx.destination);
+      }
+
+      // 2. Setup Web Speech Recognition
+      const SpeechRecognition =
+        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+      if (SpeechRecognition) {
+        const rec = new SpeechRecognition();
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.lang = 'en-US';
+
+        rec.onresult = (event: any) => {
+          let accumulated = '';
+          let interim = '';
+
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            const transcriptChunk = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              accumulated += transcriptChunk;
+            } else {
+              interim += transcriptChunk;
+            }
+          }
+
+          const fullText = (accumulated || interim || '').trim();
+          if (fullText) {
+            latestTranscriptRef.current = fullText;
+          }
+
+          if (accumulated) {
+            setLiveTranscript(accumulated);
+            setInterimText('');
+          } else if (interim) {
+            setInterimText(interim);
+          }
+        };
+
+        rec.onerror = (event: any) => {
+          if (event.error !== 'no-speech' && event.error !== 'aborted') {
+            console.warn('SpeechRecognition warning:', event.error);
+          }
+        };
+
+        rec.onend = () => {
+          if (isMicActiveRef.current) {
+            try {
+              rec.start();
+            } catch {}
+          }
+        };
+
+        rec.start();
+        recognitionRef.current = rec;
+      }
+
+      setIsMicActive(true);
+      onListeningChangeRef.current?.(true);
+      Sound.toggle(true);
+    } catch (err: any) {
+      console.warn('Microphone access not granted:', err?.name, err?.message || err);
+      const isDenied =
+        err?.name === 'NotAllowedError' ||
+        err?.name === 'PermissionDeniedError' ||
+        (err?.message && String(err.message).toLowerCase().includes('denied'));
+
+      setMicError(
+        isDenied
+          ? 'Microphone permission was denied. Tap "Grant Permission" below or check your browser address bar settings to allow microphone access.'
+          : 'Unable to start microphone: ' + (err?.message || 'Please check device permissions.')
+      );
+      setIsMicActive(false);
+      onListeningChangeRef.current?.(false);
+    }
+  }, []);
+
+  // Toggle Mic on/off
+  const handleToggleMic = useCallback(() => {
+    if (isProcessing) return;
+
+    if (isMicActive) {
+      // Turn off and execute
+      turnOffAndExecute();
+    } else {
+      // Turn on
+      turnOnMic();
+    }
+  }, [isProcessing, isMicActive, turnOffAndExecute, turnOnMic]);
+
+  // Lifecycle: open/close handling
   useEffect(() => {
     if (!isOpen) {
-      stopAllAudio();
+      stopGeminiSpeech();
+      stopAudioTracks();
+      setIsMicActive(false);
+      setIsProcessing(false);
+      setIsSpeaking(false);
+      setLiveTranscript('');
+      setInterimText('');
+      setAcknowledgment(null);
+      setMicError(null);
+      onListeningChangeRef.current?.(false);
       return;
     }
 
-    setErrorMessage(null);
-    setUserTranscript('');
-    setInterimTranscript('');
-    setModelTranscript('');
-    setExecutedTools([]);
-    setIsMuted(false);
-    setIsCommandProcessed(false);
-    setIsSendingToLlm(false);
-    setProcessingPrompt('');
-    setLastProcessedMessage('');
-    setIsVadTimedOut(false);
-    isVadTimedOutRef.current = false;
-    latestTranscriptRef.current = '';
-    isSpeakingRef.current = false;
-    isSpeakingDetectedRef.current = false;
-    lastSpeechTimestampRef.current = Date.now();
-
-    startVoiceEngine();
+    // Modal opened: keep mic in ready state waiting for user click
+    setIsMicActive(false);
+    setIsProcessing(false);
+    setIsSpeaking(false);
+    setLiveTranscript('');
+    setInterimText('');
+    setAcknowledgment(null);
+    setMicError(null);
 
     return () => {
-      stopAllAudio();
-      if (successIndicatorTimerRef.current) {
-        clearTimeout(successIndicatorTimerRef.current);
-      }
+      stopGeminiSpeech();
+      stopAudioTracks();
+      onListeningChangeRef.current?.(false);
     };
-  }, [isOpen, startVoiceEngine, stopAllAudio]);
-
-  const handleToggleMute = () => {
-    if (isVadTimedOutRef.current) {
-      handleResumeMic();
-      return;
-    }
-    const next = !isMuted;
-    setIsMuted(next);
-    isMutedRef.current = next;
-    if (next) {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch {}
-      }
-      setIsMicActive(false);
-    } else {
-      lastSpeechTimestampRef.current = Date.now();
-      restartSpeechRecognition();
-      setIsMicActive(true);
-    }
-  };
-
-  const handleInterrupt = () => {
-    stopGeminiSpeech();
-    isSpeakingRef.current = false;
-    setStatus('listening');
-    restartSpeechRecognition();
-  };
-
-  const handleManualSubmit = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    const text = manualInput.trim();
-    if (!text) return;
-
-    setUserTranscript(text);
-    setInterimTranscript('');
-    setManualInput('');
-
-    handleExecuteTrigger(text).then((matched) => {
-      if (!matched) {
-        handleAiFallback(text);
-      }
-    });
-  };
+  }, [isOpen, stopAudioTracks]);
 
   if (!isOpen) return null;
 
@@ -815,569 +467,235 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
           className="fixed inset-0 bg-black/80 backdrop-blur-md"
         />
 
-        {/* Modal Window */}
+        {/* Streamlined Assistant Card */}
         <motion.div
           initial={{ opacity: 0, scale: 0.94, y: 16 }}
-          animate={{
-            opacity: 1,
-            scale: 1,
-            y: 0,
-            borderColor: isCommandProcessed
-              ? 'rgba(52, 211, 153, 0.95)'
-              : isVadTimedOut
-              ? 'rgba(245, 158, 11, 0.5)'
-              : 'rgba(99, 102, 241, 0.25)',
-            boxShadow: isCommandProcessed
-              ? '0 0 50px -5px rgba(16, 185, 129, 0.5), 0 25px 50px -12px rgba(0, 0, 0, 0.7)'
-              : isVadTimedOut
-              ? '0 0 30px -5px rgba(245, 158, 11, 0.25), 0 25px 50px -12px rgba(0, 0, 0, 0.6)'
-              : '0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 15px -3px rgba(99, 102, 241, 0.1)',
-          }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.94, y: 16 }}
-          transition={{
-            type: 'spring',
-            damping: 26,
-            stiffness: 320,
-            borderColor: { duration: 0.35 },
-            boxShadow: { duration: 0.35 },
-          }}
-          className={`relative w-full max-w-lg bg-gradient-to-b from-gray-900 via-[#131927] to-[#0D1117] text-white rounded-3xl shadow-2xl border overflow-hidden flex flex-col p-6 sm:p-8 z-10 transition-colors ${
-            isCommandProcessed ? 'ring-2 ring-emerald-400/50' : ''
-          }`}
+          transition={{ type: 'spring', damping: 26, stiffness: 320 }}
+          className="relative w-full max-w-sm bg-gradient-to-b from-[#161B22] to-[#0D1117] text-white rounded-3xl shadow-2xl border border-white/10 overflow-hidden flex flex-col p-6 z-10"
         >
-          {/* Subtle Green Flash & Glow Overlay when Command is Successfully Processed */}
-          <AnimatePresence>
-            {isCommandProcessed && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: [0, 0.85, 0.3, 0.7, 0] }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 2.8, ease: 'easeInOut' }}
-                className="pointer-events-none absolute inset-0 rounded-3xl border-2 border-emerald-400 shadow-[inset_0_0_35px_rgba(16,185,129,0.35)] z-30"
-              />
-            )}
-          </AnimatePresence>
-
-          {/* Header */}
-          <div className="flex items-center justify-between pb-4 border-b border-white/10">
-            <div className="flex items-center gap-3">
-              <div className={`w-9 h-9 rounded-2xl flex items-center justify-center transition-colors duration-300 ${
-                isCommandProcessed
-                  ? 'bg-emerald-500/20 border border-emerald-400/40 text-emerald-400'
-                  : isVadTimedOut
-                  ? 'bg-amber-500/20 border border-amber-400/40 text-amber-400'
-                  : 'bg-indigo-500/20 border border-indigo-400/30 text-indigo-400'
-              }`}>
-                {isCommandProcessed ? (
-                  <Check className="w-5 h-5 text-emerald-400 animate-in zoom-in" />
-                ) : isVadTimedOut ? (
-                  <Clock className="w-5 h-5 text-amber-400" />
-                ) : (
-                  <Radio className="w-5 h-5 animate-pulse text-indigo-400" />
-                )}
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-base font-bold tracking-tight text-white flex items-center gap-1.5">
-                    Voice Assistant & Commands
-                  </h2>
-                  <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full transition-colors duration-300 ${
-                    isCommandProcessed
-                      ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-400/50'
-                      : isVadTimedOut
-                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1'
-                      : isMicActive
-                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 animate-pulse'
-                      : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
-                  }`}>
-                    {isCommandProcessed ? (
-                      'Command Processed'
-                    ) : isVadTimedOut ? (
-                      <>
-                        <Clock className="w-2.5 h-2.5" /> Mic Paused (3s Silence)
-                      </>
-                    ) : isMicActive ? (
-                      'Mic Active'
-                    ) : (
-                      'Connecting'
-                    )}
-                  </span>
-                </div>
-                <p className="text-xs text-gray-400">
-                  Continuous speech recognition, instant command matching & AI
-                </p>
-              </div>
-            </div>
-
+          {/* Header: Title & Close Button */}
+          <div className="flex items-center justify-between pb-3 border-b border-white/10">
             <div className="flex items-center gap-2">
-              {onOpenCommandMappings && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onClose();
-                    onOpenCommandMappings();
-                  }}
-                  className="px-2.5 py-1.5 text-xs font-semibold text-amber-300 hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
-                  title="Manage Voice Command Mappings"
-                >
-                  <Zap className="w-3.5 h-3.5 text-amber-400" />
-                  <span className="hidden sm:inline">Triggers</span>
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={onClose}
-                className="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition-colors cursor-pointer"
-                aria-label="Close voice assistant"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-
-          {/* Central Animated Voice Orb Area */}
-          <div className="my-5 flex flex-col items-center justify-center relative min-h-[185px]">
-            {/* Visual 'Speak Now' Text Indicator or VAD 3-second Inactivity Prompt */}
-            <AnimatePresence>
-              {isVadTimedOut ? (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9, y: -6 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.9, y: -4 }}
-                  transition={{ type: 'spring', damping: 18, stiffness: 350 }}
-                  className="mb-2.5 px-3.5 py-1.5 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-200 font-semibold text-xs flex items-center gap-2.5 shadow-lg shadow-amber-500/10"
-                >
-                  <Clock className="w-3.5 h-3.5 text-amber-300 animate-pulse shrink-0" />
-                  <span className="text-[11px]">No speech detected for 3s • Mic paused</span>
-                  <button
-                    type="button"
-                    onClick={handleResumeMic}
-                    className="ml-1 px-2.5 py-0.5 rounded-full bg-amber-400 hover:bg-amber-300 text-gray-950 font-bold text-[10px] uppercase tracking-wider transition-colors cursor-pointer flex items-center gap-1 shadow-sm"
-                  >
-                    <Play className="w-2.5 h-2.5 fill-current" /> Resume
-                  </button>
-                </motion.div>
-              ) : isMicActive && !isMuted && status === 'listening' && !isCommandProcessed ? (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.85, y: -6 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.85, y: -4 }}
-                  transition={{ type: 'spring', damping: 18, stiffness: 350 }}
-                  className="mb-2.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-500/20"
-                >
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-300"></span>
-                  </span>
-                  <span className="tracking-wide uppercase text-[11px] font-extrabold">Speak Now</span>
-                  <span className="text-[10px] text-emerald-200/70 font-normal">Auto-pauses after 3s silence</span>
-                </motion.div>
-              ) : null}
-            </AnimatePresence>
-
-            {/* Outer Pulsing Wave Rings */}
-            <div
-              className={`absolute rounded-full transition-all duration-300 pointer-events-none ${
-                isCommandProcessed
-                  ? 'bg-emerald-500/25 animate-pulse'
-                  : isVadTimedOut
-                  ? 'bg-amber-500/10'
-                  : status === 'speaking'
-                  ? 'bg-purple-500/25 animate-ping'
-                  : status === 'listening'
-                  ? 'bg-cyan-500/20 animate-pulse'
-                  : 'bg-gray-500/10'
-              }`}
-              style={{
-                width: `${140 + volume * 100}px`,
-                height: `${140 + volume * 100}px`,
-              }}
-            />
-            <div
-              className={`absolute rounded-full transition-all duration-150 pointer-events-none ${
-                isCommandProcessed
-                  ? 'bg-emerald-400/30 blur-md'
-                  : isVadTimedOut
-                  ? 'bg-amber-400/10 blur-sm'
-                  : status === 'speaking'
-                  ? 'bg-purple-400/30 blur-md'
-                  : status === 'listening'
-                  ? 'bg-cyan-400/30 blur-md'
-                  : 'bg-gray-500/10'
-              }`}
-              style={{
-                width: `${120 + volume * 70}px`,
-                height: `${120 + volume * 70}px`,
-              }}
-            />
-
-            {/* Core Orb Button */}
-            <motion.button
-              type="button"
-              onClick={isVadTimedOut ? handleResumeMic : status === 'speaking' ? handleInterrupt : undefined}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className={`relative z-10 w-24 h-24 rounded-full flex flex-col items-center justify-center shadow-2xl transition-all duration-300 cursor-pointer ${
-                isCommandProcessed
-                  ? 'bg-gradient-to-tr from-emerald-600 via-teal-600 to-green-500 shadow-emerald-500/50 ring-4 ring-emerald-400/60'
-                  : isVadTimedOut
-                  ? 'bg-gradient-to-tr from-amber-600 via-amber-700 to-amber-800 shadow-amber-500/40 ring-4 ring-amber-400/50'
-                  : status === 'speaking'
-                  ? 'bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-500 shadow-purple-500/40'
-                  : status === 'listening'
-                  ? 'bg-gradient-to-tr from-indigo-600 via-cyan-600 to-blue-500 shadow-indigo-500/40 ring-2 ring-cyan-400/40'
-                  : status === 'processing'
-                  ? 'bg-gradient-to-tr from-amber-600 to-indigo-600 shadow-amber-500/40 animate-pulse'
-                  : 'bg-rose-900 shadow-rose-900/40'
-              }`}
-            >
-              {isCommandProcessed ? (
-                <>
-                  <Check className="w-8 h-8 text-white animate-in zoom-in" strokeWidth={3} />
-                  <span className="text-[10px] uppercase font-bold tracking-wider mt-1 text-white">
-                    Executed
-                  </span>
-                </>
-              ) : isVadTimedOut ? (
-                <>
-                  <Play className="w-8 h-8 text-white fill-current animate-pulse ml-0.5" />
-                  <span className="text-[10px] uppercase font-bold tracking-wider mt-1 text-amber-200">
-                    Resume Mic
-                  </span>
-                </>
-              ) : status === 'speaking' ? (
-                <>
-                  <Volume2 className="w-8 h-8 text-white animate-bounce" />
-                  <span className="text-[10px] uppercase font-bold tracking-wider mt-1 text-white/90">
-                    Speaking
-                  </span>
-                </>
-              ) : status === 'listening' ? (
-                <>
-                  <Mic className="w-8 h-8 text-white animate-pulse" />
-                  <span className="text-[10px] uppercase font-bold tracking-wider mt-1 text-white/90">
-                    {isMuted ? 'Muted' : 'Listening'}
-                  </span>
-                </>
-              ) : status === 'processing' ? (
-                <>
-                  <Loader2 className="w-8 h-8 text-amber-200 animate-spin" />
-                  <span className="text-[10px] uppercase font-bold tracking-wider mt-1 text-amber-100">
-                    Processing
-                  </span>
-                </>
-              ) : (
-                <>
-                  <AlertCircle className="w-8 h-8 text-rose-300" />
-                  <span className="text-[10px] uppercase font-bold tracking-wider mt-1 text-rose-200">
-                    Error
-                  </span>
-                </>
-              )}
-            </motion.button>
-
-            {/* Enhanced Waveform Visualizer with dynamic emerald color shift & subtle success indicator */}
-            <div className="mt-3 flex items-center justify-center">
-              <WaveformVisualizer
-                isActive={(status === 'listening' || status === 'speaking' || isCommandProcessed) && !isMuted && !isVadTimedOut}
-                volume={isVadTimedOut ? 0 : volume}
-                barCount={7}
-                size="md"
-                colorTheme={isCommandProcessed ? 'emerald' : 'cyan'}
-                isProcessed={isCommandProcessed}
-                showSuccessBadge={true}
+              <span
+                className={`w-2.5 h-2.5 rounded-full ${
+                  isMicActive
+                    ? 'bg-rose-500 animate-ping'
+                    : isProcessing
+                    ? 'bg-amber-400 animate-pulse'
+                    : isSpeaking
+                    ? 'bg-purple-400'
+                    : 'bg-emerald-400'
+                }`}
               />
+              <h2 className="text-sm font-semibold tracking-tight text-white">
+                Voice Assistant
+              </h2>
             </div>
-
-            {/* Status Text Label */}
-            <div className="mt-2 text-center px-4">
-              {isCommandProcessed ? (
-                <p className="text-xs text-emerald-300 font-semibold flex items-center justify-center gap-1.5 animate-in fade-in">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 inline-block" />
-                  {lastProcessedMessage || 'Command processed successfully!'}
-                </p>
-              ) : isVadTimedOut ? (
-                <div className="flex flex-col items-center gap-1.5 animate-in fade-in">
-                  <p className="text-xs text-amber-300 font-medium flex items-center justify-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-amber-400" />
-                    Microphone paused after 3s of silence to improve efficiency & battery life.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleResumeMic}
-                    className="px-3.5 py-1 text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 rounded-lg border border-amber-500/40 transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
-                  >
-                    <Mic className="w-3.5 h-3.5" /> Tap or Click to Resume Listening
-                  </button>
-                </div>
-              ) : status === 'listening' ? (
-                <p className="text-xs text-cyan-300 font-medium">
-                  {isMuted
-                    ? 'Microphone muted. Click Unmute to speak.'
-                    : 'Speak naturally. Your command is captured in real-time.'}
-                </p>
-              ) : status === 'speaking' ? (
-                <p className="text-xs text-purple-300">
-                  Assistant speaking. Click the orb to interrupt.
-                </p>
-              ) : status === 'processing' ? (
-                <p className="text-xs text-amber-300 animate-pulse flex items-center justify-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-spin" />
-                  Executing command & sending to LLM...
-                </p>
-              ) : (
-                <div className="flex items-center justify-center gap-2">
-                  <p className="text-xs text-rose-400">
-                    {errorMessage || 'Voice service encountered an issue.'}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={startVoiceEngine}
-                    className="px-2 py-0.5 text-[10px] font-bold bg-rose-500/20 text-rose-200 rounded border border-rose-500/40 hover:bg-rose-500/30 flex items-center gap-1 cursor-pointer"
-                  >
-                    <RotateCcw className="w-3 h-3" /> Retry
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Visual 'Processing...' Toast Indicator when sending command to LLM */}
-          <AnimatePresence>
-            {(isSendingToLlm || status === 'processing') && (
-              <motion.div
-                initial={{ opacity: 0, y: 14, scale: 0.95 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                transition={{ type: 'spring', damping: 20, stiffness: 320 }}
-                className="mb-3 px-3.5 py-2.5 rounded-2xl bg-indigo-950/90 border border-indigo-400/50 shadow-xl backdrop-blur-md flex items-center gap-3 text-white"
-              >
-                <div className="w-7 h-7 rounded-xl bg-indigo-500/30 flex items-center justify-center shrink-0">
-                  <Loader2 className="w-4 h-4 text-indigo-300 animate-spin" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-indigo-200">Processing...</span>
-                    <span className="text-[9px] font-semibold text-indigo-300/90 bg-indigo-500/30 px-1.5 py-0.5 rounded-md uppercase tracking-wider">
-                      Sending to Gemini LLM
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-gray-200 truncate font-mono mt-0.5">
-                    “{processingPrompt || userTranscript || 'Executing command...'}”
-                  </p>
-                </div>
-                <Activity className="w-4 h-4 text-indigo-400 animate-pulse shrink-0" />
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Real-Time Live Transcripts & Executed Tool Badges with Smooth Slide-Up and Fade-In Animation */}
-          <div
-            ref={transcriptContainerRef}
-            className="space-y-3 min-h-[120px] max-h-[160px] overflow-y-auto pr-1 text-xs border-t border-white/10 pt-3 scroll-smooth"
-          >
-            {/* Executed Tools Badges */}
-            {executedTools.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {executedTools.map((tool) => (
-                  <span
-                    key={tool.id}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-medium animate-in fade-in"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                    {tool.chip}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {/* Smooth Fade-In and Slide-Up Transcript Display Area */}
-            <AnimatePresence mode="wait">
-              {userTranscript || interimTranscript ? (
-                <motion.div
-                  key="active-user-transcript"
-                  initial={{ opacity: 0, y: 14, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -10, scale: 0.98 }}
-                  transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-                  className={`p-3 rounded-2xl border transition-all duration-300 ${
-                    isCommandProcessed
-                      ? 'bg-emerald-950/30 border-emerald-500/40 shadow-xs shadow-emerald-500/20'
-                      : 'bg-white/5 border-white/15'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                      <span className={`w-2 h-2 rounded-full ${
-                        isCommandProcessed
-                          ? 'bg-emerald-400'
-                          : 'bg-cyan-400 animate-pulse'
-                      }`} />
-                      <span className={isCommandProcessed ? 'text-emerald-400' : 'text-cyan-400'}>
-                        {isCommandProcessed
-                          ? 'Command Executed'
-                          : 'Real-Time Transcript (Being sent to LLM)'}
-                      </span>
-                    </span>
-                    {interimTranscript && (
-                      <span className="text-[9px] text-cyan-300/90 font-normal italic flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping inline-block" />
-                        Listening live...
-                      </span>
-                    )}
-                  </div>
-
-                  <p className="font-mono text-xs sm:text-sm text-white leading-relaxed font-medium">
-                    “{userTranscript}”
-                    {interimTranscript && !userTranscript.endsWith(interimTranscript) && (
-                      <span className="text-cyan-300 italic opacity-90 ml-1">
-                        {interimTranscript}
-                      </span>
-                    )}
-                  </p>
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="idle-user-transcript"
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  transition={{ duration: 0.25 }}
-                  className="p-3 rounded-2xl border border-white/10 bg-white/5 text-gray-400"
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-gray-500" />
-                      <span>Live Speech Engine</span>
-                    </span>
-                    <span className="text-[10px] text-emerald-400/80 font-medium">Mic Ready</span>
-                  </div>
-                  <p className="text-gray-400 text-xs italic">
-                    Say something aloud like “log breakfast 150”, “open habits”, or “morning coffee 80”...
-                  </p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Model Speech Transcription */}
-            {modelTranscript && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="p-2.5 rounded-xl bg-indigo-950/40 border border-indigo-500/20 text-indigo-100"
-              >
-                <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wider block mb-0.5">
-                  Assistant Response
-                </span>
-                <p>{modelTranscript}</p>
-              </motion.div>
-            )}
-
-            {/* Bottom scroll anchor */}
-            <div ref={transcriptEndRef} className="h-0 w-full shrink-0" aria-hidden="true" />
-          </div>
-
-          {/* Sample Command Quick Trigger Chips */}
-          <div className="mt-3 pt-2 border-t border-white/10">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[11px] font-medium text-gray-400">
-                Quick commands (speak or tap to execute):
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {SAMPLE_COMMANDS.map((cmd, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => {
-                    if (isVadTimedOutRef.current) {
-                      setIsVadTimedOut(false);
-                      isVadTimedOutRef.current = false;
-                    }
-                    lastSpeechTimestampRef.current = Date.now();
-                    setUserTranscript(cmd);
-                    setInterimTranscript('');
-                    latestTranscriptRef.current = cmd;
-                    handleExecuteTrigger(cmd);
-                  }}
-                  className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] text-gray-300 hover:text-white border border-white/10 hover:border-indigo-400/40 transition-colors cursor-pointer text-left"
-                >
-                  {cmd}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Manual Input Fallback */}
-          <form onSubmit={handleManualSubmit} className="mt-3 flex items-center gap-2">
-            <input
-              type="text"
-              value={manualInput}
-              onChange={(e) => setManualInput(e.target.value)}
-              placeholder="Or type a voice command..."
-              className="flex-1 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500"
-            />
-            <button
-              type="submit"
-              disabled={!manualInput.trim()}
-              className="p-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40 transition-colors cursor-pointer"
-              title="Execute command"
-            >
-              <Send className="w-3.5 h-3.5" />
-            </button>
-          </form>
-
-          {/* Bottom Controls Bar */}
-          <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={handleToggleMute}
-              className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer ${
-                isVadTimedOut
-                  ? 'bg-amber-500/20 text-amber-200 border border-amber-500/50 hover:bg-amber-500/30 shadow-sm'
-                  : isMuted
-                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30'
-                  : 'bg-white/10 text-gray-200 hover:bg-white/15'
-              }`}
-            >
-              {isVadTimedOut ? (
-                <>
-                  <Play className="w-4 h-4 fill-current text-amber-300" />
-                  <span>Resume Mic</span>
-                </>
-              ) : isMuted ? (
-                <>
-                  <MicOff className="w-4 h-4" />
-                  <span>Unmute Mic</span>
-                </>
-              ) : (
-                <>
-                  <Mic className="w-4 h-4" />
-                  <span>Mute Mic</span>
-                </>
-              )}
-            </button>
-
-            {status === 'speaking' && (
-              <button
-                type="button"
-                onClick={handleInterrupt}
-                className="px-3.5 py-2 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <VolumeX className="w-4 h-4" />
-                <span>Interrupt</span>
-              </button>
-            )}
 
             <button
               type="button"
               onClick={onClose}
-              className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/30 transition-all cursor-pointer"
+              className="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition-colors cursor-pointer"
+              aria-label="Close voice assistant"
             >
-              Close
+              <X className="w-5 h-5" />
             </button>
           </div>
+
+          {/* Error Message if Mic is Denied */}
+          {micError && (
+            <div className="mt-3 p-3 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex flex-col gap-2">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
+                <span className="leading-snug">{micError}</span>
+              </div>
+              <div className="flex items-center gap-2 pt-1 border-t border-rose-500/20">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMicError(null);
+                    turnOnMic();
+                  }}
+                  className="px-2.5 py-1 text-[11px] font-semibold bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 rounded-lg transition-colors cursor-pointer"
+                >
+                  Grant Permission / Retry
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMicError(null)}
+                  className="px-2.5 py-1 text-[11px] font-medium text-gray-400 hover:text-gray-200 transition-colors cursor-pointer"
+                >
+                  Dismiss
+                </button>
+              </div>
+
+              {/* Text Fallback if mic cannot be used */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (fallbackCommandText.trim()) {
+                    executeCommand(fallbackCommandText.trim());
+                    setFallbackCommandText('');
+                  }
+                }}
+                className="flex items-center gap-1.5 mt-1"
+              >
+                <input
+                  type="text"
+                  value={fallbackCommandText}
+                  onChange={(e) => setFallbackCommandText(e.target.value)}
+                  placeholder="Or type command here..."
+                  className="flex-1 bg-black/40 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-rose-400"
+                />
+                <button
+                  type="submit"
+                  disabled={!fallbackCommandText.trim() || isProcessing}
+                  className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold cursor-pointer"
+                >
+                  Run
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* Central Mic Button Area */}
+          <div className="my-6 flex flex-col items-center justify-center">
+            <div className="relative flex items-center justify-center">
+              {/* Pulsing Ripple Rings when Mic is ON */}
+              {isMicActive && (
+                <>
+                  <motion.div
+                    animate={{ scale: [1, 1.35, 1], opacity: [0.6, 0.1, 0.6] }}
+                    transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+                    className="absolute w-28 h-28 rounded-full bg-rose-500/25 pointer-events-none"
+                  />
+                  <motion.div
+                    animate={{ scale: [1, 1.2, 1], opacity: [0.8, 0.2, 0.8] }}
+                    transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut', delay: 0.2 }}
+                    className="absolute w-24 h-24 rounded-full bg-rose-500/30 pointer-events-none"
+                  />
+                </>
+              )}
+
+              {/* The Dedicated Mic Button */}
+              <motion.button
+                type="button"
+                onClick={handleToggleMic}
+                disabled={isProcessing}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className={`relative z-10 w-24 h-24 rounded-full flex flex-col items-center justify-center shadow-xl transition-all duration-300 cursor-pointer ${
+                  isProcessing
+                    ? 'bg-gradient-to-tr from-amber-600 to-amber-500 text-white ring-4 ring-amber-400/40 shadow-amber-500/40'
+                    : isMicActive
+                    ? 'bg-gradient-to-tr from-rose-600 via-rose-500 to-red-500 text-white ring-4 ring-rose-400/50 shadow-rose-500/50 animate-pulse'
+                    : isSpeaking
+                    ? 'bg-gradient-to-tr from-purple-600 to-indigo-600 text-white ring-2 ring-purple-400/40 shadow-purple-500/30'
+                    : 'bg-gradient-to-tr from-indigo-600 via-indigo-500 to-blue-600 text-white ring-2 ring-indigo-400/30 shadow-indigo-500/30 hover:shadow-indigo-500/50'
+                }`}
+                aria-label={isMicActive ? 'Turn off mic and execute command' : 'Turn on microphone'}
+              >
+                {isProcessing ? (
+                  <Loader2 className="w-10 h-10 animate-spin text-white" />
+                ) : isSpeaking ? (
+                  <Volume2 className="w-10 h-10 text-white animate-bounce" />
+                ) : (
+                  <Mic className="w-10 h-10 text-white" />
+                )}
+              </motion.button>
+            </div>
+
+            {/* Mic State Action Prompt */}
+            <p className="mt-4 text-xs font-medium text-center">
+              {isProcessing ? (
+                <span className="text-amber-300 animate-pulse">Executing command...</span>
+              ) : isMicActive ? (
+                <span className="text-rose-300 font-semibold">
+                  Listening... Tap mic to execute
+                </span>
+              ) : isSpeaking ? (
+                <span className="text-purple-300">Speaking response...</span>
+              ) : (
+                <span className="text-gray-400">Tap mic to speak</span>
+              )}
+            </p>
+          </div>
+
+          {/* Live Transcript Display */}
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-1 text-[11px] font-medium text-gray-400">
+              <span>Live Transcript</span>
+              {isMicActive && (
+                <span className="text-rose-400 flex items-center gap-1 font-semibold animate-pulse">
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                  Live
+                </span>
+              )}
+            </div>
+
+            <div className="min-h-[56px] max-h-[90px] overflow-y-auto p-3 rounded-2xl bg-white/5 border border-white/10 flex items-center">
+              {liveTranscript || interimText ? (
+                <p className="text-sm font-medium text-white leading-snug">
+                  “{liveTranscript}”
+                  {interimText && !liveTranscript.endsWith(interimText) && (
+                    <span className="text-rose-300 italic opacity-90 ml-1">
+                      {interimText}
+                    </span>
+                  )}
+                </p>
+              ) : (
+                <p className="text-xs text-gray-500 italic">
+                  {isMicActive
+                    ? 'Speak your command now...'
+                    : 'Tap the mic and speak a command (e.g. “log breakfast 150”, “open expenses”)'}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Command Acknowledgment Card */}
+          <AnimatePresence>
+            {acknowledgment && (
+              <motion.div
+                initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                className={`p-3.5 rounded-2xl border text-xs transition-colors ${
+                  acknowledgment.success
+                    ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
+                    : 'bg-amber-950/40 border-amber-500/40 text-amber-200'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-[10px]">
+                    {acknowledgment.success ? (
+                      <>
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span className="text-emerald-400">Performed Successfully</span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span className="text-amber-400">Could Not Perform</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <p className="text-[11px] text-gray-300">
+                    <span className="font-semibold text-gray-400">Command: </span>
+                    <span className="font-mono text-white">“{acknowledgment.commandText}”</span>
+                  </p>
+                  <p className="text-xs text-white/90 leading-relaxed">
+                    {acknowledgment.message}
+                  </p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
       </div>
     </AnimatePresence>
