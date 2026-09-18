@@ -326,23 +326,105 @@ export function stopGeminiSpeech() {
   }
 }
 
+export interface AudioTranscriptionResult {
+  transcript: string;
+  error?: string;
+  statusCode?: number;
+  isMissingApiKey?: boolean;
+  isOffline?: boolean;
+}
+
 export async function transcribeAudioWithGemini(
   base64Audio: string,
-  mimeType: string = 'audio/webm'
-): Promise<string> {
+  mimeType: string = 'audio/wav'
+): Promise<AudioTranscriptionResult> {
   try {
     const res = await fetch('/api/gemini/transcribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ audio: base64Audio, mimeType }),
     });
-    if (!res.ok) {
-      throw new Error(`Transcribe returned status ${res.status}`);
+
+    if (res.status === 503) {
+      const errData = await res.json().catch(() => ({}));
+      return {
+        transcript: '',
+        error: errData.error || 'GEMINI_API_KEY is not configured on the server.',
+        statusCode: 503,
+        isMissingApiKey: true,
+      };
     }
+
+    if (res.status === 404) {
+      return {
+        transcript: '',
+        error: 'Transcription API route was not found (backend server is offline on this deployment).',
+        statusCode: 404,
+        isOffline: true,
+      };
+    }
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      return {
+        transcript: '',
+        error: errData.error || `Transcription failed with HTTP ${res.status}`,
+        statusCode: res.status,
+      };
+    }
+
     const data = await res.json();
-    return data.transcript || '';
-  } catch (e) {
-    console.warn('Gemini Transcribe error:', e);
-    return '';
+    return {
+      transcript: data.transcript || '',
+      statusCode: 200,
+    };
+  } catch (e: any) {
+    console.warn('Gemini Transcribe network error:', e);
+    return {
+      transcript: '',
+      error: e?.message || 'Network error connecting to transcription server',
+      isOffline: true,
+    };
   }
+}
+
+export async function transcribeAudioWithGroqWhisper(audioBlob: Blob): Promise<string> {
+  try {
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'speech.wav');
+    formData.append('model', 'whisper-large-v3');
+    formData.append('language', 'en');
+    formData.append('response_format', 'json');
+
+    // 1. Try server proxy route first
+    try {
+      const proxyRes = await fetch('/api/groq/audio/transcriptions', {
+        method: 'POST',
+        body: formData,
+      });
+      if (proxyRes.ok) {
+        const data = await proxyRes.json();
+        if (data.text?.trim()) return data.text.trim();
+      }
+    } catch {}
+
+    // 2. Try direct Groq endpoint if user has client-configured key
+    const clientKey = Storage.getGroqApiKey?.() || (import.meta as any).env?.VITE_GROQ_API_KEY;
+    if (clientKey?.trim()) {
+      const directRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${clientKey.trim()}`,
+        },
+        body: formData,
+      });
+      if (directRes.ok) {
+        const data = await directRes.json();
+        if (data.text?.trim()) return data.text.trim();
+      }
+    }
+  } catch (err) {
+    console.warn('Groq Whisper transcription fallback error:', err);
+  }
+  return '';
 }

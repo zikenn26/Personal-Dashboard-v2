@@ -421,24 +421,6 @@ export async function handleGeminiTranscribe(req: Request, res: Response) {
       return res.json({ transcript: "" });
     }
 
-    // Fast silence detection: if audio buffer is all zeros (e.g. muted mic or test silence), return empty transcript immediately
-    try {
-      const sampleBuf = Buffer.from(cleanBase64.slice(0, 1024), "base64");
-      const pcmStart = sampleBuf.length > 44 ? 44 : 0;
-      let hasSignal = false;
-      for (let i = pcmStart; i < sampleBuf.length; i++) {
-        if (sampleBuf[i] !== 0) {
-          hasSignal = true;
-          break;
-        }
-      }
-      if (!hasSignal) {
-        return res.json({ transcript: "" });
-      }
-    } catch {
-      // Proceed to model if buffer check fails
-    }
-
     // Sanitize MIME type (remove parameters like codecs=opus)
     let cleanMimeType = (mimeType || "audio/wav").split(";")[0].trim().toLowerCase();
     if (cleanMimeType === "audio/wave") cleanMimeType = "audio/wav";

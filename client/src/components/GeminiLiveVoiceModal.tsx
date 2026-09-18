@@ -9,6 +9,7 @@ import {
   Volume2,
   Radio,
   ExternalLink,
+  Info,
 } from 'lucide-react';
 import {
   matchCommandTrigger,
@@ -19,6 +20,8 @@ import {
   speakTextWithGemini,
   stopGeminiSpeech,
   transcribeAudioWithGemini,
+  transcribeAudioWithGroqWhisper,
+  checkGeminiHealth,
 } from '../services/geminiService';
 import { encodePcmToWav, downsampleTo16k, blobToBase64 } from '../utils/audioUtils';
 import { Sound } from '../utils/audio';
@@ -46,6 +49,9 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
   onListeningChange,
   onCommandExecuted,
 }) => {
+  // Server deployment health & API key status
+  const [serverHealth, setServerHealth] = useState<{ status: string; hasApiKey: boolean } | null>(null);
+
   // Mic state: whether active listening is on or off
   const [isMicActive, setIsMicActive] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -101,6 +107,21 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
 
   const onCommandExecutedRef = useRef(onCommandExecuted);
   onCommandExecutedRef.current = onCommandExecuted;
+
+  const speechRecognitionFailedRef = useRef<boolean>(false);
+
+  // Check backend Gemini API status when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      checkGeminiHealth()
+        .then((h) => {
+          setServerHealth({ status: h.status, hasApiKey: h.hasApiKey });
+        })
+        .catch(() => {
+          setServerHealth({ status: 'offline', hasApiKey: false });
+        });
+    }
+  }, [isOpen]);
 
   // Cleanup helper to stop all audio streams & recognition
   const stopAudioTracks = useCallback(() => {
@@ -260,6 +281,14 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     setAudioLevel(0);
     Sound.voiceRegistered(true);
 
+    // Stop Web Speech cleanly and allow any in-flight results to flush
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {}
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+
     // Stop MediaRecorder cleanly and wait for final chunks
     let recordedMime = 'audio/webm';
     if (mediaRecorderRef.current) {
@@ -297,6 +326,8 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
 
     // 2. Fallback to Gemini Transcribe if Web Speech was silent
     setIsProcessing(true);
+    let lastGeminiError: any = null;
+    let fallbackWavBlob: Blob | null = null;
 
     // Try PCM WAV first (16kHz 16-bit PCM is rock-solid and verified to work with Gemini)
     if (pcmSnapshot.length > 0) {
@@ -313,19 +344,22 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
           }
 
           const pcm16k = downsampleTo16k(fullPcm, sampleRate);
-          const wavBlob = encodePcmToWav(pcm16k, 16000);
-          const base64 = await blobToBase64(wavBlob);
+          fallbackWavBlob = encodePcmToWav(pcm16k, 16000);
+          const base64 = await blobToBase64(fallbackWavBlob);
 
           if (base64) {
             setLiveTranscript('Transcribing speech...');
-            const transcript = await transcribeAudioWithGemini(base64, 'audio/wav');
-            if (transcript && transcript.trim()) {
-              const clean = transcript.trim();
+            const geminiRes = await transcribeAudioWithGemini(base64, 'audio/wav');
+            if (geminiRes.transcript && geminiRes.transcript.trim()) {
+              const clean = geminiRes.transcript.trim();
               setLiveTranscript(clean);
               setInterimText('');
               await executeCommand(clean);
               isExecutingRef.current = false;
               return;
+            }
+            if (geminiRes.error) {
+              lastGeminiError = geminiRes;
             }
           }
         }
@@ -334,21 +368,24 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
       }
     }
 
-    // Try MediaRecorder Blob
-    if (recordedBlob && recordedBlob.size > 200) {
+    // Try MediaRecorder Blob if PCM WAV was empty or had errors
+    if (!lastGeminiError?.transcript && recordedBlob && recordedBlob.size > 200) {
       try {
         const base64 = await blobToBase64(recordedBlob);
         if (base64) {
           setLiveTranscript('Transcribing speech...');
           const mimeType = recordedBlob.type.split(';')[0] || 'audio/webm';
-          const transcript = await transcribeAudioWithGemini(base64, mimeType);
-          if (transcript && transcript.trim()) {
-            const clean = transcript.trim();
+          const geminiRes = await transcribeAudioWithGemini(base64, mimeType);
+          if (geminiRes.transcript && geminiRes.transcript.trim()) {
+            const clean = geminiRes.transcript.trim();
             setLiveTranscript(clean);
             setInterimText('');
             await executeCommand(clean);
             isExecutingRef.current = false;
             return;
+          }
+          if (geminiRes.error) {
+            lastGeminiError = geminiRes;
           }
         }
       } catch (e) {
@@ -356,7 +393,58 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
       }
     }
 
-    // Nothing was spoken or detected
+    // 3. Fallback to Groq Whisper if available (transcribes speech reliably even without Gemini key)
+    const audioForWhisper = fallbackWavBlob || recordedBlob;
+    if (audioForWhisper && audioForWhisper.size > 200) {
+      try {
+        setLiveTranscript('Transcribing speech...');
+        const whisperText = await transcribeAudioWithGroqWhisper(audioForWhisper);
+        if (whisperText && whisperText.trim()) {
+          const clean = whisperText.trim();
+          setLiveTranscript(clean);
+          setInterimText('');
+          await executeCommand(clean);
+          isExecutingRef.current = false;
+          return;
+        }
+      } catch (e) {
+        console.warn('Groq Whisper fallback error:', e);
+      }
+    }
+
+    // 4. Handle Case where speech was heard by audio level detection, but transcription could not succeed
+    if (hasDetectedSpeechRef.current) {
+      if (lastGeminiError?.isMissingApiKey) {
+        setAcknowledgment({
+          commandText: '(Transcription API Key Missing)',
+          success: false,
+          message:
+            'Speech was detected by your microphone, but transcription failed because GEMINI_API_KEY is not configured on this deployed server. Please set GEMINI_API_KEY in your hosting environment variables (e.g. Render/Vercel/Railway), or type your command in the prompt bar below.',
+          timestamp: Date.now(),
+        });
+      } else if (lastGeminiError?.isOffline) {
+        setAcknowledgment({
+          commandText: '(Backend API Offline)',
+          success: false,
+          message:
+            'Speech was detected, but the backend API server is offline on this deployment (/api/gemini/transcribe returned 404). Please ensure the backend Node.js server (npm start) is deployed, or type your command below.',
+          timestamp: Date.now(),
+        });
+      } else {
+        setAcknowledgment({
+          commandText: '(Speech Processing Issue)',
+          success: false,
+          message:
+            'Speech was heard from your microphone, but could not be converted to text. Please check your mic clarity or speak closer to the mic, or type your command below.',
+          timestamp: Date.now(),
+        });
+      }
+      setIsProcessing(false);
+      isExecutingRef.current = false;
+      return;
+    }
+
+    // Truly no sound / silence detected
     await executeCommand('');
     isExecutingRef.current = false;
   }, [liveTranscript, interimText, stopAudioTracks, executeCommand]);
@@ -403,6 +491,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     lastSpeechTimeRef.current = Date.now();
     micStartTimeRef.current = Date.now();
     hasDetectedSpeechRef.current = false;
+    speechRecognitionFailedRef.current = false;
     setHasDetectedSpeech(false);
     setVadRemainingSeconds(10);
 
@@ -564,7 +653,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
           const rec = new SpeechRecognition();
           rec.continuous = true;
           rec.interimResults = true;
-          rec.lang = 'en-US';
+          rec.lang = (typeof navigator !== 'undefined' && navigator.language) || 'en-US';
 
           rec.onaudiostart = () => {
             const elapsed = Date.now() - micStartTimeRef.current;
@@ -619,10 +708,22 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
 
           rec.onerror = (event: any) => {
             console.warn('SpeechRecognition warning:', event.error);
+            if (
+              event.error === 'not-allowed' ||
+              event.error === 'service-not-allowed' ||
+              event.error === 'audio-capture' ||
+              event.error === 'network'
+            ) {
+              speechRecognitionFailedRef.current = true;
+            }
           };
 
           rec.onend = () => {
-            if (isMicActiveRef.current && !isExecutingRef.current) {
+            if (
+              isMicActiveRef.current &&
+              !isExecutingRef.current &&
+              !speechRecognitionFailedRef.current
+            ) {
               try {
                 rec.start();
               } catch {}
@@ -805,6 +906,23 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Server Config Notice if Gemini key is missing on deployed host */}
+          {serverHealth && (!serverHealth.hasApiKey || serverHealth.status === 'offline') && (
+            <div className="mt-3 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-200/90 text-xs flex items-start gap-2">
+              <Info className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-medium text-amber-300">
+                  {serverHealth.status === 'offline' ? 'Backend Server Unreachable' : 'GEMINI_API_KEY Not Set on Host'}
+                </p>
+                <p className="text-[11px] text-amber-200/70 mt-0.5 leading-relaxed">
+                  {serverHealth.status === 'offline'
+                    ? 'The full-stack server is offline on this URL. Voice will use browser recognition or Groq Whisper, or type commands below.'
+                    : 'To enable Gemini audio transcription in production, add GEMINI_API_KEY to your deployment host environment variables.'}
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Error Message if Mic is Denied */}
           {micError && (
