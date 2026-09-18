@@ -51,9 +51,7 @@ import {
 } from '../services/commandMappingService';
 import { Storage } from '../utils/storage';
 import { Sound } from '../utils/audio';
-import { BrandLogo } from './BrandLogo';
 import { GeminiLiveVoiceModal } from './GeminiLiveVoiceModal';
-import { VoiceDiagnosticModal } from './VoiceDiagnosticModal';
 import { WaveformVisualizer } from './WaveformVisualizer';
 
 interface AISecretaryWidgetProps {
@@ -94,14 +92,17 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
 
   // Gemini Configuration State
   const [selectedGeminiModel, setSelectedGeminiModel] = useState<string>(() => {
-    return localStorage.getItem(GEMINI_MODEL_KEY) || 'gemini-3.8-flash';
+    const saved = localStorage.getItem(GEMINI_MODEL_KEY);
+    if (!saved || saved === 'gemini-3.8-flash') {
+      return 'gemini-3.1-flash-lite';
+    }
+    return saved;
   });
   const [selectedRole, setSelectedRole] = useState<string>(() => {
     return localStorage.getItem(GEMINI_ROLE_KEY) || 'chief_of_staff';
   });
   const [isLiveVoiceModalOpen, setIsLiveVoiceModalOpen] = useState(false);
   const [isLiveListening, setIsLiveListening] = useState(false);
-  const [isDiagnosticModalOpen, setIsDiagnosticModalOpen] = useState(false);
   const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
 
   // Voice Command Speech-to-Text State
@@ -423,8 +424,8 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
       <div className="p-3 sm:px-3.5 pb-2.5 border-b border-[#EDECE9] dark:border-[#334155]/60 flex items-center justify-between gap-2 shrink-0 bg-[#FAF9F6] dark:bg-[#23324C]">
         <div className="flex items-center gap-2.5 min-w-0">
           {dragHandle}
-          <div className="w-7 h-7 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-900/40 flex items-center justify-center shrink-0 overflow-hidden">
-            <BrandLogo size={22} className="rounded-sm" />
+          <div className="w-7 h-7 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-900/40 flex items-center justify-center shrink-0">
+            <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
@@ -740,23 +741,6 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
               </button>
             </div>
           )}
-
-          {/* Quick access to Audio & Microphone Diagnostics */}
-          <div className="pt-2 border-t border-indigo-100 dark:border-indigo-900/40">
-            <button
-              type="button"
-              onClick={() => setIsDiagnosticModalOpen(true)}
-              className="w-full py-1.5 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/50 text-indigo-800 dark:text-indigo-200 text-xs font-semibold flex items-center justify-between transition-colors border border-indigo-200/60 dark:border-indigo-800/40 cursor-pointer shadow-2xs"
-            >
-              <span className="flex items-center gap-1.5">
-                <Activity className="w-3.5 h-3.5 text-indigo-500" />
-                <span>Audio &amp; Mic Diagnostic Suite</span>
-              </span>
-              <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">
-                Test &amp; Debug →
-              </span>
-            </button>
-          </div>
         </div>
       )}
 
@@ -772,8 +756,8 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
               className={`flex gap-2.5 ${isUser ? 'justify-end' : 'justify-start'}`}
             >
               {!isUser && (
-                <div className="w-6 h-6 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-900/40 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs overflow-hidden">
-                  <BrandLogo size={20} className="rounded-xs" />
+                <div className="w-6 h-6 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-900/40 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                 </div>
               )}
 
@@ -993,16 +977,6 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
         onNavigate={onNavigate}
         onListeningChange={(listening) => setIsLiveListening(listening)}
         onOpenCommandMappings={onOpenCommandMappings}
-      />
-
-      {/* Voice Diagnostic Suite Modal */}
-      <VoiceDiagnosticModal
-        isOpen={isDiagnosticModalOpen}
-        onClose={() => setIsDiagnosticModalOpen(false)}
-        onRetryVoiceAssistant={() => {
-          setIsDiagnosticModalOpen(false);
-          setIsLiveVoiceModalOpen(true);
-        }}
       />
     </div>
   );

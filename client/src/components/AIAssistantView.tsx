@@ -1,6 +1,5 @@
 import React from 'react';
-import { Zap } from 'lucide-react';
-import { BrandLogo } from './BrandLogo';
+import { Sparkles, Zap } from 'lucide-react';
 import { AISecretaryWidget } from './AISecretaryWidget';
 
 interface AIAssistantViewProps {
@@ -14,10 +13,12 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
 }) => {
   return (
     <div className="space-y-5 max-w-4xl mx-auto pb-6">
-      {/* Top Heading with Official Zikenn Brand Logo */}
+      {/* Top Heading */}
       <div className="pb-3 border-b border-[#E5E7EB] dark:border-[#1F2937] flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <BrandLogo size={36} className="rounded-lg" />
+          <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-900/40 flex items-center justify-center shrink-0 shadow-2xs">
+            <Sparkles className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+          </div>
           <div>
             <h1 className="workspace-heading font-extrabold flex items-center gap-2">
               <span className="font-serif tracking-wide text-black dark:text-white transition-colors duration-200">

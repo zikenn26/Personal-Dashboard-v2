@@ -58,7 +58,6 @@ import { QuotesManagerView } from './components/QuotesManagerView';
 import { ExamsSection } from './components/ExamsSection';
 import { AuthModal } from './components/AuthModal';
 import { AvatarPickerModal } from './components/AvatarPickerModal';
-import { BrandLogo } from './components/BrandLogo';
 import { STOCK_IMAGES } from './assets/stockImages';
 import LandingPage from './components/LandingPage';
 import {
@@ -1733,37 +1732,37 @@ export default function App() {
     label: string;
     icon: React.ComponentType<{ className?: string }>;
     count?: number;
-    emoji: string;
+    emoji?: string;
     group: 'top' | 'plan' | 'work' | 'life' | 'money' | 'private' | 'system';
     badge?: string;
   }
 
   const navItems: NavItem[] = [
     // Top Level
-    { id: 'home', label: 'Home / Today', icon: Home, count: undefined, emoji: '🏠', group: 'top' },
-    { id: 'assistant', label: 'Zikenn AI', icon: Sparkle, count: undefined, emoji: '✨', group: 'top' },
+    { id: 'home', label: 'Home / Today', icon: Home, count: undefined, group: 'top' },
+    { id: 'assistant', label: 'Zikenn AI', icon: Sparkles, count: undefined, group: 'top' },
 
     // PLAN
-    { id: 'tasks', label: 'Tasks', icon: CheckSquare, count: todos.filter((t) => !t.completed).length, emoji: '☑️', group: 'plan' },
-    { id: 'habits', label: 'Habits', icon: Flame, count: habits.length, emoji: '🔥', group: 'plan' },
-    { id: 'goals', label: 'Goals', icon: Target, count: goals.filter((g) => g.status === 'active').length || undefined, emoji: '🎯', group: 'plan' },
-    { id: 'exams', label: 'Exams', icon: GraduationCap, count: exams.length, emoji: '🎓', group: 'plan' },
-    { id: 'timeline', label: 'Life Map', icon: Compass, count: milestones.length, emoji: '🗺️', group: 'plan' },
+    { id: 'tasks', label: 'Tasks', icon: CheckSquare, count: todos.filter((t) => !t.completed).length, group: 'plan' },
+    { id: 'habits', label: 'Habits', icon: Flame, count: habits.length, group: 'plan' },
+    { id: 'goals', label: 'Goals', icon: Target, count: goals.filter((g) => g.status === 'active').length || undefined, group: 'plan' },
+    { id: 'exams', label: 'Exams', icon: GraduationCap, count: exams.length, group: 'plan' },
+    { id: 'timeline', label: 'Life Map', icon: Compass, count: milestones.length, group: 'plan' },
 
     // WORK
-    { id: 'workfolio', label: 'Portfolio', icon: Briefcase, count: projects.length, emoji: '💼', group: 'work' },
+    { id: 'workfolio', label: 'Portfolio', icon: Briefcase, count: projects.length, group: 'work' },
 
     // LIFE
-    { id: 'journal', label: 'Journal', icon: BookOpen, count: journal.length, emoji: '📖', group: 'life' },
-    { id: 'quotes', label: 'Quotes', icon: Quote, count: quotes.length, emoji: '💬', group: 'life' },
-    { id: 'media', label: 'Library', icon: Film, count: media.length, emoji: '🎬', group: 'life' },
+    { id: 'journal', label: 'Journal', icon: BookOpen, count: journal.length, group: 'life' },
+    { id: 'quotes', label: 'Quotes', icon: Quote, count: quotes.length, group: 'life' },
+    { id: 'media', label: 'Library', icon: Film, count: media.length, group: 'life' },
 
     // MONEY
-    { id: 'expenses', label: 'Spending', icon: CreditCard, count: expenses.length, emoji: '💳', group: 'money' },
+    { id: 'expenses', label: 'Spending', icon: CreditCard, count: expenses.length, group: 'money' },
 
     // PRIVATE
-    { id: 'vault', label: 'Vault', icon: Shield, count: vault.length, emoji: '🔐', group: 'private' },
-    { id: 'backup', label: 'Backup & Restore', icon: Database, count: undefined, emoji: '💾', group: 'private' },
+    { id: 'vault', label: 'Vault', icon: Shield, count: vault.length, group: 'private' },
+    { id: 'backup', label: 'Backup & Restore', icon: Database, count: undefined, group: 'private' },
   ];
 
   const currentNav = navItems.find((n) => n.id === activeView) || navItems[0];
@@ -1840,11 +1839,7 @@ export default function App() {
               </button>
               <span className="hidden sm:inline text-[#D1D5DB] dark:text-[#4B5563]">/</span>
               <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#F7F7F5] dark:bg-[#1F2937] border border-[#EDECE9] dark:border-[#374151] text-[#37352F] dark:text-white font-semibold text-xs min-w-0 max-w-[110px] sm:max-w-none">
-                {currentNav.id === 'assistant' ? (
-                  <BrandLogo size={16} className="rounded-xs shrink-0" />
-                ) : (
-                  <span className="shrink-0">{currentNav.emoji}</span>
-                )}
+                <currentNav.icon className="w-3.5 h-3.5 shrink-0 text-[#6366F1] dark:text-[#818CF8]" />
                 <span className="truncate">{currentNav.label}</span>
               </div>
             </div>
@@ -2194,11 +2189,9 @@ export default function App() {
                         title={item.label}
                       >
                         <div className="w-5 h-5 flex items-center justify-center shrink-0">
-                          {item.id === 'assistant' ? (
-                            <BrandLogo size={18} className="rounded-xs shrink-0" />
-                          ) : (
-                            <span className="text-base leading-none">{item.emoji}</span>
-                          )}
+                          <item.icon className={`w-4 h-4 shrink-0 transition-colors ${
+                            isActive ? 'text-[#6366F1] dark:text-[#818CF8]' : 'text-[#787774] dark:text-[#9CA3AF]'
+                          }`} />
                         </div>
                         <AnimatePresence initial={false}>
                           {!isSidebarCollapsed && (
@@ -2252,7 +2245,9 @@ export default function App() {
                         title={item.label}
                       >
                         <div className="w-5 h-5 flex items-center justify-center shrink-0">
-                          <span className="text-base leading-none">{item.emoji}</span>
+                          <item.icon className={`w-4 h-4 shrink-0 transition-colors ${
+                            isActive ? 'text-[#6366F1] dark:text-[#818CF8]' : 'text-[#787774] dark:text-[#9CA3AF]'
+                          }`} />
                         </div>
                         <AnimatePresence initial={false}>
                           {!isSidebarCollapsed && (
@@ -2316,7 +2311,9 @@ export default function App() {
                         title={item.label}
                       >
                         <div className="w-5 h-5 flex items-center justify-center shrink-0">
-                          <span className="text-base leading-none">{item.emoji}</span>
+                          <item.icon className={`w-4 h-4 shrink-0 transition-colors ${
+                            isActive ? 'text-[#6366F1] dark:text-[#818CF8]' : 'text-[#787774] dark:text-[#9CA3AF]'
+                          }`} />
                         </div>
                         <AnimatePresence initial={false}>
                           {!isSidebarCollapsed && (
@@ -2375,7 +2372,9 @@ export default function App() {
                         title={item.label}
                       >
                         <div className="w-5 h-5 flex items-center justify-center shrink-0">
-                          <span className="text-base leading-none">{item.emoji}</span>
+                          <item.icon className={`w-4 h-4 shrink-0 transition-colors ${
+                            isActive ? 'text-[#6366F1] dark:text-[#818CF8]' : 'text-[#787774] dark:text-[#9CA3AF]'
+                          }`} />
                         </div>
                         <AnimatePresence initial={false}>
                           {!isSidebarCollapsed && (
@@ -2434,7 +2433,9 @@ export default function App() {
                         title={item.label}
                       >
                         <div className="w-5 h-5 flex items-center justify-center shrink-0">
-                          <span className="text-base leading-none">{item.emoji}</span>
+                          <item.icon className={`w-4 h-4 shrink-0 transition-colors ${
+                            isActive ? 'text-[#6366F1] dark:text-[#818CF8]' : 'text-[#787774] dark:text-[#9CA3AF]'
+                          }`} />
                         </div>
                         <AnimatePresence initial={false}>
                           {!isSidebarCollapsed && (
@@ -2493,7 +2494,9 @@ export default function App() {
                         title={item.label}
                       >
                         <div className="w-5 h-5 flex items-center justify-center shrink-0">
-                          <span className="text-base leading-none">{item.emoji}</span>
+                          <item.icon className={`w-4 h-4 shrink-0 transition-colors ${
+                            isActive ? 'text-[#6366F1] dark:text-[#818CF8]' : 'text-[#787774] dark:text-[#9CA3AF]'
+                          }`} />
                         </div>
                         <AnimatePresence initial={false}>
                           {!isSidebarCollapsed && (
@@ -2594,11 +2597,9 @@ export default function App() {
                           }`}
                         >
                           <div className="flex items-center gap-2.5">
-                            {item.id === 'assistant' ? (
-                              <BrandLogo size={18} className="rounded-xs shrink-0" />
-                            ) : (
-                              <span>{item.emoji}</span>
-                            )}
+                            <item.icon className={`w-4 h-4 shrink-0 ${
+                              isActive ? 'text-[#6366F1] dark:text-[#818CF8]' : 'text-[#787774] dark:text-[#9CA3AF]'
+                            }`} />
                             <span>{item.label}</span>
                           </div>
                           {item.badge && (
@@ -3061,7 +3062,7 @@ export default function App() {
             title="Chat with Personalized Zikenn AI"
             aria-label="Open Zikenn AI"
           >
-            <BrandLogo size={28} className="rounded-xs group-hover:scale-105 transition-transform duration-200 pointer-events-none" />
+            <Sparkles className="w-6 h-6 text-white group-hover:scale-110 transition-transform duration-200" />
           </button>
         </div>
       )}

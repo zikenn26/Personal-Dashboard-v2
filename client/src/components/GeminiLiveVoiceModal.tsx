@@ -8,7 +8,7 @@ import {
   Loader2,
   Volume2,
   Radio,
-  Activity,
+  ExternalLink,
 } from 'lucide-react';
 import {
   matchCommandTrigger,
@@ -22,7 +22,6 @@ import {
 } from '../services/geminiService';
 import { encodePcmToWav, downsampleTo16k, blobToBase64 } from '../utils/audioUtils';
 import { Sound } from '../utils/audio';
-import { VoiceDiagnosticModal } from './VoiceDiagnosticModal';
 
 interface GeminiLiveVoiceModalProps {
   isOpen: boolean;
@@ -66,15 +65,12 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
   // Live microphone audio input level (0-100) for real-time visual feedback
   const [audioLevel, setAudioLevel] = useState<number>(0);
 
-  // 3-second Voice Activity Detection (VAD) state
-  const [vadRemainingSeconds, setVadRemainingSeconds] = useState<number>(3);
+  // 10-second Voice Activity Detection (VAD) state
+  const [vadRemainingSeconds, setVadRemainingSeconds] = useState<number>(10);
   const [hasDetectedSpeech, setHasDetectedSpeech] = useState<boolean>(false);
 
   // Subtle green flash glow state on successful command execution
   const [isSuccessGlow, setIsSuccessGlow] = useState<boolean>(false);
-
-  // Diagnostic Modal open/close state
-  const [isDiagnosticModalOpen, setIsDiagnosticModalOpen] = useState<boolean>(false);
 
   // Refs for tracking active audio and speech instances
   const isMicActiveRef = useRef<boolean>(false);
@@ -108,6 +104,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
 
   // Cleanup helper to stop all audio streams & recognition
   const stopAudioTracks = useCallback(() => {
+    isMicActiveRef.current = false;
     if (animationFrameIdRef.current) {
       cancelAnimationFrame(animationFrameIdRef.current);
       animationFrameIdRef.current = null;
@@ -253,24 +250,6 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     []
   );
 
-  // Auto-close mic when no speech is detected after 3 seconds of inactivity
-  const autoCloseInactivity = useCallback(() => {
-    if (isExecutingRef.current) return;
-    stopAudioTracks();
-    setIsMicActive(false);
-    onListeningChangeRef.current?.(false);
-    setAudioLevel(0);
-    Sound.toggle(false);
-    setLiveTranscript('');
-    setInterimText('');
-    setAcknowledgment({
-      commandText: '(No speech detected)',
-      success: false,
-      message: 'Microphone stopped automatically after 3 seconds of inactivity to conserve battery and CPU.',
-      timestamp: Date.now(),
-    });
-  }, [stopAudioTracks]);
-
   // Turn off mic and process whatever was heard
   const turnOffAndExecute = useCallback(async () => {
     if (isExecutingRef.current) return;
@@ -282,12 +261,16 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     Sound.voiceRegistered(true);
 
     // Stop MediaRecorder cleanly and wait for final chunks
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      try {
-        mediaRecorderRef.current.requestData();
-        mediaRecorderRef.current.stop();
-      } catch {}
-      await new Promise((resolve) => setTimeout(resolve, 80));
+    let recordedMime = 'audio/webm';
+    if (mediaRecorderRef.current) {
+      recordedMime = mediaRecorderRef.current.mimeType || 'audio/webm';
+      if (mediaRecorderRef.current.state === 'recording') {
+        try {
+          mediaRecorderRef.current.requestData();
+          mediaRecorderRef.current.stop();
+        } catch {}
+        await new Promise((resolve) => setTimeout(resolve, 80));
+      }
     }
 
     const speechText = (latestTranscriptRef.current || liveTranscript || interimText).trim();
@@ -298,7 +281,6 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     const sampleRate = audioCtxRef.current?.sampleRate || 44100;
 
     if (audioBlobChunksRef.current.length > 0) {
-      const recordedMime = mediaRecorderRef.current?.mimeType || 'audio/webm';
       recordedBlob = new Blob(audioBlobChunksRef.current, { type: recordedMime });
     }
 
@@ -379,6 +361,33 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     isExecutingRef.current = false;
   }, [liveTranscript, interimText, stopAudioTracks, executeCommand]);
 
+  // Auto-close mic when no speech is detected after 10 seconds of inactivity
+  const autoCloseInactivity = useCallback(() => {
+    if (isExecutingRef.current) return;
+
+    // If speech was detected or Web Speech captured transcript, process it!
+    const speechText = (latestTranscriptRef.current || liveTranscript || interimText).trim();
+    if (speechText || hasDetectedSpeechRef.current) {
+      turnOffAndExecute();
+      return;
+    }
+
+    // If only silence occurred, pause cleanly without displaying a red execution error
+    stopAudioTracks();
+    setIsMicActive(false);
+    onListeningChangeRef.current?.(false);
+    setAudioLevel(0);
+    Sound.toggle(false);
+    setLiveTranscript('');
+    setInterimText('');
+    setAcknowledgment({
+      commandText: '(Listening paused)',
+      success: false,
+      message: 'Listening paused after 10 seconds of silence. Tap the microphone when you are ready to speak, or type your command below.',
+      timestamp: Date.now(),
+    });
+  }, [stopAudioTracks, liveTranscript, interimText, turnOffAndExecute]);
+
   // Turn on mic and start recording / speech recognition
   const turnOnMic = useCallback(async () => {
     stopGeminiSpeech();
@@ -395,7 +404,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     micStartTimeRef.current = Date.now();
     hasDetectedSpeechRef.current = false;
     setHasDetectedSpeech(false);
-    setVadRemainingSeconds(3);
+    setVadRemainingSeconds(10);
 
     // Check if getUserMedia is supported
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -406,16 +415,34 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     }
 
     try {
-      // 1. Request microphone access
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
+      // 1. Request microphone access with automatic fallback to basic constraints if advanced flags are overconstrained
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+      } catch (firstErr: any) {
+        if (
+          firstErr?.name === 'OverconstrainedError' ||
+          firstErr?.name === 'NotFoundError' ||
+          firstErr?.name === 'DevicesNotFoundError' ||
+          String(firstErr?.message || '').toLowerCase().includes('device')
+        ) {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } else {
+          throw firstErr;
+        }
+      }
 
       mediaStreamRef.current = stream;
+      isMicActiveRef.current = true;
+      setIsMicActive(true);
+      onListeningChangeRef.current?.(true);
+      Sound.toggle(true);
 
       // 2. Setup AudioContext, AnalyserNode for volume meter & PCM processor
       const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -439,7 +466,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
         const dataArray = new Uint8Array(bufferLength);
 
         const updateAudioLevel = () => {
-          if (!isMicActiveRef.current) return;
+          if (!isMicActiveRef.current && !mediaStreamRef.current?.active) return;
           analyser.getByteFrequencyData(dataArray);
           let sum = 0;
           for (let i = 0; i < bufferLength; i++) {
@@ -447,18 +474,24 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
           }
           const average = sum / bufferLength;
           // Scale 0-100
-          const level = Math.min(100, Math.round((average / 90) * 100));
+          const level = Math.min(100, Math.round((average / 75) * 100));
           setAudioLevel(level);
 
           // Voice Activity Detection from audio input
-          // Threshold: if average volume exceeds ambient silence (average >= 4.5 or level >= 5)
-          if (average >= 4.5 || level >= 5) {
-            hasDetectedSpeechRef.current = true;
-            lastSpeechTimeRef.current = Date.now();
-            setHasDetectedSpeech(true);
+          // Allow an 800ms grace window after mic starts so the startup chime / click does not trip speech detection
+          const elapsedSinceStart = Date.now() - micStartTimeRef.current;
+          if (elapsedSinceStart > 800) {
+            // Human speech volume typically registers average >= 6 or level >= 8 (above ambient room hum)
+            if (average >= 6 || level >= 8) {
+              hasDetectedSpeechRef.current = true;
+              lastSpeechTimeRef.current = Date.now();
+              setHasDetectedSpeech(true);
+            }
           }
 
-          animationFrameIdRef.current = requestAnimationFrame(updateAudioLevel);
+          if (isMicActiveRef.current) {
+            animationFrameIdRef.current = requestAnimationFrame(updateAudioLevel);
+          }
         };
         animationFrameIdRef.current = requestAnimationFrame(updateAudioLevel);
 
@@ -533,6 +566,14 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
           rec.interimResults = true;
           rec.lang = 'en-US';
 
+          rec.onaudiostart = () => {
+            const elapsed = Date.now() - micStartTimeRef.current;
+            if (elapsed > 800) {
+              hasDetectedSpeechRef.current = true;
+              lastSpeechTimeRef.current = Date.now();
+            }
+          };
+
           rec.onspeechstart = () => {
             hasDetectedSpeechRef.current = true;
             lastSpeechTimeRef.current = Date.now();
@@ -540,9 +581,12 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
           };
 
           rec.onsoundstart = () => {
-            hasDetectedSpeechRef.current = true;
-            lastSpeechTimeRef.current = Date.now();
-            setHasDetectedSpeech(true);
+            const elapsed = Date.now() - micStartTimeRef.current;
+            if (elapsed > 800) {
+              hasDetectedSpeechRef.current = true;
+              lastSpeechTimeRef.current = Date.now();
+              setHasDetectedSpeech(true);
+            }
           };
 
           rec.onresult = (event: any) => {
@@ -591,10 +635,6 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
           console.warn('SpeechRecognition init error:', recInitErr);
         }
       }
-
-      setIsMicActive(true);
-      onListeningChangeRef.current?.(true);
-      Sound.toggle(true);
     } catch (err: any) {
       console.warn('Microphone access not granted:', err?.name, err?.message || err);
       const isDenied =
@@ -602,12 +642,25 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
         err?.name === 'PermissionDeniedError' ||
         (err?.message && String(err.message).toLowerCase().includes('denied'));
 
-      setMicError(
-        isDenied
-          ? 'Microphone permission was denied. Tap "Grant Permission" below or check your browser address bar settings to allow microphone access.'
-          : 'Unable to start microphone: ' + (err?.message || 'Please check device permissions.')
-      );
+      const isNotFound =
+        err?.name === 'NotFoundError' ||
+        err?.name === 'DevicesNotFoundError' ||
+        (err?.message && String(err.message).toLowerCase().includes('not found')) ||
+        (err?.message && String(err.message).toLowerCase().includes('device'));
+
+      const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
+      let errorMessage = 'Unable to start microphone: ' + (err?.message || 'Please check device permissions.');
+      if (isDenied) {
+        errorMessage = isInIframe
+          ? 'Microphone permission could not be acquired inside the preview iframe. Browsers often restrict microphone access within embedded preview frames. Click "Open in New Tab" below to test with direct microphone access.'
+          : 'Microphone permission was denied. Tap "Grant Permission / Retry" below or check your browser address bar settings to allow microphone access.';
+      } else if (isNotFound) {
+        errorMessage = 'No audio input hardware detected (Requested device not found). Please connect an external microphone or headset, verify system audio settings, or type commands directly into the prompt bar below.';
+      }
+
+      setMicError(errorMessage);
       setIsMicActive(false);
+      isMicActiveRef.current = false;
       onListeningChangeRef.current?.(false);
     }
   }, []);
@@ -625,7 +678,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     }
   }, [isProcessing, isMicActive, turnOffAndExecute, turnOnMic]);
 
-  // 3-second Voice Activity Detection (VAD) Timeout & Automatic Speech Endpointing Loop
+  // 10-second Voice Activity Detection (VAD) Timeout & Automatic Speech Endpointing Loop
   useEffect(() => {
     if (!isMicActive) return;
 
@@ -637,19 +690,19 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
       // Case A: No speech detected yet since microphone was turned on
       if (!hasDetectedSpeechRef.current) {
         const elapsed = now - micStartTimeRef.current;
-        const remaining = Math.max(0, Math.ceil((3000 - elapsed) / 1000));
+        const remaining = Math.max(0, Math.ceil((10000 - elapsed) / 1000));
         setVadRemainingSeconds(remaining);
 
-        // 3-second VAD timeout: automatically stop listening if no speech is detected
-        if (elapsed >= 3000) {
+        // 10-second VAD timeout: automatically stop listening if no speech is detected
+        if (elapsed >= 10000) {
           clearInterval(vadInterval);
           autoCloseInactivity();
         }
       } else {
         // Case B: Speech detected! Check for end-of-speech silence (sentence completion)
         const silenceElapsed = now - lastSpeechTimeRef.current;
-        // If user finished speaking and has been silent for 1.8 seconds, auto-execute command!
-        if (silenceElapsed >= 1800) {
+        // If user finished speaking and has been silent for 2.8 seconds, auto-execute command!
+        if (silenceElapsed >= 2800) {
           clearInterval(vadInterval);
           turnOffAndExecute();
         }
@@ -744,16 +797,6 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setIsDiagnosticModalOpen(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-indigo-300 hover:text-indigo-100 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 rounded-xl transition-all cursor-pointer shadow-2xs"
-                title="Run diagnostic checks for microphone, browser compatibility, and network"
-              >
-                <Activity className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Diagnose</span>
-              </button>
-
-              <button
-                type="button"
                 onClick={onClose}
                 className="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition-colors cursor-pointer"
                 aria-label="Close voice assistant"
@@ -781,14 +824,17 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                 >
                   Grant Permission / Retry
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setIsDiagnosticModalOpen(true)}
-                  className="px-2.5 py-1 text-[11px] font-semibold bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 border border-indigo-500/30 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
-                >
-                  <Activity className="w-3 h-3 text-indigo-300" />
-                  Run Diagnostics
-                </button>
+                {typeof window !== 'undefined' && window.self !== window.top && (
+                  <a
+                    href={window.location.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    Open in New Tab
+                  </a>
+                )}
                 <button
                   type="button"
                   onClick={() => setMicError(null)}
@@ -899,13 +945,13 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                       Listening... Speak your command now
                     </span>
                     <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300 font-medium">
-                      <span>Auto-stopping in {vadRemainingSeconds}s if silent</span>
+                      <span>Auto-pauses in {vadRemainingSeconds}s if silent</span>
                       <div className="flex items-center gap-1 ml-0.5">
-                        {[1, 2, 3].map((dot) => (
+                        {[2, 4, 6, 8, 10].map((step) => (
                           <span
-                            key={dot}
+                            key={step}
                             className={`w-1.5 h-1.5 rounded-full transition-colors ${
-                              dot <= vadRemainingSeconds ? 'bg-amber-400' : 'bg-amber-400/20'
+                              vadRemainingSeconds >= step ? 'bg-amber-400' : 'bg-amber-400/20'
                             }`}
                           />
                         ))}
@@ -1030,7 +1076,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                             Listening... speak your command now
                           </p>
                           <p className="text-xs text-amber-300/80">
-                            Auto-stops in {vadRemainingSeconds}s if no speech is detected
+                            Auto-pauses in {vadRemainingSeconds}s if no speech is detected
                           </p>
                         </>
                       )}
@@ -1043,14 +1089,6 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                       <p className="text-xs text-gray-500">
                         Speech will appear here in real-time as you talk
                       </p>
-                      <button
-                        type="button"
-                        onClick={() => setIsDiagnosticModalOpen(true)}
-                        className="mt-1 text-[11px] text-indigo-400 hover:text-indigo-300 underline underline-offset-2 flex items-center gap-1 cursor-pointer"
-                      >
-                        <Activity className="w-3 h-3" />
-                        Microphone not working? Run Diagnostics
-                      </button>
                     </div>
                   )}
                 </div>
@@ -1105,14 +1143,6 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                         <Mic className="w-3.5 h-3.5" />
                         Tap to speak again
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => setIsDiagnosticModalOpen(true)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold transition-colors cursor-pointer"
-                      >
-                        <Activity className="w-3.5 h-3.5" />
-                        Run Diagnostic Test
-                      </button>
                     </div>
                   )}
                 </div>
@@ -1120,16 +1150,6 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
             )}
           </AnimatePresence>
         </motion.div>
-
-        {/* Step-by-Step Diagnostic Suite Modal */}
-        <VoiceDiagnosticModal
-          isOpen={isDiagnosticModalOpen}
-          onClose={() => setIsDiagnosticModalOpen(false)}
-          onRetryVoiceAssistant={() => {
-            setIsDiagnosticModalOpen(false);
-            turnOnMic();
-          }}
-        />
       </div>
     </AnimatePresence>
   );

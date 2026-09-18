@@ -665,6 +665,7 @@ export interface QuickAlarm {
 // ----------------------------------------------------
 export type CommandActionType =
   | 'add_expense'
+  | 'delete_expense'
   | 'add_todo'
   | 'add_habit'
   | 'toggle_habit'

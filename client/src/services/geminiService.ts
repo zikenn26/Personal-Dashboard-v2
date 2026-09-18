@@ -12,9 +12,15 @@ export interface GeminiChatMessage {
 
 export const GEMINI_MODELS = [
   {
+    id: 'gemini-3.1-flash-lite',
+    name: 'Gemini 3.1 Flash Lite',
+    badge: 'Recommended',
+    desc: 'Lowest latency, high availability for instant answers and dashboard actions',
+  },
+  {
     id: 'gemini-3.8-flash',
     name: 'Gemini 3.8 Flash',
-    badge: 'Recommended',
+    badge: 'Multimodal',
     desc: 'High speed, multimodal intelligence, and tool execution for daily tasks',
   },
   {
@@ -22,12 +28,6 @@ export const GEMINI_MODELS = [
     name: 'Gemini 3.5 Flash',
     badge: 'General',
     desc: 'Versatile general-purpose model for conversational workflow',
-  },
-  {
-    id: 'gemini-3.1-flash-lite',
-    name: 'Gemini 3.1 Flash Lite',
-    badge: 'Ultra Fast',
-    desc: 'Lowest latency for quick command processing and instant answers',
   },
   {
     id: 'gemini-3.1-pro-preview',
@@ -85,7 +85,7 @@ export async function checkGeminiHealth(): Promise<GeminiHealthResponse> {
     return {
       status: 'offline',
       hasApiKey: false,
-      defaultModel: 'gemini-3.8-flash',
+      defaultModel: 'gemini-3.1-flash-lite',
       liveModel: 'gemini-3.8-live',
     };
   }
@@ -104,7 +104,7 @@ export async function sendGeminiMessage(params: {
   model: string;
   updatedHistory: GeminiChatMessage[];
 }> {
-  const { message, history, model = 'gemini-3.8-flash', roleId, customSystemInstruction } = params;
+  const { message, history, model = 'gemini-3.1-flash-lite', roleId, customSystemInstruction } = params;
 
   // Selected role instruction
   const matchedRole = GEMINI_ROLES.find((r) => r.id === roleId);
@@ -121,6 +121,16 @@ export async function sendGeminiMessage(params: {
   const completedHabits = habits.filter((h) => h.completedDays?.[todayIdx]).length;
   const totalExpenses = expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
 
+  const recentExpensesSummary = expenses
+    .slice(0, 8)
+    .map((e) => `"${e.name}" (₹${e.amount} on ${e.date || 'today'})`)
+    .join(', ');
+
+  const recentTasksSummary = todos
+    .slice(0, 8)
+    .map((t) => `"${t.title}" [${t.status || (t.completed ? 'completed' : 'pending')}]`)
+    .join(', ');
+
   const payload = {
     message,
     history: history.map((h) => ({
@@ -134,6 +144,8 @@ export async function sendGeminiMessage(params: {
       completedHabitsCount: completedHabits,
       totalHabitsCount: habits.length,
       totalExpenses: Math.round(totalExpenses),
+      recentExpensesSummary,
+      recentTasksSummary,
     },
   };
 
@@ -160,7 +172,11 @@ export async function sendGeminiMessage(params: {
 
         // Map function names to existing executeSecretaryTool if needed
         if (toolName === 'createTask') toolName = 'add_task';
+        if (toolName === 'deleteTask') toolName = 'delete_task';
+        if (toolName === 'updateTask') toolName = 'update_task';
         if (toolName === 'logExpense') toolName = 'add_expense';
+        if (toolName === 'deleteExpense') toolName = 'delete_expense';
+        if (toolName === 'updateExpense') toolName = 'update_expense';
         if (toolName === 'toggleHabit') {
           // find habit id by title if habitTitle passed
           if (args.habitTitle && !args.id) {
@@ -183,10 +199,19 @@ export async function sendGeminiMessage(params: {
     }
   }
 
+  let finalReply = data.reply?.trim();
+  if (!finalReply) {
+    if (actionChips.length > 0) {
+      finalReply = actionChips.map((c) => c.replace(/^[✓⚡⚠️\s]+/, '')).join('. ') + '.';
+    } else {
+      finalReply = 'Action completed successfully.';
+    }
+  }
+
   const assistantMessage: GeminiChatMessage = {
     id: 'msg-gemini-' + Date.now(),
     role: 'assistant',
-    content: data.reply || 'Request completed.',
+    content: finalReply,
     actionChips,
     modelUsed: data.model || model,
     timestamp: Date.now(),
@@ -200,7 +225,7 @@ export async function sendGeminiMessage(params: {
   };
 
   return {
-    reply: data.reply,
+    reply: finalReply,
     actionChips,
     model: data.model || model,
     updatedHistory: [...history, userMessage, assistantMessage],

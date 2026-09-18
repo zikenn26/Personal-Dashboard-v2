@@ -56,6 +56,12 @@ export default defineConfig({
         secure: false,
         rewrite: (path) => path.replace(/^\/api\/supabase/, ""),
       },
+      "/api/weather": {
+        target: "https://api.open-meteo.com/v1/forecast",
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api\/weather/, ""),
+      },
     },
   },
 });

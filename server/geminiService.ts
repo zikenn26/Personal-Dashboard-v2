@@ -75,6 +75,104 @@ const dashboardTools: FunctionDeclaration[] = [
     },
   },
   {
+    name: "deleteExpense",
+    description: "Delete or remove an existing expense entry from the user's dashboard by description/name, amount, date ('today', 'yesterday'), category, or most recent/latest.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        query: {
+          type: Type.STRING,
+          description: "Description or keyword of the expense to delete, e.g. 'lunch', 'coffee', 'groceries'",
+        },
+        amount: {
+          type: Type.NUMBER,
+          description: "Numerical amount of the expense to delete, e.g. 29, 250, 500",
+        },
+        date: {
+          type: Type.STRING,
+          description: "Date of the expense, e.g. 'today', 'yesterday', or 'YYYY-MM-DD'",
+        },
+        category: {
+          type: Type.STRING,
+          description: "Category of the expense, e.g. 'Food & Dining', 'Groceries'",
+        },
+        isLatest: {
+          type: Type.BOOLEAN,
+          description: "Set to true if user wants to delete their most recent or last expense",
+        },
+      },
+    },
+  },
+  {
+    name: "updateExpense",
+    description: "Update or modify an existing expense entry (e.g. change amount, title, category, or date).",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        query: {
+          type: Type.STRING,
+          description: "Existing expense title, keyword, or description to identify it, e.g. 'lunch' or 'coffee'",
+        },
+        oldAmount: {
+          type: Type.NUMBER,
+          description: "Original amount of the expense if known",
+        },
+        newName: {
+          type: Type.STRING,
+          description: "New title or description for the expense",
+        },
+        newAmount: {
+          type: Type.NUMBER,
+          description: "New numerical amount for the expense",
+        },
+        newCategory: {
+          type: Type.STRING,
+          description: "New category for the expense",
+        },
+        isLatest: {
+          type: Type.BOOLEAN,
+          description: "Set to true if updating the most recent or last logged expense",
+        },
+      },
+    },
+  },
+  {
+    name: "deleteTask",
+    description: "Delete or remove a to-do task from the dashboard by title or description.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title: {
+          type: Type.STRING,
+          description: "Title or keywords of the task to delete",
+        },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "updateTask",
+    description: "Update an existing task status (e.g. mark completed, pending) or update priority/category.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title: {
+          type: Type.STRING,
+          description: "Title or keywords of the task to update",
+        },
+        status: {
+          type: Type.STRING,
+          description: "Status to set: 'completed', 'in_progress', or 'pending'",
+        },
+        priority: {
+          type: Type.STRING,
+          description: "Priority: 'low', 'medium', or 'high'",
+        },
+      },
+      required: ["title"],
+    },
+  },
+  {
     name: "toggleHabit",
     description: "Toggle or check off a daily habit by habit title.",
     parameters: {
@@ -123,7 +221,7 @@ export function handleGeminiHealth(_req: Request, res: Response) {
   res.json({
     status: "ok",
     hasApiKey: isGeminiKeyConfigured(),
-    defaultModel: "gemini-3.8-flash",
+    defaultModel: "gemini-3.1-flash-lite",
     liveModel: "gemini-3.8-live",
   });
 }
@@ -140,7 +238,7 @@ export async function handleGeminiChat(req: Request, res: Response) {
     const {
       message,
       history = [],
-      model = "gemini-3.8-flash",
+      model = "gemini-3.1-flash-lite",
       roleSystemInstruction,
       dashboardContext,
     } = req.body;
@@ -153,22 +251,25 @@ export async function handleGeminiChat(req: Request, res: Response) {
 
     // Validate model selection
     const allowedModels = [
-      "gemini-3.8-flash",
-      "gemini-3.5-flash",
       "gemini-3.1-flash-lite",
+      "gemini-3.5-flash",
+      "gemini-3.8-flash",
       "gemini-3.1-pro-preview",
     ];
-    const selectedModel = allowedModels.includes(model) ? model : "gemini-3.8-flash";
+    const selectedModel = allowedModels.includes(model) ? model : "gemini-3.1-flash-lite";
 
     // Build system instruction
     const baseInstruction =
       "You are Zikenn AI, an intelligent personal dashboard assistant, voice companion, and executive chief of staff. " +
-      "You help the user manage tasks, track habits, log expenses, organize exams, and reflect in their diary. " +
-      "You can execute dashboard actions via function tools (createTask, logExpense, toggleHabit, navigateView, queryDashboardData). " +
+      "You help the user manage tasks, track habits, log and delete/modify expenses, organize exams, and reflect in their diary. " +
+      "You have full capability to execute dashboard actions via function tools: createTask, deleteTask, updateTask, logExpense, deleteExpense, updateExpense, toggleHabit, navigateView, queryDashboardData. " +
+      "When the user asks to delete, cancel, or modify an expense or task (such as 'Delete the recent 29 rupees expense for lunch today'), ALWAYS call the appropriate tool (e.g. deleteExpense, deleteTask, updateExpense) immediately rather than apologizing or telling them to do it manually. " +
       "Be concise, engaging, and helpful. When you call a tool or understand a user command, confirm clearly what you did.";
 
     const contextPart = dashboardContext
-      ? `\nCurrent Dashboard State Summary:\n- Active Tasks: ${dashboardContext.pendingTasksCount ?? 'unknown'}\n- Today's Completed Habits: ${dashboardContext.completedHabitsCount ?? 0}/${dashboardContext.totalHabitsCount ?? 0}\n- Total Month Expenses: ₹${dashboardContext.totalExpenses ?? 0}\n`
+      ? `\nCurrent Dashboard State Summary:\n- Active Tasks: ${dashboardContext.pendingTasksCount ?? 'unknown'}\n- Today's Completed Habits: ${dashboardContext.completedHabitsCount ?? 0}/${dashboardContext.totalHabitsCount ?? 0}\n- Total Month Expenses: ₹${dashboardContext.totalExpenses ?? 0}\n` +
+        (dashboardContext.recentExpensesSummary ? `- Recent Logged Expenses: ${dashboardContext.recentExpensesSummary}\n` : '') +
+        (dashboardContext.recentTasksSummary ? `- Recent Tasks: ${dashboardContext.recentTasksSummary}\n` : '')
       : "";
 
     const fullSystemInstruction = `${baseInstruction}\n${roleSystemInstruction || ""}${contextPart}`;
@@ -191,34 +292,42 @@ export async function handleGeminiChat(req: Request, res: Response) {
       parts: [{ text: message }],
     });
 
-    let response;
-    try {
-      response = await ai.models.generateContent({
-        model: selectedModel,
-        contents,
-        config: {
-          systemInstruction: fullSystemInstruction,
-          tools: [{ functionDeclarations: dashboardTools }],
-        },
-      });
-    } catch (primaryErr: any) {
-      if (selectedModel !== "gemini-3.1-flash-lite") {
-        // Fall back gracefully to gemini-3.1-flash-lite if primary model is experiencing high demand
-        try {
-          response = await ai.models.generateContent({
-            model: "gemini-3.1-flash-lite",
-            contents,
-            config: {
-              systemInstruction: fullSystemInstruction,
-              tools: [{ functionDeclarations: dashboardTools }],
-            },
-          });
-        } catch {
-          throw primaryErr;
-        }
-      } else {
-        throw primaryErr;
+    // Resilient fallback order to gracefully handle temporary demand spikes
+    const candidateModels = [
+      selectedModel,
+      "gemini-3.1-flash-lite",
+      "gemini-3.5-flash",
+      "gemini-3.8-flash",
+    ];
+    const modelsToTry = Array.from(new Set(candidateModels));
+
+    let response: any = null;
+    let modelSuccessfullyUsed = selectedModel;
+
+    for (const modelToAttempt of modelsToTry) {
+      try {
+        response = await ai.models.generateContent({
+          model: modelToAttempt,
+          contents,
+          config: {
+            systemInstruction: fullSystemInstruction,
+            tools: [{ functionDeclarations: dashboardTools }],
+          },
+        });
+        modelSuccessfullyUsed = modelToAttempt;
+        break; // Succeeded
+      } catch {
+        // Try next fallback candidate smoothly without crashing
       }
+    }
+
+    if (!response) {
+      return res.json({
+        reply: "I am temporarily experiencing high cloud traffic. I'm ready to assist—please try your question again in a moment, or use one of the quick dashboard tools below.",
+        functionCalls: [],
+        model: "offline-fallback",
+        warning: "Temporary capacity limitation on cloud models.",
+      });
     }
 
     const replyText = response.text || "";
@@ -236,12 +345,11 @@ export async function handleGeminiChat(req: Request, res: Response) {
     res.json({
       reply: replyText,
       functionCalls: executedActions,
-      model: selectedModel,
+      model: modelSuccessfullyUsed,
     });
   } catch (err: any) {
-    console.error("Gemini Chat Error:", err);
     res.status(500).json({
-      error: err?.message || "Failed to process message with Gemini AI.",
+      error: "Failed to process message with Gemini AI.",
     });
   }
 }
@@ -285,8 +393,7 @@ export async function handleGeminiTts(req: Request, res: Response) {
       format: "pcm16",
     });
   } catch (err: any) {
-    console.error("Gemini TTS Error:", err);
-    res.status(500).json({ error: err?.message || "TTS generation failed." });
+    res.status(500).json({ error: "TTS generation failed." });
   }
 }
 
@@ -346,8 +453,8 @@ export async function handleGeminiTranscribe(req: Request, res: Response) {
 
     const promptText = "Transcribe this spoken audio exactly into text. Return only the spoken words without any commentary, quotes, or timestamps. If there is no clear speech or only silence/noise, return an empty string.";
 
-    // Dedicated transcription model order: gemini-3.5-transcribe -> gemini-3.1-flash-lite -> gemini-3.8-flash
-    const modelsToTry = ["gemini-3.5-transcribe", "gemini-3.1-flash-lite", "gemini-3.8-flash"];
+    // Dedicated transcription model order: gemini-3.1-flash-lite (fast, multimodal) -> gemini-3.8-flash
+    const modelsToTry = ["gemini-3.1-flash-lite", "gemini-3.8-flash"];
     let transcript = "";
     let lastError: any = null;
 
@@ -357,12 +464,22 @@ export async function handleGeminiTranscribe(req: Request, res: Response) {
           model: modelName,
           contents: [audioPart, promptText],
         });
-        transcript = (response.text || "").trim();
-        lastError = null;
-        break; // Successfully transcribed
+        const rawText = (response.text || "").trim();
+        // Discard pure silence artifacts like "00:00", "[silence]", "...", etc.
+        const cleaned = rawText
+          .replace(/^["'`]|["'`]$/g, "")
+          .replace(/^\[?(silence|blank_audio|\d{1,2}:\d{2})\]?\.?$/i, "")
+          .trim();
+
+        if (cleaned) {
+          transcript = cleaned;
+          lastError = null;
+          console.log(`[Gemini Transcribe] Model ${modelName} transcribed (${cleanMimeType}): "${transcript}"`);
+          break; // Successfully transcribed spoken words!
+        }
       } catch (err: any) {
         lastError = err;
-        // Continue to the next fallback model smoothly without logging noisy error JSON to stderr
+        // Continue to the next fallback model smoothly
       }
     }
 

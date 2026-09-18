@@ -10,6 +10,7 @@ import {
 } from '../types';
 import { Storage, DEFAULT_COMMAND_MAPPINGS } from '../utils/storage';
 import { Sound } from '../utils/audio';
+import { executeSecretaryTool } from './groqService';
 
 export interface DirectAppHandlers {
   onAddExpense?: (item: Omit<ExpenseItem, 'id'>) => void;
@@ -160,7 +161,7 @@ export function matchCommandTrigger(rawTranscript: string): MatchResult | null {
     if (isMatch) {
       const extractedParams: { amount?: number; dynamicText?: string } = {};
 
-      if (mapping.actionType === 'add_expense') {
+      if (mapping.actionType === 'add_expense' || mapping.actionType === 'delete_expense') {
         const dynAmount = extractDynamicAmount(rawClean, trigger);
         if (dynAmount !== null) {
           extractedParams.amount = dynAmount;
@@ -271,6 +272,29 @@ export async function executeCommandMapping(
         message: msg,
         actionChip: `✓ Expense Logged: ₹${amount} (${name})`,
         details: expenseData,
+      };
+    }
+
+    // ----------------------------------------------------
+    // DELETE EXPENSE
+    // ----------------------------------------------------
+    case 'delete_expense': {
+      const res = await executeSecretaryTool('delete_expense', {
+        query: extractedParams?.dynamicText || p.expenseName,
+        amount: extractedParams?.amount ?? p.expenseAmount,
+        isLatest: !extractedParams?.dynamicText && !extractedParams?.amount,
+      });
+
+      Sound.success(true);
+      const msg = res.data?.message || res.actionChip || 'Expense deleted.';
+      handlers.onShowToast?.(`Voice Trigger: ${msg}`, 'success');
+
+      return {
+        success: res.data?.success !== false,
+        actionType: 'delete_expense',
+        message: msg,
+        actionChip: res.actionChip,
+        details: res.data,
       };
     }
 

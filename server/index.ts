@@ -94,6 +94,19 @@ async function startServer() {
     }
   });
 
+  // Proxy /api/weather to Open-Meteo to bypass browser sandbox / CORS restrictions
+  app.get("/api/weather*", async (req, res) => {
+    try {
+      const queryString = req.url.includes("?") ? req.url.substring(req.url.indexOf("?")) : "";
+      const targetUrl = `https://api.open-meteo.com/v1/forecast${queryString}`;
+      const upstreamRes = await fetch(targetUrl);
+      const data = await upstreamRes.json();
+      res.status(upstreamRes.status).json(data);
+    } catch (err: any) {
+      res.status(502).json({ error: "Weather proxy error", message: err?.message });
+    }
+  });
+
   // Serve static files from dist/public in production
   const staticPath =
     process.env.NODE_ENV === "production"

@@ -57,6 +57,13 @@ const ACTION_META: Record<
     bg: 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/40',
     icon: <DollarSign className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-300" />,
   },
+  delete_expense: {
+    label: 'Delete Expense',
+    functionName: 'executeSecretaryTool(delete_expense)',
+    color: 'text-rose-700 dark:text-rose-300',
+    bg: 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/40',
+    icon: <Trash2 className="w-3.5 h-3.5 text-rose-700 dark:text-rose-300" />,
+  },
   add_todo: {
     label: 'Add Task / Todo',
     functionName: 'handleAddTodo',

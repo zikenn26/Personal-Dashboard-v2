@@ -1095,16 +1095,24 @@ export async function executeSecretaryTool(
 
       case 'update_task': {
         const current = Storage.getTodos();
-        const index = current.findIndex((t) => t.id === args.id);
+        let index = current.findIndex((t) => t.id === args.id);
+        if (index === -1 && (args.title || args.query)) {
+          const q = String(args.title || args.query).toLowerCase().trim();
+          index = current.findIndex((t) => t.title.toLowerCase().includes(q));
+        }
         if (index === -1) {
-          return { data: { error: `Task with id ${args.id} not found` } };
+          return { data: { error: `Task "${args.title || args.id}" not found` } };
         }
         const updatedTask = { ...current[index] };
         if (typeof args.completed === 'boolean') {
           updatedTask.completed = args.completed;
           updatedTask.status = args.completed ? 'complete' : 'todo';
+        } else if (args.status) {
+          const isComp = args.status === 'completed' || args.status === 'complete' || args.status === 'done';
+          updatedTask.completed = isComp;
+          updatedTask.status = isComp ? 'complete' : args.status;
         }
-        if (args.title) updatedTask.title = args.title;
+        if (args.title && !args.status && typeof args.completed !== 'boolean') updatedTask.title = args.title;
         if (args.priority) updatedTask.priority = args.priority as Priority;
 
         current[index] = updatedTask;
@@ -1565,6 +1573,8 @@ export async function executeSecretaryTool(
 
         const isLatestRequested =
           args.latest === true ||
+          args.isLatest === true ||
+          args.recent === true ||
           /\b(last|latest|recent|newest)\b/i.test(rawQuery);
 
         // Case A: User explicitly requested clearing ALL expenses and provided no specific item/amount filter
@@ -1778,6 +1788,67 @@ export async function executeSecretaryTool(
             remainingCount: updated.length,
           },
           actionChip: chipLabel,
+        };
+      }
+
+      case 'update_expense':
+      case 'modify_expense': {
+        const current = Storage.getExpenses();
+        if (current.length === 0) {
+          return {
+            data: { success: false, message: 'No expenses found in dashboard to update.' },
+            actionChip: '⚠️ No Expenses to Update',
+          };
+        }
+
+        let targetIndex = -1;
+        if (args.id) {
+          targetIndex = current.findIndex((e) => e.id === String(args.id));
+        }
+
+        if (targetIndex === -1 && (args.query || args.name || args.title)) {
+          const q = String(args.query || args.name || args.title).toLowerCase().trim();
+          targetIndex = current.findIndex(
+            (e) =>
+              e.name.toLowerCase().includes(q) ||
+              (args.oldAmount && Math.abs(Number(e.amount) - Number(args.oldAmount)) < 0.01)
+          );
+        }
+
+        if (targetIndex === -1 && args.oldAmount) {
+          targetIndex = current.findIndex(
+            (e) => Math.abs(Number(e.amount) - Number(args.oldAmount)) < 0.01
+          );
+        }
+
+        if (targetIndex === -1 && (args.isLatest || args.latest || args.recent)) {
+          targetIndex = 0;
+        }
+
+        if (targetIndex === -1) {
+          return {
+            data: { success: false, message: 'Could not find a matching expense to update.' },
+            actionChip: '⚠️ Expense Not Found',
+          };
+        }
+
+        const existing = current[targetIndex];
+        const updatedExpense: ExpenseItem = {
+          ...existing,
+          name: args.newName || args.name || existing.name,
+          amount: args.newAmount ? Number(args.newAmount) : args.amount ? Number(args.amount) : existing.amount,
+          category: args.newCategory || args.category || existing.category,
+          date: args.newDate || args.date || existing.date,
+        };
+
+        const updatedList = [...current];
+        updatedList[targetIndex] = updatedExpense;
+        Storage.setExpenses(updatedList);
+        notifyDataChanged('expenses', { updatedExpenses: updatedList });
+
+        return {
+          data: { success: true, expense: updatedExpense },
+          actionChip: `✓ Updated Expense: "${updatedExpense.name}" (₹${Number(updatedExpense.amount).toLocaleString()})`,
         };
       }
 
