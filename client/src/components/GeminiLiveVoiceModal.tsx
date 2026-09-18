@@ -75,6 +75,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
   const isMicActiveRef = useRef<boolean>(false);
   isMicActiveRef.current = isMicActive;
 
+  const micStartTimeRef = useRef<number>(0);
   const lastSpeechTimeRef = useRef<number>(Date.now());
   const hasDetectedSpeechRef = useRef<boolean>(false);
   const transcriptContainerRef = useRef<HTMLDivElement | null>(null);
@@ -260,7 +261,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     setAcknowledgment({
       commandText: '(No speech detected)',
       success: false,
-      message: 'Microphone closed automatically (3-second inactivity timeout) to conserve battery.',
+      message: 'Microphone stopped automatically after 3 seconds of inactivity to conserve battery and CPU.',
       timestamp: Date.now(),
     });
   }, [stopAudioTracks]);
@@ -386,6 +387,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
     audioBlobChunksRef.current = [];
     pcmChunksRef.current = [];
     lastSpeechTimeRef.current = Date.now();
+    micStartTimeRef.current = Date.now();
     hasDetectedSpeechRef.current = false;
     setHasDetectedSpeech(false);
     setVadRemainingSeconds(3);
@@ -440,8 +442,17 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
           }
           const average = sum / bufferLength;
           // Scale 0-100
-          const level = Math.min(100, Math.round((average / 110) * 100));
+          const level = Math.min(100, Math.round((average / 90) * 100));
           setAudioLevel(level);
+
+          // Voice Activity Detection from audio input
+          // Threshold: if average volume exceeds ambient silence (average >= 4.5 or level >= 5)
+          if (average >= 4.5 || level >= 5) {
+            hasDetectedSpeechRef.current = true;
+            lastSpeechTimeRef.current = Date.now();
+            setHasDetectedSpeech(true);
+          }
+
           animationFrameIdRef.current = requestAnimationFrame(updateAudioLevel);
         };
         animationFrameIdRef.current = requestAnimationFrame(updateAudioLevel);
@@ -517,7 +528,23 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
           rec.interimResults = true;
           rec.lang = 'en-US';
 
+          rec.onspeechstart = () => {
+            hasDetectedSpeechRef.current = true;
+            lastSpeechTimeRef.current = Date.now();
+            setHasDetectedSpeech(true);
+          };
+
+          rec.onsoundstart = () => {
+            hasDetectedSpeechRef.current = true;
+            lastSpeechTimeRef.current = Date.now();
+            setHasDetectedSpeech(true);
+          };
+
           rec.onresult = (event: any) => {
+            hasDetectedSpeechRef.current = true;
+            lastSpeechTimeRef.current = Date.now();
+            setHasDetectedSpeech(true);
+
             let finalTranscript = '';
             let interimTranscript = '';
 
@@ -546,7 +573,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
           };
 
           rec.onend = () => {
-            if (isMicActiveRef.current) {
+            if (isMicActiveRef.current && !isExecutingRef.current) {
               try {
                 rec.start();
               } catch {}
@@ -592,6 +619,42 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
       turnOnMic();
     }
   }, [isProcessing, isMicActive, turnOffAndExecute, turnOnMic]);
+
+  // 3-second Voice Activity Detection (VAD) Timeout & Automatic Speech Endpointing Loop
+  useEffect(() => {
+    if (!isMicActive) return;
+
+    const vadInterval = setInterval(() => {
+      if (!isMicActiveRef.current || isExecutingRef.current) return;
+
+      const now = Date.now();
+
+      // Case A: No speech detected yet since microphone was turned on
+      if (!hasDetectedSpeechRef.current) {
+        const elapsed = now - micStartTimeRef.current;
+        const remaining = Math.max(0, Math.ceil((3000 - elapsed) / 1000));
+        setVadRemainingSeconds(remaining);
+
+        // 3-second VAD timeout: automatically stop listening if no speech is detected
+        if (elapsed >= 3000) {
+          clearInterval(vadInterval);
+          autoCloseInactivity();
+        }
+      } else {
+        // Case B: Speech detected! Check for end-of-speech silence (sentence completion)
+        const silenceElapsed = now - lastSpeechTimeRef.current;
+        // If user finished speaking and has been silent for 1.8 seconds, auto-execute command!
+        if (silenceElapsed >= 1800) {
+          clearInterval(vadInterval);
+          turnOffAndExecute();
+        }
+      }
+    }, 100);
+
+    return () => {
+      clearInterval(vadInterval);
+    };
+  }, [isMicActive, autoCloseInactivity, turnOffAndExecute]);
 
   // Lifecycle: open/close handling
   useEffect(() => {
@@ -787,23 +850,43 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
             </div>
 
             {/* Mic State Action Prompt */}
-            <div className="mt-4 flex flex-col items-center gap-1 text-center min-h-[36px]">
+            <div className="mt-4 flex flex-col items-center gap-1.5 text-center min-h-[44px]">
               {isProcessing ? (
                 <span className="text-amber-300 text-xs font-semibold animate-pulse flex items-center gap-1.5">
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   Processing voice command...
                 </span>
               ) : isMicActive ? (
-                audioLevel > 5 ? (
-                  <span className="text-emerald-300 text-xs font-bold flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 animate-pulse">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                    Hearing voice ({audioLevel}%) — Tap mic to finish & execute
-                  </span>
+                hasDetectedSpeech ? (
+                  <div className="flex flex-col items-center gap-1">
+                    <span className="text-emerald-300 text-xs font-bold flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 animate-pulse">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                      Voice detected ({audioLevel}%)
+                    </span>
+                    <span className="text-[11px] text-emerald-400/80 font-medium">
+                      Auto-executes when you finish speaking (or tap mic)
+                    </span>
+                  </div>
                 ) : (
-                  <span className="text-rose-300 text-xs font-semibold flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping" />
-                    Listening... Speak now, then tap mic to execute
-                  </span>
+                  <div className="flex flex-col items-center gap-1">
+                    <span className="text-rose-300 text-xs font-semibold flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping" />
+                      Listening... Speak your command now
+                    </span>
+                    <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300 font-medium">
+                      <span>Auto-stopping in {vadRemainingSeconds}s if silent</span>
+                      <div className="flex items-center gap-1 ml-0.5">
+                        {[1, 2, 3].map((dot) => (
+                          <span
+                            key={dot}
+                            className={`w-1.5 h-1.5 rounded-full transition-colors ${
+                              dot <= vadRemainingSeconds ? 'bg-amber-400' : 'bg-amber-400/20'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 )
               ) : isSpeaking ? (
                 <span className="text-purple-300 text-xs font-medium flex items-center gap-1.5">
@@ -829,7 +912,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
               {isMicActive ? (
                 <div
                   className={`flex items-center gap-2 px-2.5 py-1 rounded-full border text-[11px] font-semibold transition-colors ${
-                    audioLevel > 5
+                    hasDetectedSpeech
                       ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
                       : 'bg-rose-500/20 border-rose-500/40 text-rose-300'
                   }`}
@@ -837,30 +920,30 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                   <div className="flex items-end gap-0.5 h-3.5">
                     <span
                       className={`w-1 rounded-full transition-all duration-75 ${
-                        audioLevel > 5 ? 'bg-emerald-400' : 'bg-rose-400'
+                        hasDetectedSpeech ? 'bg-emerald-400' : 'bg-rose-400'
                       }`}
                       style={{
-                        height: `${Math.max(4, Math.min(14, audioLevel > 5 ? (audioLevel * 0.14) + 4 : 5))}px`,
+                        height: `${Math.max(4, Math.min(14, hasDetectedSpeech ? (audioLevel * 0.14) + 4 : 5))}px`,
                       }}
                     />
                     <span
                       className={`w-1 rounded-full transition-all duration-75 ${
-                        audioLevel > 5 ? 'bg-emerald-400' : 'bg-rose-400'
+                        hasDetectedSpeech ? 'bg-emerald-400' : 'bg-rose-400'
                       }`}
                       style={{
-                        height: `${Math.max(4, Math.min(14, audioLevel > 5 ? (audioLevel * 0.18) + 6 : 9))}px`,
+                        height: `${Math.max(4, Math.min(14, hasDetectedSpeech ? (audioLevel * 0.18) + 6 : 9))}px`,
                       }}
                     />
                     <span
                       className={`w-1 rounded-full transition-all duration-75 ${
-                        audioLevel > 5 ? 'bg-emerald-400' : 'bg-rose-400'
+                        hasDetectedSpeech ? 'bg-emerald-400' : 'bg-rose-400'
                       }`}
                       style={{
-                        height: `${Math.max(4, Math.min(14, audioLevel > 5 ? (audioLevel * 0.14) + 4 : 5))}px`,
+                        height: `${Math.max(4, Math.min(14, hasDetectedSpeech ? (audioLevel * 0.14) + 4 : 5))}px`,
                       }}
                     />
                   </div>
-                  <span>{audioLevel > 5 ? 'HEARING VOICE' : 'LISTENING'}</span>
+                  <span>{hasDetectedSpeech ? 'HEARING VOICE' : `VAD: ${vadRemainingSeconds}s`}</span>
                 </div>
               ) : isProcessing ? (
                 <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[11px] font-semibold animate-pulse">
@@ -878,7 +961,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
               ref={transcriptContainerRef}
               className={`relative min-h-[130px] max-h-[190px] overflow-y-auto p-4 sm:p-5 rounded-2xl transition-all duration-200 border ${
                 isMicActive
-                  ? audioLevel > 5
+                  ? hasDetectedSpeech
                     ? 'bg-gradient-to-b from-[#0B1A14] to-[#0A1210] border-emerald-500/50 ring-2 ring-emerald-500/30 shadow-inner'
                     : 'bg-gradient-to-b from-[#140F14] to-[#0D0A0E] border-rose-500/40 ring-2 ring-rose-500/20 shadow-inner'
                   : 'bg-[#0B0F15] border-white/10 shadow-inner'
@@ -897,7 +980,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                     {isMicActive && (
                       <span
                         className={`inline-block w-2.5 h-5 ml-1.5 align-middle animate-pulse rounded-sm ${
-                          audioLevel > 5 ? 'bg-emerald-400' : 'bg-rose-400'
+                          hasDetectedSpeech ? 'bg-emerald-400' : 'bg-rose-400'
                         }`}
                       />
                     )}
@@ -907,7 +990,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                 <div className="h-full min-h-[90px] flex flex-col items-center justify-center text-center p-2">
                   {isMicActive ? (
                     <div className="flex flex-col items-center gap-1.5">
-                      {audioLevel > 5 ? (
+                      {hasDetectedSpeech ? (
                         <>
                           <p className="text-lg sm:text-xl font-semibold text-emerald-300">
                             Hearing your voice...
@@ -921,8 +1004,8 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                           <p className="text-lg sm:text-xl font-medium text-rose-300 animate-pulse">
                             Listening... speak your command now
                           </p>
-                          <p className="text-xs text-gray-400">
-                            Words appear here in large real-time text
+                          <p className="text-xs text-amber-300/80">
+                            Auto-stops in {vadRemainingSeconds}s if no speech is detected
                           </p>
                         </>
                       )}
@@ -979,6 +1062,18 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                   <p className="text-xs text-white/90 leading-relaxed">
                     {acknowledgment.message}
                   </p>
+                  {!acknowledgment.success && !isMicActive && !isProcessing && (
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={turnOnMic}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs font-semibold transition-colors cursor-pointer"
+                      >
+                        <Mic className="w-3.5 h-3.5" />
+                        Tap to speak again
+                      </button>
+                    </div>
+                  )}
                 </div>
               </motion.div>
             )}

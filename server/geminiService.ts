@@ -191,14 +191,31 @@ export async function handleGeminiChat(req: Request, res: Response) {
       parts: [{ text: message }],
     });
 
-    const response = await ai.models.generateContent({
-      model: selectedModel,
-      contents,
-      config: {
-        systemInstruction: fullSystemInstruction,
-        tools: [{ functionDeclarations: dashboardTools }],
-      },
-    });
+    let response;
+    try {
+      response = await ai.models.generateContent({
+        model: selectedModel,
+        contents,
+        config: {
+          systemInstruction: fullSystemInstruction,
+          tools: [{ functionDeclarations: dashboardTools }],
+        },
+      });
+    } catch (primaryErr: any) {
+      if (selectedModel !== "gemini-3.1-flash-lite") {
+        console.warn(`${selectedModel} failed (${primaryErr?.message}), falling back to gemini-3.1-flash-lite`);
+        response = await ai.models.generateContent({
+          model: "gemini-3.1-flash-lite",
+          contents,
+          config: {
+            systemInstruction: fullSystemInstruction,
+            tools: [{ functionDeclarations: dashboardTools }],
+          },
+        });
+      } else {
+        throw primaryErr;
+      }
+    }
 
     const replyText = response.text || "";
     const functionCalls = response.functionCalls || [];
@@ -303,23 +320,32 @@ export async function handleGeminiTranscribe(req: Request, res: Response) {
 
     let transcript = "";
     try {
-      // First try gemini-3.8-flash which is fastest and highly accurate with audio input
+      // First try gemini-3.8-flash
       const response = await ai.models.generateContent({
         model: "gemini-3.8-flash",
         contents: [audioPart, promptText],
       });
       transcript = (response.text || "").trim();
     } catch (flashErr: any) {
-      console.warn("gemini-3.8-flash audio transcribe failed, trying gemini-3.5-transcribe:", flashErr?.message);
+      console.warn("gemini-3.8-flash transcribe failed, trying gemini-3.1-flash-lite:", flashErr?.message);
       try {
-        const transcribeResponse = await ai.models.generateContent({
-          model: "gemini-3.5-transcribe",
+        const liteResponse = await ai.models.generateContent({
+          model: "gemini-3.1-flash-lite",
           contents: [audioPart, promptText],
         });
-        transcript = (transcribeResponse.text || "").trim();
-      } catch (transcribeErr: any) {
-        console.warn("gemini-3.5-transcribe fallback failed:", transcribeErr?.message);
-        return res.json({ transcript: "", warning: transcribeErr?.message });
+        transcript = (liteResponse.text || "").trim();
+      } catch (liteErr: any) {
+        console.warn("gemini-3.1-flash-lite fallback failed, trying gemini-3.5-transcribe:", liteErr?.message);
+        try {
+          const transcribeResponse = await ai.models.generateContent({
+            model: "gemini-3.5-transcribe",
+            contents: [audioPart, promptText],
+          });
+          transcript = (transcribeResponse.text || "").trim();
+        } catch (transcribeErr: any) {
+          console.warn("gemini-3.5-transcribe fallback failed:", transcribeErr?.message);
+          return res.json({ transcript: "", warning: transcribeErr?.message });
+        }
       }
     }
 
