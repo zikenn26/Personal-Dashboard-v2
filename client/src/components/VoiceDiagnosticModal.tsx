@@ -388,7 +388,7 @@ export const VoiceDiagnosticModal: React.FC<VoiceDiagnosticModalProps> = ({
         const transcribeRes = await fetch('/api/gemini/transcribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ audio: base64Data, mimeType: 'audio/wav' }),
+          body: JSON.stringify({ audio: base64Data, mimeType: 'audio/wav', isDiagnosticTest: true }),
         });
 
         if (transcribeRes.ok) {

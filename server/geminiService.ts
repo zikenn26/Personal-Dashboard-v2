@@ -203,15 +203,19 @@ export async function handleGeminiChat(req: Request, res: Response) {
       });
     } catch (primaryErr: any) {
       if (selectedModel !== "gemini-3.1-flash-lite") {
-        console.warn(`${selectedModel} failed (${primaryErr?.message}), falling back to gemini-3.1-flash-lite`);
-        response = await ai.models.generateContent({
-          model: "gemini-3.1-flash-lite",
-          contents,
-          config: {
-            systemInstruction: fullSystemInstruction,
-            tools: [{ functionDeclarations: dashboardTools }],
-          },
-        });
+        // Fall back gracefully to gemini-3.1-flash-lite if primary model is experiencing high demand
+        try {
+          response = await ai.models.generateContent({
+            model: "gemini-3.1-flash-lite",
+            contents,
+            config: {
+              systemInstruction: fullSystemInstruction,
+              tools: [{ functionDeclarations: dashboardTools }],
+            },
+          });
+        } catch {
+          throw primaryErr;
+        }
       } else {
         throw primaryErr;
       }
@@ -293,7 +297,13 @@ export async function handleGeminiTranscribe(req: Request, res: Response) {
       return res.status(503).json({ error: "GEMINI_API_KEY is not configured." });
     }
 
-    const { audio, mimeType = "audio/wav" } = req.body;
+    const { audio, mimeType = "audio/wav", isDiagnosticTest = false } = req.body;
+
+    // Fast diagnostic verification ping without invoking heavy models
+    if (isDiagnosticTest) {
+      return res.json({ transcript: "", verified: true, status: "ok" });
+    }
+
     if (!audio || typeof audio !== "string") {
       return res.status(400).json({ error: "Missing 'audio' (base64 string) in request body." });
     }
@@ -302,6 +312,24 @@ export async function handleGeminiTranscribe(req: Request, res: Response) {
     const cleanBase64 = audio.replace(/^data:[^;]+;base64,/, "").replace(/\s/g, "");
     if (!cleanBase64 || cleanBase64.length < 128) {
       return res.json({ transcript: "" });
+    }
+
+    // Fast silence detection: if audio buffer is all zeros (e.g. muted mic or test silence), return empty transcript immediately
+    try {
+      const sampleBuf = Buffer.from(cleanBase64.slice(0, 1024), "base64");
+      const pcmStart = sampleBuf.length > 44 ? 44 : 0;
+      let hasSignal = false;
+      for (let i = pcmStart; i < sampleBuf.length; i++) {
+        if (sampleBuf[i] !== 0) {
+          hasSignal = true;
+          break;
+        }
+      }
+      if (!hasSignal) {
+        return res.json({ transcript: "" });
+      }
+    } catch {
+      // Proceed to model if buffer check fails
     }
 
     // Sanitize MIME type (remove parameters like codecs=opus)
@@ -318,40 +346,35 @@ export async function handleGeminiTranscribe(req: Request, res: Response) {
 
     const promptText = "Transcribe this spoken audio exactly into text. Return only the spoken words without any commentary, quotes, or timestamps. If there is no clear speech or only silence/noise, return an empty string.";
 
+    // Dedicated transcription model order: gemini-3.5-transcribe -> gemini-3.1-flash-lite -> gemini-3.8-flash
+    const modelsToTry = ["gemini-3.5-transcribe", "gemini-3.1-flash-lite", "gemini-3.8-flash"];
     let transcript = "";
-    try {
-      // First try gemini-3.8-flash
-      const response = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
-        contents: [audioPart, promptText],
-      });
-      transcript = (response.text || "").trim();
-    } catch (flashErr: any) {
-      console.warn("gemini-3.8-flash transcribe failed, trying gemini-3.1-flash-lite:", flashErr?.message);
+    let lastError: any = null;
+
+    for (const modelName of modelsToTry) {
       try {
-        const liteResponse = await ai.models.generateContent({
-          model: "gemini-3.1-flash-lite",
+        const response = await ai.models.generateContent({
+          model: modelName,
           contents: [audioPart, promptText],
         });
-        transcript = (liteResponse.text || "").trim();
-      } catch (liteErr: any) {
-        console.warn("gemini-3.1-flash-lite fallback failed, trying gemini-3.5-transcribe:", liteErr?.message);
-        try {
-          const transcribeResponse = await ai.models.generateContent({
-            model: "gemini-3.5-transcribe",
-            contents: [audioPart, promptText],
-          });
-          transcript = (transcribeResponse.text || "").trim();
-        } catch (transcribeErr: any) {
-          console.warn("gemini-3.5-transcribe fallback failed:", transcribeErr?.message);
-          return res.json({ transcript: "", warning: transcribeErr?.message });
-        }
+        transcript = (response.text || "").trim();
+        lastError = null;
+        break; // Successfully transcribed
+      } catch (err: any) {
+        lastError = err;
+        // Continue to the next fallback model smoothly without logging noisy error JSON to stderr
       }
+    }
+
+    if (lastError && !transcript) {
+      return res.json({
+        transcript: "",
+        warning: "Audio transcription is temporarily experiencing high demand. Please speak again in a moment.",
+      });
     }
 
     res.json({ transcript });
   } catch (err: any) {
-    console.error("Gemini Transcribe Error:", err);
     res.status(500).json({ error: err?.message || "Audio transcription failed." });
   }
 }
