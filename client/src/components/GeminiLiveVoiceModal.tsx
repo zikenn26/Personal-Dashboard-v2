@@ -8,6 +8,7 @@ import {
   Loader2,
   Volume2,
   Radio,
+  Activity,
 } from 'lucide-react';
 import {
   matchCommandTrigger,
@@ -21,6 +22,7 @@ import {
 } from '../services/geminiService';
 import { encodePcmToWav, downsampleTo16k, blobToBase64 } from '../utils/audioUtils';
 import { Sound } from '../utils/audio';
+import { VoiceDiagnosticModal } from './VoiceDiagnosticModal';
 
 interface GeminiLiveVoiceModalProps {
   isOpen: boolean;
@@ -70,6 +72,9 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
 
   // Subtle green flash glow state on successful command execution
   const [isSuccessGlow, setIsSuccessGlow] = useState<boolean>(false);
+
+  // Diagnostic Modal open/close state
+  const [isDiagnosticModalOpen, setIsDiagnosticModalOpen] = useState<boolean>(false);
 
   // Refs for tracking active audio and speech instances
   const isMicActiveRef = useRef<boolean>(false);
@@ -736,14 +741,26 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
               </h2>
             </div>
 
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition-colors cursor-pointer"
-              aria-label="Close voice assistant"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsDiagnosticModalOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-indigo-300 hover:text-indigo-100 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 rounded-xl transition-all cursor-pointer shadow-2xs"
+                title="Run diagnostic checks for microphone, browser compatibility, and network"
+              >
+                <Activity className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Diagnose</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition-colors cursor-pointer"
+                aria-label="Close voice assistant"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           {/* Error Message if Mic is Denied */}
@@ -763,6 +780,14 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                   className="px-2.5 py-1 text-[11px] font-semibold bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 rounded-lg transition-colors cursor-pointer"
                 >
                   Grant Permission / Retry
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsDiagnosticModalOpen(true)}
+                  className="px-2.5 py-1 text-[11px] font-semibold bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 border border-indigo-500/30 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                >
+                  <Activity className="w-3 h-3 text-indigo-300" />
+                  Run Diagnostics
                 </button>
                 <button
                   type="button"
@@ -1018,6 +1043,14 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                       <p className="text-xs text-gray-500">
                         Speech will appear here in real-time as you talk
                       </p>
+                      <button
+                        type="button"
+                        onClick={() => setIsDiagnosticModalOpen(true)}
+                        className="mt-1 text-[11px] text-indigo-400 hover:text-indigo-300 underline underline-offset-2 flex items-center gap-1 cursor-pointer"
+                      >
+                        <Activity className="w-3 h-3" />
+                        Microphone not working? Run Diagnostics
+                      </button>
                     </div>
                   )}
                 </div>
@@ -1063,7 +1096,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                     {acknowledgment.message}
                   </p>
                   {!acknowledgment.success && !isMicActive && !isProcessing && (
-                    <div className="pt-2">
+                    <div className="pt-2 flex items-center gap-2 flex-wrap">
                       <button
                         type="button"
                         onClick={turnOnMic}
@@ -1072,6 +1105,14 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
                         <Mic className="w-3.5 h-3.5" />
                         Tap to speak again
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsDiagnosticModalOpen(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold transition-colors cursor-pointer"
+                      >
+                        <Activity className="w-3.5 h-3.5" />
+                        Run Diagnostic Test
+                      </button>
                     </div>
                   )}
                 </div>
@@ -1079,6 +1120,16 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
             )}
           </AnimatePresence>
         </motion.div>
+
+        {/* Step-by-Step Diagnostic Suite Modal */}
+        <VoiceDiagnosticModal
+          isOpen={isDiagnosticModalOpen}
+          onClose={() => setIsDiagnosticModalOpen(false)}
+          onRetryVoiceAssistant={() => {
+            setIsDiagnosticModalOpen(false);
+            turnOnMic();
+          }}
+        />
       </div>
     </AnimatePresence>
   );
