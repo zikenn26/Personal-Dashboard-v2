@@ -1686,6 +1686,8 @@ export default function App() {
       setActiveView('expenses');
     } else if (view === 'docs') {
       setActiveView('journal');
+    } else if (view === 'todos' || view === 'todo' || view === 'tasks') {
+      setActiveView('tasks');
     } else {
       setActiveView(view as MainNavView);
     }
@@ -2721,7 +2723,7 @@ export default function App() {
               )}
 
               {/* VIEW 2: Tasks Notion Kanban Board */}
-              {activeView === 'tasks' && (
+              {(activeView === 'tasks' || (activeView as string) === 'todos' || (activeView as string) === 'todo') && (
                 <TasksKanbanView
                   todos={todos}
                   onToggleTodo={handleToggleTodo}

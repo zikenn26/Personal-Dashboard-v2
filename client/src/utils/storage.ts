@@ -162,7 +162,7 @@ export const DEFAULT_COMMAND_MAPPINGS: CommandMapping[] = [
     triggerPhrase: 'go to tasks',
     actionType: 'navigate_view',
     parameters: {
-      view: 'todos',
+      view: 'tasks',
     },
     matchType: 'contains',
     enabled: true,

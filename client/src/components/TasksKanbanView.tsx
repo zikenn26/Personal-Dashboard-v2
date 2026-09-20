@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { TodoItem, Priority, TaskStatus } from '../types';
 import { Sound } from '../utils/audio';
 import { triggerConfetti } from '../utils/confetti';
@@ -28,6 +28,8 @@ import {
   AlertCircle,
   X,
   GripVertical,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 
 interface TasksKanbanViewProps {
@@ -47,6 +49,9 @@ interface TasksKanbanViewProps {
   soundEnabled: boolean;
 }
 
+export type TaskSortField = 'priority' | 'dueDate' | 'createdAt';
+export type SortDirection = 'asc' | 'desc';
+
 const STATUS_COLUMNS: {
   id: TaskStatus;
   label: string;
@@ -55,6 +60,7 @@ const STATUS_COLUMNS: {
   bgDark: string;
   badgeBg: string;
   borderActive: string;
+  ringColor: string;
 }[] = [
   {
     id: 'todo',
@@ -64,6 +70,7 @@ const STATUS_COLUMNS: {
     bgDark: 'dark:bg-purple-950/20',
     badgeBg: 'bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-300',
     borderActive: 'border-purple-400 bg-purple-50/30 dark:bg-purple-950/40',
+    ringColor: '#a855f7', // purple-500
   },
   {
     id: 'in_progress',
@@ -73,6 +80,7 @@ const STATUS_COLUMNS: {
     bgDark: 'dark:bg-amber-950/20',
     badgeBg: 'bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-300',
     borderActive: 'border-amber-400 bg-amber-50/30 dark:bg-amber-950/40',
+    ringColor: '#f59e0b', // amber-500
   },
   {
     id: 'complete',
@@ -82,8 +90,83 @@ const STATUS_COLUMNS: {
     bgDark: 'dark:bg-emerald-950/20',
     badgeBg: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-300',
     borderActive: 'border-emerald-400 bg-emerald-50/30 dark:bg-emerald-950/40',
+    ringColor: '#10b981', // emerald-500
   },
 ];
+
+const PRIORITY_ORDER: Record<Priority, number> = {
+  urgent: 4,
+  high: 3,
+  medium: 2,
+  low: 1,
+};
+
+/**
+ * Small Progress Ring component for Column Health Check
+ */
+const ColumnProgressRing: React.FC<{
+  percentage: number;
+  count: number;
+  total: number;
+  strokeColor: string;
+  statusId: TaskStatus;
+}> = ({ percentage, count, total, strokeColor, statusId }) => {
+  const size = 30;
+  const strokeWidth = 3;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (Math.min(100, Math.max(0, percentage)) / 100) * circumference;
+
+  const tooltipText =
+    total === 0
+      ? `${count} tasks`
+      : statusId === 'complete'
+      ? `${percentage}% of total tasks completed (${count}/${total})`
+      : statusId === 'in_progress'
+      ? `${percentage}% active in progress (${count}/${total})`
+      : `${percentage}% of tasks queued (${count}/${total})`;
+
+  return (
+    <div
+      className="relative flex items-center justify-center shrink-0 group/ring cursor-help"
+      title={tooltipText}
+    >
+      <svg width={size} height={size} className="transform -rotate-90">
+        {/* Background Track */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={strokeWidth}
+          className="text-gray-200 dark:text-gray-700/80 transition-colors"
+        />
+        {/* Filled Progress Ring */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={strokeColor}
+          strokeWidth={strokeWidth}
+          strokeDasharray={circumference}
+          strokeDashoffset={strokeDashoffset}
+          strokeLinecap="round"
+          className="transition-all duration-500 ease-out"
+        />
+      </svg>
+      {/* Central percentage text or check */}
+      <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold font-mono text-gray-700 dark:text-gray-300 tracking-tighter select-none">
+        {statusId === 'complete' && percentage === 100 && count > 0 ? (
+          <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400 stroke-[3]" />
+        ) : (
+          `${percentage}%`
+        )}
+      </span>
+    </div>
+  );
+};
 
 const PRIORITY_CONFIG: Record<
   Priority,
@@ -132,6 +215,8 @@ export const TasksKanbanView: React.FC<TasksKanbanViewProps> = ({
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterPriority, setFilterPriority] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<TaskSortField>('priority');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
   // Drag and Drop State
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
@@ -304,16 +389,70 @@ export const TasksKanbanView: React.FC<TasksKanbanViewProps> = ({
   };
 
   // Filter tasks based on searchQuery and priority
-  const filteredTodos = todos.filter((todo) => {
-    if (searchQuery.trim()) {
-      const match =
-        todo.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (todo.category && todo.category.toLowerCase().includes(searchQuery.toLowerCase()));
-      if (!match) return false;
+  const filteredTodos = useMemo(() => {
+    return todos.filter((todo) => {
+      if (searchQuery.trim()) {
+        const match =
+          todo.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (todo.category && todo.category.toLowerCase().includes(searchQuery.toLowerCase()));
+        if (!match) return false;
+      }
+      if (filterPriority !== 'all' && todo.priority !== filterPriority) return false;
+      return true;
+    });
+  }, [todos, searchQuery, filterPriority]);
+
+  // Sort tasks by selected criteria: Priority, Due Date, or Created Date
+  const sortedAndFilteredTodos = useMemo(() => {
+    const list = [...filteredTodos];
+
+    list.sort((a, b) => {
+      let comparison = 0;
+
+      if (sortBy === 'priority') {
+        const pA = PRIORITY_ORDER[(a.priority || 'medium') as Priority] || 2;
+        const pB = PRIORITY_ORDER[(b.priority || 'medium') as Priority] || 2;
+        comparison = pA - pB;
+      } else if (sortBy === 'dueDate') {
+        const dA = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+        const dB = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+        comparison = dA - dB;
+      } else if (sortBy === 'createdAt') {
+        const tA = a.createdAt || 0;
+        const tB = b.createdAt || 0;
+        comparison = tA - tB;
+      }
+
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+
+    return list;
+  }, [filteredTodos, sortBy, sortDirection]);
+
+  // Overall Board Statistics for Health Check
+  const totalTasksCount = todos.length;
+  const completedTasksCount = todos.filter((t) => getTaskStatus(t) === 'complete').length;
+  const inProgressTasksCount = todos.filter((t) => getTaskStatus(t) === 'in_progress').length;
+  const todoTasksCount = todos.filter((t) => getTaskStatus(t) === 'todo').length;
+
+  const getColumnStats = (colId: TaskStatus, currentColumnFilteredCount: number) => {
+    const totalAll = totalTasksCount;
+    let percentage = 0;
+    if (totalAll > 0) {
+      if (colId === 'complete') {
+        percentage = Math.round((completedTasksCount / totalAll) * 100);
+      } else if (colId === 'in_progress') {
+        percentage = Math.round((inProgressTasksCount / totalAll) * 100);
+      } else {
+        percentage = Math.round((todoTasksCount / totalAll) * 100);
+      }
     }
-    if (filterPriority !== 'all' && todo.priority !== filterPriority) return false;
-    return true;
-  });
+    return {
+      percentage,
+      count: currentColumnFilteredCount,
+      totalAll,
+    };
+  };
 
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-200">
@@ -377,7 +516,51 @@ export const TasksKanbanView: React.FC<TasksKanbanViewProps> = ({
         </div>
 
         {/* Right Action Tools */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+          {/* Sorting Toggle Control */}
+          <div className="flex items-center bg-[#F9FAFB] dark:bg-[#1F2937] border border-[#E5E7EB] dark:border-[#374151] rounded-lg p-0.5 text-xs">
+            <div className="flex items-center gap-1 pl-2 pr-1 text-[#6B7280] dark:text-[#9CA3AF] text-[11px] font-medium select-none">
+              <ArrowUpDown className="w-3 h-3 text-indigo-500 shrink-0" />
+              <span className="hidden lg:inline">Sort:</span>
+            </div>
+
+            {/* Sort Field Selector */}
+            <select
+              value={sortBy}
+              onChange={(e) => {
+                Sound.click(soundEnabled);
+                setSortBy(e.target.value as TaskSortField);
+              }}
+              className="bg-transparent text-[11px] font-semibold text-[#111827] dark:text-white px-1.5 py-1 rounded focus:outline-none cursor-pointer border-none"
+              title="Select sorting criteria"
+            >
+              <option value="priority" className="dark:bg-[#1F2937]">Priority</option>
+              <option value="dueDate" className="dark:bg-[#1F2937]">Due Date</option>
+              <option value="createdAt" className="dark:bg-[#1F2937]">Created Date</option>
+            </select>
+
+            {/* Sort Direction Toggle Button */}
+            <button
+              type="button"
+              onClick={() => {
+                Sound.click(soundEnabled);
+                setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+              }}
+              className="p-1 text-[#6B7280] dark:text-[#9CA3AF] hover:text-[#111827] dark:hover:text-white hover:bg-white dark:hover:bg-[#111827] rounded transition-all cursor-pointer"
+              title={
+                sortDirection === 'asc'
+                  ? `Ascending order (${sortBy === 'priority' ? 'Low to Urgent' : sortBy === 'dueDate' ? 'Earliest first' : 'Oldest first'}) - Click to toggle`
+                  : `Descending order (${sortBy === 'priority' ? 'Urgent to Low' : sortBy === 'dueDate' ? 'Latest first' : 'Newest first'}) - Click to toggle`
+              }
+            >
+              {sortDirection === 'asc' ? (
+                <ArrowUp className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+              ) : (
+                <ArrowDown className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+              )}
+            </button>
+          </div>
+
           {/* Search Input */}
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-[#9CA3AF] absolute left-2.5 top-1/2 -translate-y-1/2" />
@@ -386,7 +569,7 @@ export const TasksKanbanView: React.FC<TasksKanbanViewProps> = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Filter tasks..."
-              className="pl-8 pr-2.5 py-1 rounded-lg text-xs bg-[#F9FAFB] dark:bg-[#1F2937] border border-[#E5E7EB] dark:border-[#374151] text-[#111827] dark:text-white focus:outline-none focus:ring-1 focus:ring-[#6366F1] w-36 sm:w-48"
+              className="pl-8 pr-2.5 py-1 rounded-lg text-xs bg-[#F9FAFB] dark:bg-[#1F2937] border border-[#E5E7EB] dark:border-[#374151] text-[#111827] dark:text-white focus:outline-none focus:ring-1 focus:ring-[#6366F1] w-32 sm:w-44"
             />
           </div>
 
@@ -428,8 +611,9 @@ export const TasksKanbanView: React.FC<TasksKanbanViewProps> = ({
       {viewMode === 'kanban' ? (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
           {STATUS_COLUMNS.map((col) => {
-            const colTasks = filteredTodos.filter((t) => getTaskStatus(t) === col.id);
+            const colTasks = sortedAndFilteredTodos.filter((t) => getTaskStatus(t) === col.id);
             const isDragOver = dragOverColumn === col.id;
+            const stats = getColumnStats(col.id, colTasks.length);
 
             return (
               <div
@@ -444,7 +628,7 @@ export const TasksKanbanView: React.FC<TasksKanbanViewProps> = ({
                 }`}
               >
                 <div className="space-y-2.5">
-                  {/* Column Header */}
+                  {/* Column Header with Health Progress Ring */}
                   <div className="flex items-center justify-between px-1">
                     <div className="flex items-center gap-2">
                       <span className={`w-2.5 h-2.5 rounded-full ${col.dotColor}`} />
@@ -456,13 +640,24 @@ export const TasksKanbanView: React.FC<TasksKanbanViewProps> = ({
                       </span>
                     </div>
 
-                    <button
-                      onClick={() => openNewTaskModal(col.id)}
-                      className="p-1 rounded text-[#9CA3AF] hover:text-[#111827] dark:hover:text-white hover:bg-[#E5E7EB] dark:hover:bg-[#374151] cursor-pointer"
-                      title={`Add task in ${col.label}`}
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      {/* Health Progress Ring */}
+                      <ColumnProgressRing
+                        percentage={stats.percentage}
+                        count={stats.count}
+                        total={stats.totalAll}
+                        strokeColor={col.ringColor}
+                        statusId={col.id}
+                      />
+
+                      <button
+                        onClick={() => openNewTaskModal(col.id)}
+                        className="p-1 rounded text-[#9CA3AF] hover:text-[#111827] dark:hover:text-white hover:bg-[#E5E7EB] dark:hover:bg-[#374151] cursor-pointer"
+                        title={`Add task in ${col.label}`}
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Inline Task Quick Input if active */}
@@ -666,7 +861,7 @@ export const TasksKanbanView: React.FC<TasksKanbanViewProps> = ({
         /* List / Table Mode */
         <div className="rounded-2xl border border-[#E5E7EB] dark:border-[#1F2937] bg-white dark:bg-[#111827] overflow-hidden shadow-2xs">
           <div className="divide-y divide-[#F3F4F6] dark:divide-[#1F2937]">
-            {filteredTodos.map((todo) => {
+            {sortedAndFilteredTodos.map((todo) => {
               const priority = (todo.priority || 'medium') as Priority;
               const priorityCfg = PRIORITY_CONFIG[priority] || PRIORITY_CONFIG.medium;
 

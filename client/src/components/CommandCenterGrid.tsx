@@ -23,6 +23,7 @@ import {
   GripVertical,
   RotateCcw,
   LayoutGrid,
+  ArrowRight,
 } from 'lucide-react';
 
 export interface DropIndicator {
@@ -677,20 +678,30 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
           <div className="flex items-center justify-between pb-2 border-b border-[#EDECE9] dark:border-[#334155]/60">
             <div className="flex items-center gap-2">
               {dragHandle}
-              <div className="w-7 h-7 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200/60 dark:border-blue-900/40 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
-                <CheckSquare className="w-3.5 h-3.5" />
-              </div>
-              <div>
-                <h2 className="text-xs uppercase font-bold text-[#37352F] dark:text-white tracking-wider">
-                  Today&apos;s Tasks
-                </h2>
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  Sound.click(soundEnabled);
+                  onNavigate('tasks');
+                }}
+                className="flex items-center gap-2 text-left group cursor-pointer hover:opacity-80 transition-opacity"
+                title="Go to Tasks & Kanban"
+              >
+                <div className="w-7 h-7 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200/60 dark:border-blue-900/40 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0 group-hover:scale-105 transition-transform">
+                  <CheckSquare className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <h2 className="text-xs uppercase font-bold text-[#37352F] dark:text-white tracking-wider group-hover:text-[#6366F1] dark:group-hover:text-[#818CF8] transition-colors">
+                    Today&apos;s Tasks
+                  </h2>
+                </div>
+              </button>
             </div>
             <button
               type="button"
               onClick={() => {
                 Sound.click(soundEnabled);
-                onNavigate('todos');
+                onNavigate('tasks');
               }}
               className="text-xs text-[#6366F1] dark:text-[#818CF8] hover:underline font-semibold cursor-pointer"
             >
@@ -706,6 +717,17 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
                 <p className="text-[11px] text-[#787774] dark:text-[#9CA3AF] mt-0.5">
                   Relax or create a new goal.
                 </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    Sound.click(soundEnabled);
+                    onNavigate('tasks');
+                  }}
+                  className="mt-2.5 inline-flex items-center gap-1 text-[11px] font-semibold text-[#6366F1] dark:text-[#818CF8] hover:underline cursor-pointer"
+                >
+                  <span>Open Tasks & Kanban</span>
+                  <ArrowRight className="w-3 h-3" />
+                </button>
               </div>
             ) : (
               todos

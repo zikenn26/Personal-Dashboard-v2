@@ -476,7 +476,7 @@ export function parseNaturalLanguageIntent(rawTranscript: string): MatchResult |
   if (navMatch && navMatch[1]) {
     const rawTarget = navMatch[1].toLowerCase();
     let view = 'home';
-    if (/^(?:todo|todos|task|tasks)$/.test(rawTarget)) view = 'todos';
+    if (/^(?:todo|todos|task|tasks)$/.test(rawTarget)) view = 'tasks';
     else if (/^(?:expense|expenses|budget)$/.test(rawTarget)) view = 'expenses';
     else if (/^(?:habit|habits)$/.test(rawTarget)) view = 'habits';
     else if (/^(?:journal|note|notes)$/.test(rawTarget)) view = 'journal';
