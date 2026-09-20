@@ -1,57 +1,31 @@
 import React, { useState, useRef } from 'react';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas-pro';
+import { jsPDF } from 'jspdf';
 import {
   UserProfile,
   PortfolioProject,
   SkillCategory,
   ResumeDocument,
   MainNavView,
-  EducationRecord,
-  JobExperience,
-  HobbyItem,
-  CertificationItem,
 } from '../types';
+import { ResumeView, ResumeFormatStyle } from './ResumeView';
+import { WebPortfolioView } from './WebPortfolioView';
+import { EditProfileModal } from './EditProfileModal';
+import { ResumePreviewModal } from './ResumePreviewModal';
+import { ProjectDetailModal } from './ProjectDetailModal';
 import { Sound } from '../utils/audio';
-import { DEFAULT_ATS_RESUME } from '../utils/storage';
-import { STOCK_IMAGES } from '../assets/stockImages';
-import { CoverPickerModal } from './CoverPickerModal';
-import { AvatarPickerModal } from './AvatarPickerModal';
-import { ResumeDocumentSheet } from './ResumeDocumentSheet';
 import {
-  FileText,
-  Printer,
-  Copy,
   Download,
-  Check,
-  Building,
-  GraduationCap,
-  Briefcase,
-  Sparkles,
-  Mail,
-  Phone,
-  Globe,
-  Linkedin,
-  Github,
-  MapPin,
-  Heart,
+  Printer,
+  Eye,
+  Share2,
+  Pencil,
+  SlidersHorizontal,
   ExternalLink,
-  Code2,
-  Edit2,
-  Edit3,
-  Plus,
-  Trash2,
-  X,
-  FolderGit2,
-  Award,
-  Camera,
-  Image as ImageIcon,
-  CheckCircle2,
-  Sliders,
+  Check,
+  Globe,
+  Sparkles,
   Layers,
-  Save,
-  Loader2,
-  UserCheck,
 } from 'lucide-react';
 
 interface WorkfolioViewProps {
@@ -60,6 +34,8 @@ interface WorkfolioViewProps {
   skills: SkillCategory[];
   resume: ResumeDocument;
   onUpdateProfile: (updated: UserProfile) => void;
+  onUpdateProjects?: (projects: PortfolioProject[]) => void;
+  onUpdateSkills?: (skills: SkillCategory[]) => void;
   onUpdateResume?: (resume: ResumeDocument) => void;
   onAddProject: (project: Omit<PortfolioProject, 'id'>) => void;
   onDeleteProject: (id: string) => void;
@@ -67,1442 +43,587 @@ interface WorkfolioViewProps {
   soundEnabled: boolean;
 }
 
+export type PortfolioTab = 'resume' | 'portfolio';
+
 export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
   profile,
   projects,
   skills,
   resume,
   onUpdateProfile,
+  onUpdateProjects,
+  onUpdateSkills,
   onUpdateResume,
   onAddProject,
   onDeleteProject,
   onNavigate,
   soundEnabled,
 }) => {
-  const [copiedSuccess, setCopiedSuccess] = useState(false);
-  const [downloadSuccess, setDownloadSuccess] = useState(false);
+  // Navigation tab state: 'resume' or 'portfolio'
+  const [activeTab, setActiveTab] = useState<PortfolioTab>('portfolio');
+
+  // Resume visible sections state for toggles
+  const [visibleSections, setVisibleSections] = useState<Record<string, boolean>>({
+    summary: true,
+    experience: true,
+    education: true,
+    skills: true,
+    projects: true,
+    certifications: true,
+    publications: true,
+    achievements: true,
+  });
+
+  // Modal States
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editInitialTab, setEditInitialTab] = useState('basic');
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [selectedProject, setSelectedProject] = useState<PortfolioProject | null>(null);
+
+  // Export & Action States
   const [isExportingPDF, setIsExportingPDF] = useState(false);
+  const [sharedToast, setSharedToast] = useState(false);
 
-  // Direct In-Place Edit Mode on Resume
-  const [isInlineEditMode, setIsInlineEditMode] = useState(false);
+  // Resume Sheet DOM Ref for PDF capture and Print
+  const resumeSheetRef = useRef<HTMLDivElement | null>(null);
 
-  // Modals for Cover & Avatar & Deep Modals
-  const [showCoverModal, setShowCoverModal] = useState(false);
-  const [showAvatarModal, setShowAvatarModal] = useState(false);
-  const [showProfileModal, setShowProfileModal] = useState(false);
-  const [showProjectModal, setShowProjectModal] = useState(false);
-  const [showJobModal, setShowJobModal] = useState(false);
-  const [showEduModal, setShowEduModal] = useState(false);
-
-  // Profile Edit Modal State
-  const [formName, setFormName] = useState(profile.name || '');
-  const [formSubtitle, setFormSubtitle] = useState(profile.handle?.replace('@', '') || '');
-  const [formTitle, setFormTitle] = useState(profile.title || '');
-  const [formSummary, setFormSummary] = useState(
-    profile.professionalSummary ||
-      profile.bio ||
-      ''
-  );
-  const [formLocation, setFormLocation] = useState(profile.location || '');
-  const [formEmail, setFormEmail] = useState(profile.contactEmail || '');
-  const [formPhone, setFormPhone] = useState(profile.phone || '');
-  const [formLinkedin, setFormLinkedin] = useState(profile.linkedin || '');
-  const [formGithub, setFormGithub] = useState(profile.github || '');
-  const [formWebsite, setFormWebsite] = useState(profile.website || '');
-
-  // New Project State
-  const [projTitle, setProjTitle] = useState('');
-  const [projCategory, setProjCategory] = useState<PortfolioProject['category']>('Fullstack');
-  const [projDesc, setProjDesc] = useState('');
-  const [projTech, setProjTech] = useState('');
-  const [projLive, setProjLive] = useState('');
-  const [projGithub, setProjGithub] = useState('');
-
-  // New Job State
-  const [jobRole, setJobRole] = useState('');
-  const [jobCompany, setJobCompany] = useState('');
-  const [jobDates, setJobDates] = useState('');
-  const [jobLocation, setJobLocation] = useState('');
-  const [jobDesc, setJobDesc] = useState('');
-  const [jobAch, setJobAch] = useState('');
-  const [jobTech, setJobTech] = useState('');
-
-  // New Edu State
-  const [eduDegree, setEduDegree] = useState('');
-  const [eduLevelTitle, setEduLevelTitle] = useState('');
-  const [eduInstitution, setEduInstitution] = useState('');
-  const [eduScore, setEduScore] = useState('');
-  const [eduYear, setEduYear] = useState('');
-  const [eduHighlights, setEduHighlights] = useState('');
-
-  // Quick Inline Add States
-  const [newSkillInput, setNewSkillInput] = useState<{ [categoryIdx: number]: string }>({});
-  const [newHobbyTitle, setNewHobbyTitle] = useState('');
-  const [newHobbyEmoji, setNewHobbyEmoji] = useState('💡');
-  const [newCertName, setNewCertName] = useState('');
-  const [newCertIssuer, setNewCertIssuer] = useState('');
-  const [newCertYear, setNewCertYear] = useState('');
-  const [newInfoText, setNewInfoText] = useState('');
-
-  const [showOptionalHobbies, setShowOptionalHobbies] = useState(false);
-
-  const educationRecords: EducationRecord[] = (profile.educationRecords && profile.educationRecords.length > 0)
-    ? profile.educationRecords
-    : (DEFAULT_ATS_RESUME.education || []).map((e, idx) => ({
-        id: `default-edu-${idx}`,
-        level: (idx === 0 ? 'postgraduation' : 'graduation') as any,
-        levelTitle: idx === 0 ? "Master's Degree" : "Bachelor's Degree",
-        degree: e.degree,
-        institution: e.school,
-        year: e.year,
-        score: e.score || '',
-        location: e.location,
-        specialization: e.specialization,
-        highlights: e.highlights,
-      }));
-
-  const jobExperiences: JobExperience[] = (profile.jobExperiences && profile.jobExperiences.length > 0)
-    ? profile.jobExperiences
-    : (DEFAULT_ATS_RESUME.experiences || []).map((exp, idx) => ({
-        id: `default-job-${idx}`,
-        role: exp.role,
-        company: exp.company,
-        startDate: exp.period,
-        endDate: exp.period,
-        description: exp.details || '',
-        keyAchievements: exp.achievements || [],
-        techStack: exp.techStack || [],
-      }));
-
-  const hobbies = profile.hobbies || [];
-
-  const certifications = (resume.certifications && resume.certifications.length > 0)
-    ? resume.certifications
-    : ((profile.certifications && profile.certifications.length > 0)
-        ? profile.certifications
-        : DEFAULT_ATS_RESUME.certifications);
-
-  const additionalInfo = (resume.additionalInfo && resume.additionalInfo.length > 0)
-    ? resume.additionalInfo
-    : DEFAULT_ATS_RESUME.additionalInfo;
-
-  const skillsCategories = (resume.skillsByCategory && resume.skillsByCategory.length > 0)
-    ? resume.skillsByCategory
-    : (skills && skills.length > 0
-        ? skills.map(sc => ({ category: sc.category, items: sc.skills.map(s => s.name) }))
-        : (DEFAULT_ATS_RESUME.skillsByCategory || []));
-
-  const resumeProjects = (resume.projects && resume.projects.length > 0)
-    ? resume.projects
-    : DEFAULT_ATS_RESUME.projects;
-
-  const resumeSheetRef = useRef<HTMLDivElement>(null);
-
-  // Print Handler
-  const handlePrint = () => {
+  const toggleSection = (id: string) => {
     Sound.click(soundEnabled);
-    if (isInlineEditMode) {
-      setIsInlineEditMode(false);
-    }
-    setTimeout(() => {
-      window.focus();
-      window.print();
-    }, 150);
+    setVisibleSections((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
   };
 
-  // High Quality PDF Download via html2canvas & jsPDF
+  const handleShareResume = () => {
+    Sound.click(soundEnabled);
+    const shareUrl = window.location.href;
+    navigator.clipboard.writeText(shareUrl);
+    Sound.success(soundEnabled);
+    setSharedToast(true);
+    setTimeout(() => setSharedToast(false), 2400);
+  };
+
+  const [printStatus, setPrintStatus] = useState<string | null>(null);
+
+  // High-Resolution PDF Export
   const handleDownloadPDF = async () => {
     Sound.click(soundEnabled);
-    const element = document.getElementById('printable-resume-sheet');
-    if (!element) return;
+    setIsExportingPDF(true);
+
+    const wasPortfolio = activeTab === 'portfolio';
+    if (wasPortfolio) {
+      setActiveTab('resume');
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    }
 
     try {
-      setIsExportingPDF(true);
-      const wasEditing = isInlineEditMode;
-      if (wasEditing) setIsInlineEditMode(false);
+      const sheet = document.getElementById('printable-resume-sheet');
+      if (!sheet) {
+        throw new Error('Resume sheet element not found');
+      }
 
-      // Temporarily attach high-contrast export styling class
-      element.classList.add('pdf-exporting-target');
-      await new Promise((resolve) => setTimeout(resolve, 80));
+      // Scroll window to top so html2canvas renders origin correctly
+      window.scrollTo({ top: 0, behavior: 'instant' as any });
+      await new Promise((resolve) => setTimeout(resolve, 150));
 
-      const canvas = await html2canvas(element, {
-        scale: 2, // 2x crisp resolution
+      const canvas = await html2canvas(sheet, {
+        scale: 2,
         useCORS: true,
         allowTaint: true,
-        backgroundColor: '#ffffff',
         logging: false,
-        scrollX: 0,
-        scrollY: 0,
+        backgroundColor: '#ffffff',
+        windowWidth: 1200,
       });
-
-      element.classList.remove('pdf-exporting-target');
-      if (wasEditing) setIsInlineEditMode(true);
 
       const imgData = canvas.toDataURL('image/jpeg', 0.98);
       const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-      // Maintain standard 8mm print margin
-      const margin = 8;
-      const contentWidth = pdfWidth - margin * 2;
-      const contentHeight = (canvas.height * contentWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
 
-      let heightLeft = contentHeight;
-      let position = margin;
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
 
-      // First Page
-      pdf.addImage(imgData, 'JPEG', margin, position, contentWidth, contentHeight, undefined, 'FAST');
-      heightLeft -= (pdfHeight - margin * 2);
-
-      // Additional pages if needed
-      while (heightLeft > 0) {
-        position = heightLeft - contentHeight + margin;
+      while (heightLeft > 5) {
+        position = heightLeft - imgHeight;
         pdf.addPage();
-        pdf.addImage(imgData, 'JPEG', margin, position, contentWidth, contentHeight, undefined, 'FAST');
-        heightLeft -= (pdfHeight - margin * 2);
+        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
       }
 
-      const cleanFileName = (profile.name || 'User_Resume')
-        .trim()
-        .replace(/[^a-zA-Z0-9_-]/g, '_');
-      pdf.save(`${cleanFileName}_Resume.pdf`);
-
+      const cleanName = (profile.name || 'Gulshan_Kumar_Nayak').trim().replace(/\s+/g, '_');
+      pdf.save(`${cleanName}_Resume.pdf`);
       Sound.success(soundEnabled);
-      setDownloadSuccess(true);
-      setTimeout(() => setDownloadSuccess(false), 3000);
     } catch (err) {
-      console.error('PDF Export Error:', err);
-      // Fallback to native print
-      window.print();
+      console.error('PDF export error:', err);
+      executePrint();
     } finally {
       setIsExportingPDF(false);
-      element.classList.remove('pdf-exporting-target');
-    }
-  };
-
-  // Copy Markdown Representation
-  const handleCopyMarkdown = () => {
-    Sound.click(soundEnabled);
-
-    let md = `# ${profile.name || 'Professional'}\n`;
-    md += `**${profile.handle ? profile.handle.replace('@', '') : 'Profile'}**\n\n`;
-    md += `📍 Location: ${profile.location || 'India'} | ✉️ Email: ${profile.contactEmail || ''}\n`;
-    if (profile.phone) md += `📞 Phone: ${profile.phone} | `;
-    if (profile.linkedin) md += `💼 LinkedIn: ${profile.linkedin} | `;
-    if (profile.github) md += `🐙 GitHub: ${profile.github}\n\n`;
-
-    const summaryText = profile.professionalSummary || profile.bio;
-    if (summaryText) {
-      md += `## PROFESSIONAL SUMMARY\n${summaryText}\n\n`;
-    }
-
-    if (jobExperiences.length > 0) {
-      md += `## PROFESSIONAL EXPERIENCE\n`;
-      jobExperiences.forEach((j) => {
-        md += `### ${j.role} • ${j.company} (${j.startDate} - ${j.endDate || 'Present'})\n`;
-        if (j.location) md += `*${j.location}*\n\n`;
-        if (j.description) md += `${j.description}\n\n`;
-        if (j.keyAchievements && j.keyAchievements.length > 0) {
-          j.keyAchievements.forEach((ach) => {
-            md += `- ${ach}\n`;
-          });
-          md += `\n`;
-        }
-        if (j.techStack && j.techStack.length > 0) {
-          md += `*Technologies:* ${j.techStack.join(', ')}\n\n`;
-        }
-      });
-    }
-
-    if (educationRecords.length > 0) {
-      md += `## EDUCATION & ACADEMIC QUALIFICATIONS\n`;
-      educationRecords.forEach((e) => {
-        md += `### ${e.degree} (${e.levelTitle || e.level})\n`;
-        md += `*Score:* **${e.score}** | *Year:* ${e.year} | *Institution:* ${e.institution}\n`;
-        if (e.highlights && e.highlights.length > 0) {
-          e.highlights.forEach((h) => {
-            md += `- ${h}\n`;
-          });
-        }
-        md += `\n`;
-      });
-    }
-
-    if (skills.length > 0) {
-      md += `## TECHNICAL SKILLS\n`;
-      skills.forEach((sc) => {
-        md += `**${sc.category}:** ${sc.skills.map((s) => s.name).join(', ')}\n\n`;
-      });
-    }
-
-    navigator.clipboard.writeText(md);
-    setCopiedSuccess(true);
-    setTimeout(() => setCopiedSuccess(false), 2500);
-  };
-
-  // Download JSON
-  const handleDownloadJSON = () => {
-    Sound.click(soundEnabled);
-    const data = {
-      profile,
-      educationRecords,
-      jobExperiences,
-      skills,
-      projects,
-      hobbies,
-      exportedAt: new Date().toISOString(),
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `resume_portfolio_${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    setDownloadSuccess(true);
-    setTimeout(() => setDownloadSuccess(false), 2500);
-  };
-
-  // Save Profile Details Modal
-  const handleSaveProfile = (e: React.FormEvent) => {
-    e.preventDefault();
-    Sound.success(soundEnabled);
-    onUpdateProfile({
-      ...profile,
-      name: formName.trim() || profile.name,
-      handle: formSubtitle.trim() ? `@${formSubtitle.trim().replace(/^@/, '')}` : profile.handle,
-      title: formTitle.trim() || profile.title,
-      professionalSummary: formSummary.trim(),
-      bio: formSummary.trim(),
-      location: formLocation.trim() || 'Noida / Bengaluru, India',
-      contactEmail: formEmail.trim() || undefined,
-      phone: formPhone.trim() || undefined,
-      linkedin: formLinkedin.trim() || undefined,
-      github: formGithub.trim() || undefined,
-      website: formWebsite.trim() || undefined,
-    });
-    setShowProfileModal(false);
-  };
-
-  // Inline Profile Update Helper
-  const handleInlineProfileChange = (key: keyof UserProfile, value: any) => {
-    onUpdateProfile({
-      ...profile,
-      [key]: value,
-    });
-  };
-
-  // Add Project
-  const handleAddProjectSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!projTitle.trim()) return;
-    Sound.success(soundEnabled);
-    onAddProject({
-      title: projTitle.trim(),
-      category: projCategory,
-      description: projDesc.trim(),
-      techStack: projTech
-        ? projTech.split(',').map((t) => t.trim()).filter(Boolean)
-        : [],
-      liveUrl: projLive.trim() || undefined,
-      githubUrl: projGithub.trim() || undefined,
-    });
-    setProjTitle('');
-    setProjDesc('');
-    setProjTech('');
-    setProjLive('');
-    setProjGithub('');
-    setShowProjectModal(false);
-  };
-
-  // Add Job
-  const handleAddJobSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!jobRole.trim() || !jobCompany.trim()) return;
-    Sound.success(soundEnabled);
-    const newJob: JobExperience = {
-      id: `job-${Date.now()}`,
-      role: jobRole.trim(),
-      company: jobCompany.trim(),
-      startDate: jobDates.split('-')[0]?.trim() || '2023',
-      endDate: jobDates.split('-')[1]?.trim() || 'Present',
-      location: jobLocation.trim() || 'Noida / Bengaluru, India',
-      description: jobDesc.trim(),
-      keyAchievements: jobAch
-        ? jobAch.split('\n').map((a) => a.trim()).filter(Boolean)
-        : [],
-      techStack: jobTech
-        ? jobTech.split(',').map((t) => t.trim()).filter(Boolean)
-        : [],
-    };
-    onUpdateProfile({
-      ...profile,
-      jobExperiences: [newJob, ...jobExperiences],
-    });
-    setJobRole('');
-    setJobCompany('');
-    setJobDates('');
-    setJobLocation('');
-    setJobDesc('');
-    setJobAch('');
-    setJobTech('');
-    setShowJobModal(false);
-  };
-
-  // Update Specific Job Inline
-  const handleUpdateJobInline = (id: string, updatedFields: Partial<JobExperience>) => {
-    const updated = jobExperiences.map((j) => (j.id === id ? { ...j, ...updatedFields } : j));
-    onUpdateProfile({
-      ...profile,
-      jobExperiences: updated,
-    });
-  };
-
-  // Add Bullet to Specific Job
-  const handleAddJobAchievement = (jobId: string) => {
-    const updated = jobExperiences.map((j) => {
-      if (j.id === jobId) {
-        const ach = j.keyAchievements || [];
-        return {
-          ...j,
-          keyAchievements: [...ach, 'New impact metric or architectural achievement...'],
-        };
+      if (wasPortfolio) {
+        setActiveTab('portfolio');
       }
-      return j;
-    });
-    onUpdateProfile({ ...profile, jobExperiences: updated });
+    }
   };
 
-  // Delete Specific Job Bullet
-  const handleDeleteJobAchievement = (jobId: string, achIndex: number) => {
-    const updated = jobExperiences.map((j) => {
-      if (j.id === jobId) {
-        const ach = (j.keyAchievements || []).filter((_, i) => i !== achIndex);
-        return { ...j, keyAchievements: ach };
+  const handlePrint = () => {
+    Sound.click(soundEnabled);
+    if (activeTab !== 'resume') {
+      setActiveTab('resume');
+      setTimeout(() => executePrint(), 350);
+    } else {
+      executePrint();
+    }
+  };
+
+  const executePrint = () => {
+    const sheet = document.getElementById('printable-resume-sheet');
+    if (!sheet) {
+      try {
+        window.print();
+      } catch (_) {}
+      return;
+    }
+
+    setPrintStatus('Preparing printable document...');
+
+    try {
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      iframe.style.visibility = 'hidden';
+      document.body.appendChild(iframe);
+
+      const frameDoc = iframe.contentWindow?.document;
+      if (frameDoc) {
+        const styleSheets = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+          .map((el) => el.outerHTML)
+          .join('\n');
+
+        frameDoc.open();
+        frameDoc.write(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <title>${(profile.name || 'Gulshan Kumar Nayak')} - Resume</title>
+              <meta charset="utf-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1" />
+              ${styleSheets}
+              <style>
+                @page { size: A4 portrait; margin: 10mm 12mm; }
+                body {
+                  background: white !important;
+                  color: black !important;
+                  padding: 16px !important;
+                  margin: 0 !important;
+                  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                }
+                #printable-resume-sheet {
+                  max-width: 100% !important;
+                  width: 100% !important;
+                  box-shadow: none !important;
+                  border: none !important;
+                  padding: 0 !important;
+                  margin: 0 !important;
+                }
+                .print\\:hidden, button { display: none !important; }
+              </style>
+            </head>
+            <body>
+              ${sheet.outerHTML}
+            </body>
+          </html>
+        `);
+        frameDoc.close();
+
+        setTimeout(() => {
+          try {
+            iframe.contentWindow?.focus();
+            iframe.contentWindow?.print();
+            setPrintStatus(null);
+          } catch (printErr) {
+            console.warn('Iframe print failed, calling window.print():', printErr);
+            try {
+              window.print();
+            } catch (err2) {
+              console.error('Print unavailable in iframe:', err2);
+            }
+            setPrintStatus(null);
+          } finally {
+            setTimeout(() => {
+              try {
+                document.body.removeChild(iframe);
+              } catch (_) {}
+            }, 3000);
+          }
+        }, 500);
+        return;
       }
-      return j;
-    });
-    onUpdateProfile({ ...profile, jobExperiences: updated });
-  };
-
-  // Delete Job
-  const handleDeleteJob = (id: string) => {
-    Sound.click(soundEnabled);
-    onUpdateProfile({
-      ...profile,
-      jobExperiences: jobExperiences.filter((j) => j.id !== id),
-    });
-  };
-
-  // Add Education
-  const handleAddEduSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!eduDegree.trim() || !eduInstitution.trim()) return;
-    Sound.success(soundEnabled);
-    const newEdu: EducationRecord = {
-      id: `edu-${Date.now()}`,
-      degree: eduDegree.trim(),
-      level: 'graduation',
-      levelTitle: eduLevelTitle.trim() || "Graduation (Bachelor's Degree)",
-      institution: eduInstitution.trim(),
-      year: eduYear.trim() || '2020 - 2024',
-      score: eduScore.trim() || '8.5 CGPA',
-      scoreType: 'cgpa',
-      highlights: eduHighlights
-        ? eduHighlights.split('\n').map((h) => h.trim()).filter(Boolean)
-        : [],
-    };
-    onUpdateProfile({
-      ...profile,
-      educationRecords: [newEdu, ...educationRecords],
-    });
-    setEduDegree('');
-    setEduLevelTitle('');
-    setEduInstitution('');
-    setEduScore('');
-    setEduYear('');
-    setEduHighlights('');
-    setShowEduModal(false);
-  };
-
-  // Update Specific Education Inline
-  const handleUpdateEduInline = (id: string, updatedFields: Partial<EducationRecord>) => {
-    const updated = educationRecords.map((e) => (e.id === id ? { ...e, ...updatedFields } : e));
-    onUpdateProfile({
-      ...profile,
-      educationRecords: updated,
-    });
-  };
-
-  // Delete Education
-  const handleDeleteEdu = (id: string) => {
-    Sound.click(soundEnabled);
-    onUpdateProfile({
-      ...profile,
-      educationRecords: educationRecords.filter((e) => e.id !== id),
-    });
-  };
-
-  // Add Skill Item to Category
-  const handleAddSkillInline = (catIdx: number) => {
-    const skillName = newSkillInput[catIdx]?.trim();
-    if (!skillName) return;
-
-    const updatedSkills = [...skills];
-    if (updatedSkills[catIdx]) {
-      updatedSkills[catIdx].skills.push({
-        name: skillName,
-        level: 90,
-        experience: '3+ yrs',
-      });
-      // trigger resume / profile state sync
-      setNewSkillInput({ ...newSkillInput, [catIdx]: '' });
-      Sound.success(soundEnabled);
+    } catch (e) {
+      console.warn('Iframe print setup failed, using window.print():', e);
+      try {
+        window.print();
+      } catch (_) {}
+      setPrintStatus(null);
     }
   };
 
-  // Remove Skill Item from Category
-  const handleRemoveSkillInline = (catIdx: number, skillIdx: number) => {
-    const updatedSkills = [...skills];
-    if (updatedSkills[catIdx]) {
-      updatedSkills[catIdx].skills.splice(skillIdx, 1);
-      Sound.click(soundEnabled);
-    }
-  };
-
-  // Add Hobby Inline
-  const handleAddHobbyInline = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newHobbyTitle.trim()) return;
-    const newHobby: HobbyItem = {
-      id: `hob-${Date.now()}`,
-      title: newHobbyTitle.trim(),
-      icon: newHobbyEmoji.trim() || '✨',
-      category: 'Lifestyle',
-      description: 'Personal interest and passion pursuit',
-      passionLevel: 'Active Passion',
-    };
-    onUpdateProfile({
-      ...profile,
-      hobbies: [...hobbies, newHobby],
-    });
-    setNewHobbyTitle('');
-    Sound.success(soundEnabled);
-  };
-
-  // Remove Hobby Inline
-  const handleRemoveHobbyInline = (id: string) => {
-    onUpdateProfile({
-      ...profile,
-      hobbies: hobbies.filter((h) => h.id !== id),
-    });
-    Sound.click(soundEnabled);
-  };
-
-  // Add Certification Inline
-  const handleAddCertInline = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newCertName.trim()) return;
-    const currentCerts: CertificationItem[] = (profile.certifications || certifications).map((c, i) => ({
-      id: (c as any).id || `cert-${Date.now()}-${i}`,
-      name: c.name,
-      issuer: c.issuer,
-      year: c.year,
-      link: c.link,
-    }));
-    const newCert: CertificationItem = {
-      id: `cert-${Date.now()}`,
-      name: newCertName.trim(),
-      issuer: newCertIssuer.trim() || undefined,
-      year: newCertYear.trim() || undefined,
-    };
-    const updated = [...currentCerts, newCert];
-    onUpdateResume({
-      ...resume,
-      certifications: updated,
-    });
-    onUpdateProfile({
-      ...profile,
-      certifications: updated,
-    });
-    setNewCertName('');
-    setNewCertIssuer('');
-    setNewCertYear('');
-    Sound.success(soundEnabled);
-  };
-
-  // Remove Certification Inline
-  const handleRemoveCertInline = (idx: number) => {
-    const currentCerts: CertificationItem[] = (profile.certifications || certifications).map((c, i) => ({
-      id: (c as any).id || `cert-${Date.now()}-${i}`,
-      name: c.name,
-      issuer: c.issuer,
-      year: c.year,
-      link: c.link,
-    }));
-    const updated = [...currentCerts];
-    updated.splice(idx, 1);
-    onUpdateResume({
-      ...resume,
-      certifications: updated,
-    });
-    onUpdateProfile({
-      ...profile,
-      certifications: updated,
-    });
-    Sound.click(soundEnabled);
-  };
-
-  // Add Additional Info Inline
-  const handleAddInfoInline = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newInfoText.trim()) return;
-    const updated = [...additionalInfo, newInfoText.trim()];
-    onUpdateResume({
-      ...resume,
-      additionalInfo: updated,
-    });
-    setNewInfoText('');
-    Sound.success(soundEnabled);
-  };
-
-  // Remove Additional Info Inline
-  const handleRemoveInfoInline = (idx: number) => {
-    const updated = [...additionalInfo];
-    updated.splice(idx, 1);
-    onUpdateResume({
-      ...resume,
-      additionalInfo: updated,
-    });
-    Sound.click(soundEnabled);
-  };
-
-  // Update Resume Project Inline
-  const handleUpdateResumeProjectInline = (pIdx: number, partial: any) => {
-    const updated = [...resumeProjects];
-    updated[pIdx] = { ...updated[pIdx], ...partial };
-    onUpdateResume({
-      ...resume,
-      projects: updated,
-    });
-  };
-
-  // Delete Resume Project Inline
-  const handleDeleteResumeProject = (pIdx: number) => {
-    const updated = [...resumeProjects];
-    updated.splice(pIdx, 1);
-    onUpdateResume({
-      ...resume,
-      projects: updated,
-    });
-    Sound.click(soundEnabled);
-  };
-
-  const displayName = profile.name || 'GULSHAN KUMAR NAYAK';
-  const displaySubtitle = profile.handle
-    ? profile.handle.replace('@', '')
-    : profile.title || '';
-  const displayLocation = profile.location || 'India';
-  const displayEmail = profile.contactEmail || '';
-  const summaryText =
-    profile.professionalSummary ||
-    profile.bio ||
-    resume.summary ||
-    DEFAULT_ATS_RESUME.summary;
-
-  const avatarSrc = profile.avatarUrl || STOCK_IMAGES.avatar;
-  const coverSrc = profile.staticCoverImage || STOCK_IMAGES.workspaceCover;
+  const visibleSectionsList = [
+    { id: 'summary', label: 'Professional Summary' },
+    { id: 'experience', label: 'Experience' },
+    { id: 'education', label: 'Education' },
+    { id: 'skills', label: 'Skills' },
+    { id: 'projects', label: 'Projects' },
+    { id: 'certifications', label: 'Certifications' },
+    { id: 'publications', label: 'Publications' },
+    { id: 'achievements', label: 'Achievements' },
+  ];
 
   return (
-    <div className="min-h-screen py-4 px-2 sm:px-4 lg:px-6 space-y-6 print:min-h-0 print:py-0 print:px-0 print:space-y-0">
-      {/* 1. LINKEDIN-STYLE PROFILE HEADER CARD (Interactive banner, avatar, headline, quick actions) */}
-      <div
-        id="linkedin-profile-card"
-        className="max-w-4xl mx-auto rounded-3xl bg-white dark:bg-[#111827] border border-[#E5E7EB] dark:border-[#1F2937] shadow-sm overflow-hidden print:hidden transition-all"
-      >
-        {/* Cover / Background Banner */}
-        <div className="relative h-44 sm:h-56 w-full bg-slate-800 overflow-hidden group">
-          {coverSrc ? (
-            <img
-              src={coverSrc}
-              alt="LinkedIn Cover Background"
-              className="w-full h-full object-cover group-hover:scale-[1.01] transition-transform duration-500"
-              referrerPolicy="no-referrer"
-            />
-          ) : null}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 pointer-events-none" />
+    <div className="min-h-screen bg-[#FDFBF7] py-6 px-3 sm:px-6 lg:px-10 space-y-8 print:min-h-0 print:py-0 print:px-0 print:space-y-0 print:bg-white">
+      {/* 1. TOP HEADER BAR (Exact replica of the attached image) */}
+      <header className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 pb-4 print:hidden">
+        {/* Left: Brand / Title */}
+        <div className="text-left w-full md:w-auto">
+          <h1 className="text-xl font-bold font-serif text-gray-950 tracking-tight">
+            Portfolio
+          </h1>
+          <p className="text-xs text-gray-500 font-medium">
+            A simple way to tell your story
+          </p>
+        </div>
 
-          {/* Cover Action Button */}
-          <div className="absolute top-3.5 right-3.5 flex items-center gap-2">
+        {/* Center: Clean Toggle Tab & Italic Note */}
+        <div className="flex items-center gap-3">
+          <div className="bg-[#EBE7DF] p-1 rounded-full flex items-center shadow-inner">
             <button
               type="button"
               onClick={() => {
                 Sound.click(soundEnabled);
-                setShowCoverModal(true);
+                setActiveTab('resume');
               }}
-              className="px-3 py-1.5 rounded-xl bg-black/60 hover:bg-black/80 backdrop-blur-md border border-white/20 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-md cursor-pointer hover:scale-105"
+              className={`px-5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'resume'
+                  ? 'bg-[#18181B] text-white shadow-sm'
+                  : 'text-gray-600 hover:text-gray-950'
+              }`}
             >
-              <ImageIcon className="w-3.5 h-3.5 text-[#818CF8]" />
-              <span>Change Background</span>
+              Resume
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                Sound.click(soundEnabled);
+                setActiveTab('portfolio');
+              }}
+              className={`px-5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'portfolio'
+                  ? 'bg-[#18181B] text-white shadow-sm'
+                  : 'text-gray-600 hover:text-gray-950'
+              }`}
+            >
+              Web Portfolio
             </button>
           </div>
+
+          {/* Script note next to toggle */}
+          {activeTab === 'resume' && (
+            <span className="font-serif italic text-xs text-gray-400 select-none hidden sm:inline-block -rotate-6 transform">
+              Same story. Different views.
+            </span>
+          )}
         </div>
 
-        {/* LinkedIn Meta & Overlapping Avatar Section */}
-        <div className="px-6 sm:px-8 pb-6 pt-0 relative">
-          {/* Avatar + Quick Edit Badge */}
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between -mt-16 sm:-mt-20 gap-4 mb-4">
-            <div className="relative group self-start">
-              <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-full border-4 border-white dark:border-[#111827] shadow-xl overflow-hidden bg-white dark:bg-[#1F2937] relative flex items-center justify-center">
-                {avatarSrc ? (
-                  <img
-                    src={avatarSrc}
-                    alt={profile.name}
-                    className="w-full h-full object-cover"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-4xl font-bold text-purple-600 bg-purple-50 dark:bg-purple-950/40">
-                    {(profile.name || 'U').charAt(0).toUpperCase()}
-                  </div>
-                )}
+        {/* Right: Actions */}
+        <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+          {activeTab === 'resume' ? (
+            <>
+              <div className="text-right hidden sm:block">
+                <p className="text-[10px] text-gray-400 font-medium">Last updated</p>
+                <p className="text-xs text-gray-700 font-semibold">17 Sep 2026, 01:24 PM</p>
               </div>
 
-              {/* Camera Icon Overlay on Avatar */}
               <button
                 type="button"
                 onClick={() => {
                   Sound.click(soundEnabled);
-                  setShowAvatarModal(true);
+                  setEditInitialTab('basic');
+                  setShowEditModal(true);
                 }}
-                className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white transition-opacity duration-200 cursor-pointer"
-                title="Change Profile Photo"
+                className="bg-[#18181B] hover:bg-black text-white text-xs font-semibold px-4 py-2 rounded-xl flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
               >
-                <Camera className="w-6 h-6 mb-1 text-white drop-shadow-md" />
-                <span className="text-[10px] font-bold tracking-wide">Edit Photo</span>
-              </button>
-
-              {/* Verified / Pro Online Indicator */}
-              <span
-                className="absolute bottom-1 right-2 w-5 h-5 rounded-full bg-emerald-500 border-2 border-white dark:border-[#111827] shadow-xs flex items-center justify-center"
-                title="Online & Ready"
-              >
-                <Check className="w-3 h-3 text-white stroke-[3]" />
-              </span>
-            </div>
-
-            {/* Header Action Buttons */}
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Direct PDF Download */}
-              <button
-                type="button"
-                onClick={handleDownloadPDF}
-                disabled={isExportingPDF}
-                className="px-4 py-2 rounded-xl bg-[#6366F1] hover:bg-[#4F46E5] text-white text-xs font-bold shadow-xs hover:shadow-md transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-              >
-                {isExportingPDF ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Exporting PDF...</span>
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Download PDF</span>
-                  </>
-                )}
-              </button>
-
-              {/* Print */}
-              <button
-                type="button"
-                onClick={handlePrint}
-                className="px-3.5 py-2 rounded-xl bg-white dark:bg-[#1F2937] border border-[#E5E7EB] dark:border-[#374151] hover:border-[#6366F1] text-xs font-bold text-[#374151] dark:text-[#CBD5E1] transition-all flex items-center gap-1.5 cursor-pointer"
-                title="Print or Save as PDF"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                <span>Print</span>
-              </button>
-
-              {/* Toggle Inline Edit Mode */}
-              <button
-                type="button"
-                onClick={() => {
-                  Sound.click(soundEnabled);
-                  setIsInlineEditMode(!isInlineEditMode);
-                }}
-                className={`px-3.5 py-2 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                  isInlineEditMode
-                    ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
-                    : 'bg-white dark:bg-[#1F2937] border-[#E5E7EB] dark:border-[#374151] text-[#374151] dark:text-[#CBD5E1] hover:border-[#6366F1]'
-                }`}
-              >
-                <Edit3 className="w-3.5 h-3.5 text-current" />
-                <span>{isInlineEditMode ? 'Done Editing' : 'Edit Resume'}</span>
-              </button>
-
-              {/* Edit Details Modal */}
-              <button
-                type="button"
-                onClick={() => {
-                  Sound.click(soundEnabled);
-                  setFormName(profile.name || '');
-                  setFormSubtitle(profile.handle?.replace('@', '') || '');
-                  setFormTitle(profile.title || '');
-                  setFormSummary(summaryText);
-                  setFormLocation(displayLocation);
-                  setFormEmail(displayEmail);
-                  setFormPhone(profile.phone || '');
-                  setFormLinkedin(profile.linkedin || '');
-                  setFormGithub(profile.github || '');
-                  setFormWebsite(profile.website || '');
-                  setShowProfileModal(true);
-                }}
-                className="px-3.5 py-2 rounded-xl bg-white dark:bg-[#1F2937] border border-[#E5E7EB] dark:border-[#374151] hover:border-[#6366F1] text-xs font-semibold text-[#374151] dark:text-[#CBD5E1] transition-all flex items-center gap-1.5 cursor-pointer"
-              >
-                <Sliders className="w-3.5 h-3.5 text-[#6366F1]" />
+                <Pencil className="w-3.5 h-3.5" />
                 <span>Edit Profile</span>
               </button>
-            </div>
-          </div>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                Sound.click(soundEnabled);
+                setEditInitialTab('basic');
+                setShowEditModal(true);
+              }}
+              className="bg-[#18181B] hover:bg-black text-white text-xs font-semibold px-4 py-2 rounded-xl flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              <span>Edit Portfolio</span>
+            </button>
+          )}
+        </div>
+      </header>
 
-          {/* Profile Identity Info */}
-          <div className="space-y-2">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <h1 className="workspace-heading font-black text-[#111827] dark:text-white tracking-tight">
-                  {profile.name || 'Personal Workspace'}
-                </h1>
-                {profile.title && (
-                  <p className="text-sm font-semibold text-[#374151] dark:text-[#CBD5E1] pt-0.5">
-                    {profile.title}
-                  </p>
-                )}
+      {/* Optional Print / Toast notification */}
+      {printStatus && (
+        <div className="fixed top-5 right-5 z-50 bg-[#18181B] text-white px-4 py-2.5 rounded-xl shadow-lg text-xs font-medium flex items-center gap-2 animate-fade-in">
+          <Printer className="w-4 h-4 text-emerald-400 animate-pulse" />
+          <span>{printStatus}</span>
+        </div>
+      )}
+
+      {/* 2. MAIN ACTIVE VIEW CONTENT */}
+      <main className="max-w-7xl mx-auto">
+        {activeTab === 'resume' ? (
+          /* RESUME VIEW: 2-COLUMN LAYOUT (Document Sheet + Resume Controls) */
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            {/* Left: Printable Resume Sheet (Span 8) */}
+            <div className="lg:col-span-8 flex flex-col items-center w-full space-y-4">
+              {/* Mobile Quick Action Bar (Visible only on mobile/tablet < lg) */}
+              <div className="lg:hidden w-full max-w-[850px] bg-white rounded-2xl p-3 border border-gray-100 shadow-xs flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadPDF}
+                  disabled={isExportingPDF}
+                  className="flex-1 bg-[#1A302A] hover:bg-[#13231F] text-white py-2.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>{isExportingPDF ? 'Generating...' : 'Download PDF'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handlePrint}
+                  className="flex-1 bg-white hover:bg-gray-50 border border-gray-200 text-gray-800 py-2.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5 text-gray-600" />
+                  <span>Print</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    Sound.click(soundEnabled);
+                    setShowPreviewModal(true);
+                  }}
+                  className="p-2.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-xl text-gray-700 transition-colors cursor-pointer"
+                  title="View ATS Version"
+                >
+                  <Eye className="w-4 h-4" />
+                </button>
               </div>
 
-              {/* Company & Education Chips */}
-              {(profile.currentCompany || (profile.educationRecords && profile.educationRecords.length > 0)) && (
-                <div className="flex flex-col gap-1 text-xs text-[#4B5563] dark:text-[#9CA3AF]">
-                  {profile.currentCompany && (
-                    <div className="flex items-center gap-1.5 font-medium">
-                      <Building className="w-3.5 h-3.5 text-[#6366F1]" />
-                      <span>{profile.currentCompany}</span>
+              <ResumeView
+                sheetRef={resumeSheetRef}
+                profile={profile}
+                projects={projects}
+                skills={skills}
+                visibleSections={visibleSections}
+                onEditSection={(sec) => {
+                  setEditInitialTab(sec);
+                  setShowEditModal(true);
+                }}
+              />
+            </div>
+
+            {/* Right: Resume Controls Card (Span 4) */}
+            <div className="lg:col-span-4 sticky top-6 print:hidden">
+              <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-[0_4px_25px_-5px_rgba(0,0,0,0.03)] space-y-5">
+                {/* Title and Subtitle */}
+                <div>
+                  <h3 className="text-sm font-bold text-gray-950">Resume Controls</h3>
+                  <p className="text-xs text-gray-400">Customize and download your resume</p>
+                </div>
+
+                {/* Primary Actions: Download PDF & Print */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={handleDownloadPDF}
+                    disabled={isExportingPDF}
+                    className="bg-[#1A302A] hover:bg-[#13231F] text-white py-2.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>{isExportingPDF ? 'Generating...' : 'Download PDF'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handlePrint}
+                    className="bg-white hover:bg-gray-50 border border-gray-200 text-gray-800 py-2.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-gray-600" />
+                    <span>Print</span>
+                  </button>
+                </div>
+
+                {/* Secondary Actions: View ATS Version & Share Resume */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      Sound.click(soundEnabled);
+                      setShowPreviewModal(true);
+                    }}
+                    className="bg-white hover:bg-gray-50 border border-gray-200 text-gray-800 py-2 px-2.5 rounded-xl text-[11px] font-medium flex items-center justify-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-gray-500" />
+                    <span>View ATS Version</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleShareResume}
+                    className="bg-white hover:bg-gray-50 border border-gray-200 text-gray-800 py-2 px-2.5 rounded-xl text-[11px] font-medium flex items-center justify-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <Share2 className="w-3.5 h-3.5 text-gray-500" />
+                    <span>{sharedToast ? 'Link Copied!' : 'Share Resume'}</span>
+                  </button>
+                </div>
+
+                <div className="border-t border-gray-100" />
+
+                {/* Visible Sections header + Reorder Button */}
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-950">Visible Sections</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      Sound.click(soundEnabled);
+                      setEditInitialTab('reorder');
+                      setShowEditModal(true);
+                    }}
+                    className="border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 text-[11px] font-medium px-2 py-0.5 rounded-lg flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <SlidersHorizontal className="w-3 h-3" />
+                    <span>Reorder</span>
+                  </button>
+                </div>
+
+                {/* 8 Section Visibility Switches */}
+                <div className="space-y-3 pt-1">
+                  {visibleSectionsList.map((sec) => (
+                    <div key={sec.id} className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <Eye
+                          className={`w-4 h-4 ${
+                            visibleSections[sec.id] ? 'text-gray-700' : 'text-gray-300'
+                          }`}
+                        />
+                        <span
+                          className={`text-xs font-medium ${
+                            visibleSections[sec.id] ? 'text-gray-800' : 'text-gray-400'
+                          }`}
+                        >
+                          {sec.label}
+                        </span>
+                      </div>
+
+                      {/* iOS-style toggle switch */}
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={visibleSections[sec.id]}
+                        onClick={() => toggleSection(sec.id)}
+                        className={`w-9 h-5 rounded-full p-0.5 transition-colors cursor-pointer flex items-center ${
+                          visibleSections[sec.id] ? 'bg-[#18181B]' : 'bg-gray-200'
+                        }`}
+                      >
+                        <span
+                          className={`w-4 h-4 rounded-full bg-white shadow-xs transition-transform transform ${
+                            visibleSections[sec.id] ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
                     </div>
-                  )}
-                  {profile.educationRecords && profile.educationRecords.length > 0 && (
-                    <div className="flex items-center gap-1.5 font-medium">
-                      <GraduationCap className="w-3.5 h-3.5 text-[#6366F1]" />
-                      <span>{profile.educationRecords[0].institution}</span>
-                    </div>
-                  )}
+                  ))}
                 </div>
-              )}
-            </div>
-
-            {/* Location & Contact strip */}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-[#6B7280] dark:text-[#9CA3AF] pt-1">
-              <span className="flex items-center gap-1">
-                <MapPin className="w-3.5 h-3.5 text-[#6366F1]" />
-                <span>{displayLocation}</span>
-              </span>
-              <a
-                href={`mailto:${displayEmail}`}
-                className="flex items-center gap-1 text-[#6366F1] hover:underline"
-              >
-                <Mail className="w-3.5 h-3.5" />
-                <span>Contact info</span>
-              </a>
-              {profile.linkedin && (
-                <a
-                  href={profile.linkedin.startsWith('http') ? profile.linkedin : `https://${profile.linkedin}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-1 text-[#6366F1] hover:underline"
-                >
-                  <Linkedin className="w-3.5 h-3.5" />
-                  <span>LinkedIn</span>
-                </a>
-              )}
-              {profile.github && (
-                <a
-                  href={profile.github.startsWith('http') ? profile.github : `https://${profile.github}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-1 text-[#6366F1] hover:underline"
-                >
-                  <Github className="w-3.5 h-3.5" />
-                  <span>GitHub</span>
-                </a>
-              )}
+              </div>
             </div>
           </div>
-        </div>
-      </div>
+        ) : (
+          /* WEB PORTFOLIO VIEW */
+          <WebPortfolioView
+            profile={profile}
+            projects={projects}
+            skills={skills}
+            soundEnabled={soundEnabled}
+            onOpenResumeTab={() => setActiveTab('resume')}
+            onDownloadPDF={handleDownloadPDF}
+            onSelectProject={(proj) => setSelectedProject(proj)}
+            onEditSection={(sec) => {
+              setEditInitialTab(sec);
+              setShowEditModal(true);
+            }}
+          />
+        )}
+      </main>
 
-      {/* 2. MAIN CURRICULUM VITAE & PORTFOLIO DOCUMENT SHEET (Exact PDF Format + Inline Editable + Capture Target for PDF) */}
-      <ResumeDocumentSheet
-        resumeSheetRef={resumeSheetRef}
-        profile={profile}
-        resume={resume}
-        skills={skills}
-        soundEnabled={soundEnabled}
-        isInlineEditMode={isInlineEditMode}
-        setIsInlineEditMode={setIsInlineEditMode}
-        onUpdateProfile={onUpdateProfile}
-        onUpdateResume={onUpdateResume}
-        onAddEducationModal={() => {
-          Sound.click(soundEnabled);
-          setShowEduModal(true);
-        }}
-        onAddJobModal={() => {
-          Sound.click(soundEnabled);
-          setShowJobModal(true);
-        }}
-        onAddProjectModal={() => {
-          Sound.click(soundEnabled);
-          setShowProjectModal(true);
-        }}
-      />
-
-      {/* MODAL 1: Edit Profile / Header Details Modal */}
-      {showProfileModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white dark:bg-[#111827] border border-[#E5E7EB] dark:border-[#1F2937] shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-[#F3F4F6] dark:border-[#1F2937] pb-3">
-              <h3 className="text-base font-bold text-[#111827] dark:text-white">
-                Edit Professional Profile &amp; Summary
-              </h3>
-              <button
-                type="button"
-                onClick={() => setShowProfileModal(false)}
-                className="text-[#9CA3AF] hover:text-black dark:hover:text-white p-1"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveProfile} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                    Full Name (Header)
-                  </label>
-                  <input
-                    type="text"
-                    value={formName}
-                    onChange={(e) => setFormName(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                    Subtitle (Handle / Short Title)
-                  </label>
-                  <input
-                    type="text"
-                    value={formSubtitle}
-                    onChange={(e) => setFormSubtitle(e.target.value)}
-                    placeholder="e.g. Gulshan"
-                    className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                  Professional Headline / Designation
-                </label>
-                <input
-                  type="text"
-                  value={formTitle}
-                  onChange={(e) => setFormTitle(e.target.value)}
-                  placeholder="Software Engineer at HCL Software"
-                  className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                  Professional Summary
-                </label>
-                <textarea
-                  value={formSummary}
-                  onChange={(e) => setFormSummary(e.target.value)}
-                  rows={4}
-                  className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                    Location Label
-                  </label>
-                  <input
-                    type="text"
-                    value={formLocation}
-                    onChange={(e) => setFormLocation(e.target.value)}
-                    placeholder="Noida / Bengaluru, India"
-                    className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                    Contact Email
-                  </label>
-                  <input
-                    type="email"
-                    value={formEmail}
-                    onChange={(e) => setFormEmail(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                    LinkedIn URL
-                  </label>
-                  <input
-                    type="text"
-                    value={formLinkedin}
-                    onChange={(e) => setFormLinkedin(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                    GitHub URL
-                  </label>
-                  <input
-                    type="text"
-                    value={formGithub}
-                    onChange={(e) => setFormGithub(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                    Phone Number
-                  </label>
-                  <input
-                    type="text"
-                    value={formPhone}
-                    onChange={(e) => setFormPhone(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#F3F4F6] dark:border-[#1F2937]">
-                <button
-                  type="button"
-                  onClick={() => setShowProfileModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] hover:bg-[#F3F4F6] dark:hover:bg-[#1F2937]"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-[#6366F1] hover:bg-[#4F46E5] text-white text-xs font-bold shadow-xs cursor-pointer"
-                >
-                  Save Changes
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {/* 3. MODALS */}
+      {showEditModal && (
+        <EditProfileModal
+          isOpen={showEditModal}
+          initialTab={editInitialTab}
+          profile={profile}
+          projects={projects}
+          skills={skills}
+          soundEnabled={soundEnabled}
+          onClose={() => setShowEditModal(false)}
+          onSave={(updatedProfile, updatedProjects, updatedSkills) => {
+            onUpdateProfile(updatedProfile);
+            if (onUpdateProjects) onUpdateProjects(updatedProjects);
+            if (onUpdateSkills) onUpdateSkills(updatedSkills);
+            Sound.success(soundEnabled);
+          }}
+        />
       )}
 
-      {/* MODAL 2: Add Job Experience */}
-      {showJobModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="w-full max-w-lg rounded-3xl bg-white dark:bg-[#111827] border border-[#E5E7EB] dark:border-[#1F2937] shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-[#F3F4F6] dark:border-[#1F2937] pb-3">
-              <h3 className="text-base font-bold text-[#111827] dark:text-white">
-                Add Work Experience
-              </h3>
-              <button
-                type="button"
-                onClick={() => setShowJobModal(false)}
-                className="text-[#9CA3AF] hover:text-black dark:hover:text-white p-1"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddJobSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                    Role / Title *
-                  </label>
-                  <input
-                    type="text"
-                    value={jobRole}
-                    onChange={(e) => setJobRole(e.target.value)}
-                    placeholder="e.g. Software Engineer"
-                    className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                    Company *
-                  </label>
-                  <input
-                    type="text"
-                    value={jobCompany}
-                    onChange={(e) => setJobCompany(e.target.value)}
-                    placeholder="e.g. HCL Software"
-                    className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                    Timeline (Dates)
-                  </label>
-                  <input
-                    type="text"
-                    value={jobDates}
-                    onChange={(e) => setJobDates(e.target.value)}
-                    placeholder="e.g. Jul 2022 - Present"
-                    className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                    Location &amp; Type
-                  </label>
-                  <input
-                    type="text"
-                    value={jobLocation}
-                    onChange={(e) => setJobLocation(e.target.value)}
-                    placeholder="e.g. Noida / Bengaluru, India • Hybrid"
-                    className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                  Brief Overview
-                </label>
-                <input
-                  type="text"
-                  value={jobDesc}
-                  onChange={(e) => setJobDesc(e.target.value)}
-                  placeholder="Architecting scalable cloud web applications..."
-                  className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                  Key Achievements (one per line)
-                </label>
-                <textarea
-                  value={jobAch}
-                  onChange={(e) => setJobAch(e.target.value)}
-                  rows={3}
-                  placeholder="Engineered high-performance React applications&#10;Implemented real-time state synchronization"
-                  className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                  Technologies (comma-separated)
-                </label>
-                <input
-                  type="text"
-                  value={jobTech}
-                  onChange={(e) => setJobTech(e.target.value)}
-                  placeholder="React, TypeScript, Tailwind CSS, Node.js, REST APIs, Git"
-                  className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#F3F4F6] dark:border-[#1F2937]">
-                <button
-                  type="button"
-                  onClick={() => setShowJobModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] hover:bg-[#F3F4F6] dark:hover:bg-[#1F2937]"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-[#6366F1] hover:bg-[#4F46E5] text-white text-xs font-bold shadow-xs cursor-pointer"
-                >
-                  Add Experience
-                </button>
-              </div>
-            </form>
+      {showPreviewModal && (
+        <ResumePreviewModal
+          isOpen={showPreviewModal}
+          onClose={() => setShowPreviewModal(false)}
+          onDownloadPDF={handleDownloadPDF}
+          onPrint={handlePrint}
+          isExportingPDF={isExportingPDF}
+          soundEnabled={soundEnabled}
+        >
+          <div className="p-4 bg-white flex justify-center">
+            <ResumeView
+              sheetRef={null as any}
+              profile={profile}
+              projects={projects}
+              skills={skills}
+              visibleSections={visibleSections}
+            />
           </div>
-        </div>
+        </ResumePreviewModal>
       )}
 
-      {/* MODAL 3: Add Education Record */}
-      {showEduModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="w-full max-w-lg rounded-3xl bg-white dark:bg-[#111827] border border-[#E5E7EB] dark:border-[#1F2937] shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-[#F3F4F6] dark:border-[#1F2937] pb-3">
-              <h3 className="text-base font-bold text-[#111827] dark:text-white">
-                Add Education Record
-              </h3>
-              <button
-                type="button"
-                onClick={() => setShowEduModal(false)}
-                className="text-[#9CA3AF] hover:text-black dark:hover:text-white p-1"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddEduSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                  Degree / Program *
-                </label>
-                <input
-                  type="text"
-                  value={eduDegree}
-                  onChange={(e) => setEduDegree(e.target.value)}
-                  placeholder="e.g. Master of Technology / B.Tech Computer Science"
-                  className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                    Level Category Title
-                  </label>
-                  <input
-                    type="text"
-                    value={eduLevelTitle}
-                    onChange={(e) => setEduLevelTitle(e.target.value)}
-                    placeholder="Graduation (Bachelor's Degree)"
-                    className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                    Score / CGPA
-                  </label>
-                  <input
-                    type="text"
-                    value={eduScore}
-                    onChange={(e) => setEduScore(e.target.value)}
-                    placeholder="8.8 CGPA / 85%"
-                    className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                    Institution / University *
-                  </label>
-                  <input
-                    type="text"
-                    value={eduInstitution}
-                    onChange={(e) => setEduInstitution(e.target.value)}
-                    placeholder="National Institute of Technology"
-                    className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                    Year Period
-                  </label>
-                  <input
-                    type="text"
-                    value={eduYear}
-                    onChange={(e) => setEduYear(e.target.value)}
-                    placeholder="2018 - 2022"
-                    className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                  Highlights (one per line)
-                </label>
-                <textarea
-                  value={eduHighlights}
-                  onChange={(e) => setEduHighlights(e.target.value)}
-                  rows={2}
-                  placeholder="Specialized in Computer Science & Distributed Systems&#10;Graduated with First Class Honors"
-                  className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#F3F4F6] dark:border-[#1F2937]">
-                <button
-                  type="button"
-                  onClick={() => setShowEduModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] hover:bg-[#F3F4F6] dark:hover:bg-[#1F2937]"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-[#6366F1] hover:bg-[#4F46E5] text-white text-xs font-bold shadow-xs cursor-pointer"
-                >
-                  Add Record
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {selectedProject && (
+        <ProjectDetailModal
+          project={selectedProject}
+          onClose={() => setSelectedProject(null)}
+          soundEnabled={soundEnabled}
+        />
       )}
-
-      {/* MODAL 4: Add Project */}
-      {showProjectModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="w-full max-w-lg rounded-3xl bg-white dark:bg-[#111827] border border-[#E5E7EB] dark:border-[#1F2937] shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-[#F3F4F6] dark:border-[#1F2937] pb-3">
-              <h3 className="text-base font-bold text-[#111827] dark:text-white">
-                Add New Project
-              </h3>
-              <button
-                type="button"
-                onClick={() => setShowProjectModal(false)}
-                className="text-[#9CA3AF] hover:text-black dark:hover:text-white p-1"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddProjectSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                  Project Title *
-                </label>
-                <input
-                  type="text"
-                  value={projTitle}
-                  onChange={(e) => setProjTitle(e.target.value)}
-                  placeholder="e.g. Distributed Cloud Task Engine"
-                  className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                  Description
-                </label>
-                <textarea
-                  value={projDesc}
-                  onChange={(e) => setProjDesc(e.target.value)}
-                  rows={3}
-                  placeholder="Summarize the project's goal, architecture, and key achievements..."
-                  className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                  Tech Stack (comma-separated)
-                </label>
-                <input
-                  type="text"
-                  value={projTech}
-                  onChange={(e) => setProjTech(e.target.value)}
-                  placeholder="e.g. React, TypeScript, Node.js, PostgreSQL"
-                  className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                    Live Demo URL
-                  </label>
-                  <input
-                    type="url"
-                    value={projLive}
-                    onChange={(e) => setProjLive(e.target.value)}
-                    placeholder="https://..."
-                    className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] mb-1">
-                    GitHub URL
-                  </label>
-                  <input
-                    type="url"
-                    value={projGithub}
-                    onChange={(e) => setProjGithub(e.target.value)}
-                    placeholder="https://github.com/..."
-                    className="w-full px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-[#374151] bg-white dark:bg-[#1F2937] text-xs text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#F3F4F6] dark:border-[#1F2937]">
-                <button
-                  type="button"
-                  onClick={() => setShowProjectModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-[#4B5563] dark:text-[#9CA3AF] hover:bg-[#F3F4F6] dark:hover:bg-[#1F2937]"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-[#6366F1] hover:bg-[#4F46E5] text-white text-xs font-bold shadow-xs cursor-pointer"
-                >
-                  Add Project
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL 5: Change Cover Background Image */}
-      <CoverPickerModal
-        isOpen={showCoverModal}
-        currentCoverUrl={coverSrc}
-        onSelectCover={(url) => {
-          onUpdateProfile({
-            ...profile,
-            staticCoverImage: url,
-          });
-        }}
-        onClose={() => setShowCoverModal(false)}
-        soundEnabled={soundEnabled}
-      />
-
-      {/* MODAL 6: Change Avatar Profile Photo */}
-      <AvatarPickerModal
-        isOpen={showAvatarModal}
-        currentAvatarUrl={avatarSrc}
-        onSelectAvatar={(url) => {
-          onUpdateProfile({
-            ...profile,
-            avatarUrl: url,
-          });
-        }}
-        onClose={() => setShowAvatarModal(false)}
-        soundEnabled={soundEnabled}
-      />
     </div>
   );
 };

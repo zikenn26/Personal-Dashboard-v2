@@ -169,8 +169,8 @@ export interface AchievementItem {
   issuer: string;
   date: string;
   credentialUrl?: string;
-  category: 'Certification' | 'Award' | 'Hackathon' | 'Publication';
-  badgeIcon: string;
+  category: 'Certification' | 'Award' | 'Hackathon' | 'Publication' | string;
+  badgeIcon?: string;
   description: string;
 }
 
@@ -212,6 +212,25 @@ export interface PortfolioProject {
   category: 'Frontend' | 'Systems' | 'AI / Data' | 'Open Source' | 'Fullstack' | 'Mobile' | 'Design' | 'Other' | string;
   featured?: boolean;
   accentColor?: string;
+  keyResult?: string;
+  imageUrl?: string;
+}
+
+export interface PublicationItem {
+  id: string;
+  title: string;
+  publisher?: string;
+  conference?: string;
+  year?: string;
+  link?: string;
+  description?: string;
+}
+
+export interface ResumeSectionConfig {
+  id: string;
+  label: string;
+  visible: boolean;
+  order: number;
 }
 
 export type EducationLevel =
@@ -227,7 +246,7 @@ export type EducationLevel =
 export interface EducationRecord {
   id: string;
   level: EducationLevel;
-  levelTitle: string; // e.g. "Matriculation (Class 10th)", "Intermediate (+2 / Class 12th)", "Graduation (Bachelor's Degree)", "Postgraduation (Master's Degree)"
+  levelTitle?: string; // e.g. "Matriculation (Class 10th)", "Intermediate (+2 / Class 12th)", "Graduation (Bachelor's Degree)", "Postgraduation (Master's Degree)"
   degree: string; // e.g. "Secondary School Examination", "Higher Secondary (PCM / Science)", "B.Tech in Computer Science & Engineering", "M.Tech in Software Systems"
   institution: string; // School / College / University name
   boardOrUniversity?: string; // e.g. "CBSE", "ICSE", "State Board", "State University", "Autonomous"
@@ -285,20 +304,24 @@ export interface WorkfolioDiscipline {
 }
 
 export interface SkillItem {
+  id?: string;
   name: string;
-  level: number; // 1-100
-  experience: string;
+  level?: number; // 1-100
+  proficiency?: number;
+  experience?: string;
   highlight?: boolean;
 }
 
 export interface SkillCategory {
   category: string;
   skills: SkillItem[];
+  icon?: string;
 }
 
 export interface CertificationItem {
   id: string;
   name: string;
+  title?: string;
   issuer?: string;
   year?: string;
   link?: string;
@@ -309,6 +332,8 @@ export interface LanguageItem {
   name: string;
   proficiency: string; // e.g. "Fluent", "Native", "Professional", "Conversational", "Basic"
 }
+
+export type ResumeThemeStyle = 'modern' | 'jakes' | 'executive';
 
 export interface UserProfile {
   name: string;
@@ -344,6 +369,9 @@ export interface UserProfile {
   certifications?: CertificationItem[];
   languages?: LanguageItem[];
   achievementsList?: AchievementItem[];
+  publications?: PublicationItem[];
+  resumeSectionConfig?: ResumeSectionConfig[];
+  resumeThemeStyle?: 'modern' | 'jakes' | 'executive';
   professionalSummary?: string;
   careerObjective?: string;
   availabilityStatus?: string;

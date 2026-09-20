@@ -189,7 +189,7 @@ export default function App() {
   const [media, setMedia] = useState<MediaItem[]>(Storage.getMedia);
   const [milestones, setMilestones] = useState<LifeMilestone[]>(Storage.getTimeline);
   const [projects, setProjects] = useState<PortfolioProject[]>(Storage.getProjects);
-  const [skills] = useState<SkillCategory[]>(Storage.getSkills);
+  const [skills, setSkills] = useState<SkillCategory[]>(Storage.getSkills);
   const [achievements, setAchievements] = useState<AchievementItem[]>(Storage.getAchievements);
   const [doodles, setDoodles] = useState<DoodleItem[]>(Storage.getDoodles);
   const [settings, setSettings] = useState<AppSettings>(Storage.getSettings);
@@ -1631,6 +1631,16 @@ export default function App() {
     Storage.setProjects(updated);
   };
 
+  const handleUpdateProjects = (updatedProjects: PortfolioProject[]) => {
+    setProjects(updatedProjects);
+    Storage.setProjects(updatedProjects);
+  };
+
+  const handleUpdateSkills = (updatedSkills: SkillCategory[]) => {
+    setSkills(updatedSkills);
+    Storage.setSkills(updatedSkills);
+  };
+
   // Milestone Handlers
   const handleAddMilestone = (milestone: Omit<LifeMilestone, 'id'>) => {
     const newMilestone: LifeMilestone = {
@@ -2908,6 +2918,8 @@ export default function App() {
                   skills={skills}
                   resume={resume}
                   onUpdateProfile={handleUpdateProfile}
+                  onUpdateProjects={handleUpdateProjects}
+                  onUpdateSkills={handleUpdateSkills}
                   onUpdateResume={handleUpdateResume}
                   onAddProject={handleAddProject}
                   onDeleteProject={handleDeleteProject}

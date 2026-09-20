@@ -541,6 +541,41 @@
 }
 
 @media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm 12mm;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Hide application navigation, top headers, action buttons, sticky controls, modals */
+  header,
+  nav,
+  aside,
+  footer,
+  button,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* Ensure printable sheet fits page perfectly without cutoffs */
+  #printable-resume-sheet {
+    max-width: 100% !important;
+    width: 100% !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    display: block !important;
+  }
+
   .resume-section-header-bar,
   [class*="resume-section-header-bar"],
   [class*="bg-[#E8EDF2]"],

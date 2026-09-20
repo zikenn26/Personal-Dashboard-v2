@@ -12,14 +12,12 @@ import {
   Trash2,
   Loader2,
   Lock,
-  Activity,
-  RefreshCw,
 } from 'lucide-react';
 import { Storage } from '../utils/storage';
 import { Sound } from '../utils/audio';
 import { testGroqApiKey, SUPPORTED_GROQ_MODELS, DEFAULT_GROQ_MODEL } from '../services/groqService';
 import { testGeminiApiKey } from '../services/geminiService';
-import { AuthUser, UserProfile, AppSettings, ApiMonthlyStats } from '../types';
+import { AuthUser, UserProfile, AppSettings } from '../types';
 
 interface ApiKeySettingsModalProps {
   isOpen: boolean;
@@ -33,8 +31,6 @@ interface ApiKeySettingsModalProps {
 export const ApiKeySettingsModal: React.FC<ApiKeySettingsModalProps> = ({
   isOpen,
   onClose,
-  currentUser,
-  profile,
   settings,
   onUpdateSettings,
 }) => {
@@ -53,14 +49,7 @@ export const ApiKeySettingsModal: React.FC<ApiKeySettingsModalProps> = ({
 
   // Saving All State
   const [isSavingAll, setIsSavingAll] = useState(false);
-
-  // General Notification Banner
   const [banner, setBanner] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-
-  // Monthly Usage Stats (compact indicator)
-  const [monthlyStats, setMonthlyStats] = useState<ApiMonthlyStats>(() =>
-    Storage.getApiRequestCountsThisMonth()
-  );
 
   // Sync state on modal open
   useEffect(() => {
@@ -73,7 +62,6 @@ export const ApiKeySettingsModal: React.FC<ApiKeySettingsModalProps> = ({
       setGroqKey(activeGroq || '');
       setGroqModel(activeModel);
 
-      // Mask keys by default for security
       setShowGeminiKey(false);
       setShowGroqKey(false);
 
@@ -83,10 +71,8 @@ export const ApiKeySettingsModal: React.FC<ApiKeySettingsModalProps> = ({
       setGroqMsg('');
       setBanner(null);
       setIsSavingAll(false);
-
-      setMonthlyStats(Storage.getApiRequestCountsThisMonth());
     }
-  }, [isOpen, currentUser?.id, settings.groqModel]);
+  }, [isOpen, settings.groqModel]);
 
   if (!isOpen) return null;
 
@@ -103,14 +89,14 @@ export const ApiKeySettingsModal: React.FC<ApiKeySettingsModalProps> = ({
       onUpdateSettings({ ...settings, geminiApiKey: '' });
       setGeminiStatus('idle');
       setGeminiMsg('');
-      setBanner({ type: 'success', message: 'Google Gemini key removed.' });
+      setBanner({ type: 'success', message: 'Gemini API key removed.' });
       Sound.click(settings.soundEnabled);
       setTimeout(() => setBanner(null), 3000);
       return;
     }
 
     setGeminiStatus('testing');
-    setGeminiMsg('Pinging Google Gemini endpoint to validate key...');
+    setGeminiMsg('Pinging Gemini endpoint...');
     Sound.click(settings.soundEnabled);
 
     try {
@@ -119,15 +105,14 @@ export const ApiKeySettingsModal: React.FC<ApiKeySettingsModalProps> = ({
         Storage.setGeminiApiKey(cleanKey);
         onUpdateSettings({ ...settings, geminiApiKey: cleanKey });
         setGeminiStatus('success');
-        setGeminiMsg(res.message || 'Key verified and active! Saved successfully.');
-        setBanner({ type: 'success', message: 'Google Gemini API key validated and saved.' });
+        setGeminiMsg(res.message || 'Key verified and active!');
+        setBanner({ type: 'success', message: 'Gemini API key validated and saved.' });
         Sound.success(settings.soundEnabled);
-        setMonthlyStats(Storage.getApiRequestCountsThisMonth());
         setTimeout(() => setBanner(null), 3500);
       } else {
         setGeminiStatus('error');
         setGeminiMsg(res.message || 'Validation failed. Key was not saved.');
-        setBanner({ type: 'error', message: 'Gemini key validation failed. Please check your key.' });
+        setBanner({ type: 'error', message: 'Gemini validation failed. Check your key.' });
         Sound.error(settings.soundEnabled);
       }
     } catch (err: any) {
@@ -150,14 +135,14 @@ export const ApiKeySettingsModal: React.FC<ApiKeySettingsModalProps> = ({
       onUpdateSettings({ ...settings, groqApiKey: '', groqModel });
       setGroqStatus('idle');
       setGroqMsg('');
-      setBanner({ type: 'success', message: 'Groq AI key removed.' });
+      setBanner({ type: 'success', message: 'Groq API key removed.' });
       Sound.click(settings.soundEnabled);
       setTimeout(() => setBanner(null), 3000);
       return;
     }
 
     setGroqStatus('testing');
-    setGroqMsg('Pinging Groq AI endpoint to validate key...');
+    setGroqMsg('Pinging Groq cloud endpoint...');
     Sound.click(settings.soundEnabled);
 
     try {
@@ -167,19 +152,18 @@ export const ApiKeySettingsModal: React.FC<ApiKeySettingsModalProps> = ({
         Storage.setGroqModel(groqModel);
         onUpdateSettings({ ...settings, groqApiKey: cleanKey, groqModel });
         setGroqStatus('success');
-        setGroqMsg(res.message || 'Key verified and active! Saved successfully.');
-        setBanner({ type: 'success', message: 'Groq AI API key validated and saved.' });
+        setGroqMsg(res.message || 'Groq connection verified!');
+        setBanner({ type: 'success', message: 'Groq API key validated and saved.' });
         Sound.success(settings.soundEnabled);
-        setMonthlyStats(Storage.getApiRequestCountsThisMonth());
         setTimeout(() => setBanner(null), 3500);
       } else {
         setGroqStatus('error');
-        setGroqMsg(res.message || 'Validation failed. Key was not saved.');
-        setBanner({ type: 'error', message: 'Groq key validation failed. Please check your key.' });
+        setGroqMsg(res.message || 'Invalid Groq key. Key was not saved.');
+        setBanner({ type: 'error', message: 'Groq validation failed. Check your key.' });
         Sound.error(settings.soundEnabled);
       }
     } catch (err: any) {
-      const msg = err?.message || 'Unable to connect to Groq endpoint.';
+      const msg = err?.message || 'Network error while validating with Groq.';
       setGroqStatus('error');
       setGroqMsg(msg);
       setBanner({ type: 'error', message: msg });
@@ -187,18 +171,19 @@ export const ApiKeySettingsModal: React.FC<ApiKeySettingsModalProps> = ({
     }
   };
 
-  // 3. Save All & Validate Both Keys
+  // 3. Save All with Pings
   const handleSaveAll = async () => {
-    const cleanGemini = geminiKey.trim();
-    const cleanGroq = groqKey.trim();
     setIsSavingAll(true);
     Sound.click(settings.soundEnabled);
+
+    const cleanGemini = geminiKey.trim();
+    const cleanGroq = groqKey.trim();
 
     let geminiOk = true;
     let groqOk = true;
     const errors: string[] = [];
 
-    // Validate Gemini if entered
+    // Test Gemini if provided
     if (cleanGemini) {
       setGeminiStatus('testing');
       setGeminiMsg('Validating Gemini key...');
@@ -207,18 +192,17 @@ export const ApiKeySettingsModal: React.FC<ApiKeySettingsModalProps> = ({
         if (res.success) {
           Storage.setGeminiApiKey(cleanGemini);
           setGeminiStatus('success');
-          setGeminiMsg(res.message || 'Key verified & saved.');
+          setGeminiMsg(res.message);
         } else {
           geminiOk = false;
           setGeminiStatus('error');
-          setGeminiMsg(res.message || 'Validation failed.');
-          errors.push('Gemini key is invalid');
+          setGeminiMsg(res.message);
+          errors.push('Gemini failed');
         }
-      } catch (e: any) {
+      } catch {
         geminiOk = false;
         setGeminiStatus('error');
-        setGeminiMsg(e?.message || 'Validation error');
-        errors.push('Gemini connection error');
+        errors.push('Gemini error');
       }
     } else {
       Storage.setGeminiApiKey('');
@@ -226,7 +210,7 @@ export const ApiKeySettingsModal: React.FC<ApiKeySettingsModalProps> = ({
       setGeminiMsg('');
     }
 
-    // Validate Groq if entered
+    // Test Groq if provided
     if (cleanGroq) {
       setGroqStatus('testing');
       setGroqMsg('Validating Groq key...');
@@ -236,18 +220,17 @@ export const ApiKeySettingsModal: React.FC<ApiKeySettingsModalProps> = ({
           Storage.setGroqApiKey(cleanGroq);
           Storage.setGroqModel(groqModel);
           setGroqStatus('success');
-          setGroqMsg(res.message || 'Key verified & saved.');
+          setGroqMsg(res.message);
         } else {
           groqOk = false;
           setGroqStatus('error');
-          setGroqMsg(res.message || 'Validation failed.');
-          errors.push('Groq key is invalid');
+          setGroqMsg(res.message);
+          errors.push('Groq failed');
         }
-      } catch (e: any) {
+      } catch {
         groqOk = false;
         setGroqStatus('error');
-        setGroqMsg(e?.message || 'Validation error');
-        errors.push('Groq connection error');
+        errors.push('Groq error');
       }
     } else {
       Storage.setGroqApiKey('');
@@ -263,15 +246,14 @@ export const ApiKeySettingsModal: React.FC<ApiKeySettingsModalProps> = ({
       groqModel,
     });
 
-    setMonthlyStats(Storage.getApiRequestCountsThisMonth());
     setIsSavingAll(false);
 
     if (geminiOk && groqOk) {
       Sound.success(settings.soundEnabled);
-      setBanner({ type: 'success', message: 'API keys validated and saved successfully!' });
+      setBanner({ type: 'success', message: 'API keys validated and saved!' });
     } else {
       Sound.error(settings.soundEnabled);
-      setBanner({ type: 'error', message: `Validation failed: ${errors.join(', ')}. Key not saved.` });
+      setBanner({ type: 'error', message: `Validation issue: ${errors.join(', ')}` });
     }
     setTimeout(() => setBanner(null), 4000);
   };
@@ -284,97 +266,79 @@ export const ApiKeySettingsModal: React.FC<ApiKeySettingsModalProps> = ({
     >
       <div
         id="api-key-settings-modal-card"
-        className="relative w-full max-w-lg bg-white dark:bg-[#18181B] rounded-2xl shadow-xl border border-gray-200 dark:border-gray-800 flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-150"
+        className="relative w-full max-w-md bg-white dark:bg-[#18181B] rounded-2xl shadow-xl border border-gray-200 dark:border-zinc-800 flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Compact Header */}
-        <div className="flex items-center justify-between px-4 py-3.5 sm:px-5 sm:py-4 border-b border-gray-100 dark:border-gray-800 bg-gray-50/70 dark:bg-gray-900/50">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/50 shrink-0">
-              <KeyRound className="w-4 h-4" />
-            </div>
-            <div className="min-w-0">
-              <h2 className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-                AI API Keys
-              </h2>
-              <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
-                Validated before saving to guarantee active status
-              </p>
-            </div>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-zinc-800 bg-gray-50/70 dark:bg-zinc-900/50">
+          <div className="flex items-center gap-2">
+            <KeyRound className="w-4 h-4 text-indigo-500" />
+            <h2 className="text-sm font-bold text-gray-900 dark:text-white">
+              AI API Keys
+            </h2>
           </div>
           <button
             id="close-api-key-settings-btn"
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors shrink-0 cursor-pointer"
-            title="Close"
+            className="p-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Scrollable Compact Body */}
-        <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-3.5 sm:space-y-4">
-          {/* Notification Banner */}
+        {/* Scrollable Compact Body - Fixed mobile overflow */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {banner && (
             <div
-              className={`p-2.5 rounded-xl flex items-center gap-2 text-xs font-medium border animate-in fade-in duration-150 ${
+              className={`p-2.5 rounded-xl flex items-center gap-2 text-xs font-medium border ${
                 banner.type === 'success'
                   ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
                   : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border-rose-200 dark:border-rose-800'
               }`}
             >
               {banner.type === 'success' ? (
-                <Check className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <Check className="w-4 h-4 shrink-0 text-emerald-600" />
               ) : (
-                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
               )}
-              <span className="leading-snug">{banner.message}</span>
+              <span className="leading-tight">{banner.message}</span>
             </div>
           )}
 
           {/* 1. Google Gemini Section */}
-          <div
-            id="gemini-key-card"
-            className="p-3.5 sm:p-4 rounded-xl bg-gray-50/80 dark:bg-zinc-900/60 border border-gray-200/80 dark:border-zinc-800 space-y-3"
-          >
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-blue-500 shrink-0" />
-                <span className="text-xs font-semibold text-gray-900 dark:text-white">
-                  Google Gemini API
+          <div className="p-3.5 rounded-xl bg-gray-50/90 dark:bg-zinc-900/60 border border-gray-200/80 dark:border-zinc-800 space-y-2.5">
+            <div className="flex items-center justify-between gap-1 flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                <span className="text-xs font-bold text-gray-900 dark:text-white">
+                  Google Gemini
                 </span>
-                {isGeminiConfigured ? (
-                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                    Active
-                  </span>
-                ) : (
-                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-200/70 dark:bg-zinc-800 text-gray-600 dark:text-gray-400">
-                    Not configured
-                  </span>
-                )}
+                <span
+                  className={`text-[10px] font-semibold px-2 py-0.2 rounded-full ${
+                    isGeminiConfigured
+                      ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                      : 'bg-gray-200/80 dark:bg-zinc-800 text-gray-500'
+                  }`}
+                >
+                  {isGeminiConfigured ? 'Active' : 'Not set'}
+                </span>
               </div>
 
               <a
                 href="https://aistudio.google.com/app/apikey"
                 target="_blank"
                 rel="noreferrer"
-                className="text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1"
+                className="text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 shrink-0"
               >
-                <span>Get Free Key</span>
+                <span>Get Key</span>
                 <ExternalLink className="w-2.5 h-2.5" />
               </a>
             </div>
 
-            <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-tight">
-              Powers voice companion, live audio conversations, and assistant actions.
-            </p>
-
-            <form onSubmit={handleSaveGemini} className="space-y-2.5">
+            <form onSubmit={handleSaveGemini} className="space-y-2">
               <div className="relative flex items-center w-full">
                 <input
-                  id="user-gemini-key-input"
                   type={showGeminiKey ? 'text' : 'password'}
                   value={geminiKey}
                   onChange={(e) => {
@@ -382,43 +346,38 @@ export const ApiKeySettingsModal: React.FC<ApiKeySettingsModalProps> = ({
                     setGeminiStatus('idle');
                     setGeminiMsg('');
                   }}
-                  placeholder="Enter Gemini key (AIzaSy...)"
+                  placeholder="Enter Gemini Key (AIzaSy...)"
                   autoComplete="off"
                   spellCheck="false"
-                  className="w-full pl-3 pr-16 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#121214] text-gray-900 dark:text-white placeholder-gray-400 text-xs font-mono focus:outline-none focus:ring-1.5 focus:ring-blue-500"
+                  className="w-full pl-3 pr-14 py-1.5 rounded-lg border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-900 dark:text-white placeholder-gray-400 text-xs font-mono focus:outline-none focus:ring-1.5 focus:ring-blue-500"
                 />
-                <div className="absolute right-1.5 flex items-center gap-0.5">
+                <div className="absolute right-1.5 flex items-center gap-1">
                   {geminiKey && (
                     <button
                       type="button"
-                      id="clear-gemini-key-btn"
                       onClick={() => {
                         setGeminiKey('');
                         setGeminiStatus('idle');
                         setGeminiMsg('');
                       }}
-                      title="Clear"
-                      className="p-1 text-gray-400 hover:text-rose-500 rounded cursor-pointer"
+                      className="p-1 text-gray-400 hover:text-rose-500 cursor-pointer"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="w-3 h-3" />
                     </button>
                   )}
                   <button
                     type="button"
-                    id="toggle-gemini-key-visibility-btn"
                     onClick={() => setShowGeminiKey(!showGeminiKey)}
-                    title={showGeminiKey ? 'Hide key' : 'Show key'}
-                    className="p-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded cursor-pointer"
+                    className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
                   >
-                    {showGeminiKey ? <EyeOff className="w-3.5 h-3.5 text-blue-500" /> : <Eye className="w-3.5 h-3.5" />}
+                    {showGeminiKey ? <EyeOff className="w-3 h-3 text-blue-500" /> : <Eye className="w-3 h-3" />}
                   </button>
                 </div>
               </div>
 
-              {/* Status feedback */}
               {geminiMsg && (
                 <div
-                  className={`p-2 rounded-lg text-xs flex items-start gap-1.5 border ${
+                  className={`p-2 rounded-lg text-[11px] flex items-start gap-1.5 border leading-tight ${
                     geminiStatus === 'success'
                       ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
                       : geminiStatus === 'error'
@@ -426,19 +385,18 @@ export const ApiKeySettingsModal: React.FC<ApiKeySettingsModalProps> = ({
                       : 'bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-800'
                   }`}
                 >
-                  {geminiStatus === 'testing' && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0 mt-0.5 text-blue-600" />}
-                  {geminiStatus === 'success' && <Check className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-600" />}
-                  {geminiStatus === 'error' && <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-rose-600" />}
-                  <span className="leading-snug break-words">{geminiMsg}</span>
+                  {geminiStatus === 'testing' && <Loader2 className="w-3 h-3 animate-spin shrink-0 mt-0.5 text-blue-600" />}
+                  {geminiStatus === 'success' && <Check className="w-3 h-3 shrink-0 mt-0.5 text-emerald-600" />}
+                  {geminiStatus === 'error' && <AlertCircle className="w-3 h-3 shrink-0 mt-0.5 text-rose-600" />}
+                  <span className="break-all">{geminiMsg}</span>
                 </div>
               )}
 
-              <div className="flex items-center justify-end gap-2 pt-0.5">
+              <div className="flex justify-end">
                 <button
                   type="submit"
-                  id="save-gemini-key-btn"
                   disabled={geminiStatus === 'testing'}
-                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   {geminiStatus === 'testing' ? (
                     <>
@@ -457,47 +415,38 @@ export const ApiKeySettingsModal: React.FC<ApiKeySettingsModalProps> = ({
           </div>
 
           {/* 2. Groq Section */}
-          <div
-            id="groq-key-card"
-            className="p-3.5 sm:p-4 rounded-xl bg-gray-50/80 dark:bg-zinc-900/60 border border-gray-200/80 dark:border-zinc-800 space-y-3"
-          >
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="flex items-center gap-2">
-                <Cpu className="w-4 h-4 text-orange-500 shrink-0" />
-                <span className="text-xs font-semibold text-gray-900 dark:text-white">
-                  Groq AI API
+          <div className="p-3.5 rounded-xl bg-gray-50/90 dark:bg-zinc-900/60 border border-gray-200/80 dark:border-zinc-800 space-y-2.5">
+            <div className="flex items-center justify-between gap-1 flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <Cpu className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+                <span className="text-xs font-bold text-gray-900 dark:text-white">
+                  Groq AI
                 </span>
-                {isGroqConfigured ? (
-                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                    Active
-                  </span>
-                ) : (
-                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-200/70 dark:bg-zinc-800 text-gray-600 dark:text-gray-400">
-                    Not configured
-                  </span>
-                )}
+                <span
+                  className={`text-[10px] font-semibold px-2 py-0.2 rounded-full ${
+                    isGroqConfigured
+                      ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                      : 'bg-gray-200/80 dark:bg-zinc-800 text-gray-500'
+                  }`}
+                >
+                  {isGroqConfigured ? 'Active' : 'Not set'}
+                </span>
               </div>
 
               <a
                 href="https://console.groq.com/keys"
                 target="_blank"
                 rel="noreferrer"
-                className="text-[11px] font-medium text-orange-600 dark:text-orange-400 hover:underline inline-flex items-center gap-1"
+                className="text-[11px] font-medium text-orange-600 dark:text-orange-400 hover:underline flex items-center gap-1 shrink-0"
               >
-                <span>Get Free Key</span>
+                <span>Get Key</span>
                 <ExternalLink className="w-2.5 h-2.5" />
               </a>
             </div>
 
-            <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-tight">
-              Powers fast reasoning, personalized secretary chat, and dashboard tool execution.
-            </p>
-
-            <form onSubmit={handleSaveGroq} className="space-y-2.5">
+            <form onSubmit={handleSaveGroq} className="space-y-2">
               <div className="relative flex items-center w-full">
                 <input
-                  id="user-groq-key-input"
                   type={showGroqKey ? 'text' : 'password'}
                   value={groqKey}
                   onChange={(e) => {
@@ -505,49 +454,41 @@ export const ApiKeySettingsModal: React.FC<ApiKeySettingsModalProps> = ({
                     setGroqStatus('idle');
                     setGroqMsg('');
                   }}
-                  placeholder="Enter Groq key (gsk_...)"
+                  placeholder="Enter Groq Key (gsk_...)"
                   autoComplete="off"
                   spellCheck="false"
-                  className="w-full pl-3 pr-16 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#121214] text-gray-900 dark:text-white placeholder-gray-400 text-xs font-mono focus:outline-none focus:ring-1.5 focus:ring-orange-500"
+                  className="w-full pl-3 pr-14 py-1.5 rounded-lg border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-900 dark:text-white placeholder-gray-400 text-xs font-mono focus:outline-none focus:ring-1.5 focus:ring-orange-500"
                 />
-                <div className="absolute right-1.5 flex items-center gap-0.5">
+                <div className="absolute right-1.5 flex items-center gap-1">
                   {groqKey && (
                     <button
                       type="button"
-                      id="clear-groq-key-btn"
                       onClick={() => {
                         setGroqKey('');
                         setGroqStatus('idle');
                         setGroqMsg('');
                       }}
-                      title="Clear"
-                      className="p-1 text-gray-400 hover:text-rose-500 rounded cursor-pointer"
+                      className="p-1 text-gray-400 hover:text-rose-500 cursor-pointer"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="w-3 h-3" />
                     </button>
                   )}
                   <button
                     type="button"
-                    id="toggle-groq-key-visibility-btn"
                     onClick={() => setShowGroqKey(!showGroqKey)}
-                    title={showGroqKey ? 'Hide key' : 'Show key'}
-                    className="p-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded cursor-pointer"
+                    className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
                   >
-                    {showGroqKey ? <EyeOff className="w-3.5 h-3.5 text-orange-500" /> : <Eye className="w-3.5 h-3.5" />}
+                    {showGroqKey ? <EyeOff className="w-3 h-3 text-orange-500" /> : <Eye className="w-3 h-3" />}
                   </button>
                 </div>
               </div>
 
-              {/* Model select */}
               <div className="flex items-center gap-2">
-                <label htmlFor="user-groq-model-select" className="text-[11px] text-gray-500 dark:text-gray-400 shrink-0">
-                  Model:
-                </label>
+                <label className="text-[11px] font-semibold text-gray-500 shrink-0">Model:</label>
                 <select
-                  id="user-groq-model-select"
                   value={groqModel}
                   onChange={(e) => setGroqModel(e.target.value)}
-                  className="w-full px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#121214] text-gray-900 dark:text-white text-xs focus:outline-none focus:ring-1.5 focus:ring-orange-500"
+                  className="w-full px-2 py-1 rounded-lg border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-900 dark:text-white text-xs focus:outline-none"
                 >
                   {SUPPORTED_GROQ_MODELS.map((m) => (
                     <option key={m.id} value={m.id}>
@@ -557,10 +498,9 @@ export const ApiKeySettingsModal: React.FC<ApiKeySettingsModalProps> = ({
                 </select>
               </div>
 
-              {/* Status feedback */}
               {groqMsg && (
                 <div
-                  className={`p-2 rounded-lg text-xs flex items-start gap-1.5 border ${
+                  className={`p-2 rounded-lg text-[11px] flex items-start gap-1.5 border leading-tight ${
                     groqStatus === 'success'
                       ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
                       : groqStatus === 'error'
@@ -568,19 +508,18 @@ export const ApiKeySettingsModal: React.FC<ApiKeySettingsModalProps> = ({
                       : 'bg-orange-50 dark:bg-orange-950/40 text-orange-800 dark:text-orange-300 border-orange-200 dark:border-orange-800'
                   }`}
                 >
-                  {groqStatus === 'testing' && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0 mt-0.5 text-orange-600" />}
-                  {groqStatus === 'success' && <Check className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-600" />}
-                  {groqStatus === 'error' && <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-rose-600" />}
-                  <span className="leading-snug break-words">{groqMsg}</span>
+                  {groqStatus === 'testing' && <Loader2 className="w-3 h-3 animate-spin shrink-0 mt-0.5 text-orange-600" />}
+                  {groqStatus === 'success' && <Check className="w-3 h-3 shrink-0 mt-0.5 text-emerald-600" />}
+                  {groqStatus === 'error' && <AlertCircle className="w-3 h-3 shrink-0 mt-0.5 text-rose-600" />}
+                  <span className="break-all">{groqMsg}</span>
                 </div>
               )}
 
-              <div className="flex items-center justify-end gap-2 pt-0.5">
+              <div className="flex justify-end">
                 <button
                   type="submit"
-                  id="save-groq-key-btn"
                   disabled={groqStatus === 'testing'}
-                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   {groqStatus === 'testing' ? (
                     <>
@@ -597,51 +536,28 @@ export const ApiKeySettingsModal: React.FC<ApiKeySettingsModalProps> = ({
               </div>
             </form>
           </div>
-
-          {/* Compact monthly usage footer info */}
-          <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 px-1 pt-1">
-            <div className="flex items-center gap-1.5">
-              <Activity className="w-3 h-3 text-indigo-500" />
-              <span>
-                {monthlyStats.monthName}: <strong>{monthlyStats.total}</strong> calls ({monthlyStats.gemini} Gemini · {monthlyStats.groq} Groq)
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setMonthlyStats(Storage.getApiRequestCountsThisMonth());
-                Sound.click(settings.soundEnabled);
-              }}
-              title="Refresh counts"
-              className="p-1 hover:text-gray-700 dark:hover:text-gray-200 rounded cursor-pointer"
-            >
-              <RefreshCw className="w-3 h-3" />
-            </button>
-          </div>
         </div>
 
         {/* Compact Footer */}
-        <div className="px-4 py-3 sm:px-5 border-t border-gray-100 dark:border-gray-800 bg-gray-50/70 dark:bg-gray-900/50 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+        <div className="px-4 py-3 border-t border-gray-100 dark:border-zinc-800 bg-gray-50/70 dark:bg-zinc-900/50 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1 text-[11px] text-gray-500">
             <Lock className="w-3 h-3 text-emerald-500 shrink-0" />
-            <span className="truncate">Saved in your private browser storage</span>
+            <span className="truncate">Stored securely locally</span>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              id="cancel-api-keys-modal-btn"
               onClick={onClose}
-              className="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors cursor-pointer"
+              className="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
             >
               Close
             </button>
             <button
               type="button"
-              id="save-all-keys-btn"
               onClick={handleSaveAll}
               disabled={isSavingAll}
-              className="px-3.5 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
+              className="px-3.5 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
             >
               {isSavingAll ? (
                 <>

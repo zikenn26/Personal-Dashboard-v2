@@ -628,81 +628,53 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
 
           {/* SECTION: GOOGLE GEMINI API KEY */}
-          <div className="space-y-3 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-blue-500 fill-blue-500/20" />
-                <span>Google Gemini API Key (Per-User)</span>
+          <div className="p-3 rounded-xl bg-gray-50/80 dark:bg-zinc-800/40 border border-gray-200/80 dark:border-zinc-700/60 space-y-2">
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+                <span>Google Gemini API</span>
               </span>
               <a
                 href="https://aistudio.google.com/app/apikey"
                 target="_blank"
                 rel="noreferrer"
-                className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 font-medium"
+                className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 font-medium"
               >
-                <span>Get Free Gemini Key</span>
+                <span>Get Key</span>
                 <ExternalLink className="w-2.5 h-2.5" />
               </a>
             </div>
 
-            <p className="text-xs text-[#6B7280] dark:text-[#9CA3AF]">
-              Powers Zikenn Voice Companion, live dashboard actions, and audio transcription for your private profile.
-            </p>
-
             <form onSubmit={handleSaveGeminiKey} className="space-y-2">
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                <div className="relative flex-1 min-w-0">
-                  <input
-                    type={showGeminiKey ? 'text' : 'password'}
-                    value={geminiKey}
-                    onChange={(e) => {
-                      setGeminiKey(e.target.value);
-                      setGeminiTestStatus('idle');
-                    }}
-                    placeholder="Enter Gemini API Key (AIzaSy...)"
-                    className="w-full pl-3 pr-9 py-2 rounded-xl text-xs font-mono bg-[#F9FAFB] dark:bg-[#1F2937] border border-[#E5E7EB] dark:border-[#374151] text-[#111827] dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowGeminiKey(!showGeminiKey)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
-                    title={showGeminiKey ? 'Hide key' : 'Show key'}
-                  >
-                    {showGeminiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="submit"
-                    className="flex-1 sm:flex-none px-3.5 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
-                  >
-                    {geminiKeySaved ? <Check className="w-3.5 h-3.5" /> : <KeyRound className="w-3.5 h-3.5" />}
-                    <span>{geminiKeySaved ? 'Saved' : 'Save Key'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    id="settings-test-gemini-connection-btn"
-                    onClick={handleTestGeminiKey}
-                    disabled={geminiTestStatus === 'testing' || !geminiKey.trim()}
-                    className="flex-1 sm:flex-none px-3 py-2 text-xs font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                    title="Test key against Google Gemini API"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-blue-500" />
-                    <span>{geminiTestStatus === 'testing' ? 'Testing...' : 'Test'}</span>
-                  </button>
-                </div>
+              <div className="relative flex items-center w-full">
+                <input
+                  type={showGeminiKey ? 'text' : 'password'}
+                  value={geminiKey}
+                  onChange={(e) => {
+                    setGeminiKey(e.target.value);
+                    setGeminiTestStatus('idle');
+                  }}
+                  placeholder="Enter Gemini Key (AIzaSy...)"
+                  className="w-full pl-3 pr-10 py-1.5 rounded-lg text-xs font-mono bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowGeminiKey(!showGeminiKey)}
+                  className="absolute right-2.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+                  title={showGeminiKey ? 'Hide key' : 'Show key'}
+                >
+                  {showGeminiKey ? <EyeOff className="w-3.5 h-3.5 text-blue-500" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
               </div>
 
               {geminiTestStatus !== 'idle' && (
                 <div
-                  className={`text-[11px] px-3 py-1.5 rounded-lg flex items-center gap-1.5 ${
+                  className={`text-[11px] p-2 rounded-lg flex items-center gap-1.5 leading-snug border ${
                     geminiTestStatus === 'success'
-                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                      ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
                       : geminiTestStatus === 'error'
-                      ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
-                      : 'bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300'
+                      ? 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                      : 'bg-blue-50 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800'
                   }`}
                 >
                   {geminiTestStatus === 'success' ? (
@@ -712,88 +684,101 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   ) : (
                     <RefreshCw className="w-3.5 h-3.5 shrink-0 animate-spin text-blue-600" />
                   )}
-                  <span>{geminiTestMsg}</span>
+                  <span className="break-all">{geminiTestMsg}</span>
                 </div>
               )}
+
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={geminiTestStatus === 'testing'}
+                  className="px-3 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                >
+                  {geminiTestStatus === 'testing' ? (
+                    <>
+                      <RefreshCw className="w-3 h-3 animate-spin" />
+                      <span>Validating...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3 h-3" />
+                      <span>{geminiKey.trim() ? 'Validate & Save' : 'Clear Key'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </form>
           </div>
 
-          {/* SECTION: GROQ AI ASSISTANT API KEY */}
-          <div className="space-y-3 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold flex items-center gap-1.5">
-                <Sparkle className="w-3.5 h-3.5 text-indigo-500 fill-indigo-500/20" />
-                <span>Zikenn AI &amp; Groq API Key</span>
+          {/* SECTION: GROQ AI API KEY */}
+          <div className="p-3 rounded-xl bg-gray-50/80 dark:bg-zinc-800/40 border border-gray-200/80 dark:border-zinc-700/60 space-y-2">
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                <Sparkle className="w-3.5 h-3.5 text-indigo-500" />
+                <span>Groq AI API</span>
               </span>
               <a
                 href="https://console.groq.com/keys"
                 target="_blank"
                 rel="noreferrer"
-                className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium"
+                className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium"
               >
-                <span>Get Free Key</span>
+                <span>Get Key</span>
                 <ExternalLink className="w-2.5 h-2.5" />
               </a>
             </div>
 
-            <p className="text-xs text-[#6B7280] dark:text-[#9CA3AF]">
-              Configure your personal Groq API key (<code className="font-mono text-[11px] bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">gsk_...</code>) for Personalized Zikenn AI.
-            </p>
-
             <form onSubmit={handleSaveGroqKey} className="space-y-2">
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                <div className="relative flex-1 min-w-0">
-                  <input
-                    type={showGroqKey ? 'text' : 'password'}
-                    value={groqKey}
-                    onChange={(e) => {
-                      setGroqKey(e.target.value);
-                      setGroqTestStatus('idle');
-                    }}
-                    placeholder="Enter Groq API Key (gsk_...)"
-                    className="w-full pl-3 pr-9 py-2 rounded-xl text-xs font-mono bg-[#F9FAFB] dark:bg-[#1F2937] border border-[#E5E7EB] dark:border-[#374151] text-[#111827] dark:text-white focus:outline-none focus:ring-1 focus:ring-[#6366F1]"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowGroqKey(!showGroqKey)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
-                    title={showGroqKey ? 'Hide key' : 'Show key'}
-                  >
-                    {showGroqKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
+              <div className="relative flex items-center w-full">
+                <input
+                  type={showGroqKey ? 'text' : 'password'}
+                  value={groqKey}
+                  onChange={(e) => {
+                    setGroqKey(e.target.value);
+                    setGroqTestStatus('idle');
+                  }}
+                  placeholder="Enter Groq Key (gsk_...)"
+                  className="w-full pl-3 pr-10 py-1.5 rounded-lg text-xs font-mono bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowGroqKey(!showGroqKey)}
+                  className="absolute right-2.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+                  title={showGroqKey ? 'Hide key' : 'Show key'}
+                >
+                  {showGroqKey ? <EyeOff className="w-3.5 h-3.5 text-indigo-500" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
 
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="submit"
-                    className="flex-1 sm:flex-none px-3.5 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
-                  >
-                    {groqKeySaved ? <Check className="w-3.5 h-3.5" /> : <KeyRound className="w-3.5 h-3.5" />}
-                    <span>{groqKeySaved ? 'Saved' : 'Save Key'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    id="settings-test-groq-connection-btn"
-                    onClick={handleTestGroqKey}
-                    disabled={groqTestStatus === 'testing' || !groqKey.trim()}
-                    className="flex-1 sm:flex-none px-3 py-2 text-xs font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                    title="Test key against Groq API"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                    <span>{groqTestStatus === 'testing' ? 'Testing...' : 'Test'}</span>
-                  </button>
-                </div>
+              {/* Active Groq Model Selector */}
+              <div className="flex items-center gap-2">
+                <label className="text-[11px] font-medium text-gray-500 shrink-0">Model:</label>
+                <select
+                  value={selectedModel}
+                  onChange={(e) => {
+                    const newModel = e.target.value;
+                    setSelectedModel(newModel);
+                    Storage.setGroqModel(newModel);
+                    onUpdateSettings({ ...settings, groqModel: newModel });
+                  }}
+                  className="w-full px-2 py-1 rounded-lg text-xs bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white focus:outline-none cursor-pointer"
+                >
+                  {SUPPORTED_GROQ_MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {groqTestStatus !== 'idle' && (
                 <div
-                  className={`text-[11px] px-3 py-1.5 rounded-lg flex items-center gap-1.5 ${
+                  className={`text-[11px] p-2 rounded-lg flex items-center gap-1.5 leading-snug border ${
                     groqTestStatus === 'success'
-                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                      ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
                       : groqTestStatus === 'error'
-                      ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
-                      : 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300'
+                      ? 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                      : 'bg-indigo-50 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
                   }`}
                 >
                   {groqTestStatus === 'success' ? (
@@ -803,39 +788,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   ) : (
                     <RefreshCw className="w-3.5 h-3.5 shrink-0 animate-spin text-indigo-600" />
                   )}
-                  <span>{groqTestMsg}</span>
+                  <span className="break-all">{groqTestMsg}</span>
                 </div>
               )}
 
-              {/* Active Groq Model Selector */}
-              <div className="pt-2 border-t border-gray-100 dark:border-gray-800/60">
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-[11px] font-semibold text-gray-700 dark:text-gray-300">
-                    Groq LLM Model
-                  </label>
-                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
-                    Production Active
-                  </span>
-                </div>
-                <select
-                  value={selectedModel}
-                  onChange={(e) => {
-                    const newModel = e.target.value;
-                    setSelectedModel(newModel);
-                    Storage.setGroqModel(newModel);
-                    onUpdateSettings({ ...settings, groqModel: newModel });
-                  }}
-                  className="w-full px-3 py-2 rounded-xl text-xs bg-[#F9FAFB] dark:bg-[#1F2937] border border-[#E5E7EB] dark:border-[#374151] text-[#111827] dark:text-white focus:outline-none focus:ring-1 focus:ring-[#6366F1] cursor-pointer"
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={groqTestStatus === 'testing'}
+                  className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
                 >
-                  {SUPPORTED_GROQ_MODELS.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">
-                  Decommissioned models (e.g. Mixtral 8x7B, Llama 3 70B 8192) have been retired. All selected models support live dashboard tools and autonomous operations.
-                </p>
+                  {groqTestStatus === 'testing' ? (
+                    <>
+                      <RefreshCw className="w-3 h-3 animate-spin" />
+                      <span>Validating...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3 h-3" />
+                      <span>{groqKey.trim() ? 'Validate & Save' : 'Clear Key'}</span>
+                    </>
+                  )}
+                </button>
               </div>
             </form>
           </div>

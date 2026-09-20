@@ -31,6 +31,9 @@ import {
   CommandMapping,
   ApiUsageMonthlyRecord,
   ApiMonthlyStats,
+  PublicationItem,
+  ResumeSectionConfig,
+  ResumeThemeStyle,
 } from '../types';
 import { STOCK_IMAGES } from '../assets/stockImages';
 import { decryptJson, encryptJson, isEncryptedPayload, EncryptedPayload } from './crypto';
@@ -368,11 +371,11 @@ export const INITIAL_EDUCATION_RECORDS: EducationRecord[] = [
     degree: 'M.Tech in Information Technology',
     level: 'postgraduation',
     levelTitle: 'Postgraduate (M.Tech)',
-    institution: 'National Institute of Technology Raipur, Chhattisgarh',
+    institution: 'NIT Raipur',
     boardOrUniversity: 'NIT Raipur',
-    location: 'Raipur, Chhattisgarh, India',
-    year: '2024–2026',
-    score: '8.55 CGPA',
+    location: 'Raipur, India',
+    year: '2024 – 2026',
+    score: 'CGPA: 8.9/10',
     specialization: 'Information Technology',
     highlights: ['Advanced Distributed Systems, AI Architectures & Data Engineering'],
   },
@@ -381,11 +384,11 @@ export const INITIAL_EDUCATION_RECORDS: EducationRecord[] = [
     degree: 'B.Tech in Information Technology',
     level: 'graduation',
     levelTitle: 'Undergraduate (B.Tech)',
-    institution: 'Veer Surendra Sai University of Technology Burla, Odisha',
+    institution: 'VSSUT Burla',
     boardOrUniversity: 'VSSUT Burla',
-    location: 'Burla, Odisha, India',
-    year: '2020–2024',
-    score: '8.62 CGPA',
+    location: 'Burla, India',
+    year: '2020 – 2024',
+    score: 'CGPA: 8.7/10',
     specialization: 'Information Technology',
     highlights: ['Core IT Engineering, Algorithms, Database Management & Full-Stack Systems'],
   },
@@ -393,20 +396,35 @@ export const INITIAL_EDUCATION_RECORDS: EducationRecord[] = [
 
 export const INITIAL_JOB_EXPERIENCES: JobExperience[] = [
   {
-    id: 'exp-gnanig-2023',
-    role: 'Trainee / Intern',
-    company: 'GNANIG Technologies',
-    startDate: '2023',
-    endDate: '2023',
-    location: 'India',
+    id: 'exp-hcl-2026',
+    role: 'Software Engineer (BigFix)',
+    company: 'HCLSoftware',
+    startDate: 'Jun 2026',
+    endDate: 'Present',
+    location: 'Noida, India',
     description:
-      'Designed and developed a Spring Boot backend application to manage insurance policies, clients, and claims via RESTful APIs.',
+      'Working on BigFix and automation solutions.',
     keyAchievements: [
-      'Designed and developed a Spring Boot backend application to manage insurance policies, clients, and claims via RESTful APIs.',
-      'Implemented robust CRUD operations and integrated MySQL with Spring Data JPA for efficient data storage and retrieval.',
-      'Utilized Swagger for comprehensive API documentation, enhancing usability and simplifying testing processes.',
+      'Working on BigFix and automation solutions.',
+      'Developed and maintained enterprise tools.',
+      'Collaborated with cross-functional teams.',
     ],
-    techStack: ['Spring Boot', 'Java', 'RESTful APIs', 'MySQL', 'Spring Data JPA', 'Swagger'],
+    techStack: ['BigFix', 'Automation', 'Enterprise Tools', 'Python', 'C++'],
+  },
+  {
+    id: 'exp-nit-raipur-research',
+    role: 'Research Intern',
+    company: 'NIT Raipur',
+    startDate: 'Jan 2025',
+    endDate: 'May 2026',
+    location: 'Raipur, India',
+    description:
+      'Worked on UAV network security and adversarial ML.',
+    keyAchievements: [
+      'Worked on UAV network security and adversarial ML.',
+      'Published research in peer-reviewed conference.',
+    ],
+    techStack: ['Adversarial ML', 'UAV Security', 'PyTorch', 'Network Security'],
   },
 ];
 
@@ -452,6 +470,49 @@ export const INITIAL_CERTIFICATIONS: Array<{ id: string; name: string; issuer: s
   { id: 'cert-4', name: 'Data Analysis Using Python', issuer: 'IBM', year: '2023' },
 ];
 
+export const INITIAL_PUBLICATIONS: PublicationItem[] = [
+  {
+    id: 'pub-1',
+    title: 'Real-Time Pothole and Lane Detection Using Deep Convolutional Neural Networks',
+    publisher: 'International Conference on Smart Computing & Systems',
+    year: '2024',
+    link: 'https://github.com',
+    description: 'Designed an edge-optimized computer vision pipeline with YOLOv8 achieving 80% accuracy in road anomaly detection under varying illumination.',
+  },
+];
+
+export const INITIAL_ACHIEVEMENTS_LIST: AchievementItem[] = [
+  {
+    id: 'ach-1',
+    title: 'Top 5% Graduate Ranking in Information Technology',
+    issuer: 'VSSUT Burla',
+    date: '2024',
+    category: 'Award',
+    badgeIcon: 'Award',
+    description: 'Graduated with 8.62 CGPA with distinction in core Computer Science & IT engineering curriculum.',
+  },
+  {
+    id: 'ach-2',
+    title: 'Qualified GATE in Computer Science & Information Technology',
+    issuer: 'Ministry of Education, Govt. of India',
+    date: '2024',
+    category: 'Award',
+    badgeIcon: 'CheckCircle2',
+    description: 'Secured national competitive rank qualifying for M.Tech IT program at NIT Raipur.',
+  },
+];
+
+export const DEFAULT_RESUME_SECTION_CONFIG: ResumeSectionConfig[] = [
+  { id: 'summary', label: 'Professional Summary', visible: true, order: 1 },
+  { id: 'experience', label: 'Work Experience', visible: true, order: 2 },
+  { id: 'education', label: 'Education', visible: true, order: 3 },
+  { id: 'skills', label: 'Technical Skills', visible: true, order: 4 },
+  { id: 'projects', label: 'Projects', visible: true, order: 5 },
+  { id: 'certifications', label: 'Certifications', visible: true, order: 6 },
+  { id: 'publications', label: 'Research & Publications', visible: true, order: 7 },
+  { id: 'achievements', label: 'Achievements & Honors', visible: true, order: 8 },
+];
+
 export const INITIAL_LANGUAGES: Array<{ id: string; name: string; proficiency: string }> = [
   { id: 'lang-1', name: 'English', proficiency: 'Professional' },
   { id: 'lang-2', name: 'Hindi', proficiency: 'Native / Fluent' },
@@ -460,42 +521,46 @@ export const INITIAL_LANGUAGES: Array<{ id: string; name: string; proficiency: s
 
 // Clean Base User Profile formatted according to verified resume
 export const INITIAL_PROFILE: UserProfile = {
-  name: 'GULSHAN KUMAR NAYAK',
-  caption: 'Information Technology Specialist & Software Engineer',
+  name: 'Gulshan Kumar Nayak',
+  caption: 'Data & AI Engineer | Researcher | Problem Solver',
   handle: '@gulshan',
-  title: 'Information Technology • Backend, Full Stack & AI Systems',
-  bio: 'Passionate and goal-driven Information Technology student with a strong academic foundation and hands-on experience in backend development, full-stack applications, Data Science and Analytics, and AI-integrated systems.',
-  location: 'Raipur, Chhattisgarh, India',
+  title: 'Data & AI Engineer | Researcher | Problem Solver',
+  bio: 'I build data-driven systems, AI applications and intelligent solutions to solve real-world problems.',
+  location: 'Bhubaneswar, India',
   statusText: 'Open to opportunities',
   statusEmoji: '💼',
   avatarUrl: STOCK_IMAGES.avatar,
-  avatarEnabled: false,
+  avatarEnabled: true,
   bannerType: 'gradient',
   bannerBg: 'linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 50%, #FDF4FF 100%)',
   staticCoverImage: STOCK_IMAGES.workspaceCover,
   coverImageEnabled: true,
-  contactEmail: 'gulnayak1206@gmail.com',
-  phone: '+91-7304838209',
-  github: 'https://github.com',
-  linkedin: 'https://linkedin.com',
+  contactEmail: 'gulshan@example.com',
+  phone: '+91 98765 43210',
+  github: 'github.com/gulshan',
+  linkedin: 'linkedin.com/in/gulshan',
   twitter: '',
-  website: 'https://github.com',
+  website: 'portfolio.gulshan.dev',
   resumeAvailable: true,
-  services: ['Backend API Engineering', 'Full-Stack Web Development', 'Data Analytics & Power BI', 'AI & Computer Vision'],
-  tools: ['Java', 'Spring Boot', 'Python', 'React', 'Power BI', 'SQL', 'Postman', 'Git'],
+  services: ['Data & AI Systems', 'Machine Learning & LLMs', 'Full-Stack Engineering', 'Distributed Computing'],
+  tools: ['Python', 'PyTorch', 'Java', 'Spring Boot', 'React', 'TypeScript', 'SQL', 'Git'],
   educationRecords: INITIAL_EDUCATION_RECORDS,
   jobExperiences: INITIAL_JOB_EXPERIENCES,
   hobbies: INITIAL_HOBBIES,
   certifications: INITIAL_CERTIFICATIONS,
   languages: INITIAL_LANGUAGES,
+  publications: INITIAL_PUBLICATIONS,
+  achievementsList: INITIAL_ACHIEVEMENTS_LIST,
+  resumeSectionConfig: DEFAULT_RESUME_SECTION_CONFIG,
+  resumeThemeStyle: 'modern',
   professionalSummary:
-    'Passionate and goal-driven Information Technology student with a strong academic foundation and hands-on experience in backend development, full-stack applications, Data Science and Analytics, and AI-integrated systems. Skilled in a wide range of technologies including Java, Spring Boot, React, Python, Networking, Power BI, Generative AI, LLM, and APIs. Strong problem solving skills, leadership qualities, and commitment to continuous learning and development.',
+    'Data and AI enthusiast with a strong academic background and hands-on experience in building intelligent systems. Passionate about solving real-world problems through data, machine learning and scalable software solutions.',
   careerObjective:
     'Aspiring to contribute as a Software Engineer and Data Analyst, leveraging robust backend skills, AI integrations, and high-impact analytics.',
   availabilityStatus: 'Open to opportunities',
-  yearsOfExperience: '1+ yrs',
-  currentCompany: 'NIT Raipur',
-  currentDesignation: 'M.Tech IT Scholar & Software Developer',
+  yearsOfExperience: '2+',
+  currentCompany: 'HCLSoftware',
+  currentDesignation: 'Software Engineer (BigFix)',
 };
 
 // Empty Clean State Collections (No fake/mock data for new accounts)
@@ -522,6 +587,9 @@ export const INITIAL_PROJECTS: PortfolioProject[] = [
     techStack: ['Next.js', 'React.js', 'Node.js', 'Tailwind CSS', 'JWT', 'RESTful APIs', 'Gemini API'],
     category: 'Fullstack',
     featured: true,
+    keyResult: 'Empowered 500+ student users with real-time syllabus tracking and reduced support queries by 40% with AI chatbot.',
+    githubUrl: 'https://github.com',
+    liveUrl: 'https://github.com',
   },
   {
     id: 'proj-data-analytics',
@@ -532,6 +600,8 @@ export const INITIAL_PROJECTS: PortfolioProject[] = [
     techStack: ['Power BI', 'SQL', 'MS Excel', 'Microsoft Office Suite', 'DAX'],
     category: 'Systems',
     featured: true,
+    keyResult: 'Automated 12+ executive KPI dashboards, slashing monthly reporting turnaround from 3 days to under 15 minutes.',
+    githubUrl: 'https://github.com',
   },
   {
     id: 'proj-pothole-lane',
@@ -542,6 +612,8 @@ export const INITIAL_PROJECTS: PortfolioProject[] = [
     techStack: ['Python', 'OpenCV', 'PyTorch', 'YOLOv8', 'Torchvision'],
     category: 'Systems',
     featured: true,
+    keyResult: 'Attained 80% road hazard detection accuracy with sub-30ms frame inference speeds on edge devices.',
+    githubUrl: 'https://github.com',
   },
 ];
 
