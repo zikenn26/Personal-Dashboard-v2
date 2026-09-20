@@ -1,5 +1,6 @@
 import { executeSecretaryTool, sendSecretaryMessage } from './groqService';
 import { Storage } from '../utils/storage';
+import { parseNaturalLanguageIntent, executeCommandMapping } from './commandMappingService';
 
 export interface GeminiChatMessage {
   id: string;
@@ -165,11 +166,42 @@ export async function sendGeminiMessage(params: {
     data = await response.json();
   } catch (backendError: any) {
     console.warn(
-      'Gemini chat backend error or offline, attempting Groq fallback:',
+      'Gemini chat backend error or offline, attempting local intent execution or Groq fallback:',
       backendError?.message
     );
 
-    // Fallback to Groq API client-side
+    // 1. Attempt immediate local intent execution (zero-network, 100% offline)
+    const localMatch = parseNaturalLanguageIntent(message);
+    if (localMatch) {
+      try {
+        const localRes = await executeCommandMapping(localMatch.mapping, localMatch.extractedParams);
+        const userMessage: GeminiChatMessage = {
+          id: 'msg-user-' + Date.now(),
+          role: 'user',
+          content: message,
+          timestamp: Date.now() - 1,
+        };
+        const assistantMessage: GeminiChatMessage = {
+          id: 'msg-local-' + Date.now(),
+          role: 'assistant',
+          content: localRes.message,
+          actionChips: localRes.actionChip ? [localRes.actionChip] : [],
+          modelUsed: 'Local Command Engine',
+          timestamp: Date.now(),
+        };
+
+        return {
+          reply: localRes.message,
+          actionChips: localRes.actionChip ? [localRes.actionChip] : [],
+          model: 'Local Command Engine',
+          updatedHistory: [...history, userMessage, assistantMessage],
+        };
+      } catch (localErr) {
+        console.warn('Local fallback execution failed:', localErr);
+      }
+    }
+
+    // 2. Fallback to Groq API client-side
     try {
       const groqRes = await sendSecretaryMessage(
         message,
@@ -180,6 +212,11 @@ export async function sendGeminiMessage(params: {
           timestamp: h.timestamp,
         }))
       );
+
+      // If groq returned an error (e.g. missing API key), check if local intent was possible
+      if (groqRes.error && !localMatch) {
+        throw new Error(groqRes.error);
+      }
 
       const assistantMessage: GeminiChatMessage = {
         id: 'msg-groq-' + Date.now(),

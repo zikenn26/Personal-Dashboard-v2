@@ -188,8 +188,13 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
       setIsProcessing(true);
       Sound.voiceProcessing(true);
 
-      // Check if command matches registered triggers
-      const match = matchCommandTrigger(trimmed);
+      const cleaned = trimmed
+        .replace(/^[\s"“”'‘’`«»„.?!,;:\-_(){}\[\]]+/, '')
+        .replace(/[\s"“”'‘’`«»„.?!,;:\-_(){}\[\]]+$/, '')
+        .trim();
+
+      // Check if command matches registered triggers or natural language intent
+      const match = matchCommandTrigger(trimmed) || (cleaned ? matchCommandTrigger(cleaned) : null);
       if (match) {
         try {
           const res = await executeCommandMapping(match.mapping, match.extractedParams);
@@ -233,7 +238,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
       // Fallback: AI Secretary
       try {
         const response = await sendGeminiMessage({
-          message: trimmed,
+          message: cleaned || trimmed,
           history: [],
         });
 
@@ -257,6 +262,28 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
           setIsSpeaking(false);
         });
       } catch (err: any) {
+        // Last-resort offline attempt
+        const fallbackMatch = matchCommandTrigger(cleaned || trimmed);
+        if (fallbackMatch) {
+          try {
+            const res = await executeCommandMapping(fallbackMatch.mapping, fallbackMatch.extractedParams);
+            Sound.success(true);
+            setAcknowledgment({
+              commandText: trimmed,
+              success: res.success,
+              message: res.message,
+              timestamp: Date.now(),
+            });
+            setIsSuccessGlow(true);
+            setTimeout(() => setIsSuccessGlow(false), 2500);
+            onCommandExecutedRef.current?.(trimmed);
+            setIsProcessing(false);
+            return;
+          } catch {
+            // fall through
+          }
+        }
+
         Sound.error(true);
         const userFriendlyMsg =
           err?.message?.includes('405') || err?.message?.includes('Failed to fetch') || err?.message?.includes('NetworkError')

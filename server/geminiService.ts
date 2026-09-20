@@ -644,7 +644,11 @@ export function setupGeminiLiveWebSocket(server: HttpServer) {
 
 // Helper to register routes on Express
 export function registerGeminiRoutes(app: any) {
-  app.get("/api/gemini/health", handleGeminiHealth);
+  app.all("/api/gemini/health", handleGeminiHealth);
+  app.all("/api/gemini/ping", handleGeminiHealth);
+  app.get("/api/gemini/chat", (_req: any, res: any) =>
+    res.json({ status: "ok", endpoint: "/api/gemini/chat", message: "Use POST to send messages" })
+  );
   app.post("/api/gemini/chat", handleGeminiChat);
   app.post("/api/gemini/tts", handleGeminiTts);
   app.post("/api/gemini/transcribe", handleGeminiTranscribe);
@@ -660,51 +664,91 @@ export function geminiVitePlugin() {
       }
 
       server.middlewares.use(async (req: any, res: any, next: any) => {
-        const url = req.url || "";
-        if (!url.startsWith("/api/gemini")) {
+        let pathname = "";
+        try {
+          const rawUrl = req.url || "";
+          pathname = rawUrl.startsWith("/")
+            ? rawUrl.split("?")[0]
+            : new URL(rawUrl, "http://localhost").pathname;
+        } catch {
+          pathname = (req.url || "").split("?")[0];
+        }
+
+        // Normalize trailing slashes
+        pathname = pathname.replace(/\/+$/, "") || "/";
+
+        if (!pathname.startsWith("/api/gemini")) {
           return next();
         }
 
-        const pathname = url.split("?")[0];
-
-        // Ensure Express-like res.json and res.status
+        // Ensure Express-like res.json, res.status, res.send
         const enhancedRes = Object.assign(res, {
           status(code: number) {
             this.statusCode = code;
             return this;
           },
           json(data: any) {
-            this.setHeader("Content-Type", "application/json");
+            if (!this.headersSent) {
+              this.setHeader("Content-Type", "application/json");
+            }
             this.end(JSON.stringify(data));
+          },
+          send(data: any) {
+            if (typeof data === "object") {
+              return this.json(data);
+            }
+            this.end(String(data));
           },
         });
 
-        // Set CORS headers for all /api/gemini requests
+        // Set permissive CORS headers for all /api/gemini requests
         res.setHeader("Access-Control-Allow-Origin", "*");
-        res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+        res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, HEAD");
+        res.setHeader("Access-Control-Allow-Headers", "*");
 
-        if (req.method === "OPTIONS") {
+        const method = (req.method || "").toUpperCase();
+
+        if (method === "OPTIONS") {
           res.statusCode = 204;
           return res.end();
         }
 
-        if (pathname === "/api/gemini/health") {
+        if (pathname === "/api/gemini/health" || pathname === "/api/gemini/ping") {
           return handleGeminiHealth(req, enhancedRes);
         }
 
-        // For POST endpoints, parse JSON body if needed
-        if (req.method === "POST") {
+        if (pathname === "/api/gemini/chat" && method === "GET") {
+          return enhancedRes.json({
+            status: "ok",
+            endpoint: "/api/gemini/chat",
+            message: "Use POST to send messages",
+          });
+        }
+
+        // For POST endpoints, parse JSON body safely
+        if (method === "POST") {
           let body = req.body;
-          if (!body) {
+          if (!body || typeof body !== "object") {
             try {
-              const buffers: any[] = [];
-              for await (const chunk of req) {
-                buffers.push(chunk);
-              }
-              const raw = Buffer.concat(buffers).toString("utf-8");
-              body = JSON.parse(raw || "{}");
-            } catch (err) {
+              body = await new Promise((resolve) => {
+                const timeout = setTimeout(() => resolve({}), 4000);
+                const chunks: Buffer[] = [];
+                req.on("data", (c: any) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+                req.on("end", () => {
+                  clearTimeout(timeout);
+                  try {
+                    const str = Buffer.concat(chunks).toString("utf-8");
+                    resolve(str ? JSON.parse(str) : {});
+                  } catch {
+                    resolve({});
+                  }
+                });
+                req.on("error", () => {
+                  clearTimeout(timeout);
+                  resolve({});
+                });
+              });
+            } catch {
               body = {};
             }
           }

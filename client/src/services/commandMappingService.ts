@@ -66,7 +66,7 @@ export function normalizeVoiceInput(input: string): { rawClean: string; stripped
 
   const rawClean = input
     .toLowerCase()
-    .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"'’]/g, ' ')
+    .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"'’“”…«»„]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -128,9 +128,10 @@ export function parseNaturalLanguageIntent(rawTranscript: string): MatchResult |
   const rawClean = rawTranscript.trim();
   if (!rawClean) return null;
 
-  // Clean common speech quotes and leading filler
+  // Clean common speech quotes, brackets, and leading/trailing punctuation
   let clean = rawClean
-    .replace(/^["'`]|["'`]$/g, '')
+    .replace(/^[\s"“”'‘’`«»„.?!,;:\-_(){}\[\]]+/, '')
+    .replace(/[\s"“”'‘’`«»„.?!,;:\-_(){}\[\]]+$/, '')
     .trim();
 
   // Strip conversational wake/filler phrases
@@ -143,9 +144,10 @@ export function parseNaturalLanguageIntent(rawTranscript: string): MatchResult |
   }
 
   // 1. ================== TASKS / TODOS ==================
-  // Pattern: "Add a new task to play Kabaddi", "Add task play Kabaddi", "Create a task to buy groceries", "Remind me to call mom", "New task: workout"
+  // Pattern: "Add a new task to visit Bangalore", "Add task visit Bangalore", "Add visit Bangalore to tasks", "Remind me to visit Bangalore", "New task: visit Bangalore"
   const addTaskPatterns = [
     /^(?:add|create|make|schedule|insert|put|record)\s+(?:a\s+)?(?:new\s+)?(?:task|todo|to-do|item)\s+(?:to\s+|called\s+|titled\s+|for\s+|:\s*|\-\s*)?(.+)$/i,
+    /^(?:add|create|make|insert|put)\s+(.+?)\s+(?:to\s+|in\s+|into\s+)(?:my\s+)?(?:tasks?|todos?|to-dos?|task\s+list|todo\s+list)$/i,
     /^(?:remind me to|remember to|don't forget to|dont forget to)\s+(.+)$/i,
     /^(?:task|todo|to-do)\s*(?::\s*|\-\s*|\s+to\s+|\s+called\s+|\s+titled\s+|\s+)(.+)$/i,
     /^(?:new\s+task|new\s+todo)\s+(?:to\s+|called\s+|titled\s+|:\s*|\-\s*)?(.+)$/i,
@@ -200,8 +202,11 @@ export function parseNaturalLanguageIntent(rawTranscript: string): MatchResult |
         }
       }
 
-      // Final title cleanup
-      taskBody = taskBody.replace(/^(?:to\s+|called\s+|titled\s+|for\s+|:\s*|\-\s*)+/i, '').trim();
+      // Final title cleanup (strip prefixes and trailing punctuation/quotes)
+      taskBody = taskBody
+        .replace(/^(?:to\s+|called\s+|titled\s+|for\s+|:\s*|\-\s*)+/i, '')
+        .replace(/[\s"“”'‘’`«»„.?!,;:\-_(){}\[\]]+$/, '')
+        .trim();
       const title = taskBody ? taskBody.charAt(0).toUpperCase() + taskBody.slice(1) : 'New Task';
 
       return {
@@ -678,7 +683,15 @@ export function matchCommandTrigger(rawTranscript: string): MatchResult | null {
   }
 
   // If no explicit user-defined or default mapping matched, fall back to natural language intent recognition!
-  const nlMatch = parseNaturalLanguageIntent(rawTranscript);
+  const cleanedText = rawTranscript
+    .replace(/^[\s"“”'‘’`«»„.?!,;:\-_(){}\[\]]+/, '')
+    .replace(/[\s"“”'‘’`«»„.?!,;:\-_(){}\[\]]+$/, '')
+    .trim();
+
+  const nlMatch =
+    parseNaturalLanguageIntent(rawTranscript) ||
+    parseNaturalLanguageIntent(cleanedText) ||
+    (stripped ? parseNaturalLanguageIntent(stripped) : null);
   if (nlMatch) {
     return nlMatch;
   }

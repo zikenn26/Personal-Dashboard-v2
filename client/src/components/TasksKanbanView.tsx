@@ -521,44 +521,57 @@ export const TasksKanbanView: React.FC<TasksKanbanViewProps> = ({
           <div className="flex items-center bg-[#F9FAFB] dark:bg-[#1F2937] border border-[#E5E7EB] dark:border-[#374151] rounded-lg p-0.5 text-xs">
             <div className="flex items-center gap-1 pl-2 pr-1 text-[#6B7280] dark:text-[#9CA3AF] text-[11px] font-medium select-none">
               <ArrowUpDown className="w-3 h-3 text-indigo-500 shrink-0" />
-              <span className="hidden lg:inline">Sort:</span>
+              <span className="hidden sm:inline">Sort:</span>
             </div>
 
-            {/* Sort Field Selector */}
-            <select
-              value={sortBy}
-              onChange={(e) => {
-                Sound.click(soundEnabled);
-                setSortBy(e.target.value as TaskSortField);
-              }}
-              className="bg-transparent text-[11px] font-semibold text-[#111827] dark:text-white px-1.5 py-1 rounded focus:outline-none cursor-pointer border-none"
-              title="Select sorting criteria"
-            >
-              <option value="priority" className="dark:bg-[#1F2937]">Priority</option>
-              <option value="dueDate" className="dark:bg-[#1F2937]">Due Date</option>
-              <option value="createdAt" className="dark:bg-[#1F2937]">Created Date</option>
-            </select>
-
-            {/* Sort Direction Toggle Button */}
-            <button
-              type="button"
-              onClick={() => {
-                Sound.click(soundEnabled);
-                setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
-              }}
-              className="p-1 text-[#6B7280] dark:text-[#9CA3AF] hover:text-[#111827] dark:hover:text-white hover:bg-white dark:hover:bg-[#111827] rounded transition-all cursor-pointer"
-              title={
-                sortDirection === 'asc'
-                  ? `Ascending order (${sortBy === 'priority' ? 'Low to Urgent' : sortBy === 'dueDate' ? 'Earliest first' : 'Oldest first'}) - Click to toggle`
-                  : `Descending order (${sortBy === 'priority' ? 'Urgent to Low' : sortBy === 'dueDate' ? 'Latest first' : 'Newest first'}) - Click to toggle`
-              }
-            >
-              {sortDirection === 'asc' ? (
-                <ArrowUp className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
-              ) : (
-                <ArrowDown className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
-              )}
-            </button>
+            {/* Direct Toggle Pills */}
+            <div className="flex items-center gap-0.5">
+              {(
+                [
+                  { field: 'priority', label: 'Priority' },
+                  { field: 'dueDate', label: 'Due Date' },
+                  { field: 'createdAt', label: 'Created' },
+                ] as const
+              ).map(({ field, label }) => {
+                const isActive = sortBy === field;
+                return (
+                  <button
+                    key={field}
+                    type="button"
+                    onClick={() => {
+                      Sound.click(soundEnabled);
+                      if (isActive) {
+                        setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+                      } else {
+                        setSortBy(field);
+                        setSortDirection(field === 'dueDate' ? 'asc' : 'desc');
+                      }
+                    }}
+                    className={`px-2 py-1 rounded text-[11px] font-semibold flex items-center gap-1 transition-all cursor-pointer ${
+                      isActive
+                        ? 'bg-indigo-600 text-white shadow-2xs dark:bg-indigo-500'
+                        : 'text-[#6B7280] dark:text-[#9CA3AF] hover:text-[#111827] dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800'
+                    }`}
+                    title={`Sort by ${label} (${
+                      isActive
+                        ? sortDirection === 'asc'
+                          ? 'Ascending - Click to toggle Descending'
+                          : 'Descending - Click to toggle Ascending'
+                        : 'Click to sort'
+                    })`}
+                  >
+                    <span>{label}</span>
+                    {isActive && (
+                      sortDirection === 'asc' ? (
+                        <ArrowUp className="w-3 h-3 stroke-[2.5]" />
+                      ) : (
+                        <ArrowDown className="w-3 h-3 stroke-[2.5]" />
+                      )
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Search Input */}
