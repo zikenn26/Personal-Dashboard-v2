@@ -134,6 +134,7 @@ export async function checkGeminiHealth(): Promise<GeminiHealthResponse> {
 
 /**
  * Validate / test user's Google Gemini API Key
+ * Robustly tests via backend endpoint, with safe JSON parsing and direct Google Gemini validation fallback.
  */
 export async function testGeminiApiKey(
   testKey?: string
@@ -146,8 +147,18 @@ export async function testGeminiApiKey(
     };
   }
 
+  // Quick format sanity check
+  if (keyToTest.length < 8) {
+    return {
+      success: false,
+      message: 'Invalid Gemini API key format. Please enter a complete Gemini API key.',
+    };
+  }
+
+  Storage.recordApiRequest('gemini');
+
+  // Strategy 1: Attempt verification through backend proxy endpoint (/api/gemini/test-key)
   try {
-    Storage.recordApiRequest('gemini');
     const res = await fetch('/api/gemini/test-key', {
       method: 'POST',
       headers: {
@@ -157,21 +168,85 @@ export async function testGeminiApiKey(
       body: JSON.stringify({ apiKey: keyToTest }),
     });
 
-    const data = await res.json();
-    if (res.ok && data.success) {
+    const rawText = await res.text().catch(() => '');
+    let data: any = null;
+    if (rawText) {
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        data = null;
+      }
+    }
+
+    if (res.ok && data?.success) {
       return {
         success: true,
         message: data.message || 'Google Gemini API key validated successfully!',
       };
     }
+
+    // If backend gave a clear validation error from Gemini, return it directly
+    if (data && typeof data === 'object' && (data.message || data.error)) {
+      const errMsg = data.message || data.error;
+      // If it's a genuine key validation error, return it
+      if (typeof errMsg === 'string' && (errMsg.includes('validation failed') || errMsg.includes('API key') || errMsg.includes('INVALID'))) {
+        return {
+          success: false,
+          message: errMsg,
+        };
+      }
+    }
+  } catch (backendErr: any) {
+    console.warn('Backend /api/gemini/test-key unreachable, trying direct Gemini validation:', backendErr?.message);
+  }
+
+  // Strategy 2: Direct Google Gemini API validation fallback
+  // Queries Google's official public API to verify the key directly.
+  // This guarantees verification succeeds seamlessly even in static deployments, server cold-starts, or behind CDN/nginx proxies.
+  try {
+    const directRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(keyToTest)}`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    const directRaw = await directRes.text().catch(() => '');
+    let directData: any = null;
+    if (directRaw) {
+      try {
+        directData = JSON.parse(directRaw);
+      } catch {
+        directData = null;
+      }
+    }
+
+    if (directRes.ok && directData?.models) {
+      return {
+        success: true,
+        message: 'Google Gemini API key validated successfully! Ready to power your assistant.',
+      };
+    }
+
+    const errDetail =
+      directData?.error?.message ||
+      (directRes.status === 400
+        ? 'API key not valid. Please pass a valid API key from Google AI Studio.'
+        : directRes.status === 403
+        ? 'Permission denied or quota exceeded for this Gemini API key.'
+        : `Validation failed with status ${directRes.status}`);
+
     return {
       success: false,
-      message: data.message || data.error || 'Failed to validate Gemini API key.',
+      message: `Gemini key validation failed: ${errDetail}`,
     };
-  } catch (err: any) {
+  } catch (directErr: any) {
     return {
       success: false,
-      message: `Connection error: ${err?.message || 'Unable to contact server to test key.'}`,
+      message: `Unable to connect to Google Gemini servers: ${directErr?.message || 'Please check your internet connection.'}`,
     };
   }
 }
@@ -520,7 +595,15 @@ export async function sendGeminiMessage(params: {
       return await executeLocalClientVoiceFallback(message, history);
     }
 
-    data = await response.json();
+    const responseText = await response.text().catch(() => '');
+    try {
+      data = responseText ? JSON.parse(responseText) : {};
+    } catch {
+      data = {};
+    }
+    if (!data || typeof data !== 'object') {
+      return await executeLocalClientVoiceFallback(message, history);
+    }
   } catch (backendError: any) {
     console.warn(
       'Gemini chat backend error or offline, automatically switching voice command processing to local client fallback handler:',
@@ -630,7 +713,13 @@ export async function speakTextWithGemini(
       throw new Error(`TTS server returned ${res.status}`);
     }
 
-    const data = await res.json();
+    const rawText = await res.text().catch(() => '');
+    let data: any = null;
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      data = {};
+    }
     if (!data.audio) throw new Error('No audio data received');
 
     // Decode PCM 16-bit 24kHz
@@ -755,7 +844,7 @@ export async function transcribeAudioWithGemini(
       };
     }
 
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     return {
       transcript: data.transcript || '',
       statusCode: 200,

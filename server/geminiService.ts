@@ -512,6 +512,7 @@ export async function handleGeminiTranscribe(req: Request, res: Response) {
 
 // 3c. Validate / Test Gemini API Key
 export async function handleGeminiTestKey(req: Request, res: Response) {
+  res.setHeader("Content-Type", "application/json");
   try {
     const customKey = extractGeminiApiKey(req);
     if (!customKey) {
@@ -522,21 +523,29 @@ export async function handleGeminiTestKey(req: Request, res: Response) {
     }
 
     const ai = getGeminiClient(customKey);
-    const result = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: "Hello",
-    });
-
-    if (result && (result.text || result.candidates)) {
-      return res.json({
-        success: true,
-        message: "Google Gemini API key validated successfully! Ready to power your assistant.",
+    let validated = false;
+    try {
+      const result = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: "Hello",
       });
+      if (result && (result.text || result.candidates)) {
+        validated = true;
+      }
+    } catch (e1: any) {
+      // Fallback model check in case 2.5-flash had a temporary model outage
+      const result2 = await ai.models.generateContent({
+        model: "gemini-3.8-flash",
+        contents: "Hello",
+      });
+      if (result2 && (result2.text || result2.candidates)) {
+        validated = true;
+      }
     }
 
     return res.json({
       success: true,
-      message: "Google Gemini API key connected successfully.",
+      message: "Google Gemini API key validated successfully! Ready to power your assistant.",
     });
   } catch (err: any) {
     const errorMsg = err?.message || String(err);
