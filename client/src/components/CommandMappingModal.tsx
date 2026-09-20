@@ -106,6 +106,48 @@ const ACTION_META: Record<
     bg: 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/40',
     icon: <Sparkles className="w-3.5 h-3.5 text-rose-700 dark:text-rose-300" />,
   },
+  delete_todo: {
+    label: 'Delete Task',
+    functionName: 'Storage.deleteTodo',
+    color: 'text-rose-700 dark:text-rose-300',
+    bg: 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/40',
+    icon: <Trash2 className="w-3.5 h-3.5 text-rose-700 dark:text-rose-300" />,
+  },
+  toggle_todo: {
+    label: 'Toggle Task',
+    functionName: 'Storage.toggleTodo',
+    color: 'text-indigo-700 dark:text-indigo-300',
+    bg: 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800/40',
+    icon: <CheckSquare className="w-3.5 h-3.5 text-indigo-700 dark:text-indigo-300" />,
+  },
+  clear_all_tasks: {
+    label: 'Clear All Tasks',
+    functionName: 'Storage.clearAllTasks',
+    color: 'text-red-700 dark:text-red-300',
+    bg: 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/40',
+    icon: <Trash2 className="w-3.5 h-3.5 text-red-700 dark:text-red-300" />,
+  },
+  clear_all_expenses: {
+    label: 'Clear All Expenses',
+    functionName: 'Storage.clearAllExpenses',
+    color: 'text-red-700 dark:text-red-300',
+    bg: 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/40',
+    icon: <Trash2 className="w-3.5 h-3.5 text-red-700 dark:text-red-300" />,
+  },
+  set_alarm: {
+    label: 'Set Alarm',
+    functionName: 'Storage.setActiveAlarm',
+    color: 'text-amber-700 dark:text-amber-300',
+    bg: 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/40',
+    icon: <Clock className="w-3.5 h-3.5 text-amber-700 dark:text-amber-300" />,
+  },
+  cancel_alarm: {
+    label: 'Cancel Alarm',
+    functionName: 'Storage.cancelAlarm',
+    color: 'text-gray-700 dark:text-gray-300',
+    bg: 'bg-gray-50 dark:bg-gray-950/40 border-gray-200 dark:border-gray-800/40',
+    icon: <Clock className="w-3.5 h-3.5 text-gray-700 dark:text-gray-300" />,
+  },
 };
 
 const EXPENSE_CATEGORIES: ExpenseCategory[] = [

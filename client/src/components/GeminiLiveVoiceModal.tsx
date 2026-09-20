@@ -258,10 +258,14 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
         });
       } catch (err: any) {
         Sound.error(true);
+        const userFriendlyMsg =
+          err?.message?.includes('405') || err?.message?.includes('Failed to fetch') || err?.message?.includes('NetworkError')
+            ? 'Backend AI server is offline on this URL. Direct commands like "Add task [title]" or "Add expense ₹[amount]" run 100% offline.'
+            : (err?.message || 'Could not process voice command.');
         setAcknowledgment({
           commandText: trimmed,
           success: false,
-          message: err?.message || 'Failed to process command with AI.',
+          message: userFriendlyMsg,
           timestamp: Date.now(),
         });
       }

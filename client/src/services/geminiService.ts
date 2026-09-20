@@ -1,4 +1,4 @@
-import { executeSecretaryTool } from './groqService';
+import { executeSecretaryTool, sendSecretaryMessage } from './groqService';
 import { Storage } from '../utils/storage';
 
 export interface GeminiChatMessage {
@@ -149,18 +149,89 @@ export async function sendGeminiMessage(params: {
     },
   };
 
-  const response = await fetch('/api/gemini/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
+  let data: any;
+  try {
+    const response = await fetch('/api/gemini/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
 
-  if (!response.ok) {
-    const errData = await response.json().catch(() => ({}));
-    throw new Error(errData.error || `Server returned HTTP ${response.status}`);
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || `Server returned HTTP ${response.status}`);
+    }
+
+    data = await response.json();
+  } catch (backendError: any) {
+    console.warn(
+      'Gemini chat backend error or offline, attempting Groq fallback:',
+      backendError?.message
+    );
+
+    // Fallback to Groq API client-side
+    try {
+      const groqRes = await sendSecretaryMessage(
+        message,
+        history.map((h) => ({
+          id: h.id,
+          role: h.role as any,
+          content: h.content,
+          timestamp: h.timestamp,
+        }))
+      );
+
+      const assistantMessage: GeminiChatMessage = {
+        id: 'msg-groq-' + Date.now(),
+        role: 'assistant',
+        content: groqRes.reply,
+        actionChips: groqRes.actionChips,
+        modelUsed: 'Groq (Auto-Fallback)',
+        timestamp: Date.now(),
+      };
+
+      const userMessage: GeminiChatMessage = {
+        id: 'msg-user-' + Date.now(),
+        role: 'user',
+        content: message,
+        timestamp: Date.now(),
+      };
+
+      return {
+        reply: groqRes.reply,
+        actionChips: groqRes.actionChips || [],
+        model: 'Groq (Auto-Fallback)',
+        updatedHistory: [...history, userMessage, assistantMessage],
+      };
+    } catch (groqErr) {
+      // Graceful offline message instead of confusing HTTP status codes
+      const fallbackReply =
+        `I understood: "${message}". The cloud AI service is offline on this URL, but your direct commands (like adding/completing tasks, logging expenses, checking habits, and navigating views) work 100% offline!`;
+
+      const assistantMessage: GeminiChatMessage = {
+        id: 'msg-offline-' + Date.now(),
+        role: 'assistant',
+        content: fallbackReply,
+        actionChips: ['⚡ Direct voice commands work offline'],
+        modelUsed: 'Offline Engine',
+        timestamp: Date.now(),
+      };
+
+      const userMessage: GeminiChatMessage = {
+        id: 'msg-user-' + Date.now(),
+        role: 'user',
+        content: message,
+        timestamp: Date.now(),
+      };
+
+      return {
+        reply: fallbackReply,
+        actionChips: ['⚡ Direct voice commands work offline'],
+        model: 'Offline Engine',
+        updatedHistory: [...history, userMessage, assistantMessage],
+      };
+    }
   }
-
-  const data = await response.json();
   const actionChips: string[] = [];
 
   // Execute any function calls on local state

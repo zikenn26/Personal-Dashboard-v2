@@ -679,7 +679,17 @@ export function geminiVitePlugin() {
           },
         });
 
-        if (pathname === "/api/gemini/health" && req.method === "GET") {
+        // Set CORS headers for all /api/gemini requests
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+        if (req.method === "OPTIONS") {
+          res.statusCode = 204;
+          return res.end();
+        }
+
+        if (pathname === "/api/gemini/health") {
           return handleGeminiHealth(req, enhancedRes);
         }
 
@@ -711,7 +721,9 @@ export function geminiVitePlugin() {
           }
         }
 
-        next();
+        return enhancedRes.status(404).json({
+          error: `Endpoint ${pathname} not found or unsupported method ${req.method}`,
+        });
       });
     },
   };

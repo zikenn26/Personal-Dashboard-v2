@@ -666,12 +666,18 @@ export interface QuickAlarm {
 export type CommandActionType =
   | 'add_expense'
   | 'delete_expense'
+  | 'clear_all_expenses'
   | 'add_todo'
+  | 'delete_todo'
+  | 'toggle_todo'
+  | 'clear_all_tasks'
   | 'add_habit'
   | 'toggle_habit'
   | 'navigate_view'
   | 'add_journal'
-  | 'add_quote';
+  | 'add_quote'
+  | 'set_alarm'
+  | 'cancel_alarm';
 
 export interface CommandMappingParams {
   // For 'add_expense' (maps to handleAddExpense):
@@ -697,6 +703,9 @@ export interface CommandMappingParams {
   quoteText?: string;
   quoteAuthor?: string;
   quoteCategory?: string;
+  // For 'set_alarm':
+  alarmTime?: string;
+  alarmLabel?: string;
 }
 
 export type CommandMatchType = 'exact' | 'contains' | 'starts_with';
