@@ -192,14 +192,45 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  const handleSaveGeminiKey = (e: React.FormEvent) => {
+  const handleSaveGeminiKey = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanKey = geminiKey.trim();
-    Storage.setGeminiApiKey(cleanKey);
-    onUpdateSettings({ ...settings, geminiApiKey: cleanKey });
-    Sound.success(settings.soundEnabled);
-    setGeminiKeySaved(true);
-    setTimeout(() => setGeminiKeySaved(false), 2500);
+
+    if (!cleanKey) {
+      Storage.setGeminiApiKey('');
+      onUpdateSettings({ ...settings, geminiApiKey: '' });
+      Sound.click(settings.soundEnabled);
+      setGeminiKeySaved(true);
+      setGeminiTestStatus('idle');
+      setGeminiTestMsg('');
+      setTimeout(() => setGeminiKeySaved(false), 2500);
+      return;
+    }
+
+    setGeminiTestStatus('testing');
+    setGeminiTestMsg('Pinging Google Gemini endpoint to validate key...');
+    Sound.click(settings.soundEnabled);
+
+    try {
+      const res = await testGeminiApiKey(cleanKey);
+      if (res.success) {
+        Storage.setGeminiApiKey(cleanKey);
+        onUpdateSettings({ ...settings, geminiApiKey: cleanKey });
+        Sound.success(settings.soundEnabled);
+        setGeminiKeySaved(true);
+        setGeminiTestStatus('success');
+        setGeminiTestMsg(res.message);
+        setTimeout(() => setGeminiKeySaved(false), 2500);
+      } else {
+        Sound.error(settings.soundEnabled);
+        setGeminiTestStatus('error');
+        setGeminiTestMsg(res.message);
+      }
+    } catch (err: any) {
+      Sound.error(settings.soundEnabled);
+      setGeminiTestStatus('error');
+      setGeminiTestMsg(err?.message || 'Failed to validate Gemini key.');
+    }
   };
 
   const handleTestGeminiKey = async () => {
@@ -219,14 +250,45 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  const handleSaveGroqKey = (e: React.FormEvent) => {
+  const handleSaveGroqKey = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanKey = groqKey.trim();
-    Storage.setGroqApiKey(cleanKey);
-    onUpdateSettings({ ...settings, groqApiKey: cleanKey });
-    Sound.success(settings.soundEnabled);
-    setGroqKeySaved(true);
-    setTimeout(() => setGroqKeySaved(false), 2500);
+
+    if (!cleanKey) {
+      Storage.setGroqApiKey('');
+      onUpdateSettings({ ...settings, groqApiKey: '' });
+      Sound.click(settings.soundEnabled);
+      setGroqKeySaved(true);
+      setGroqTestStatus('idle');
+      setGroqTestMsg('');
+      setTimeout(() => setGroqKeySaved(false), 2500);
+      return;
+    }
+
+    setGroqTestStatus('testing');
+    setGroqTestMsg('Pinging Groq AI endpoint to validate key...');
+    Sound.click(settings.soundEnabled);
+
+    try {
+      const res = await testGroqApiKey(cleanKey);
+      if (res.success) {
+        Storage.setGroqApiKey(cleanKey);
+        onUpdateSettings({ ...settings, groqApiKey: cleanKey });
+        Sound.success(settings.soundEnabled);
+        setGroqKeySaved(true);
+        setGroqTestStatus('success');
+        setGroqTestMsg(res.message);
+        setTimeout(() => setGroqKeySaved(false), 2500);
+      } else {
+        Sound.error(settings.soundEnabled);
+        setGroqTestStatus('error');
+        setGroqTestMsg(res.message);
+      }
+    } catch (err: any) {
+      Sound.error(settings.soundEnabled);
+      setGroqTestStatus('error');
+      setGroqTestMsg(err?.message || 'Failed to validate Groq key.');
+    }
   };
 
   const handleTestGroqKey = async () => {
@@ -588,8 +650,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </p>
 
             <form onSubmit={handleSaveGeminiKey} className="space-y-2">
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <div className="relative flex-1 min-w-0">
                   <input
                     type={showGeminiKey ? 'text' : 'password'}
                     value={geminiKey}
@@ -610,25 +672,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </button>
                 </div>
 
-                <button
-                  type="submit"
-                  className="px-3.5 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs shrink-0"
-                >
-                  {geminiKeySaved ? <Check className="w-3.5 h-3.5" /> : <KeyRound className="w-3.5 h-3.5" />}
-                  <span>{geminiKeySaved ? 'Saved' : 'Save Key'}</span>
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="submit"
+                    className="flex-1 sm:flex-none px-3.5 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    {geminiKeySaved ? <Check className="w-3.5 h-3.5" /> : <KeyRound className="w-3.5 h-3.5" />}
+                    <span>{geminiKeySaved ? 'Saved' : 'Save Key'}</span>
+                  </button>
 
-                <button
-                  type="button"
-                  id="settings-test-gemini-connection-btn"
-                  onClick={handleTestGeminiKey}
-                  disabled={geminiTestStatus === 'testing' || !geminiKey.trim()}
-                  className="px-3 py-2 text-xs font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
-                  title="Test key against Google Gemini API"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-blue-500" />
-                  <span>{geminiTestStatus === 'testing' ? 'Testing...' : 'Test Connection'}</span>
-                </button>
+                  <button
+                    type="button"
+                    id="settings-test-gemini-connection-btn"
+                    onClick={handleTestGeminiKey}
+                    disabled={geminiTestStatus === 'testing' || !geminiKey.trim()}
+                    className="flex-1 sm:flex-none px-3 py-2 text-xs font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    title="Test key against Google Gemini API"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+                    <span>{geminiTestStatus === 'testing' ? 'Testing...' : 'Test'}</span>
+                  </button>
+                </div>
               </div>
 
               {geminiTestStatus !== 'idle' && (
@@ -677,8 +741,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </p>
 
             <form onSubmit={handleSaveGroqKey} className="space-y-2">
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <div className="relative flex-1 min-w-0">
                   <input
                     type={showGroqKey ? 'text' : 'password'}
                     value={groqKey}
@@ -699,25 +763,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </button>
                 </div>
 
-                <button
-                  type="submit"
-                  className="px-3.5 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs shrink-0"
-                >
-                  {groqKeySaved ? <Check className="w-3.5 h-3.5" /> : <KeyRound className="w-3.5 h-3.5" />}
-                  <span>{groqKeySaved ? 'Saved' : 'Save Key'}</span>
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="submit"
+                    className="flex-1 sm:flex-none px-3.5 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    {groqKeySaved ? <Check className="w-3.5 h-3.5" /> : <KeyRound className="w-3.5 h-3.5" />}
+                    <span>{groqKeySaved ? 'Saved' : 'Save Key'}</span>
+                  </button>
 
-                <button
-                  type="button"
-                  id="settings-test-groq-connection-btn"
-                  onClick={handleTestGroqKey}
-                  disabled={groqTestStatus === 'testing' || !groqKey.trim()}
-                  className="px-3 py-2 text-xs font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
-                  title="Test key against Groq API"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                  <span>{groqTestStatus === 'testing' ? 'Testing...' : 'Test Connection'}</span>
-                </button>
+                  <button
+                    type="button"
+                    id="settings-test-groq-connection-btn"
+                    onClick={handleTestGroqKey}
+                    disabled={groqTestStatus === 'testing' || !groqKey.trim()}
+                    className="flex-1 sm:flex-none px-3 py-2 text-xs font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    title="Test key against Groq API"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                    <span>{groqTestStatus === 'testing' ? 'Testing...' : 'Test'}</span>
+                  </button>
+                </div>
               </div>
 
               {groqTestStatus !== 'idle' && (

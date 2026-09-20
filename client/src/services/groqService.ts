@@ -2445,8 +2445,20 @@ export async function testGroqApiKey(testKey?: string): Promise<{ success: boole
       return { success: true, message: 'Groq API key verified successfully! Connected to Groq cloud.' };
     }
 
-    const errData = await directRes.json().catch(() => null);
-    const errMessage = errData?.error?.message || `Status ${directRes.status}`;
+    const errText = await directRes.text().catch(() => '');
+    let errData: any = null;
+    if (errText) {
+      try {
+        errData = JSON.parse(errText);
+      } catch {
+        errData = null;
+      }
+    }
+    const errMessage =
+      errData?.error?.message ||
+      (directRes.status === 401
+        ? 'Invalid Groq API key. Please check your key from console.groq.com'
+        : `Validation failed with status ${directRes.status}`);
     return { success: false, message: `Groq Authentication Failed: ${errMessage}` };
   } catch (err: any) {
     return { success: false, message: err.message || 'Network error while validating key with Groq.' };
