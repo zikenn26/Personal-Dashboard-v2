@@ -20,6 +20,7 @@ import {
   ExternalLink,
   Award,
   BookOpen,
+  PlusCircle,
 } from 'lucide-react';
 
 export type ResumeFormatStyle = 'jakes' | 'modern' | 'executive';
@@ -53,11 +54,12 @@ export const ResumeView: React.FC<ResumeViewProps> = ({
   const displayGithub = profile.github || 'github.com/gulshan';
   const displayWebsite = profile.website || 'portfolio.gulshan.dev';
   const summaryText =
-    profile.professionalSummary ||
-    'Data and AI enthusiast with a strong academic background and hands-on experience in building intelligent systems. Passionate about solving real-world problems through data, machine learning and scalable software solutions.';
+    profile.professionalSummary !== undefined
+      ? profile.professionalSummary
+      : 'Data and AI enthusiast with a strong academic background and hands-on experience in building intelligent systems. Passionate about solving real-world problems through data, machine learning and scalable software solutions.';
 
   const experienceList: JobExperience[] =
-    profile.jobExperiences && profile.jobExperiences.length > 0
+    profile.jobExperiences !== undefined
       ? profile.jobExperiences
       : [
           {
@@ -90,7 +92,7 @@ export const ResumeView: React.FC<ResumeViewProps> = ({
         ];
 
   const educationList: EducationRecord[] =
-    profile.educationRecords && profile.educationRecords.length > 0
+    profile.educationRecords !== undefined
       ? profile.educationRecords
       : [
           {
@@ -130,7 +132,7 @@ export const ResumeView: React.FC<ResumeViewProps> = ({
     <div
       id="printable-resume-sheet"
       ref={sheetRef as any}
-      className="w-full max-w-[850px] mx-auto p-4 sm:p-8 md:p-12 rounded-2xl bg-white text-gray-900 shadow-sm border border-gray-100 transition-all font-sans print:shadow-none print:border-none print:p-0 print:m-0 print:max-w-none print:w-full print:bg-white print:text-black"
+      className="w-full max-w-[850px] mx-auto p-4 sm:p-8 md:p-12 rounded-2xl bg-white text-gray-900 shadow-sm border border-gray-100 transition-all font-sans print:shadow-none print:border-none print:p-0 print:m-0 print:max-w-none print:w-full print:bg-white print:text-black print:rounded-none"
     >
       {/* 1. RESUME HEADER */}
       <div className="flex flex-col sm:flex-row justify-between items-start gap-4 sm:gap-6 pb-6 border-b border-gray-100">
@@ -226,8 +228,8 @@ export const ResumeView: React.FC<ResumeViewProps> = ({
       {/* 2. RESUME BODY SECTIONS */}
       <div className="space-y-6 pt-5">
         {/* SECTION: PROFESSIONAL SUMMARY */}
-        {isVisible('summary') && summaryText && (
-          <section className="space-y-1.5">
+        {isVisible('summary') && (
+          <section className="space-y-1.5 resume-section-item">
             <div className="flex items-center justify-between">
               <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-950">
                 Professional Summary
@@ -242,15 +244,27 @@ export const ResumeView: React.FC<ResumeViewProps> = ({
                 </button>
               )}
             </div>
-            <p className="text-xs text-gray-600 leading-relaxed text-justify">
-              {summaryText}
-            </p>
+            {summaryText ? (
+              <p className="text-xs text-gray-600 leading-relaxed text-justify">
+                {summaryText}
+              </p>
+            ) : (
+              <div
+                onClick={() => onEditSection && onEditSection('summary')}
+                className="p-3.5 rounded-xl border border-dashed border-gray-200 hover:border-gray-400 bg-gray-50/50 hover:bg-gray-50/80 transition-all text-center cursor-pointer group print:hidden"
+              >
+                <p className="text-xs font-medium text-gray-500 group-hover:text-gray-900 flex items-center justify-center gap-1.5">
+                  <PlusCircle className="w-3.5 h-3.5 text-gray-400 group-hover:text-indigo-600" />
+                  <span>No summary added yet • Click to add professional summary</span>
+                </p>
+              </div>
+            )}
           </section>
         )}
 
         {/* SECTION: EXPERIENCE */}
-        {isVisible('experience') && experienceList.length > 0 && (
-          <section className="space-y-3">
+        {isVisible('experience') && (
+          <section className="space-y-3 resume-section-item">
             <div className="flex items-center justify-between">
               <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-950">
                 Experience
@@ -266,55 +280,67 @@ export const ResumeView: React.FC<ResumeViewProps> = ({
               )}
             </div>
 
-            <div className="relative pl-5 border-l-2 border-gray-200 ml-1.5 space-y-4">
-              {experienceList.map((exp, idx) => (
-                <div key={exp.id || idx} className="relative space-y-1">
-                  {/* Timeline bullet dot */}
-                  <span className="absolute -left-[25px] top-1.5 w-2 h-2 rounded-full bg-[#1E293B] border-2 border-white ring-1 ring-gray-200" />
+            {experienceList.length > 0 ? (
+              <div className="relative pl-5 border-l-2 border-gray-200 ml-1.5 space-y-4">
+                {experienceList.map((exp, idx) => (
+                  <div key={exp.id || idx} className="relative space-y-1">
+                    {/* Timeline bullet dot */}
+                    <span className="absolute -left-[25px] top-1.5 w-2 h-2 rounded-full bg-[#1E293B] border-2 border-white ring-1 ring-gray-200" />
 
-                  <div className="flex flex-col sm:flex-row sm:items-baseline justify-between text-xs gap-0.5 sm:gap-2">
-                    <span className="font-bold text-gray-950">
-                      {exp.company}
-                    </span>
-                    <span className="text-[11px] text-gray-500 font-medium shrink-0">
-                      {exp.startDate}
-                      {exp.endDate ? ` – ${exp.endDate}` : ''}
-                    </span>
-                  </div>
-
-                  <div className="flex items-baseline justify-between text-xs">
-                    <span className="text-gray-700 font-medium">
-                      {exp.role}
-                    </span>
-                    {exp.location && (
-                      <span className="text-[11px] text-gray-500">
-                        {exp.location}
+                    <div className="flex flex-col sm:flex-row sm:items-baseline justify-between text-xs gap-0.5 sm:gap-2">
+                      <span className="font-bold text-gray-950">
+                        {exp.company}
                       </span>
-                    )}
-                  </div>
+                      <span className="text-[11px] text-gray-500 font-medium shrink-0">
+                        {exp.startDate}
+                        {exp.endDate ? ` – ${exp.endDate}` : ''}
+                      </span>
+                    </div>
 
-                  {exp.keyAchievements && exp.keyAchievements.length > 0 ? (
-                    <ul className="list-disc list-outside pl-4 space-y-0.5 text-xs text-gray-600 pt-0.5">
-                      {exp.keyAchievements.map((item, aIdx) => (
-                        <li key={aIdx} className="leading-snug">
-                          {item}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : exp.description ? (
-                    <p className="text-xs text-gray-600 leading-relaxed">
-                      {exp.description}
-                    </p>
-                  ) : null}
-                </div>
-              ))}
-            </div>
+                    <div className="flex items-baseline justify-between text-xs">
+                      <span className="text-gray-700 font-medium">
+                        {exp.role}
+                      </span>
+                      {exp.location && (
+                        <span className="text-[11px] text-gray-500">
+                          {exp.location}
+                        </span>
+                      )}
+                    </div>
+
+                    {exp.keyAchievements && exp.keyAchievements.length > 0 ? (
+                      <ul className="list-disc list-outside pl-4 space-y-0.5 text-xs text-gray-600 pt-0.5">
+                        {exp.keyAchievements.map((item, aIdx) => (
+                          <li key={aIdx} className="leading-snug">
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : exp.description ? (
+                      <p className="text-xs text-gray-600 leading-relaxed">
+                        {exp.description}
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div
+                onClick={() => onEditSection && onEditSection('experience')}
+                className="p-3.5 rounded-xl border border-dashed border-gray-200 hover:border-gray-400 bg-gray-50/50 hover:bg-gray-50/80 transition-all text-center cursor-pointer group print:hidden"
+              >
+                <p className="text-xs font-medium text-gray-500 group-hover:text-gray-900 flex items-center justify-center gap-1.5">
+                  <PlusCircle className="w-3.5 h-3.5 text-gray-400 group-hover:text-indigo-600" />
+                  <span>No experience added yet • Click to add work experience</span>
+                </p>
+              </div>
+            )}
           </section>
         )}
 
         {/* SECTION: EDUCATION */}
-        {isVisible('education') && educationList.length > 0 && (
-          <section className="space-y-3">
+        {isVisible('education') && (
+          <section className="space-y-3 resume-section-item">
             <div className="flex items-center justify-between">
               <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-950">
                 Education
@@ -330,41 +356,53 @@ export const ResumeView: React.FC<ResumeViewProps> = ({
               )}
             </div>
 
-            <div className="relative pl-5 border-l-2 border-gray-200 ml-1.5 space-y-4">
-              {educationList.map((edu, idx) => (
-                <div key={edu.id || idx} className="relative space-y-0.5">
-                  {/* Timeline bullet dot */}
-                  <span className="absolute -left-[25px] top-1.5 w-2 h-2 rounded-full bg-[#1E293B] border-2 border-white ring-1 ring-gray-200" />
+            {educationList.length > 0 ? (
+              <div className="relative pl-5 border-l-2 border-gray-200 ml-1.5 space-y-4">
+                {educationList.map((edu, idx) => (
+                  <div key={edu.id || idx} className="relative space-y-0.5">
+                    {/* Timeline bullet dot */}
+                    <span className="absolute -left-[25px] top-1.5 w-2 h-2 rounded-full bg-[#1E293B] border-2 border-white ring-1 ring-gray-200" />
 
-                  <div className="flex flex-col sm:flex-row sm:items-baseline justify-between text-xs gap-0.5 sm:gap-2">
-                    <span className="font-bold text-gray-950">
-                      {edu.degree}
-                    </span>
-                    <span className="text-[11px] text-gray-500 font-medium shrink-0">
-                      {edu.year}
-                    </span>
-                  </div>
-
-                  <div className="flex items-baseline justify-between text-xs text-gray-700">
-                    <span>
-                      {edu.institution || edu.boardOrUniversity}
-                      {edu.score ? ` | CGPA: ${edu.score.replace(/^CGPA:?\s*/i, '')}` : ''}
-                    </span>
-                    {edu.location && (
-                      <span className="text-[11px] text-gray-500">
-                        {edu.location}
+                    <div className="flex flex-col sm:flex-row sm:items-baseline justify-between text-xs gap-0.5 sm:gap-2">
+                      <span className="font-bold text-gray-950">
+                        {edu.degree}
                       </span>
-                    )}
+                      <span className="text-[11px] text-gray-500 font-medium shrink-0">
+                        {edu.year}
+                      </span>
+                    </div>
+
+                    <div className="flex items-baseline justify-between text-xs text-gray-700">
+                      <span>
+                        {edu.institution || edu.boardOrUniversity}
+                        {edu.score ? ` | CGPA: ${edu.score.replace(/^CGPA:?\s*/i, '')}` : ''}
+                      </span>
+                      {edu.location && (
+                        <span className="text-[11px] text-gray-500">
+                          {edu.location}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div
+                onClick={() => onEditSection && onEditSection('education')}
+                className="p-3.5 rounded-xl border border-dashed border-gray-200 hover:border-gray-400 bg-gray-50/50 hover:bg-gray-50/80 transition-all text-center cursor-pointer group print:hidden"
+              >
+                <p className="text-xs font-medium text-gray-500 group-hover:text-gray-900 flex items-center justify-center gap-1.5">
+                  <PlusCircle className="w-3.5 h-3.5 text-gray-400 group-hover:text-indigo-600" />
+                  <span>No education added yet • Click to add education history</span>
+                </p>
+              </div>
+            )}
           </section>
         )}
 
         {/* SECTION: SKILLS */}
-        {isVisible('skills') && skills && skills.length > 0 && (
-          <section className="space-y-2">
+        {isVisible('skills') && (
+          <section className="space-y-2 resume-section-item">
             <div className="flex items-center justify-between">
               <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-950">
                 Technical Skills
@@ -380,24 +418,36 @@ export const ResumeView: React.FC<ResumeViewProps> = ({
               )}
             </div>
 
-            <div className="space-y-1 text-xs text-gray-700">
-              {skills.map((sc, sIdx) => (
-                <div key={sIdx} className="flex flex-wrap items-baseline gap-1.5">
-                  <span className="font-bold text-gray-950 min-w-[120px]">
-                    {sc.category}:
-                  </span>
-                  <span className="text-gray-600">
-                    {sc.skills.map((s) => s.name).join(', ')}
-                  </span>
-                </div>
-              ))}
-            </div>
+            {skills && skills.length > 0 ? (
+              <div className="space-y-1 text-xs text-gray-700">
+                {skills.map((sc, sIdx) => (
+                  <div key={sIdx} className="flex flex-wrap items-baseline gap-1.5">
+                    <span className="font-bold text-gray-950 min-w-[120px]">
+                      {sc.category}:
+                    </span>
+                    <span className="text-gray-600">
+                      {sc.skills.map((s) => s.name).join(', ')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div
+                onClick={() => onEditSection && onEditSection('skills')}
+                className="p-3.5 rounded-xl border border-dashed border-gray-200 hover:border-gray-400 bg-gray-50/50 hover:bg-gray-50/80 transition-all text-center cursor-pointer group print:hidden"
+              >
+                <p className="text-xs font-medium text-gray-500 group-hover:text-gray-900 flex items-center justify-center gap-1.5">
+                  <PlusCircle className="w-3.5 h-3.5 text-gray-400 group-hover:text-indigo-600" />
+                  <span>No skills added yet • Click to add technical competencies</span>
+                </p>
+              </div>
+            )}
           </section>
         )}
 
         {/* SECTION: PROJECTS */}
-        {isVisible('projects') && projects && projects.length > 0 && (
-          <section className="space-y-3">
+        {isVisible('projects') && (
+          <section className="space-y-3 resume-section-item">
             <div className="flex items-center justify-between">
               <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-950">
                 Key Projects
@@ -413,83 +463,167 @@ export const ResumeView: React.FC<ResumeViewProps> = ({
               )}
             </div>
 
-            <div className="space-y-3 text-xs">
-              {projects.slice(0, 3).map((proj, pIdx) => (
-                <div key={proj.id || pIdx} className="space-y-0.5">
-                  <div className="flex items-baseline justify-between font-bold text-gray-950">
-                    <span>{proj.title}</span>
-                    {proj.techStack && proj.techStack.length > 0 && (
-                      <span className="text-[10.5px] font-normal text-gray-500">
-                        {proj.techStack.join(' • ')}
-                      </span>
+            {projects && projects.length > 0 ? (
+              <div className="space-y-3 text-xs">
+                {projects.slice(0, 3).map((proj, pIdx) => (
+                  <div key={proj.id || pIdx} className="space-y-0.5">
+                    <div className="flex items-baseline justify-between font-bold text-gray-950">
+                      <span>{proj.title}</span>
+                      {proj.techStack && proj.techStack.length > 0 && (
+                        <span className="text-[10.5px] font-normal text-gray-500">
+                          {proj.techStack.join(' • ')}
+                        </span>
+                      )}
+                    </div>
+                    {proj.description && (
+                      <p className="text-gray-600 leading-relaxed">
+                        {proj.description}
+                      </p>
+                    )}
+                    {proj.keyResult && (
+                      <p className="text-gray-700 font-medium text-[11px]">
+                        Impact: {proj.keyResult}
+                      </p>
                     )}
                   </div>
-                  {proj.description && (
-                    <p className="text-gray-600 leading-relaxed">
-                      {proj.description}
-                    </p>
-                  )}
-                  {proj.keyResult && (
-                    <p className="text-gray-700 font-medium text-[11px]">
-                      Impact: {proj.keyResult}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div
+                onClick={() => onEditSection && onEditSection('projects')}
+                className="p-3.5 rounded-xl border border-dashed border-gray-200 hover:border-gray-400 bg-gray-50/50 hover:bg-gray-50/80 transition-all text-center cursor-pointer group print:hidden"
+              >
+                <p className="text-xs font-medium text-gray-500 group-hover:text-gray-900 flex items-center justify-center gap-1.5">
+                  <PlusCircle className="w-3.5 h-3.5 text-gray-400 group-hover:text-indigo-600" />
+                  <span>No projects added yet • Click to add key projects</span>
+                </p>
+              </div>
+            )}
           </section>
         )}
 
         {/* SECTION: CERTIFICATIONS */}
-        {isVisible('certifications') && certificationsList.length > 0 && (
-          <section className="space-y-2">
-            <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-950">
-              Certifications
-            </h2>
-            <div className="space-y-1 text-xs text-gray-600">
-              {certificationsList.map((cert, cIdx) => (
-                <div key={cert.id || cIdx} className="flex justify-between">
-                  <span className="font-medium text-gray-950">{cert.title || (cert as any).name}</span>
-                  <span className="text-gray-500">{cert.issuer} {cert.year ? `(${cert.year})` : ''}</span>
-                </div>
-              ))}
+        {isVisible('certifications') && (
+          <section className="space-y-2 resume-section-item">
+            <div className="flex items-center justify-between">
+              <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-950">
+                Certifications
+              </h2>
+              {onEditSection && (
+                <button
+                  type="button"
+                  onClick={() => onEditSection('certifications')}
+                  className="text-[10px] text-gray-400 hover:text-indigo-600 opacity-0 hover:opacity-100 transition-opacity print:hidden cursor-pointer"
+                >
+                  Edit
+                </button>
+              )}
             </div>
+
+            {certificationsList.length > 0 ? (
+              <div className="space-y-1 text-xs text-gray-600">
+                {certificationsList.map((cert, cIdx) => (
+                  <div key={cert.id || cIdx} className="flex justify-between">
+                    <span className="font-medium text-gray-950">{cert.title || (cert as any).name}</span>
+                    <span className="text-gray-500">{cert.issuer} {cert.year ? `(${cert.year})` : ''}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div
+                onClick={() => onEditSection && onEditSection('certifications')}
+                className="p-3 rounded-xl border border-dashed border-gray-200 hover:border-gray-400 bg-gray-50/50 hover:bg-gray-50/80 transition-all text-center cursor-pointer group print:hidden"
+              >
+                <p className="text-xs font-medium text-gray-500 group-hover:text-gray-900 flex items-center justify-center gap-1.5">
+                  <PlusCircle className="w-3.5 h-3.5 text-gray-400 group-hover:text-indigo-600" />
+                  <span>No certifications added yet • Click to add certifications</span>
+                </p>
+              </div>
+            )}
           </section>
         )}
 
         {/* SECTION: PUBLICATIONS */}
-        {isVisible('publications') && publicationsList.length > 0 && (
-          <section className="space-y-2">
-            <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-950">
-              Publications &amp; Research
-            </h2>
-            <div className="space-y-1.5 text-xs text-gray-600">
-              {publicationsList.map((pub, pIdx) => (
-                <div key={pub.id || pIdx}>
-                  <p className="font-medium text-gray-950">{pub.title}</p>
-                  <p className="text-[11px] text-gray-500">
-                    {pub.publisher || pub.conference} {pub.year ? `(${pub.year})` : ''}
-                  </p>
-                </div>
-              ))}
+        {isVisible('publications') && (
+          <section className="space-y-2 resume-section-item">
+            <div className="flex items-center justify-between">
+              <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-950">
+                Publications &amp; Research
+              </h2>
+              {onEditSection && (
+                <button
+                  type="button"
+                  onClick={() => onEditSection('publications')}
+                  className="text-[10px] text-gray-400 hover:text-indigo-600 opacity-0 hover:opacity-100 transition-opacity print:hidden cursor-pointer"
+                >
+                  Edit
+                </button>
+              )}
             </div>
+
+            {publicationsList.length > 0 ? (
+              <div className="space-y-1.5 text-xs text-gray-600">
+                {publicationsList.map((pub, pIdx) => (
+                  <div key={pub.id || pIdx}>
+                    <p className="font-medium text-gray-950">{pub.title}</p>
+                    <p className="text-[11px] text-gray-500">
+                      {pub.publisher || pub.conference} {pub.year ? `(${pub.year})` : ''}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div
+                onClick={() => onEditSection && onEditSection('publications')}
+                className="p-3 rounded-xl border border-dashed border-gray-200 hover:border-gray-400 bg-gray-50/50 hover:bg-gray-50/80 transition-all text-center cursor-pointer group print:hidden"
+              >
+                <p className="text-xs font-medium text-gray-500 group-hover:text-gray-900 flex items-center justify-center gap-1.5">
+                  <PlusCircle className="w-3.5 h-3.5 text-gray-400 group-hover:text-indigo-600" />
+                  <span>No publications added yet • Click to add research papers</span>
+                </p>
+              </div>
+            )}
           </section>
         )}
 
         {/* SECTION: ACHIEVEMENTS */}
-        {isVisible('achievements') && achievementsList.length > 0 && (
-          <section className="space-y-2">
-            <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-950">
-              Achievements
-            </h2>
-            <ul className="list-disc list-outside pl-4 space-y-0.5 text-xs text-gray-600">
-              {achievementsList.map((ach, aIdx) => (
-                <li key={ach.id || aIdx}>
-                  <span className="font-medium text-gray-950">{ach.title}</span>
-                  {ach.description && <span> – {ach.description}</span>}
-                </li>
-              ))}
-            </ul>
+        {isVisible('achievements') && (
+          <section className="space-y-2 resume-section-item">
+            <div className="flex items-center justify-between">
+              <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-950">
+                Achievements
+              </h2>
+              {onEditSection && (
+                <button
+                  type="button"
+                  onClick={() => onEditSection('achievements')}
+                  className="text-[10px] text-gray-400 hover:text-indigo-600 opacity-0 hover:opacity-100 transition-opacity print:hidden cursor-pointer"
+                >
+                  Edit
+                </button>
+              )}
+            </div>
+
+            {achievementsList.length > 0 ? (
+              <ul className="list-disc list-outside pl-4 space-y-0.5 text-xs text-gray-600">
+                {achievementsList.map((ach, aIdx) => (
+                  <li key={ach.id || aIdx}>
+                    <span className="font-medium text-gray-950">{ach.title}</span>
+                    {ach.description && <span> – {ach.description}</span>}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div
+                onClick={() => onEditSection && onEditSection('achievements')}
+                className="p-3 rounded-xl border border-dashed border-gray-200 hover:border-gray-400 bg-gray-50/50 hover:bg-gray-50/80 transition-all text-center cursor-pointer group print:hidden"
+              >
+                <p className="text-xs font-medium text-gray-500 group-hover:text-gray-900 flex items-center justify-center gap-1.5">
+                  <PlusCircle className="w-3.5 h-3.5 text-gray-400 group-hover:text-indigo-600" />
+                  <span>No achievements listed • Click to add honors and awards</span>
+                </p>
+              </div>
+            )}
           </section>
         )}
       </div>

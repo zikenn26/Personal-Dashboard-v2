@@ -203,6 +203,10 @@ export interface PortfolioProject {
   title: string;
   tagLine?: string;
   description: string;
+  expandedDescription?: string;
+  startDate?: string;
+  endDate?: string;
+  date?: string;
   techStack?: string[];
   tech?: string[];
   liveUrl?: string;
@@ -214,6 +218,10 @@ export interface PortfolioProject {
   accentColor?: string;
   keyResult?: string;
   imageUrl?: string;
+  screenshots?: string[];
+  role?: string;
+  metrics?: string[];
+  highlights?: string[];
 }
 
 export interface PublicationItem {

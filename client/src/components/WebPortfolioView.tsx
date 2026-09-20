@@ -31,6 +31,10 @@ import {
   Copy,
   Send,
   Code2,
+  Calendar,
+  Briefcase,
+  Plus,
+  PlusCircle,
 } from 'lucide-react';
 import { Sound } from '../utils/audio';
 
@@ -84,7 +88,7 @@ export const WebPortfolioView: React.FC<WebPortfolioViewProps> = ({
   const displayWebsite = profile.website || 'portfolio.gulshan.dev';
 
   const experiences: JobExperience[] =
-    profile.jobExperiences && profile.jobExperiences.length > 0
+    profile.jobExperiences !== undefined
       ? profile.jobExperiences
       : [
           {
@@ -119,7 +123,7 @@ export const WebPortfolioView: React.FC<WebPortfolioViewProps> = ({
         ];
 
   const educations: EducationRecord[] =
-    profile.educationRecords && profile.educationRecords.length > 0
+    profile.educationRecords !== undefined
       ? profile.educationRecords
       : [
           {
@@ -515,55 +519,77 @@ export const WebPortfolioView: React.FC<WebPortfolioViewProps> = ({
                 onClick={() => onEditSection('experience')}
                 className="text-xs text-indigo-600 hover:underline cursor-pointer"
               >
-                Edit
+                {experiences.length > 0 ? 'Edit' : '+ Add'}
               </button>
             )}
           </div>
 
-          <div className="space-y-4">
-            {experiences.map((exp, idx) => (
-              <div
-                key={exp.id || idx}
-                className="bg-white rounded-2xl p-6 border border-gray-100 shadow-2xs space-y-3"
-              >
-                <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1">
-                  <div>
-                    <h3 className="text-sm font-bold text-gray-950">{exp.company}</h3>
-                    <p className="text-xs text-gray-600 font-medium">{exp.role}</p>
-                  </div>
-                  <div className="text-right text-[11px] text-gray-500 font-medium">
-                    <span>
-                      {exp.startDate} – {exp.endDate || 'Present'}
-                    </span>
-                    {exp.location && <span> | {exp.location}</span>}
-                  </div>
-                </div>
-
-                {exp.keyAchievements && exp.keyAchievements.length > 0 ? (
-                  <ul className="list-disc list-outside pl-4 space-y-1 text-xs text-gray-600">
-                    {exp.keyAchievements.map((item, aIdx) => (
-                      <li key={aIdx}>{item}</li>
-                    ))}
-                  </ul>
-                ) : exp.description ? (
-                  <p className="text-xs text-gray-600">{exp.description}</p>
-                ) : null}
-
-                {exp.techStack && exp.techStack.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 pt-2">
-                    {exp.techStack.map((tech, tIdx) => (
-                      <span
-                        key={tIdx}
-                        className="px-2.5 py-0.5 rounded-md bg-gray-100 text-[11px] font-medium text-gray-600"
-                      >
-                        {tech}
+          {experiences.length > 0 ? (
+            <div className="space-y-4">
+              {experiences.map((exp, idx) => (
+                <div
+                  key={exp.id || idx}
+                  className="bg-white rounded-2xl p-6 border border-gray-100 shadow-2xs space-y-3"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1">
+                    <div>
+                      <h3 className="text-sm font-bold text-gray-950">{exp.company}</h3>
+                      <p className="text-xs text-gray-600 font-medium">{exp.role}</p>
+                    </div>
+                    <div className="text-right text-[11px] text-gray-500 font-medium">
+                      <span>
+                        {exp.startDate} – {exp.endDate || 'Present'}
                       </span>
-                    ))}
+                      {exp.location && <span> | {exp.location}</span>}
+                    </div>
                   </div>
-                )}
+
+                  {exp.keyAchievements && exp.keyAchievements.length > 0 ? (
+                    <ul className="list-disc list-outside pl-4 space-y-1 text-xs text-gray-600">
+                      {exp.keyAchievements.map((item, aIdx) => (
+                        <li key={aIdx}>{item}</li>
+                      ))}
+                    </ul>
+                  ) : exp.description ? (
+                    <p className="text-xs text-gray-600">{exp.description}</p>
+                  ) : null}
+
+                  {exp.techStack && exp.techStack.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-2">
+                      {exp.techStack.map((tech, tIdx) => (
+                        <span
+                          key={tIdx}
+                          className="px-2.5 py-0.5 rounded-md bg-gray-100 text-[11px] font-medium text-gray-600"
+                        >
+                          {tech}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div
+              onClick={() => onEditSection && onEditSection('experience')}
+              className="p-6 rounded-2xl border border-dashed border-gray-200 hover:border-gray-400 bg-gray-50/50 hover:bg-gray-50/80 transition-all text-center space-y-2 cursor-pointer group"
+            >
+              <div className="w-10 h-10 rounded-full bg-white shadow-2xs border border-gray-200 text-gray-400 group-hover:text-indigo-600 flex items-center justify-center mx-auto transition-colors">
+                <Briefcase className="w-5 h-5" />
               </div>
-            ))}
-          </div>
+              <div>
+                <p className="text-xs font-semibold text-gray-800">No experience entries added yet</p>
+                <p className="text-[11px] text-gray-500">Click to add your employment and engineering experience</p>
+              </div>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-colors pointer-events-none"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Experience</span>
+              </button>
+            </div>
+          )}
         </section>
 
         {/* SECTION: PROJECTS */}
@@ -578,56 +604,140 @@ export const WebPortfolioView: React.FC<WebPortfolioViewProps> = ({
                 onClick={() => onEditSection('projects')}
                 className="text-xs text-indigo-600 hover:underline cursor-pointer"
               >
-                Edit
+                {projects.length > 0 ? 'Edit' : '+ Add'}
               </button>
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {projects.map((proj) => (
-              <div
-                key={proj.id}
-                onClick={() => onSelectProject(proj)}
-                className="bg-white rounded-2xl p-5 border border-gray-100 shadow-2xs hover:shadow-sm hover:border-gray-200 transition-all cursor-pointer space-y-3 flex flex-col justify-between"
-              >
-                <div className="space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="text-sm font-bold text-gray-950 leading-snug">
-                      {proj.title}
-                    </h3>
-                    <ExternalLink className="w-3.5 h-3.5 text-gray-400 shrink-0 mt-0.5" />
-                  </div>
+          {projects.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
+              {projects.map((proj) => {
+                const defaultImg =
+                  proj.imageUrl ||
+                  (proj.category === 'Fullstack'
+                    ? 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=800&q=80'
+                    : proj.category === 'Systems'
+                    ? 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=800&q=80'
+                    : 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=800&q=80');
+                const projDate =
+                  proj.startDate && proj.endDate
+                    ? `${proj.startDate} – ${proj.endDate}`
+                    : proj.startDate
+                    ? `${proj.startDate} – Present`
+                    : proj.date;
 
-                  {proj.description && (
-                    <p className="text-xs text-gray-600 line-clamp-3 leading-relaxed">
-                      {proj.description}
-                    </p>
-                  )}
-                </div>
-
-                <div className="space-y-2 pt-2">
-                  {proj.keyResult && (
-                    <p className="text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg">
-                      Impact: {proj.keyResult}
-                    </p>
-                  )}
-
-                  {proj.techStack && proj.techStack.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {proj.techStack.slice(0, 4).map((tech, idx) => (
-                        <span
-                          key={idx}
-                          className="px-2 py-0.5 rounded-md bg-gray-100 text-[10px] font-medium text-gray-600"
-                        >
-                          {tech}
+                return (
+                  <div
+                    key={proj.id}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onSelectProject(proj);
+                    }}
+                    className="group bg-white rounded-2xl border border-gray-100 shadow-2xs hover:shadow-md hover:border-gray-200 transition-all cursor-pointer flex flex-col justify-between overflow-hidden"
+                  >
+                    {/* High-Resolution Project Banner */}
+                    <div className="relative h-44 w-full bg-gray-100 overflow-hidden">
+                      <img
+                        src={defaultImg}
+                        alt={proj.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        loading="lazy"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent pointer-events-none" />
+                      <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-white/95 text-gray-900 shadow-2xs backdrop-blur-xs">
+                          {proj.category}
                         </span>
-                      ))}
+                        {proj.featured && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white shadow-2xs flex items-center gap-1">
+                            <Sparkles className="w-2.5 h-2.5 fill-white" />
+                            Featured
+                          </span>
+                        )}
+                      </div>
+                      {projDate && (
+                        <div className="absolute bottom-2.5 right-3 text-[10.5px] font-medium text-white/95 bg-black/50 backdrop-blur-xs px-2.5 py-0.5 rounded-md flex items-center gap-1">
+                          <Calendar className="w-3 h-3 text-white/80" />
+                          <span>{projDate}</span>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
+
+                    <div className="p-5 flex-1 flex flex-col justify-between space-y-3">
+                      <div className="space-y-1.5">
+                        <h3 className="text-sm font-bold text-gray-950 group-hover:text-indigo-600 transition-colors leading-snug">
+                          {proj.title}
+                        </h3>
+                        {proj.tagLine && (
+                          <p className="text-[11px] font-medium text-indigo-700/80 line-clamp-1">
+                            {proj.tagLine}
+                          </p>
+                        )}
+                        {proj.description && (
+                          <p className="text-xs text-gray-600 line-clamp-3 leading-relaxed pt-1">
+                            {proj.description}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="space-y-2.5 pt-2">
+                        {proj.keyResult && (
+                          <p className="text-[11px] font-medium text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100/80 line-clamp-2">
+                            <span className="font-bold">Impact: </span>
+                            {proj.keyResult}
+                          </p>
+                        )}
+
+                        {proj.techStack && proj.techStack.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {proj.techStack.slice(0, 3).map((tech, idx) => (
+                              <span
+                                key={idx}
+                                className="px-2 py-0.5 rounded-md bg-gray-100 text-[10px] font-medium text-gray-600"
+                              >
+                                {tech}
+                              </span>
+                            ))}
+                            {proj.techStack.length > 3 && (
+                              <span className="px-1.5 py-0.5 rounded-md bg-gray-50 text-[10px] text-gray-400 font-medium">
+                                +{proj.techStack.length - 3}
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="pt-1 flex items-center justify-between text-xs font-semibold text-gray-900 group-hover:text-indigo-600">
+                          <span>View Details</span>
+                          <ArrowRight className="w-3.5 h-3.5 transform group-hover:translate-x-1 transition-transform" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div
+              onClick={() => onEditSection && onEditSection('projects')}
+              className="p-6 rounded-2xl border border-dashed border-gray-200 hover:border-gray-400 bg-gray-50/50 hover:bg-gray-50/80 transition-all text-center space-y-2 cursor-pointer group"
+            >
+              <div className="w-10 h-10 rounded-full bg-white shadow-2xs border border-gray-200 text-gray-400 group-hover:text-indigo-600 flex items-center justify-center mx-auto transition-colors">
+                <Code2 className="w-5 h-5" />
               </div>
-            ))}
-          </div>
+              <div>
+                <p className="text-xs font-semibold text-gray-800">No projects added yet</p>
+                <p className="text-[11px] text-gray-500">Showcase your applications, systems, and engineering deliverables</p>
+              </div>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-colors pointer-events-none"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Project</span>
+              </button>
+            </div>
+          )}
         </section>
 
         {/* SECTION: SKILLS */}
@@ -642,33 +752,55 @@ export const WebPortfolioView: React.FC<WebPortfolioViewProps> = ({
                 onClick={() => onEditSection('skills')}
                 className="text-xs text-indigo-600 hover:underline cursor-pointer"
               >
-                Edit
+                {skills.length > 0 ? 'Edit' : '+ Add'}
               </button>
             )}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {skills.map((sc, idx) => (
-              <div
-                key={idx}
-                className="bg-white rounded-2xl p-5 border border-gray-100 shadow-2xs space-y-3"
-              >
-                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-950">
-                  {sc.category}
-                </h3>
-                <div className="flex flex-wrap gap-1.5">
-                  {sc.skills.map((s, sIdx) => (
-                    <span
-                      key={sIdx}
-                      className="px-3 py-1 rounded-full bg-gray-100 hover:bg-gray-200 text-xs font-medium text-gray-800 transition-colors"
-                    >
-                      {s.name}
-                    </span>
-                  ))}
+          {skills && skills.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {skills.map((sc, idx) => (
+                <div
+                  key={idx}
+                  className="bg-white rounded-2xl p-5 border border-gray-100 shadow-2xs space-y-3"
+                >
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-gray-950">
+                    {sc.category}
+                  </h3>
+                  <div className="flex flex-wrap gap-1.5">
+                    {sc.skills.map((s, sIdx) => (
+                      <span
+                        key={sIdx}
+                        className="px-3 py-1 rounded-full bg-gray-100 hover:bg-gray-200 text-xs font-medium text-gray-800 transition-colors"
+                      >
+                        {s.name}
+                      </span>
+                    ))}
+                  </div>
                 </div>
+              ))}
+            </div>
+          ) : (
+            <div
+              onClick={() => onEditSection && onEditSection('skills')}
+              className="p-6 rounded-2xl border border-dashed border-gray-200 hover:border-gray-400 bg-gray-50/50 hover:bg-gray-50/80 transition-all text-center space-y-2 cursor-pointer group"
+            >
+              <div className="w-10 h-10 rounded-full bg-white shadow-2xs border border-gray-200 text-gray-400 group-hover:text-indigo-600 flex items-center justify-center mx-auto transition-colors">
+                <Sparkles className="w-5 h-5" />
               </div>
-            ))}
-          </div>
+              <div>
+                <p className="text-xs font-semibold text-gray-800">No skills added yet</p>
+                <p className="text-[11px] text-gray-500">Click to add programming languages, frameworks, and engineering tools</p>
+              </div>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-colors pointer-events-none"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Skills</span>
+              </button>
+            </div>
+          )}
         </section>
 
         {/* SECTION: EDUCATION */}
@@ -683,35 +815,57 @@ export const WebPortfolioView: React.FC<WebPortfolioViewProps> = ({
                 onClick={() => onEditSection('education')}
                 className="text-xs text-indigo-600 hover:underline cursor-pointer"
               >
-                Edit
+                {educations.length > 0 ? 'Edit' : '+ Add'}
               </button>
             )}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {educations.map((edu, idx) => (
-              <div
-                key={edu.id || idx}
-                className="bg-white rounded-2xl p-5 border border-gray-100 shadow-2xs space-y-2"
-              >
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-gray-950">{edu.degree}</span>
-                  <span className="text-[11px] text-gray-500 font-medium">{edu.year}</span>
+          {educations.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {educations.map((edu, idx) => (
+                <div
+                  key={edu.id || idx}
+                  className="bg-white rounded-2xl p-5 border border-gray-100 shadow-2xs space-y-2"
+                >
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-gray-950">{edu.degree}</span>
+                    <span className="text-[11px] text-gray-500 font-medium">{edu.year}</span>
+                  </div>
+                  <p className="text-xs text-gray-700 font-medium">
+                    {edu.institution || edu.boardOrUniversity}
+                    {edu.score ? ` | CGPA: ${edu.score.replace(/^CGPA:?\s*/i, '')}` : ''}
+                  </p>
+                  {edu.location && (
+                    <p className="text-[11px] text-gray-500">{edu.location}</p>
+                  )}
                 </div>
-                <p className="text-xs text-gray-700 font-medium">
-                  {edu.institution || edu.boardOrUniversity}
-                  {edu.score ? ` | CGPA: ${edu.score.replace(/^CGPA:?\s*/i, '')}` : ''}
-                </p>
-                {edu.location && (
-                  <p className="text-[11px] text-gray-500">{edu.location}</p>
-                )}
+              ))}
+            </div>
+          ) : (
+            <div
+              onClick={() => onEditSection && onEditSection('education')}
+              className="p-6 rounded-2xl border border-dashed border-gray-200 hover:border-gray-400 bg-gray-50/50 hover:bg-gray-50/80 transition-all text-center space-y-2 cursor-pointer group"
+            >
+              <div className="w-10 h-10 rounded-full bg-white shadow-2xs border border-gray-200 text-gray-400 group-hover:text-indigo-600 flex items-center justify-center mx-auto transition-colors">
+                <GraduationCap className="w-5 h-5" />
               </div>
-            ))}
-          </div>
+              <div>
+                <p className="text-xs font-semibold text-gray-800">No education records added yet</p>
+                <p className="text-[11px] text-gray-500">Click to add your degrees, institutions, and academic achievements</p>
+              </div>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-colors pointer-events-none"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Education</span>
+              </button>
+            </div>
+          )}
         </section>
 
         {/* SECTION: CERTIFICATIONS & PUBLICATIONS */}
-        {(certifications.length > 0 || publications.length > 0) && (
+        {certifications.length > 0 || publications.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-4 border-t border-gray-100">
             {/* Certifications */}
             {certifications.length > 0 && (
@@ -753,7 +907,7 @@ export const WebPortfolioView: React.FC<WebPortfolioViewProps> = ({
               </section>
             )}
           </div>
-        )}
+        ) : null}
 
         {/* SECTION: CONTACT */}
         <section id="portfolio-sec-contact" className="space-y-4 pt-4 border-t border-gray-100">

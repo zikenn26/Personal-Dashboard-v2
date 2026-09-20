@@ -543,37 +543,81 @@
 @media print {
   @page {
     size: A4 portrait;
-    margin: 10mm 12mm;
+    margin: 12mm 15mm;
   }
 
+  html,
   body {
     background: #ffffff !important;
     color: #000000 !important;
-    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
     margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
-  /* Hide application navigation, top headers, action buttons, sticky controls, modals */
+  /* Reset all application layout wrappers so resume takes full width */
+  #root,
+  main,
+  .max-w-7xl,
+  .grid,
+  .lg\:grid-cols-12,
+  .lg\:col-span-8 {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    float: none !important;
+    overflow: visible !important;
+  }
+
+  /* Hide application navigation, top headers, action buttons, controls column, modals */
   header,
   nav,
   aside,
   footer,
   button,
-  .print\:hidden {
+  .print\:hidden,
+  .lg\:col-span-4,
+  [data-print-hide="true"],
+  .fixed,
+  .sticky,
+  #project-detail-modal-backdrop {
     display: none !important;
   }
 
-  /* Ensure printable sheet fits page perfectly without cutoffs */
+  /* Ensure Resume View printable container fits A4 page perfectly without cutoffs, clipping or overflow */
   #printable-resume-sheet {
-    max-width: 100% !important;
+    display: block !important;
+    position: static !important;
     width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
     box-shadow: none !important;
     border: none !important;
+    border-radius: 0 !important;
     padding: 0 !important;
     margin: 0 !important;
     background: #ffffff !important;
     color: #000000 !important;
-    display: block !important;
+    overflow: visible !important;
+    page-break-inside: auto !important;
+  }
+
+  /* Avoid awkward page break splits inside sections, lists, and timeline items */
+  #printable-resume-sheet section,
+  #printable-resume-sheet .border-b,
+  #printable-resume-sheet li,
+  #printable-resume-sheet .resume-section-item,
+  #printable-resume-sheet [class*="space-y"] > div {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
   .resume-section-header-bar,
