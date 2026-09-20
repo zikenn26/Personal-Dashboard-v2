@@ -309,7 +309,7 @@ export const TodoList: React.FC<TodoListProps> = ({
                       Sound.click(soundEnabled);
                       onDeleteTodo(todo.id);
                     }}
-                    className="opacity-0 group-hover:opacity-100 p-1 text-[#9CA3AF] hover:text-rose-500 transition-all cursor-pointer rounded-md hover:bg-[#F3F4F6] dark:hover:bg-[#1F2937]"
+                    className="opacity-80 sm:opacity-0 sm:group-hover:opacity-100 hover:!opacity-100 p-1 text-[#9CA3AF] hover:text-rose-500 transition-all cursor-pointer rounded-md hover:bg-[#F3F4F6] dark:hover:bg-[#1F2937]"
                     title="Delete task"
                   >
                     <Trash2 className="w-3.5 h-3.5" />

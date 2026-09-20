@@ -231,6 +231,25 @@ export const TasksKanbanView: React.FC<TasksKanbanViewProps> = ({
   const [modalDueDate, setModalDueDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [modalStatus, setModalStatus] = useState<TaskStatus>('todo');
 
+  // Delete Confirmation State
+  const [taskToDelete, setTaskToDelete] = useState<TodoItem | null>(null);
+  const [showClearCompletedConfirm, setShowClearCompletedConfirm] = useState(false);
+
+  const confirmDeleteTask = (task: TodoItem) => {
+    setTaskToDelete(task);
+  };
+
+  const executeDeleteTask = () => {
+    if (!taskToDelete) return;
+    Sound.click(soundEnabled);
+    onDeleteTodo(taskToDelete.id);
+    if (editingTaskId === taskToDelete.id) {
+      setIsModalOpen(false);
+      setEditingTaskId(null);
+    }
+    setTaskToDelete(null);
+  };
+
   // Inline Quick Add state per column
   const [activeColumnInput, setActiveColumnInput] = useState<TaskStatus | null>(null);
   const [inlineTaskTitle, setInlineTaskTitle] = useState('');
@@ -496,6 +515,19 @@ export const TasksKanbanView: React.FC<TasksKanbanViewProps> = ({
             </span>
           </div>
 
+          {/* Clear Completed Action */}
+          {todos.some((t) => t.completed || t.status === 'complete') && (
+            <button
+              type="button"
+              onClick={() => setShowClearCompletedConfirm(true)}
+              className="px-2.5 py-0.5 rounded-lg text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-900/50 transition-colors flex items-center gap-1 cursor-pointer"
+              title="Delete all completed tasks"
+            >
+              <Trash2 className="w-3 h-3" />
+              <span>Clear Completed</span>
+            </button>
+          )}
+
           {/* Filter by Priority Pills */}
           <div className="flex items-center gap-1">
             {['all', 'urgent', 'high', 'medium', 'low'].map((p) => (
@@ -654,6 +686,17 @@ export const TasksKanbanView: React.FC<TasksKanbanViewProps> = ({
                     </div>
 
                     <div className="flex items-center gap-1.5">
+                      {col.id === 'complete' && colTasks.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowClearCompletedConfirm(true)}
+                          className="p-1 rounded text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 cursor-pointer transition-colors"
+                          title="Clear all completed tasks"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+
                       {/* Health Progress Ring */}
                       <ColumnProgressRing
                         percentage={stats.percentage}
@@ -756,7 +799,8 @@ export const TasksKanbanView: React.FC<TasksKanbanViewProps> = ({
                           key={task.id}
                           draggable
                           onDragStart={(e) => handleDragStart(e, task.id)}
-                          className={`p-3 rounded-xl border border-[#E5E7EB] dark:border-[#374151] bg-white dark:bg-[#111827] hover:border-[#D1D5DB] dark:hover:border-[#4B5563] shadow-2xs hover:shadow-xs transition-all space-y-2 group cursor-grab active:cursor-grabbing ${
+                          onClick={() => openEditTaskModal(task)}
+                          className={`p-3 rounded-xl border border-[#E5E7EB] dark:border-[#374151] bg-white dark:bg-[#111827] hover:border-[#D1D5DB] dark:hover:border-[#4B5563] shadow-2xs hover:shadow-xs transition-all space-y-2 group cursor-pointer active:cursor-grabbing ${
                             isDragging ? 'opacity-40 scale-95 border-dashed border-[#6366F1]' : ''
                           }`}
                         >
@@ -781,22 +825,21 @@ export const TasksKanbanView: React.FC<TasksKanbanViewProps> = ({
                                   e.stopPropagation();
                                   openEditTaskModal(task);
                                 }}
-                                className="opacity-0 group-hover:opacity-100 p-1 text-[#9CA3AF] hover:text-[#2563EB] hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded transition-all cursor-pointer"
+                                className="opacity-80 sm:opacity-0 sm:group-hover:opacity-100 hover:!opacity-100 p-1 text-[#9CA3AF] hover:text-[#2563EB] hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded transition-all cursor-pointer"
                                 title="Edit Task"
                               >
-                                <Edit3 className="w-3 h-3" />
+                                <Edit3 className="w-3.5 h-3.5" />
                               </button>
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  Sound.click(soundEnabled);
-                                  onDeleteTodo(task.id);
+                                  confirmDeleteTask(task);
                                 }}
-                                className="opacity-0 group-hover:opacity-100 p-1 text-[#9CA3AF] hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded transition-all cursor-pointer"
+                                className="opacity-80 sm:opacity-0 sm:group-hover:opacity-100 hover:!opacity-100 p-1 text-[#9CA3AF] hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded transition-all cursor-pointer"
                                 title="Delete Task"
                               >
-                                <Trash2 className="w-3 h-3" />
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           </div>
@@ -933,9 +976,9 @@ export const TasksKanbanView: React.FC<TasksKanbanViewProps> = ({
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        Sound.click(soundEnabled);
-                        onDeleteTodo(todo.id);
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        confirmDeleteTask(todo);
                       }}
                       className="p-1.5 text-[#9CA3AF] hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg cursor-pointer transition-colors"
                       title="Delete task"
@@ -1087,23 +1130,139 @@ export const TasksKanbanView: React.FC<TasksKanbanViewProps> = ({
                 </div>
               </div>
 
-              {/* Submit Buttons */}
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100 dark:border-gray-800">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl text-xs font-bold bg-[#2563EB] hover:bg-[#1D4ED8] active:scale-98 text-white shadow-sm transition-all cursor-pointer"
-                >
-                  {editingTaskId ? 'Save Changes' : 'Create Task'}
-                </button>
+              {/* Submit & Delete Buttons */}
+              <div className="flex items-center justify-between gap-2 pt-3 border-t border-gray-100 dark:border-gray-800">
+                {editingTaskId ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const currentTask = todos.find((t) => t.id === editingTaskId);
+                      if (currentTask) {
+                        confirmDeleteTask(currentTask);
+                      }
+                    }}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 border border-rose-200 dark:border-rose-900/40 transition-colors cursor-pointer flex items-center gap-1.5"
+                    title="Delete this task"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Task</span>
+                  </button>
+                ) : (
+                  <div />
+                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-xl text-xs font-bold bg-[#2563EB] hover:bg-[#1D4ED8] active:scale-98 text-white shadow-sm transition-all cursor-pointer"
+                  >
+                    {editingTaskId ? 'Save Changes' : 'Create Task'}
+                  </button>
+                </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* DELETE TASK CONFIRMATION MODAL */}
+      {/* ========================================================================= */}
+      {taskToDelete && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-sm bg-white dark:bg-[#1A202C] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-2xl p-5 space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-gray-900 dark:text-white">Delete Task?</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  This action cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-100 dark:border-gray-700/50 space-y-1.5">
+              <p className="text-xs font-semibold text-gray-900 dark:text-gray-100 break-words">
+                {taskToDelete.title}
+              </p>
+              <div className="flex items-center gap-2 pt-0.5 text-[10px] flex-wrap">
+                <span className="capitalize px-1.5 py-0.5 rounded bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-medium border border-gray-200 dark:border-gray-600">
+                  Status: {getTaskStatus(taskToDelete).replace('_', ' ')}
+                </span>
+                <span className="capitalize px-1.5 py-0.5 rounded bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-medium border border-gray-200 dark:border-gray-600">
+                  Priority: {taskToDelete.priority}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setTaskToDelete(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={executeDeleteTask}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 active:scale-98 text-white shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Task</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* CLEAR COMPLETED CONFIRMATION MODAL */}
+      {/* ========================================================================= */}
+      {showClearCompletedConfirm && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-sm bg-white dark:bg-[#1A202C] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-2xl p-5 space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-gray-900 dark:text-white">Clear All Completed?</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Permanently delete all completed tasks from the board.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowClearCompletedConfirm(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  Sound.click(soundEnabled);
+                  onClearCompleted();
+                  setShowClearCompletedConfirm(false);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 active:scale-98 text-white shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Clear Completed</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -895,7 +895,7 @@ export default function App() {
   };
 
   const handleClearCompletedTodos = () => {
-    const updated = todos.filter((t) => !t.completed);
+    const updated = todos.filter((t) => !t.completed && t.status !== 'complete');
     setTodos(updated);
     Storage.setTodos(updated);
   };
