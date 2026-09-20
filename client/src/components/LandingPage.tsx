@@ -250,10 +250,381 @@ export interface LandingPageProps {
   onGetStarted: () => void;
 }
 
-export default function LandingPage({ onGetStarted }: LandingPageProps) {
+export default function LandingPage({ onSignIn, onSignUp, onGetStarted }: LandingPageProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const handleAction = onGetStarted;
-  const learn = () => document.getElementById("features")?.scrollIntoView({ behavior: "smooth" });
+  const handleSignIn = onSignIn || onGetStarted;
+  const handleSignUp = onSignUp || onGetStarted;
 
-  return <div className="site-shell"><header className="site-header"><a className="brand" href="#top"><span className="brand-mark"><Sparkles size={17} /></span><span>personal-dashboard</span></a><nav className={mobileOpen ? "nav-links open" : "nav-links"}>{navItems.map((item, i) => <a key={item} href={i === 0 ? "#features" : i === 1 ? "#how" : "#whole-life"} onClick={() => setMobileOpen(false)}>{item}</a>)}<button type="button" className="nav-cta mobile-cta" onClick={() => { setMobileOpen(false); handleAction(); }}>Get started <ArrowRight size={15} /></button></nav><div className="header-actions"><button type="button" className="nav-cta" onClick={handleAction}>Get started <ArrowRight size={15} /></button></div><button className="menu-btn" onClick={() => setMobileOpen(!mobileOpen)} aria-label="Toggle navigation">{mobileOpen ? <X size={20} /> : <Menu size={20} />}</button></header><main id="top"><section className="hero"><div className="hero-glow glow-one" /><div className="hero-glow glow-two" /><div className="hero-copy"><div className="pill"><span className="pill-dot" /> A calmer way to get things done</div><h1>Your whole life,<br /><i>in one place.</i></h1><p className="hero-sub">Personal Dashboard brings your tasks, habits, goals, money, and thoughts together — so you can spend less time organizing and more time living.</p><div className="hero-actions"><button type="button" className="primary-btn" onClick={handleAction}>Get started <ArrowRight size={17} /></button><button type="button" className="text-btn" onClick={learn}>See how it works <span>↓</span></button></div><div className="social-proof"><div className="faces"><span>AM</span><span>SK</span><span>RJ</span><span>+</span></div><span>Join <b>2,400+</b> people making room for what matters.</span></div></div><div className="hero-visual"><div className="visual-note note-top"><Sparkles size={14} /> click around the workspace</div><AppPreview onGetStarted={handleAction} /><div className="visual-note note-bottom"><span className="pulse-dot" /> built for your real life</div></div></section><section className="trust-row"><span>ONE SPACE FOR</span><div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Bot size={16} /> Zikenn AI</div><div><CheckCircle2 size={16} /> Tasks</div><div><Flame size={16} /> Habits</div><div><Target size={16} /> Goals</div><div><NotebookPen size={16} /> Journal</div><div><CircleDollarSign size={16} /> Spending</div></section><section className="tour-section" id="tour"><div className="section-kicker">TRY THE WORKSPACE</div><div className="tour-grid"><div><h2>Everything has<br /><span>a place.</span></h2><p>From the next task to the big life plan, your workspace adapts to the way you think.</p><ul className="feature-bullets"><li><Check size={14} /> Delegate actions & context queries to your autonomous AI Secretary</li><li><Check size={14} /> Organize tasks with a simple kanban flow</li><li><Check size={14} /> Build daily habits and see your momentum</li><li><Check size={14} /> Track goals, spending, journals, and ideas</li><li><Check size={14} /> Keep a polished portfolio close at hand</li><li><Check size={14} /> Protect private thoughts with a personal vault</li></ul><button className="under-link" onClick={learn}>See all features <ArrowRight size={15} /></button></div><div className="tour-callout"><div className="tour-callout-icon"><Sparkles size={17} /></div><b>One workspace.<br />Many ways to make it yours.</b><span>Tap a section in the sidebar<br />to see your life rearrange.</span></div></div></section><section className="intro-section" id="how"><div className="section-kicker">01 — THE BIG PICTURE</div><div className="intro-grid"><h2>Less scattered.<br /><span>More together.</span></h2><div><p>Most productivity tools help you manage one corner of your life. Personal Dashboard helps you see the whole picture — without the noise.</p><a href="#features" className="under-link">Explore the features <ArrowRight size={15} /></a></div></div></section><section className="feature-section" id="features"><div className="section-kicker">02 — MAKE IT YOURS</div><div className="feature-row"><div className="feature-copy"><span className="feature-number">01</span><h3>Build a rhythm<br />that sticks.</h3><p>Turn intentions into tiny, trackable rituals. See your streaks, notice your patterns, and build momentum without the guilt.</p><div className="feature-tags"><span>Habit tracking</span><span>Daily check-ins</span><span>Streaks</span></div></div><FeatureVisual type="habits" /></div><div className="feature-row reverse"><FeatureVisual type="money" /><div className="feature-copy"><span className="feature-number">02</span><h3>Know where<br />your money goes.</h3><p>Get a clear, kind view of your spending. No spreadsheets, no shame — just the signal you need to make better choices.</p><div className="feature-tags"><span>Weekly snapshot</span><span>Categories</span><span>Trends</span></div></div></div><div className="feature-row"><div className="feature-copy"><span className="feature-number">03</span><h3>Make space<br />for your thoughts.</h3><p>Your best ideas deserve more than a random notes app. Capture reflections, quotes, and the little things you want to remember.</p><div className="feature-tags"><span>Journal</span><span>Quotes</span><span>Library</span></div></div><FeatureVisual type="journal" /></div></section><section className="whole-life" id="whole-life"><div className="whole-copy"><div className="section-kicker light">03 — THE WHOLE YOU</div><h2>Organize the day.<br /><i>Keep the wonder.</i></h2><p>Personal Dashboard is structured enough to keep you moving, and gentle enough to feel like yours.</p><button type="button" className="light-btn" onClick={handleAction}>Start with today <ArrowRight size={16} /></button></div><div className="orbit-art"><div className="orbit orbit-a" /><div className="orbit orbit-b" /><div className="orbit-center"><Sparkles size={26} /></div><span className="orbit-tag tag-one">focus</span><span className="orbit-tag tag-two">energy</span><span className="orbit-tag tag-three">money</span><span className="orbit-tag tag-four">joy</span></div></section><section className="final-cta"><div className="final-kicker">YOUR NEXT CHAPTER STARTS HERE</div><h2>A little more clarity<br /><i>goes a long way.</i></h2><div style={{ display: 'flex', gap: '14px', justifyContent: 'center', flexWrap: 'wrap', alignItems: 'center' }}><button type="button" className="primary-btn" onClick={handleAction}>Create your dashboard <ArrowRight size={17} /></button></div><p>No credit card. No complicated setup. Just a fresh place to begin.</p></section></main><footer id="footer"><a className="brand" href="#top"><span className="brand-mark"><Sparkles size={17} /></span><span>personal-dashboard</span></a><span>© 2026 Make room for what matters.</span><div><button type="button" className="signin" onClick={handleAction} style={{ background: 'transparent', border: 0, padding: 0 }}>Get started</button><a href="#features">Features</a><a href="#how">About</a><a href="#top">Back to top ↑</a></div></footer></div>;
+  const scrollTo = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  return (
+    <div className="site-shell min-h-screen w-full overflow-x-hidden relative">
+      <header className="site-header">
+        <a className="brand" href="#top" onClick={(e) => { e.preventDefault(); scrollTo('top'); }}>
+          <span className="brand-mark">
+            <Sparkles size={17} />
+          </span>
+          <span>personal-dashboard</span>
+        </a>
+
+        <nav className={mobileOpen ? "nav-links open" : "nav-links"}>
+          {navItems.map((item, i) => {
+            const targetId = i === 0 ? "features" : i === 1 ? "how" : "whole-life";
+            return (
+              <a
+                key={item}
+                href={`#${targetId}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  setMobileOpen(false);
+                  scrollTo(targetId);
+                }}
+              >
+                {item}
+              </a>
+            );
+          })}
+          <button
+            type="button"
+            className="mobile-signin"
+            onClick={() => {
+              setMobileOpen(false);
+              handleSignIn();
+            }}
+          >
+            Sign in
+          </button>
+          <button
+            type="button"
+            className="nav-cta mobile-cta"
+            onClick={() => {
+              setMobileOpen(false);
+              handleSignUp();
+            }}
+          >
+            Get started <ArrowRight size={15} />
+          </button>
+        </nav>
+
+        <div className="header-actions">
+          <button
+            type="button"
+            className="signin"
+            onClick={handleSignIn}
+          >
+            Sign in
+          </button>
+          <button
+            type="button"
+            className="nav-cta"
+            onClick={handleSignUp}
+          >
+            Get started <ArrowRight size={15} />
+          </button>
+        </div>
+
+        <button
+          className="menu-btn"
+          onClick={() => setMobileOpen(!mobileOpen)}
+          aria-label="Toggle navigation"
+        >
+          {mobileOpen ? <X size={20} /> : <Menu size={20} />}
+        </button>
+      </header>
+
+      <main id="top">
+        <section className="hero">
+          <div className="hero-glow glow-one" />
+          <div className="hero-glow glow-two" />
+          <div className="hero-copy">
+            <div className="pill">
+              <span className="pill-dot" /> A calmer way to get things done
+            </div>
+            <h1>
+              Your whole life,<br />
+              <i>in one place.</i>
+            </h1>
+            <p className="hero-sub">
+              Personal Dashboard brings your tasks, habits, goals, money, and thoughts together — so you can spend less time organizing and more time living.
+            </p>
+            <div className="hero-actions">
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={handleSignUp}
+              >
+                Get started <ArrowRight size={17} />
+              </button>
+              <button
+                type="button"
+                className="hero-signin-btn"
+                onClick={handleSignIn}
+              >
+                Sign in
+              </button>
+              <button
+                type="button"
+                className="text-btn"
+                onClick={() => scrollTo("features")}
+              >
+                See how it works <span>↓</span>
+              </button>
+            </div>
+            <div className="social-proof">
+              <div className="faces">
+                <span>AM</span>
+                <span>SK</span>
+                <span>RJ</span>
+                <span>+</span>
+              </div>
+              <span>Join <b>2,400+</b> people making room for what matters.</span>
+            </div>
+          </div>
+          <div className="hero-visual">
+            <div className="visual-note note-top">
+              <Sparkles size={14} /> click around the workspace
+            </div>
+            <AppPreview onGetStarted={handleSignUp} />
+            <div className="visual-note note-bottom">
+              <span className="pulse-dot" /> built for your real life
+            </div>
+          </div>
+        </section>
+
+        <section className="trust-row">
+          <span>ONE SPACE FOR</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Bot size={16} /> Zikenn AI
+          </div>
+          <div><CheckCircle2 size={16} /> Tasks</div>
+          <div><Flame size={16} /> Habits</div>
+          <div><Target size={16} /> Goals</div>
+          <div><NotebookPen size={16} /> Journal</div>
+          <div><CircleDollarSign size={16} /> Spending</div>
+        </section>
+
+        <section className="tour-section" id="tour">
+          <div className="section-kicker">TRY THE WORKSPACE</div>
+          <div className="tour-grid">
+            <div>
+              <h2>
+                Everything has<br />
+                <span>a place.</span>
+              </h2>
+              <p>From the next task to the big life plan, your workspace adapts to the way you think.</p>
+              <ul className="feature-bullets">
+                <li><Check size={14} /> Delegate actions & context queries to your autonomous AI Secretary</li>
+                <li><Check size={14} /> Organize tasks with a simple kanban flow</li>
+                <li><Check size={14} /> Build daily habits and see your momentum</li>
+                <li><Check size={14} /> Track goals, spending, journals, and ideas</li>
+                <li><Check size={14} /> Keep a polished portfolio close at hand</li>
+                <li><Check size={14} /> Protect private thoughts with a personal vault</li>
+              </ul>
+              <button className="under-link" onClick={() => scrollTo("features")}>
+                See all features <ArrowRight size={15} />
+              </button>
+            </div>
+            <div className="tour-callout">
+              <div className="tour-callout-icon">
+                <Sparkles size={17} />
+              </div>
+              <b>One workspace.<br />Many ways to make it yours.</b>
+              <span>Tap a section in the sidebar<br />to see your life rearrange.</span>
+            </div>
+          </div>
+        </section>
+
+        <section className="intro-section" id="how">
+          <div className="section-kicker">01 — THE BIG PICTURE</div>
+          <div className="intro-grid">
+            <h2>
+              Less scattered.<br />
+              <span>More together.</span>
+            </h2>
+            <div>
+              <p>Most productivity tools help you manage one corner of your life. Personal Dashboard helps you see the whole picture — without the noise.</p>
+              <a
+                href="#features"
+                className="under-link"
+                onClick={(e) => {
+                  e.preventDefault();
+                  scrollTo("features");
+                }}
+              >
+                Explore the features <ArrowRight size={15} />
+              </a>
+            </div>
+          </div>
+        </section>
+
+        <section className="feature-section" id="features">
+          <div className="section-kicker">02 — MAKE IT YOURS</div>
+          <div className="feature-row">
+            <div className="feature-copy">
+              <span className="feature-number">01</span>
+              <h3>
+                Build a rhythm<br />
+                that sticks.
+              </h3>
+              <p>Turn intentions into tiny, trackable rituals. See your streaks, notice your patterns, and build momentum without the guilt.</p>
+              <div className="feature-tags">
+                <span>Habit tracking</span>
+                <span>Daily check-ins</span>
+                <span>Streaks</span>
+              </div>
+            </div>
+            <FeatureVisual type="habits" />
+          </div>
+
+          <div className="feature-row reverse">
+            <FeatureVisual type="money" />
+            <div className="feature-copy">
+              <span className="feature-number">02</span>
+              <h3>
+                Know where<br />
+                your money goes.
+              </h3>
+              <p>Get a clear, kind view of your spending. No spreadsheets, no shame — just the signal you need to make better choices.</p>
+              <div className="feature-tags">
+                <span>Weekly snapshot</span>
+                <span>Categories</span>
+                <span>Trends</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="feature-row">
+            <div className="feature-copy">
+              <span className="feature-number">03</span>
+              <h3>
+                Make space<br />
+                for your thoughts.
+              </h3>
+              <p>Your best ideas deserve more than a random notes app. Capture reflections, quotes, and the little things you want to remember.</p>
+              <div className="feature-tags">
+                <span>Journal</span>
+                <span>Quotes</span>
+                <span>Library</span>
+              </div>
+            </div>
+            <FeatureVisual type="journal" />
+          </div>
+        </section>
+
+        <section className="whole-life" id="whole-life">
+          <div className="whole-copy">
+            <div className="section-kicker light">03 — THE WHOLE YOU</div>
+            <h2>
+              Organize the day.<br />
+              <i>Keep the wonder.</i>
+            </h2>
+            <p>Personal Dashboard is structured enough to keep you moving, and gentle enough to feel like yours.</p>
+            <button
+              type="button"
+              className="light-btn"
+              onClick={handleSignUp}
+            >
+              Start with today <ArrowRight size={16} />
+            </button>
+          </div>
+          <div className="orbit-art">
+            <div className="orbit orbit-a" />
+            <div className="orbit orbit-b" />
+            <div className="orbit-center">
+              <Sparkles size={26} />
+            </div>
+            <span className="orbit-tag tag-one">focus</span>
+            <span className="orbit-tag tag-two">energy</span>
+            <span className="orbit-tag tag-three">money</span>
+            <span className="orbit-tag tag-four">joy</span>
+          </div>
+        </section>
+
+        <section className="final-cta">
+          <div className="final-kicker">YOUR NEXT CHAPTER STARTS HERE</div>
+          <h2>
+            A little more clarity<br />
+            <i>goes a long way.</i>
+          </h2>
+          <div style={{ display: 'flex', gap: '14px', justifyContent: 'center', flexWrap: 'wrap', alignItems: 'center' }}>
+            <button
+              type="button"
+              className="primary-btn"
+              onClick={handleSignUp}
+            >
+              Create your dashboard <ArrowRight size={17} />
+            </button>
+            <button
+              type="button"
+              className="secondary-cta-btn"
+              onClick={handleSignIn}
+            >
+              Sign in to your account
+            </button>
+          </div>
+          <p>No credit card. No complicated setup. Just a fresh place to begin.</p>
+        </section>
+      </main>
+
+      <footer id="footer">
+        <a className="brand" href="#top" onClick={(e) => { e.preventDefault(); scrollTo('top'); }}>
+          <span className="brand-mark">
+            <Sparkles size={17} />
+          </span>
+          <span>personal-dashboard</span>
+        </a>
+        <span>© 2026 Make room for what matters.</span>
+        <div>
+          <button
+            type="button"
+            className="signin"
+            onClick={handleSignIn}
+            style={{ background: 'transparent', border: 0, padding: 0 }}
+          >
+            Sign in
+          </button>
+          <button
+            type="button"
+            className="signin"
+            onClick={handleSignUp}
+            style={{ background: 'transparent', border: 0, padding: 0, fontWeight: 700, color: '#6b35d9' }}
+          >
+            Get started
+          </button>
+          <a
+            href="#features"
+            onClick={(e) => {
+              e.preventDefault();
+              scrollTo('features');
+            }}
+          >
+            Features
+          </a>
+          <a
+            href="#how"
+            onClick={(e) => {
+              e.preventDefault();
+              scrollTo('how');
+            }}
+          >
+            About
+          </a>
+          <a
+            href="#top"
+            onClick={(e) => {
+              e.preventDefault();
+              scrollTo('top');
+            }}
+          >
+            Back to top ↑
+          </a>
+        </div>
+      </footer>
+    </div>
+  );
 }

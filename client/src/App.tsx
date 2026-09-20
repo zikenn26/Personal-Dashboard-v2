@@ -1875,10 +1875,18 @@ export default function App() {
 
   if (!currentUser) {
     return (
-      <>
+      <div className="min-h-screen w-full overflow-x-hidden bg-[#f8f7f2]">
         <LandingPage
-          onGetStarted={() => {
+          onSignIn={() => {
             setAuthInitialMode('signin');
+            setIsAuthModalOpen(true);
+          }}
+          onSignUp={() => {
+            setAuthInitialMode('signup');
+            setIsAuthModalOpen(true);
+          }}
+          onGetStarted={() => {
+            setAuthInitialMode('signup');
             setIsAuthModalOpen(true);
           }}
         />
@@ -1889,7 +1897,7 @@ export default function App() {
           currentUser={currentUser}
           initialMode={authInitialMode}
         />
-      </>
+      </div>
     );
   }
 
