@@ -350,6 +350,8 @@ export interface UserProfile {
   yearsOfExperience?: string;
   currentCompany?: string;
   currentDesignation?: string;
+  geminiApiKey?: string;
+  groqApiKey?: string;
 }
 
 export interface AppSettings {
@@ -359,6 +361,31 @@ export interface AppSettings {
   masterPin: string; // default "1234"
   groqApiKey?: string;
   groqModel?: string;
+  geminiApiKey?: string;
+  apiMonthlyThreshold?: number | null; // Monthly API request limit (null = unlimited)
+}
+
+export interface ApiUsageMonthlyRecord {
+  gemini: number;
+  groq: number;
+  lastGeminiTime?: number;
+  lastGroqTime?: number;
+  lastUsed?: number;
+}
+
+export interface ApiMonthlyStats {
+  monthKey: string;
+  monthName: string;
+  gemini: number;
+  groq: number;
+  total: number;
+  threshold?: number | null;
+  percentUsed?: number;
+  isApproachingLimit?: boolean;
+  isLimitReached?: boolean;
+  remainingRequests?: number;
+  lastGeminiTime?: number;
+  lastGroqTime?: number;
 }
 
 export type MainNavView =

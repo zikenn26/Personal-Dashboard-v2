@@ -12,6 +12,7 @@ import {
   Clock,
   Zap,
   Smartphone,
+  RotateCw,
 } from 'lucide-react';
 import { Sound } from '../utils/audio';
 import { QuickAlarm } from '../types';
@@ -465,7 +466,11 @@ export const FlipClock: React.FC<FlipClockProps> = ({ className = '', onRingingC
   })() : 0;
 
   return (
-    <div className={`relative flex flex-col justify-between h-full min-h-[125px] ${className}`}>
+    <div
+      onClick={cycleClockStyle}
+      title="Click clock grid to switch style (Chronometer ➔ Analog ➔ Flip Cards)"
+      className={`relative flex flex-col justify-between h-full min-h-[125px] cursor-pointer select-none group/clock transition-all ${className}`}
+    >
       {/* ========================================================================= */}
       {/* TOP META BAR: Calendar Date + Active Alarm Indicator & Action             */}
       {/* ========================================================================= */}
@@ -476,7 +481,7 @@ export const FlipClock: React.FC<FlipClockProps> = ({ className = '', onRingingC
           <span className="truncate text-xs sm:text-[13px]">{dateStr}</span>
         </div>
 
-        {/* Right Actions: Active Alarm Pill & Trigger */}
+        {/* Right Actions: Active Alarm Pill & Trigger + Clock Style Pill */}
         <div className="flex items-center gap-1.5 shrink-0">
           {activeAlarm ? (
             <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200 dark:border-indigo-800/60 text-[10px] font-mono font-bold text-[#6366F1] dark:text-[#818CF8]">
@@ -520,6 +525,20 @@ export const FlipClock: React.FC<FlipClockProps> = ({ className = '', onRingingC
               <Bell className="w-3.5 h-3.5" />
             </button>
           )}
+
+          {/* Clock Style Pill Switcher */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              cycleClockStyle();
+            }}
+            title={`Current: ${clockStyle} • Click to toggle clock style (Chronometer ➔ Analog ➔ Cards)`}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-indigo-950/60 text-[10px] font-mono font-bold text-slate-600 hover:text-[#6366F1] dark:text-slate-300 dark:hover:text-indigo-400 border border-slate-200/60 hover:border-indigo-300 dark:border-slate-700/50 dark:hover:border-indigo-800 transition-all cursor-pointer"
+          >
+            <RotateCw className="w-2.5 h-2.5 text-[#6366F1] dark:text-indigo-400" />
+            <span className="capitalize">{clockStyle === 'chronometer' ? 'Chrono' : clockStyle}</span>
+          </button>
 
           {/* 24H Badge */}
           <div className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 border border-slate-200/60 dark:border-slate-700/50">
@@ -744,7 +763,10 @@ export const FlipClock: React.FC<FlipClockProps> = ({ className = '', onRingingC
             </span>
             <button
               type="button"
-              onClick={() => setShowAlarmModal(true)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowAlarmModal(true);
+              }}
               className="text-[#6366F1] dark:text-indigo-400 hover:underline font-semibold cursor-pointer"
             >
               + Set Alarm

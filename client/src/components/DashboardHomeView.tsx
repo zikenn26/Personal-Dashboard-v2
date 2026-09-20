@@ -695,13 +695,7 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
               isAlarmRinging ? 'alarm-tile-pulse' : ''
             }`}
           >
-            <div
-              className="cursor-pointer"
-              title="Click to view weekly schedule & agenda"
-              onClick={() => handleItemNavigate('schedule')}
-            >
-              <FlipClock onRingingChange={setIsAlarmRinging} />
-            </div>
+            <FlipClock onRingingChange={setIsAlarmRinging} />
           </motion.div>
         </div>
       </div>

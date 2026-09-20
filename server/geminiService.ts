@@ -6,7 +6,19 @@ import type { Request, Response } from "express";
 // Initialize Gemini Client (lazily with User-Agent header for telemetry)
 let aiClient: GoogleGenAI | null = null;
 
-export function getGeminiClient(): GoogleGenAI {
+export function getGeminiClient(customApiKey?: string): GoogleGenAI {
+  const trimmedCustom = customApiKey?.trim();
+  if (trimmedCustom) {
+    return new GoogleGenAI({
+      apiKey: trimmedCustom,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
+  }
+
   if (!aiClient) {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
@@ -24,8 +36,23 @@ export function getGeminiClient(): GoogleGenAI {
   return aiClient;
 }
 
-export function isGeminiKeyConfigured(): boolean {
+export function isGeminiKeyConfigured(customApiKey?: string): boolean {
+  if (customApiKey && customApiKey.trim().length > 0) return true;
   return Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim() !== "");
+}
+
+export function extractGeminiApiKey(req: Request): string | undefined {
+  const headerKey = req.headers["x-gemini-api-key"];
+  if (typeof headerKey === "string" && headerKey.trim()) {
+    return headerKey.trim();
+  }
+  if (req.body && typeof req.body.apiKey === "string" && req.body.apiKey.trim()) {
+    return req.body.apiKey.trim();
+  }
+  if (req.body && typeof req.body.geminiApiKey === "string" && req.body.geminiApiKey.trim()) {
+    return req.body.geminiApiKey.trim();
+  }
+  return undefined;
 }
 
 // Function Declarations for Dashboard Voice Commands & Tools
@@ -217,10 +244,12 @@ const dashboardTools: FunctionDeclaration[] = [
 ];
 
 // 1. Health check
-export function handleGeminiHealth(_req: Request, res: Response) {
+export function handleGeminiHealth(req: Request, res: Response) {
+  const customKey = extractGeminiApiKey(req);
   res.json({
     status: "ok",
-    hasApiKey: isGeminiKeyConfigured(),
+    hasApiKey: isGeminiKeyConfigured(customKey),
+    userCustomKeyActive: Boolean(customKey),
     defaultModel: "gemini-3.1-flash-lite",
     liveModel: "gemini-3.8-live",
   });
@@ -229,9 +258,10 @@ export function handleGeminiHealth(_req: Request, res: Response) {
 // 2. Multi-turn Chat & Voice Command API
 export async function handleGeminiChat(req: Request, res: Response) {
   try {
-    if (!isGeminiKeyConfigured()) {
+    const customKey = extractGeminiApiKey(req);
+    if (!isGeminiKeyConfigured(customKey)) {
       return res.status(503).json({
-        error: "GEMINI_API_KEY is not configured on the server. Please add your Gemini API key in Settings > Secrets.",
+        error: "Google Gemini API key is not configured. Please add your Gemini API key in User Profile > AI API Keys.",
       });
     }
 
@@ -247,7 +277,7 @@ export async function handleGeminiChat(req: Request, res: Response) {
       return res.status(400).json({ error: "Missing 'message' in request body." });
     }
 
-    const ai = getGeminiClient();
+    const ai = getGeminiClient(customKey);
 
     // Validate model selection
     const allowedModels = [
@@ -357,8 +387,9 @@ export async function handleGeminiChat(req: Request, res: Response) {
 // 3. Text-to-Speech API (gemini-3.1-flash-tts-preview)
 export async function handleGeminiTts(req: Request, res: Response) {
   try {
-    if (!isGeminiKeyConfigured()) {
-      return res.status(503).json({ error: "GEMINI_API_KEY is not configured." });
+    const customKey = extractGeminiApiKey(req);
+    if (!isGeminiKeyConfigured(customKey)) {
+      return res.status(503).json({ error: "Google Gemini API key is not configured." });
     }
 
     const { text, voice = "Zephyr" } = req.body;
@@ -366,7 +397,7 @@ export async function handleGeminiTts(req: Request, res: Response) {
       return res.status(400).json({ error: "Missing 'text' parameter." });
     }
 
-    const ai = getGeminiClient();
+    const ai = getGeminiClient(customKey);
     const cleanText = text.slice(0, 1000); // safety cap
 
     const response = await ai.models.generateContent({
@@ -400,8 +431,9 @@ export async function handleGeminiTts(req: Request, res: Response) {
 // 3b. Audio Transcription API (gemini-3.5-transcribe)
 export async function handleGeminiTranscribe(req: Request, res: Response) {
   try {
-    if (!isGeminiKeyConfigured()) {
-      return res.status(503).json({ error: "GEMINI_API_KEY is not configured." });
+    const customKey = extractGeminiApiKey(req);
+    if (!isGeminiKeyConfigured(customKey)) {
+      return res.status(503).json({ error: "Google Gemini API key is not configured." });
     }
 
     const { audio, mimeType = "audio/wav", isDiagnosticTest = false } = req.body;
@@ -425,7 +457,7 @@ export async function handleGeminiTranscribe(req: Request, res: Response) {
     let cleanMimeType = (mimeType || "audio/wav").split(";")[0].trim().toLowerCase();
     if (cleanMimeType === "audio/wave") cleanMimeType = "audio/wav";
 
-    const ai = getGeminiClient();
+    const ai = getGeminiClient(customKey);
     const audioPart = {
       inlineData: {
         mimeType: cleanMimeType,
@@ -475,6 +507,43 @@ export async function handleGeminiTranscribe(req: Request, res: Response) {
     res.json({ transcript });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || "Audio transcription failed." });
+  }
+}
+
+// 3c. Validate / Test Gemini API Key
+export async function handleGeminiTestKey(req: Request, res: Response) {
+  try {
+    const customKey = extractGeminiApiKey(req);
+    if (!customKey) {
+      return res.status(400).json({
+        success: false,
+        message: "No Gemini API key provided. Please enter a valid Gemini API key.",
+      });
+    }
+
+    const ai = getGeminiClient(customKey);
+    const result = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: "Hello",
+    });
+
+    if (result && (result.text || result.candidates)) {
+      return res.json({
+        success: true,
+        message: "Google Gemini API key validated successfully! Ready to power your assistant.",
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "Google Gemini API key connected successfully.",
+    });
+  } catch (err: any) {
+    const errorMsg = err?.message || String(err);
+    return res.status(400).json({
+      success: false,
+      message: `Gemini key validation failed: ${errorMsg}`,
+    });
   }
 }
 
@@ -652,6 +721,7 @@ export function registerGeminiRoutes(app: any) {
   app.post("/api/gemini/chat", handleGeminiChat);
   app.post("/api/gemini/tts", handleGeminiTts);
   app.post("/api/gemini/transcribe", handleGeminiTranscribe);
+  app.post("/api/gemini/test-key", handleGeminiTestKey);
 }
 
 // Helper for Vite dev server plugin
@@ -762,6 +832,9 @@ export function geminiVitePlugin() {
           }
           if (pathname === "/api/gemini/transcribe") {
             return handleGeminiTranscribe(req, enhancedRes);
+          }
+          if (pathname === "/api/gemini/test-key") {
+            return handleGeminiTestKey(req, enhancedRes);
           }
         }
 

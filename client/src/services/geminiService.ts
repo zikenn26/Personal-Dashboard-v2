@@ -100,8 +100,13 @@ export interface GeminiHealthResponse {
 
 // 1. Health check
 export async function checkGeminiHealth(): Promise<GeminiHealthResponse> {
+  const userGeminiKey = Storage.getGeminiApiKey();
   try {
-    const res = await fetch('/api/gemini/health');
+    const headers: Record<string, string> = {};
+    if (userGeminiKey) {
+      headers['x-gemini-api-key'] = userGeminiKey;
+    }
+    const res = await fetch('/api/gemini/health', { headers });
     if (!res.ok) {
       if (res.status === 405 || res.status >= 400) {
         backendServerErrorDetected = true;
@@ -112,14 +117,61 @@ export async function checkGeminiHealth(): Promise<GeminiHealthResponse> {
     if (health.status === 'ok') {
       backendServerErrorDetected = false;
     }
+    if (userGeminiKey) {
+      health.hasApiKey = true;
+    }
     return health;
   } catch {
     backendServerErrorDetected = true;
     return {
       status: 'offline',
-      hasApiKey: false,
+      hasApiKey: Boolean(userGeminiKey),
       defaultModel: 'gemini-3.1-flash-lite',
       liveModel: 'gemini-3.8-live',
+    };
+  }
+}
+
+/**
+ * Validate / test user's Google Gemini API Key
+ */
+export async function testGeminiApiKey(
+  testKey?: string
+): Promise<{ success: boolean; message: string }> {
+  const keyToTest = (testKey || Storage.getGeminiApiKey()).trim();
+  if (!keyToTest) {
+    return {
+      success: false,
+      message: 'No Google Gemini API key provided. Please enter a valid Gemini API key.',
+    };
+  }
+
+  try {
+    Storage.recordApiRequest('gemini');
+    const res = await fetch('/api/gemini/test-key', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-gemini-api-key': keyToTest,
+      },
+      body: JSON.stringify({ apiKey: keyToTest }),
+    });
+
+    const data = await res.json();
+    if (res.ok && data.success) {
+      return {
+        success: true,
+        message: data.message || 'Google Gemini API key validated successfully!',
+      };
+    }
+    return {
+      success: false,
+      message: data.message || data.error || 'Failed to validate Gemini API key.',
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: `Connection error: ${err?.message || 'Unable to contact server to test key.'}`,
     };
   }
 }
@@ -424,6 +476,8 @@ export async function sendGeminiMessage(params: {
     .map((t) => `"${t.title}" [${t.status || (t.completed ? 'completed' : 'pending')}]`)
     .join(', ');
 
+  const userGeminiKey = Storage.getGeminiApiKey();
+
   const payload = {
     message,
     history: history.map((h) => ({
@@ -432,6 +486,7 @@ export async function sendGeminiMessage(params: {
     })),
     model,
     roleSystemInstruction: roleInstruction,
+    apiKey: userGeminiKey || undefined,
     dashboardContext: {
       pendingTasksCount: pendingTasks,
       completedHabitsCount: completedHabits,
@@ -444,9 +499,15 @@ export async function sendGeminiMessage(params: {
 
   let data: any;
   try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (userGeminiKey) {
+      headers['x-gemini-api-key'] = userGeminiKey;
+    }
+
+    Storage.recordApiRequest('gemini');
     const response = await fetch('/api/gemini/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(payload),
     });
 
@@ -552,10 +613,17 @@ export async function speakTextWithGemini(
   stopGeminiSpeech();
 
   try {
+    const userGeminiKey = Storage.getGeminiApiKey();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (userGeminiKey) {
+      headers['x-gemini-api-key'] = userGeminiKey;
+    }
+
+    Storage.recordApiRequest('gemini');
     const res = await fetch('/api/gemini/tts', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, voice }),
+      headers,
+      body: JSON.stringify({ text, voice, apiKey: userGeminiKey || undefined }),
     });
 
     if (!res.ok) {
@@ -646,10 +714,17 @@ export async function transcribeAudioWithGemini(
   mimeType: string = 'audio/wav'
 ): Promise<AudioTranscriptionResult> {
   try {
+    const userGeminiKey = Storage.getGeminiApiKey();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (userGeminiKey) {
+      headers['x-gemini-api-key'] = userGeminiKey;
+    }
+
+    Storage.recordApiRequest('gemini');
     const res = await fetch('/api/gemini/transcribe', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ audio: base64Audio, mimeType }),
+      headers,
+      body: JSON.stringify({ audio: base64Audio, mimeType, apiKey: userGeminiKey || undefined }),
     });
 
     if (res.status === 503) {

@@ -29,6 +29,8 @@ import {
   DayScheduleOverride,
   QuickAlarm,
   CommandMapping,
+  ApiUsageMonthlyRecord,
+  ApiMonthlyStats,
 } from '../types';
 import { STOCK_IMAGES } from '../assets/stockImages';
 import { decryptJson, encryptJson, isEncryptedPayload, EncryptedPayload } from './crypto';
@@ -64,6 +66,8 @@ export const STORAGE_KEYS = {
   ALARM: 'notion_os_v4_active_alarm',
   ALARM_SNOOZE: 'notion_os_v4_alarm_snooze_interval',
   COMMAND_MAPPINGS: 'notion_os_v4_command_mappings',
+  API_REQUEST_COUNTS: 'notion_os_v4_api_request_counts',
+  API_MONTHLY_THRESHOLD: 'notion_os_v4_api_monthly_threshold',
 };
 
 export const DEFAULT_COMMAND_MAPPINGS: CommandMapping[] = [
@@ -1325,21 +1329,55 @@ export const Storage = {
     localStorage.setItem('groq_model', cleanModel);
   },
 
+  getGeminiApiKey: (): string => {
+    const scopedKey = getScopedKey('gemini_api_key');
+    const directKey = localStorage.getItem(scopedKey);
+    if (directKey?.trim()) return directKey.trim();
+    const settings = Storage.getSettings();
+    if (settings?.geminiApiKey?.trim()) return settings.geminiApiKey.trim();
+    const profile = Storage.getProfile();
+    if (profile?.geminiApiKey?.trim()) return profile.geminiApiKey.trim();
+    return '';
+  },
+  setGeminiApiKey: (key: string): void => {
+    const trimmed = key.trim();
+    const scopedKey = getScopedKey('gemini_api_key');
+    if (trimmed) {
+      localStorage.setItem(scopedKey, trimmed);
+    } else {
+      localStorage.removeItem(scopedKey);
+    }
+    const settings = Storage.getSettings();
+    Storage.setSettings({ ...settings, geminiApiKey: trimmed });
+    const profile = Storage.getProfile();
+    if (profile) {
+      Storage.setProfile({ ...profile, geminiApiKey: trimmed });
+    }
+  },
+
   getGroqApiKey: (): string => {
+    const scopedKey = getScopedKey('groq_api_key');
+    const directKey = localStorage.getItem(scopedKey);
+    if (directKey?.trim()) return directKey.trim();
     const settings = Storage.getSettings();
     if (settings?.groqApiKey?.trim()) return settings.groqApiKey.trim();
-    const directKey = localStorage.getItem('groq_api_key');
-    if (directKey?.trim()) return directKey.trim();
+    const profile = Storage.getProfile();
+    if (profile?.groqApiKey?.trim()) return profile.groqApiKey.trim();
     return '';
   },
   setGroqApiKey: (key: string): void => {
-    const settings = Storage.getSettings();
     const trimmed = key.trim();
-    Storage.setSettings({ ...settings, groqApiKey: trimmed });
+    const scopedKey = getScopedKey('groq_api_key');
     if (trimmed) {
-      localStorage.setItem('groq_api_key', trimmed);
+      localStorage.setItem(scopedKey, trimmed);
     } else {
-      localStorage.removeItem('groq_api_key');
+      localStorage.removeItem(scopedKey);
+    }
+    const settings = Storage.getSettings();
+    Storage.setSettings({ ...settings, groqApiKey: trimmed });
+    const profile = Storage.getProfile();
+    if (profile) {
+      Storage.setProfile({ ...profile, groqApiKey: trimmed });
     }
   },
 
@@ -1693,5 +1731,157 @@ export const Storage = {
     Storage.setExams(INITIAL_USER_EXAMS);
     Storage.setSchedule(INITIAL_SCHEDULE);
     Storage.setCommandMappings(DEFAULT_COMMAND_MAPPINGS);
+  },
+
+  recordApiRequest: (provider: 'gemini' | 'groq'): void => {
+    try {
+      const now = new Date();
+      const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const allRecords = loadFromStorage<Record<string, ApiUsageMonthlyRecord>>(
+        STORAGE_KEYS.API_REQUEST_COUNTS,
+        {}
+      );
+      const monthRecord = allRecords[monthKey] || { gemini: 0, groq: 0 };
+      if (provider === 'gemini') {
+        monthRecord.gemini = (monthRecord.gemini || 0) + 1;
+        monthRecord.lastGeminiTime = Date.now();
+      } else {
+        monthRecord.groq = (monthRecord.groq || 0) + 1;
+        monthRecord.lastGroqTime = Date.now();
+      }
+      monthRecord.lastUsed = Date.now();
+      allRecords[monthKey] = monthRecord;
+      saveToStorage(STORAGE_KEYS.API_REQUEST_COUNTS, allRecords);
+
+      const threshold = Storage.getApiMonthlyThreshold();
+      const currentTotal = (monthRecord.gemini || 0) + (monthRecord.groq || 0);
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('lifeos_api_request_recorded', {
+            detail: { provider, monthKey, counts: monthRecord, threshold, total: currentTotal },
+          })
+        );
+
+        if (threshold && threshold > 0) {
+          const percent = Math.round((currentTotal / threshold) * 100);
+          if (currentTotal >= threshold) {
+            window.dispatchEvent(
+              new CustomEvent('lifeos_api_threshold_warning', {
+                detail: {
+                  level: 'limit_reached',
+                  current: currentTotal,
+                  limit: threshold,
+                  percent,
+                  message: `Monthly API usage limit reached: ${currentTotal} of ${threshold} requests used (${percent}%).`,
+                },
+              })
+            );
+          } else if (currentTotal >= Math.floor(threshold * 0.8)) {
+            window.dispatchEvent(
+              new CustomEvent('lifeos_api_threshold_warning', {
+                detail: {
+                  level: 'approaching',
+                  current: currentTotal,
+                  limit: threshold,
+                  percent,
+                  message: `Approaching monthly API usage threshold: ${currentTotal} of ${threshold} requests used (${percent}%).`,
+                },
+              })
+            );
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to record API request:', err);
+    }
+  },
+
+  getApiMonthlyThreshold: (): number | null => {
+    const raw = loadFromStorage<number | null>(STORAGE_KEYS.API_MONTHLY_THRESHOLD, null);
+    if (typeof raw === 'number' && raw > 0) return raw;
+    return null;
+  },
+
+  setApiMonthlyThreshold: (threshold: number | null): void => {
+    saveToStorage(STORAGE_KEYS.API_MONTHLY_THRESHOLD, threshold && threshold > 0 ? threshold : null);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('lifeos_api_threshold_changed', {
+          detail: { threshold },
+        })
+      );
+    }
+  },
+
+  getApiRequestCountsThisMonth: (): ApiMonthlyStats => {
+    const now = new Date();
+    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const monthNames = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    const monthName = `${monthNames[now.getMonth()]} ${now.getFullYear()}`;
+
+    const allRecords = loadFromStorage<Record<string, ApiUsageMonthlyRecord>>(
+      STORAGE_KEYS.API_REQUEST_COUNTS,
+      {}
+    );
+    const rec = allRecords[monthKey] || { gemini: 0, groq: 0 };
+    const gemini = rec.gemini || 0;
+    const groq = rec.groq || 0;
+    const total = gemini + groq;
+    const threshold = Storage.getApiMonthlyThreshold();
+    const percentUsed = threshold && threshold > 0 ? Math.round((total / threshold) * 100) : undefined;
+    const isApproachingLimit = threshold && threshold > 0 ? total >= Math.floor(threshold * 0.8) && total < threshold : false;
+    const isLimitReached = threshold && threshold > 0 ? total >= threshold : false;
+    const remainingRequests = threshold && threshold > 0 ? Math.max(0, threshold - total) : undefined;
+
+    return {
+      monthKey,
+      monthName,
+      gemini,
+      groq,
+      total,
+      threshold,
+      percentUsed,
+      isApproachingLimit,
+      isLimitReached,
+      remainingRequests,
+      lastGeminiTime: rec.lastGeminiTime,
+      lastGroqTime: rec.lastGroqTime,
+    };
+  },
+
+  resetApiRequestCounts: (provider?: 'gemini' | 'groq'): void => {
+    const now = new Date();
+    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const allRecords = loadFromStorage<Record<string, ApiUsageMonthlyRecord>>(
+      STORAGE_KEYS.API_REQUEST_COUNTS,
+      {}
+    );
+    if (!allRecords[monthKey]) return;
+    if (!provider) {
+      allRecords[monthKey].gemini = 0;
+      allRecords[monthKey].groq = 0;
+    } else if (provider === 'gemini') {
+      allRecords[monthKey].gemini = 0;
+    } else if (provider === 'groq') {
+      allRecords[monthKey].groq = 0;
+    }
+    saveToStorage(STORAGE_KEYS.API_REQUEST_COUNTS, allRecords);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('lifeos_api_request_recorded', { detail: {} }));
+    }
   },
 };

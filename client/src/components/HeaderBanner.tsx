@@ -16,6 +16,7 @@ import {
   Zap,
   TrendingUp,
   Camera,
+  KeyRound,
 } from 'lucide-react';
 import { UserProfile, TodoItem, HabitItem, ExpenseItem, LifeMilestone } from '../types';
 import { Sound } from '../utils/audio';
@@ -30,6 +31,7 @@ interface HeaderBannerProps {
   expenses: ExpenseItem[];
   milestones: LifeMilestone[];
   soundEnabled: boolean;
+  onOpenApiKeySettings?: () => void;
 }
 
 const DAILY_QUOTES = [
@@ -58,6 +60,7 @@ export const HeaderBanner: React.FC<HeaderBannerProps> = ({
   expenses,
   milestones,
   soundEnabled,
+  onOpenApiKeySettings,
 }) => {
   const [quoteIndex, setQuoteIndex] = useState(0);
   const [copiedQuote, setCopiedQuote] = useState(false);
@@ -260,6 +263,20 @@ export const HeaderBanner: React.FC<HeaderBannerProps> = ({
               <Camera className="w-3.5 h-3.5 text-[#6366F1]" />
               <span>Change Photo</span>
             </button>
+            {onOpenApiKeySettings && (
+              <button
+                id="btn-header-banner-ai-keys"
+                onClick={() => {
+                  Sound.click(soundEnabled);
+                  onOpenApiKeySettings();
+                }}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#F9FAFB] hover:bg-[#F3F4F6] dark:bg-[#1F2937] dark:hover:bg-[#374151] text-[#374151] dark:text-[#E5E7EB] transition-colors flex items-center gap-1.5 border border-[#E5E7EB] dark:border-[#374151] cursor-pointer"
+                title="Configure Personal AI API Keys (Gemini & Groq)"
+              >
+                <KeyRound className="w-3.5 h-3.5 text-[#6366F1]" />
+                <span>AI Keys</span>
+              </button>
+            )}
             <a
               href={`mailto:${profile.contactEmail}`}
               className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#F9FAFB] hover:bg-[#F3F4F6] dark:bg-[#1F2937] dark:hover:bg-[#374151] text-[#374151] dark:text-[#E5E7EB] transition-colors flex items-center gap-1.5 border border-[#E5E7EB] dark:border-[#374151]"

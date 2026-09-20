@@ -29,6 +29,7 @@ import { Sound } from '../utils/audio';
 import { STOCK_IMAGES } from '../assets/stockImages';
 import { Storage } from '../utils/storage';
 import { testGroqApiKey, SUPPORTED_GROQ_MODELS, DEFAULT_GROQ_MODEL } from '../services/groqService';
+import { testGeminiApiKey } from '../services/geminiService';
 import {
   fetchAccountDevices,
   revokeDeviceSession,
@@ -73,6 +74,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [newPin, setNewPin] = useState(settings.masterPin);
   const [pinSaved, setPinSaved] = useState(false);
 
+  // Gemini API Key state
+  const [geminiKey, setGeminiKey] = useState(settings.geminiApiKey || Storage.getGeminiApiKey() || '');
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [geminiKeySaved, setGeminiKeySaved] = useState(false);
+  const [geminiTestStatus, setGeminiTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [geminiTestMsg, setGeminiTestMsg] = useState('');
+
   // Groq API Key & Model state
   const [groqKey, setGroqKey] = useState(settings.groqApiKey || Storage.getGroqApiKey() || '');
   const [selectedModel, setSelectedModel] = useState(
@@ -105,7 +113,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     } else if (currentUser?.name) {
       setDisplayName(currentUser.name);
     }
-  }, [userName, currentUser?.name, isOpen]);
+    if (isOpen) {
+      setShowGeminiKey(false);
+      setShowGroqKey(false);
+      setGeminiKey(settings.geminiApiKey || Storage.getGeminiApiKey() || '');
+      setGroqKey(settings.groqApiKey || Storage.getGroqApiKey() || '');
+    }
+  }, [userName, currentUser?.name, isOpen, settings.geminiApiKey, settings.groqApiKey]);
 
   // Load active devices whenever the modal opens
   const activeEmail = currentUser?.email || 'user@workspace.local';
@@ -175,6 +189,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       onUpdateSettings({ ...settings, masterPin: newPin });
       setPinSaved(true);
       setTimeout(() => setPinSaved(false), 2000);
+    }
+  };
+
+  const handleSaveGeminiKey = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanKey = geminiKey.trim();
+    Storage.setGeminiApiKey(cleanKey);
+    onUpdateSettings({ ...settings, geminiApiKey: cleanKey });
+    Sound.success(settings.soundEnabled);
+    setGeminiKeySaved(true);
+    setTimeout(() => setGeminiKeySaved(false), 2500);
+  };
+
+  const handleTestGeminiKey = async () => {
+    setGeminiTestStatus('testing');
+    setGeminiTestMsg('Validating with Google Gemini models...');
+    Sound.click(settings.soundEnabled);
+
+    const res = await testGeminiApiKey(geminiKey);
+    if (res.success) {
+      Sound.success(settings.soundEnabled);
+      setGeminiTestStatus('success');
+      setGeminiTestMsg(res.message);
+    } else {
+      Sound.error(settings.soundEnabled);
+      setGeminiTestStatus('error');
+      setGeminiTestMsg(res.message);
     }
   };
 
@@ -524,6 +565,95 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </form>
           </div>
 
+          {/* SECTION: GOOGLE GEMINI API KEY */}
+          <div className="space-y-3 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-blue-500 fill-blue-500/20" />
+                <span>Google Gemini API Key (Per-User)</span>
+              </span>
+              <a
+                href="https://aistudio.google.com/app/apikey"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 font-medium"
+              >
+                <span>Get Free Gemini Key</span>
+                <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+            </div>
+
+            <p className="text-xs text-[#6B7280] dark:text-[#9CA3AF]">
+              Powers Zikenn Voice Companion, live dashboard actions, and audio transcription for your private profile.
+            </p>
+
+            <form onSubmit={handleSaveGeminiKey} className="space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type={showGeminiKey ? 'text' : 'password'}
+                    value={geminiKey}
+                    onChange={(e) => {
+                      setGeminiKey(e.target.value);
+                      setGeminiTestStatus('idle');
+                    }}
+                    placeholder="Enter Gemini API Key (AIzaSy...)"
+                    className="w-full pl-3 pr-9 py-2 rounded-xl text-xs font-mono bg-[#F9FAFB] dark:bg-[#1F2937] border border-[#E5E7EB] dark:border-[#374151] text-[#111827] dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowGeminiKey(!showGeminiKey)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+                    title={showGeminiKey ? 'Hide key' : 'Show key'}
+                  >
+                    {showGeminiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+
+                <button
+                  type="submit"
+                  className="px-3.5 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs shrink-0"
+                >
+                  {geminiKeySaved ? <Check className="w-3.5 h-3.5" /> : <KeyRound className="w-3.5 h-3.5" />}
+                  <span>{geminiKeySaved ? 'Saved' : 'Save Key'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  id="settings-test-gemini-connection-btn"
+                  onClick={handleTestGeminiKey}
+                  disabled={geminiTestStatus === 'testing' || !geminiKey.trim()}
+                  className="px-3 py-2 text-xs font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
+                  title="Test key against Google Gemini API"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+                  <span>{geminiTestStatus === 'testing' ? 'Testing...' : 'Test Connection'}</span>
+                </button>
+              </div>
+
+              {geminiTestStatus !== 'idle' && (
+                <div
+                  className={`text-[11px] px-3 py-1.5 rounded-lg flex items-center gap-1.5 ${
+                    geminiTestStatus === 'success'
+                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                      : geminiTestStatus === 'error'
+                      ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                      : 'bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300'
+                  }`}
+                >
+                  {geminiTestStatus === 'success' ? (
+                    <Check className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
+                  ) : geminiTestStatus === 'error' ? (
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
+                  ) : (
+                    <RefreshCw className="w-3.5 h-3.5 shrink-0 animate-spin text-blue-600" />
+                  )}
+                  <span>{geminiTestMsg}</span>
+                </div>
+              )}
+            </form>
+          </div>
+
           {/* SECTION: GROQ AI ASSISTANT API KEY */}
           <div className="space-y-3 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">
             <div className="flex items-center justify-between">
@@ -579,13 +709,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 <button
                   type="button"
+                  id="settings-test-groq-connection-btn"
                   onClick={handleTestGroqKey}
                   disabled={groqTestStatus === 'testing' || !groqKey.trim()}
                   className="px-3 py-2 text-xs font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
                   title="Test key against Groq API"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                  <span>{groqTestStatus === 'testing' ? 'Testing...' : 'Test'}</span>
+                  <span>{groqTestStatus === 'testing' ? 'Testing...' : 'Test Connection'}</span>
                 </button>
               </div>
 

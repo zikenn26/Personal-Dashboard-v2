@@ -78,6 +78,7 @@ export function getActiveGroqModel(): string {
 }
 
 async function postGroqChat(apiKey: string, payload: any): Promise<Response> {
+  Storage.recordApiRequest('groq');
   // First try the local proxy to prevent any browser iframe/CORS/extension blocking
   try {
     const proxyRes = await fetch(GROQ_PROXY_URL, {
@@ -2418,6 +2419,7 @@ export async function testGroqApiKey(testKey?: string): Promise<{ success: boole
   }
 
   try {
+    Storage.recordApiRequest('groq');
     const res = await fetch('/api/groq/models', {
       method: 'GET',
       headers: {

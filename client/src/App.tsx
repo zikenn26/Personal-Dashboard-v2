@@ -44,6 +44,7 @@ import { AchievementsWall } from './components/AchievementsWall';
 import { LifeTimeline } from './components/LifeTimeline';
 import { CommandPalette } from './components/CommandPalette';
 import { SettingsModal } from './components/SettingsModal';
+import { ApiKeySettingsModal } from './components/ApiKeySettingsModal';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { QuickCaptureBar } from './components/QuickCaptureBar';
 import { BackupRestoreView } from './components/BackupRestoreView';
@@ -138,6 +139,7 @@ import {
   Trash2,
   Mic,
   Radio,
+  AlertTriangle,
 } from 'lucide-react';
 
 // Framer Motion Page Transition Variants for Main Content View Area
@@ -245,6 +247,7 @@ export default function App() {
   }, []);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [isCommandMappingModalOpen, setIsCommandMappingModalOpen] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
@@ -253,6 +256,37 @@ export default function App() {
   const [showQuickCapture, setShowQuickCapture] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(() => authRequest === 'signup' || authRequest === 'signin');
   const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup'>(() => authRequest === 'signup' ? 'signup' : 'signin');
+
+  // API Usage Threshold Warning Notification Banner
+  const [apiThresholdWarning, setApiThresholdWarning] = useState<{
+    level: 'approaching' | 'limit_reached';
+    current: number;
+    limit: number;
+    percent: number;
+    message: string;
+  } | null>(() => {
+    const stats = Storage.getApiRequestCountsThisMonth();
+    if (stats.threshold && stats.threshold > 0) {
+      if (stats.isLimitReached) {
+        return {
+          level: 'limit_reached',
+          current: stats.total,
+          limit: stats.threshold,
+          percent: stats.percentUsed || 100,
+          message: `Monthly API threshold reached: ${stats.total} of ${stats.threshold} requests used (${stats.percentUsed}%).`,
+        };
+      } else if (stats.isApproachingLimit) {
+        return {
+          level: 'approaching',
+          current: stats.total,
+          limit: stats.threshold,
+          percent: stats.percentUsed || 80,
+          message: `Approaching monthly API usage threshold: ${stats.total} of ${stats.threshold} requests used (${stats.percentUsed}%).`,
+        };
+      }
+    }
+    return null;
+  });
 
   // Floating Undo Toast for Deleted Expense
   const [expenseUndoToast, setExpenseUndoToast] = useState<{
@@ -643,6 +677,57 @@ export default function App() {
     setSettings(updated);
     Storage.setSettings(updated);
   };
+
+  // Listen to API monthly usage threshold warnings and changes
+  useEffect(() => {
+    const handleThresholdWarning = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        level: 'approaching' | 'limit_reached';
+        current: number;
+        limit: number;
+        percent: number;
+        message: string;
+      }>;
+      if (customEvent.detail) {
+        setApiThresholdWarning(customEvent.detail);
+        Sound.error(settings.soundEnabled);
+      }
+    };
+
+    const handleThresholdChange = () => {
+      const stats = Storage.getApiRequestCountsThisMonth();
+      if (stats.threshold && stats.threshold > 0) {
+        if (stats.isLimitReached) {
+          setApiThresholdWarning({
+            level: 'limit_reached',
+            current: stats.total,
+            limit: stats.threshold,
+            percent: stats.percentUsed || 100,
+            message: `Monthly API threshold reached: ${stats.total} of ${stats.threshold} requests used (${stats.percentUsed}%).`,
+          });
+        } else if (stats.isApproachingLimit) {
+          setApiThresholdWarning({
+            level: 'approaching',
+            current: stats.total,
+            limit: stats.threshold,
+            percent: stats.percentUsed || 80,
+            message: `Approaching monthly API usage threshold: ${stats.total} of ${stats.threshold} requests used (${stats.percentUsed}%).`,
+          });
+        } else {
+          setApiThresholdWarning(null);
+        }
+      } else {
+        setApiThresholdWarning(null);
+      }
+    };
+
+    window.addEventListener('lifeos_api_threshold_warning', handleThresholdWarning);
+    window.addEventListener('lifeos_api_threshold_changed', handleThresholdChange);
+    return () => {
+      window.removeEventListener('lifeos_api_threshold_warning', handleThresholdWarning);
+      window.removeEventListener('lifeos_api_threshold_changed', handleThresholdChange);
+    };
+  }, [settings.soundEnabled]);
 
   // Profile Handlers
   const handleUpdateProfile = (updated: UserProfile) => {
@@ -2066,6 +2151,31 @@ export default function App() {
                       <span>Change Password</span>
                     </button>
 
+                    {/* Personal AI API Keys (Gemini & Groq) */}
+                    <button
+                      type="button"
+                      id="profile-menu-ai-keys-btn"
+                      onClick={() => {
+                        setIsAccountMenuOpen(false);
+                        setIsApiKeyModalOpen(true);
+                      }}
+                      className="account-menu-item flex items-center justify-between w-full text-left font-medium text-[#111827] dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg p-2 transition-colors cursor-pointer text-xs"
+                    >
+                      <div className="flex items-center gap-2">
+                        <KeyRound className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+                        <span>AI API Keys (Gemini &amp; Groq)</span>
+                      </div>
+                      {Boolean(Storage.getGeminiApiKey() || Storage.getGroqApiKey()) ? (
+                        <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">
+                          Configured
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">
+                          Set Keys
+                        </span>
+                      )}
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => {
@@ -2657,6 +2767,64 @@ export default function App() {
           {/* Main Document Canvas View */}
           <main ref={mainScrollRef} className="flex-1 h-full overflow-y-auto min-h-0 workspace-canvas bg-white dark:bg-[#0F172A] p-2 sm:p-4 lg:p-6">
             <div className="max-w-6xl mx-auto space-y-4 pb-12">
+              {/* Global API Monthly Threshold Warning Notification Banner */}
+              {apiThresholdWarning && (
+                <div
+                  id="api-threshold-global-warning-banner"
+                  className={`p-3 sm:px-4 rounded-xl border flex items-center justify-between gap-3 shadow-2xs transition-all animate-in fade-in slide-in-from-top-2 duration-200 ${
+                    apiThresholdWarning.level === 'limit_reached'
+                      ? 'bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-900/60 text-rose-900 dark:text-rose-100'
+                      : 'bg-amber-50 dark:bg-amber-950/60 border-amber-200 dark:border-amber-900/60 text-amber-900 dark:text-amber-100'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div
+                      className={`p-1.5 rounded-lg shrink-0 ${
+                        apiThresholdWarning.level === 'limit_reached'
+                          ? 'bg-rose-100 dark:bg-rose-900/80 text-rose-600 dark:text-rose-300'
+                          : 'bg-amber-100 dark:bg-amber-900/80 text-amber-600 dark:text-amber-300'
+                      }`}
+                    >
+                      <AlertTriangle className="w-4 h-4" />
+                    </div>
+                    <div className="text-xs leading-tight min-w-0">
+                      <span className="font-bold">
+                        {apiThresholdWarning.level === 'limit_reached'
+                          ? 'Monthly API Limit Reached: '
+                          : 'Approaching Monthly API Limit: '}
+                      </span>
+                      <span className="text-gray-700 dark:text-gray-300">
+                        You have consumed {apiThresholdWarning.current} of your {apiThresholdWarning.limit} requests ({apiThresholdWarning.percent}%).
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      id="manage-api-threshold-btn"
+                      onClick={() => setIsApiKeyModalOpen(true)}
+                      className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-colors cursor-pointer shadow-2xs ${
+                        apiThresholdWarning.level === 'limit_reached'
+                          ? 'bg-rose-600 text-white border-rose-700 hover:bg-rose-700'
+                          : 'bg-amber-600 text-white border-amber-700 hover:bg-amber-700'
+                      }`}
+                    >
+                      Manage Limit
+                    </button>
+                    <button
+                      type="button"
+                      id="dismiss-api-threshold-warning-btn"
+                      onClick={() => setApiThresholdWarning(null)}
+                      className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 cursor-pointer transition-colors"
+                      title="Dismiss warning"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <AnimatePresence mode="wait">
                 <motion.div
                   key={activeView}
@@ -2959,6 +3127,16 @@ export default function App() {
         onSignOut={handleSignOut}
         onOpenChangePassword={() => setIsChangePasswordOpen(true)}
         onOpenCommandMappings={() => setIsCommandMappingModalOpen(true)}
+      />
+
+      {/* Personal AI API Keys Modal (Per-User Isolated) */}
+      <ApiKeySettingsModal
+        isOpen={isApiKeyModalOpen}
+        onClose={() => setIsApiKeyModalOpen(false)}
+        currentUser={currentUser}
+        profile={profile}
+        settings={settings}
+        onUpdateSettings={handleUpdateSettings}
       />
 
       {/* Change Password Modal */}
