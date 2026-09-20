@@ -738,35 +738,44 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
                     key={task.id}
                     onClick={() => {
                       Sound.click(soundEnabled);
-                      onToggleTodo(task.id);
+                      onNavigate('tasks');
                     }}
-                    className="flex items-center justify-between p-2.5 rounded-xl border bg-white dark:bg-[#0F172A] border-[#E2E8F0] dark:border-[#334155] hover:border-gray-300 dark:hover:border-gray-600 transition-all cursor-pointer group select-none"
+                    className="flex items-center justify-between p-2.5 rounded-xl border bg-white dark:bg-[#0F172A] border-[#E2E8F0] dark:border-[#334155] hover:border-indigo-300 dark:hover:border-indigo-700/60 hover:shadow-xs transition-all cursor-pointer group select-none"
+                    title="Click to view in Tasks & Kanban"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
                       <button
                         type="button"
-                        className="shrink-0 cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          Sound.click(soundEnabled);
+                          onToggleTodo(task.id);
+                        }}
+                        className="shrink-0 p-0.5 rounded-md hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer"
                         title="Complete task"
                       >
                         <Circle className="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-emerald-500 transition-colors" />
                       </button>
-                      <span className="text-xs font-semibold text-[#37352F] dark:text-white truncate">
+                      <span className="text-xs font-semibold text-[#37352F] dark:text-white truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                         {task.title}
                       </span>
                     </div>
-                    <span
-                      className={`text-[9px] px-1.5 py-0.5 rounded-md font-bold uppercase shrink-0 ${
-                        task.priority === 'urgent'
-                          ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'
-                          : task.priority === 'high'
-                          ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
-                          : task.priority === 'medium'
-                          ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
-                          : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
-                      }`}
-                    >
-                      {task.priority}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span
+                        className={`text-[9px] px-1.5 py-0.5 rounded-md font-bold uppercase shrink-0 ${
+                          task.priority === 'urgent'
+                            ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'
+                            : task.priority === 'high'
+                            ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+                            : task.priority === 'medium'
+                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
+                            : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
+                        }`}
+                      >
+                        {task.priority}
+                      </span>
+                      <ArrowRight className="w-3.5 h-3.5 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
                   </div>
                 ))
             )}

@@ -23,6 +23,7 @@ export interface DirectAppHandlers {
   ) => void;
   onAddHabit?: (title: string, category?: string, icon?: string, color?: string) => void;
   onToggleHabit?: (id: string, dayIndex?: number) => void;
+  onToggleTodo?: (id: string) => void;
   onNavigate?: (view: string, tabOrFilter?: string) => void;
   onAddJournal?: (title: string, content: string, mood?: string, tags?: string[]) => void;
   onAddQuote?: (quote: { text: string; author: string; category?: string }) => void;
@@ -839,8 +840,18 @@ export async function executeCommandMapping(
     // ----------------------------------------------------
     case 'add_todo': {
       let title = 'New Task';
-      if (extractedParams?.dynamicText) {
-        title = p.todoTitle ? `${p.todoTitle}: ${extractedParams.dynamicText}` : extractedParams.dynamicText;
+      if (extractedParams?.dynamicText && p.todoTitle) {
+        if (extractedParams.dynamicText.toLowerCase() === p.todoTitle.toLowerCase()) {
+          title = extractedParams.dynamicText;
+        } else if (extractedParams.dynamicText.toLowerCase().includes(p.todoTitle.toLowerCase())) {
+          title = extractedParams.dynamicText;
+        } else if (p.todoTitle.toLowerCase().includes(extractedParams.dynamicText.toLowerCase())) {
+          title = p.todoTitle;
+        } else {
+          title = `${p.todoTitle} - ${extractedParams.dynamicText}`;
+        }
+      } else if (extractedParams?.dynamicText) {
+        title = extractedParams.dynamicText;
       } else if (p.todoTitle) {
         title = p.todoTitle;
       }

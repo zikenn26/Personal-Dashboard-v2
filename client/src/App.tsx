@@ -1694,6 +1694,23 @@ export default function App() {
     if (view === 'media' && tabOrFilter) {
       setMediaInitialTab(tabOrFilter);
     }
+
+    // Force scroll to top event to ensure the target component is properly mounted and rendered
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+      const mainEl = document.querySelector('main');
+      if (mainEl) {
+        mainEl.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+        mainEl.scrollTop = 0;
+      }
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+      window.dispatchEvent(
+        new CustomEvent('dashboard-navigate-scroll-top', {
+          detail: { view, tabOrFilter },
+        })
+      );
+    }
   };
 
   // Register unified voice command mapping handlers to real React state functions
@@ -1701,6 +1718,7 @@ export default function App() {
     registerAppHandlers({
       onAddExpense: handleAddExpense,
       onAddTodo: handleAddTodo,
+      onToggleTodo: handleToggleTodo,
       onAddHabit: handleAddHabit,
       onToggleHabit: (habitIdOrTitle: string) => {
         const target = habits.find(

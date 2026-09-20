@@ -1,6 +1,28 @@
 import { executeSecretaryTool, sendSecretaryMessage } from './groqService';
 import { Storage } from '../utils/storage';
-import { parseNaturalLanguageIntent, executeCommandMapping } from './commandMappingService';
+import {
+  parseNaturalLanguageIntent,
+  executeCommandMapping,
+  matchCommandTrigger,
+  getRegisteredHandlers,
+  inferExpenseCategory,
+  broadcastDataChanged,
+} from './commandMappingService';
+
+// Backend server error detection tracker
+let backendServerErrorDetected = false;
+
+export function isBackendApiFailing(): boolean {
+  return backendServerErrorDetected;
+}
+
+export function setBackendServerError(failing: boolean): void {
+  backendServerErrorDetected = failing;
+}
+
+export function resetBackendApiStatus(): void {
+  backendServerErrorDetected = false;
+}
 
 export interface GeminiChatMessage {
   id: string;
@@ -80,9 +102,19 @@ export interface GeminiHealthResponse {
 export async function checkGeminiHealth(): Promise<GeminiHealthResponse> {
   try {
     const res = await fetch('/api/gemini/health');
-    if (!res.ok) throw new Error('Health check failed');
-    return await res.json();
+    if (!res.ok) {
+      if (res.status === 405 || res.status >= 400) {
+        backendServerErrorDetected = true;
+      }
+      throw new Error(`Health check failed with status ${res.status}`);
+    }
+    const health = await res.json();
+    if (health.status === 'ok') {
+      backendServerErrorDetected = false;
+    }
+    return health;
   } catch {
+    backendServerErrorDetected = true;
     return {
       status: 'offline',
       hasApiKey: false,
@@ -90,6 +122,260 @@ export async function checkGeminiHealth(): Promise<GeminiHealthResponse> {
       liveModel: 'gemini-3.8-live',
     };
   }
+}
+
+/**
+ * Robust Local Client-Side Fallback Handler & Simplified Mock Storage Operation
+ * Automatically used when the backend API returns a 405 or other server-side errors.
+ * Ensures zero-error voice interactions and immediate local execution.
+ */
+export async function executeLocalClientVoiceFallback(
+  rawMessage: string,
+  history: GeminiChatMessage[] = []
+): Promise<{
+  reply: string;
+  actionChips: string[];
+  model: string;
+  updatedHistory: GeminiChatMessage[];
+}> {
+  // Strip leading and trailing punctuation, quotes, question marks, and excessive whitespace
+  const message = rawMessage.trim();
+  const cleaned = message
+    .replace(/^[\s"“”'‘’`«»„.?!,;:\-_(){}\[\]]+/, '')
+    .replace(/[\s"“”'‘’`«»„.?!,;:\-_(){}\[\]]+$/, '')
+    .trim();
+
+  // 1. Match configured trigger phrases and natural language regex intents
+  const match = matchCommandTrigger(cleaned) || matchCommandTrigger(message);
+  if (match) {
+    try {
+      const res = await executeCommandMapping(match.mapping, match.extractedParams);
+      const userMessage: GeminiChatMessage = {
+        id: 'msg-user-' + Date.now(),
+        role: 'user',
+        content: message,
+        timestamp: Date.now() - 1,
+      };
+      const assistantMessage: GeminiChatMessage = {
+        id: 'msg-local-' + Date.now(),
+        role: 'assistant',
+        content: res.message,
+        actionChips: res.actionChip ? [res.actionChip] : ['⚡ Executed Locally'],
+        modelUsed: 'Offline Voice Engine',
+        timestamp: Date.now(),
+      };
+
+      return {
+        reply: res.message,
+        actionChips: res.actionChip ? [res.actionChip] : ['⚡ Executed Locally'],
+        model: 'Offline Voice Engine',
+        updatedHistory: [...history, userMessage, assistantMessage],
+      };
+    } catch (err) {
+      console.warn('executeCommandMapping failed inside fallback:', err);
+    }
+  }
+
+  // 2. Comprehensive simplified mock & local storage operation handler
+  const lower = cleaned.toLowerCase();
+  const handlers = getRegisteredHandlers();
+  let reply = '';
+  let actionChip = '';
+
+  // 2a. Tasks intent: Add, Complete, Remove, or List
+  if (
+    /\b(?:task|todo|to-do|remind|schedule|errand|item)\b/i.test(lower) ||
+    /^(?:add|create|make|insert|put)\s+/i.test(lower)
+  ) {
+    if (/\b(?:complete|finish|done|check\s*off)\b/i.test(lower)) {
+      const allTodos = Storage.getTodos();
+      const pending = allTodos.filter((t) => !t.completed);
+      const target =
+        pending.find((t) => lower.includes(t.title.toLowerCase())) || pending[0];
+      if (target) {
+        if (handlers.onToggleTodo) {
+          handlers.onToggleTodo(target.id);
+        } else {
+          target.completed = true;
+          target.status = 'complete';
+          Storage.setTodos(allTodos);
+          broadcastDataChanged('tasks');
+        }
+        reply = `Marked task "${target.title}" as completed!`;
+        actionChip = `✓ Completed: ${target.title}`;
+      } else {
+        reply = 'You currently have no pending tasks to complete.';
+        actionChip = '✓ No Pending Tasks';
+      }
+    } else if (/\b(?:delete|remove|clear)\b/i.test(lower)) {
+      const allTodos = Storage.getTodos();
+      const targetIdx = allTodos.findIndex((t) => lower.includes(t.title.toLowerCase()));
+      if (targetIdx !== -1) {
+        const removed = allTodos.splice(targetIdx, 1)[0];
+        Storage.setTodos(allTodos);
+        broadcastDataChanged('tasks');
+        reply = `Removed task "${removed.title}".`;
+        actionChip = `✓ Removed: ${removed.title}`;
+      } else {
+        reply = 'Could not find that task to remove.';
+        actionChip = '⚠️ Task Not Found';
+      }
+    } else {
+      // Add Task - Extract clear title
+      let title = cleaned
+        .replace(
+          /^(?:hey\s+)?(?:zikenn|gemini|assistant)?\s*(?:please\s+)?(?:can\s+you\s+)?(?:add|create|make|schedule|put|insert)\s+(?:a\s+)?(?:new\s+)?(?:task|todo|item)?\s*(?:to|for|called|titled|:\s*)?/i,
+          ''
+        )
+        .replace(/^(?:to\s+|called\s+|titled\s+|for\s+|:\s*|\-\s*)+/i, '')
+        .replace(/[\s"“”'‘’`«»„.?!,;:\-_(){}\[\]]+$/, '')
+        .trim();
+      if (!title) title = 'New Voice Task';
+      title = title.charAt(0).toUpperCase() + title.slice(1);
+
+      // Infer priority
+      let priority: 'low' | 'medium' | 'high' = 'medium';
+      if (/\b(?:urgent|asap|critical|high\s+priority)\b/i.test(lower)) priority = 'high';
+      else if (/\b(?:low\s+priority|someday|minor)\b/i.test(lower)) priority = 'low';
+
+      if (handlers.onAddTodo) {
+        handlers.onAddTodo(title, priority, 'Personal', '', 'todo');
+      } else {
+        const allTodos = Storage.getTodos();
+        allTodos.unshift({
+          id: `todo-${Date.now()}`,
+          title,
+          completed: false,
+          status: 'todo',
+          priority,
+          category: 'Personal',
+          createdAt: Date.now(),
+        });
+        Storage.setTodos(allTodos);
+        broadcastDataChanged('tasks');
+      }
+      reply = `Added task "${title}" to your task list.`;
+      actionChip = `✓ Added: ${title}`;
+    }
+  }
+  // 2b. Expenses intent: Add / Log spending
+  else if (
+    /\b(?:expense|spent|spend|paid|cost|rupees|rs|₹|bucks|inr)\b/i.test(lower)
+  ) {
+    const amountMatch = lower.match(/(?:rs\.?|inr|₹)?\s*(\d+(?:\.\d+)?)\s*(?:rs|rupees|inr|bucks)?/i);
+    const amount = amountMatch && amountMatch[1] ? parseFloat(amountMatch[1]) : 100;
+    let name = cleaned
+      .replace(
+        /^(?:hey\s+)?(?:zikenn|gemini|assistant)?\s*(?:please\s+)?(?:add|log|record|track|enter)?\s*(?:an?\s+)?(?:expense|spent|spend|paid)?\s*(?:of)?\s*(?:rs\.?|inr|₹)?\s*\d+(?:\.\d+)?\s*(?:rs|rupees|inr|bucks)?\s*(?:for|on|towards)?/i,
+        ''
+      )
+      .trim();
+    if (!name) name = 'Voice Expense';
+    name = name.charAt(0).toUpperCase() + name.slice(1);
+    const category = inferExpenseCategory(name);
+
+    if (handlers.onAddExpense) {
+      handlers.onAddExpense({
+        name,
+        amount,
+        category,
+        date: new Date().toISOString().split('T')[0],
+        billingCycle: 'one-time',
+        icon: '💳',
+        active: true,
+      });
+    } else {
+      const allExpenses = Storage.getExpenses();
+      allExpenses.unshift({
+        id: `exp-${Date.now()}`,
+        name,
+        amount,
+        category,
+        date: new Date().toISOString().split('T')[0],
+        billingCycle: 'one-time',
+        icon: '💳',
+        active: true,
+      });
+      Storage.setExpenses(allExpenses);
+      broadcastDataChanged('expenses');
+    }
+    reply = `Logged expense of ₹${amount} for "${name}".`;
+    actionChip = `✓ Expense: ₹${amount}`;
+  }
+  // 2c. Habit intent: Complete / Streak
+  else if (
+    /\b(?:habit|routine|streak|water|workout|exercise|meditat|read)\b/i.test(lower)
+  ) {
+    const habits = Storage.getHabits();
+    const todayIdx = (new Date().getDay() + 6) % 7;
+    const target = habits.find((h) => lower.includes(h.title.toLowerCase())) || habits[0];
+    if (target) {
+      target.completedDays[todayIdx] = true;
+      Storage.setHabits(habits);
+      broadcastDataChanged('habits');
+      handlers.onToggleHabit?.(target.id);
+      reply = `Completed habit "${target.title}" for today!`;
+      actionChip = `✓ Habit Done: ${target.title}`;
+    } else {
+      reply = `You have ${habits.length} habits tracked. Daily momentum is on track!`;
+      actionChip = '✓ Habits Checked';
+    }
+  }
+  // 2d. Navigation intent: Open / Go to view
+  else if (/\b(?:open|go to|show|navigate to|switch to|view)\b/i.test(lower)) {
+    let targetView = 'home';
+    if (/\b(?:task|tasks|kanban|todo|todos)\b/i.test(lower)) targetView = 'tasks';
+    else if (/\b(?:expense|expenses|spending|budget)\b/i.test(lower)) targetView = 'expenses';
+    else if (/\b(?:habit|habits|routine)\b/i.test(lower)) targetView = 'habits';
+    else if (/\b(?:journal|diary|log|notes)\b/i.test(lower)) targetView = 'journal';
+    else if (/\b(?:workfolio|portfolio|resume|projects)\b/i.test(lower)) targetView = 'workfolio';
+    else if (/\b(?:schedule|calendar|agenda)\b/i.test(lower)) targetView = 'schedule';
+    else if (/\b(?:quote|quotes|mantra)\b/i.test(lower)) targetView = 'quotes';
+    else if (/\b(?:exam|exams|syllabus)\b/i.test(lower)) targetView = 'exams';
+    else if (/\b(?:home|dashboard|today)\b/i.test(lower)) targetView = 'home';
+
+    if (handlers.onNavigate) {
+      handlers.onNavigate(targetView);
+    }
+    reply = `Opened ${targetView} for you.`;
+    actionChip = `⚡ View: ${targetView}`;
+  }
+  // 2e. Status / Overview
+  else if (/\b(?:status|summary|overview|how am i doing|pending|agenda)\b/i.test(lower)) {
+    const pendingCount = Storage.getTodos().filter((t) => !t.completed).length;
+    const habits = Storage.getHabits();
+    const todayIdx = (new Date().getDay() + 6) % 7;
+    const doneHabits = habits.filter((h) => h.completedDays[todayIdx]).length;
+    reply = `Daily status: You have ${pendingCount} pending task(s) and ${doneHabits}/${habits.length} habits completed today. Operating 100% offline!`;
+    actionChip = `✓ Status: ${pendingCount} Tasks, ${doneHabits} Habits`;
+  }
+  // 2f. General offline friendly response
+  else {
+    reply = `Command received: "${cleaned}". Voice actions for adding tasks, expenses, habits, and navigation work directly in offline mode.`;
+    actionChip = '⚡ Local Voice Ready';
+  }
+
+  const userMessage: GeminiChatMessage = {
+    id: 'msg-user-' + Date.now(),
+    role: 'user',
+    content: message,
+    timestamp: Date.now() - 1,
+  };
+  const assistantMessage: GeminiChatMessage = {
+    id: 'msg-offline-' + Date.now(),
+    role: 'assistant',
+    content: reply,
+    actionChips: [actionChip],
+    modelUsed: 'Local Fallback Handler',
+    timestamp: Date.now(),
+  };
+
+  return {
+    reply,
+    actionChips: [actionChip],
+    model: 'Local Fallback Handler',
+    updatedHistory: [...history, userMessage, assistantMessage],
+  };
 }
 
 // 2. Multi-turn Chat & Voice Command Execution
@@ -106,6 +392,12 @@ export async function sendGeminiMessage(params: {
   updatedHistory: GeminiChatMessage[];
 }> {
   const { message, history, model = 'gemini-3.1-flash-lite', roleId, customSystemInstruction } = params;
+
+  // If backend server returned a 405 or other error previously, route directly through local fallback
+  if (backendServerErrorDetected) {
+    console.info('Backend previously detected offline/405; executing voice command via local client fallback.');
+    return await executeLocalClientVoiceFallback(message, history);
+  }
 
   // Selected role instruction
   const matchedRole = GEMINI_ROLES.find((r) => r.id === roleId);
@@ -158,116 +450,23 @@ export async function sendGeminiMessage(params: {
       body: JSON.stringify(payload),
     });
 
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.error || `Server returned HTTP ${response.status}`);
+    // Detect 405 or other server-side errors immediately
+    if (response.status === 405 || response.status >= 500 || response.status === 404 || !response.ok) {
+      console.warn(
+        `Backend API returned HTTP ${response.status}. Automatically switching voice command processing to local client-side fallback handler.`
+      );
+      backendServerErrorDetected = true;
+      return await executeLocalClientVoiceFallback(message, history);
     }
 
     data = await response.json();
   } catch (backendError: any) {
     console.warn(
-      'Gemini chat backend error or offline, attempting local intent execution or Groq fallback:',
+      'Gemini chat backend error or offline, automatically switching voice command processing to local client fallback handler:',
       backendError?.message
     );
-
-    // 1. Attempt immediate local intent execution (zero-network, 100% offline)
-    const localMatch = parseNaturalLanguageIntent(message);
-    if (localMatch) {
-      try {
-        const localRes = await executeCommandMapping(localMatch.mapping, localMatch.extractedParams);
-        const userMessage: GeminiChatMessage = {
-          id: 'msg-user-' + Date.now(),
-          role: 'user',
-          content: message,
-          timestamp: Date.now() - 1,
-        };
-        const assistantMessage: GeminiChatMessage = {
-          id: 'msg-local-' + Date.now(),
-          role: 'assistant',
-          content: localRes.message,
-          actionChips: localRes.actionChip ? [localRes.actionChip] : [],
-          modelUsed: 'Local Command Engine',
-          timestamp: Date.now(),
-        };
-
-        return {
-          reply: localRes.message,
-          actionChips: localRes.actionChip ? [localRes.actionChip] : [],
-          model: 'Local Command Engine',
-          updatedHistory: [...history, userMessage, assistantMessage],
-        };
-      } catch (localErr) {
-        console.warn('Local fallback execution failed:', localErr);
-      }
-    }
-
-    // 2. Fallback to Groq API client-side
-    try {
-      const groqRes = await sendSecretaryMessage(
-        message,
-        history.map((h) => ({
-          id: h.id,
-          role: h.role as any,
-          content: h.content,
-          timestamp: h.timestamp,
-        }))
-      );
-
-      // If groq returned an error (e.g. missing API key), check if local intent was possible
-      if (groqRes.error && !localMatch) {
-        throw new Error(groqRes.error);
-      }
-
-      const assistantMessage: GeminiChatMessage = {
-        id: 'msg-groq-' + Date.now(),
-        role: 'assistant',
-        content: groqRes.reply,
-        actionChips: groqRes.actionChips,
-        modelUsed: 'Groq (Auto-Fallback)',
-        timestamp: Date.now(),
-      };
-
-      const userMessage: GeminiChatMessage = {
-        id: 'msg-user-' + Date.now(),
-        role: 'user',
-        content: message,
-        timestamp: Date.now(),
-      };
-
-      return {
-        reply: groqRes.reply,
-        actionChips: groqRes.actionChips || [],
-        model: 'Groq (Auto-Fallback)',
-        updatedHistory: [...history, userMessage, assistantMessage],
-      };
-    } catch (groqErr) {
-      // Graceful offline message instead of confusing HTTP status codes
-      const fallbackReply =
-        `I understood: "${message}". The cloud AI service is offline on this URL, but your direct commands (like adding/completing tasks, logging expenses, checking habits, and navigating views) work 100% offline!`;
-
-      const assistantMessage: GeminiChatMessage = {
-        id: 'msg-offline-' + Date.now(),
-        role: 'assistant',
-        content: fallbackReply,
-        actionChips: ['⚡ Direct voice commands work offline'],
-        modelUsed: 'Offline Engine',
-        timestamp: Date.now(),
-      };
-
-      const userMessage: GeminiChatMessage = {
-        id: 'msg-user-' + Date.now(),
-        role: 'user',
-        content: message,
-        timestamp: Date.now(),
-      };
-
-      return {
-        reply: fallbackReply,
-        actionChips: ['⚡ Direct voice commands work offline'],
-        model: 'Offline Engine',
-        updatedHistory: [...history, userMessage, assistantMessage],
-      };
-    }
+    backendServerErrorDetected = true;
+    return await executeLocalClientVoiceFallback(message, history);
   }
   const actionChips: string[] = [];
 

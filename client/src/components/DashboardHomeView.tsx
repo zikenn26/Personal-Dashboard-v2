@@ -128,6 +128,27 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
     return day === 0 ? 6 : day - 1;
   }, []);
 
+  // Enhanced navigation handler: forces state update to activeView and triggers scroll-to-top event
+  const handleItemNavigate = (view: any, tabOrFilter?: string) => {
+    Sound.click(soundEnabled);
+    onNavigate(view, tabOrFilter);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+      const mainEl = document.querySelector('main');
+      if (mainEl) {
+        mainEl.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+        mainEl.scrollTop = 0;
+      }
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+      window.dispatchEvent(
+        new CustomEvent('dashboard-navigate-scroll-top', {
+          detail: { view, tabOrFilter },
+        })
+      );
+    }
+  };
+
   // Time-based Greeting & Live Clock (Timezone Synchronized)
   const [currentTime, setCurrentTime] = useState(() => new Date());
   const [isAlarmRinging, setIsAlarmRinging] = useState(false);
@@ -546,6 +567,16 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
 
                 {/* Add Quote Button */}
                 <button
+                  type="button"
+                  onClick={() => handleItemNavigate('quotes')}
+                  title="Open Quotes Lounge"
+                  className="p-1 sm:px-2 sm:py-1 rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-[#64748B] hover:text-[#6366F1] dark:hover:text-white hover:border-[#6366F1]/40 transition-all cursor-pointer flex items-center gap-1 text-[11px] font-semibold shadow-2xs"
+                >
+                  <Quote className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Lounge</span>
+                </button>
+
+                <button
                   ref={quoteButtonRef}
                   type="button"
                   onClick={() => {
@@ -664,7 +695,13 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
               isAlarmRinging ? 'alarm-tile-pulse' : ''
             }`}
           >
-            <FlipClock onRingingChange={setIsAlarmRinging} />
+            <div
+              className="cursor-pointer"
+              title="Click to view weekly schedule & agenda"
+              onClick={() => handleItemNavigate('schedule')}
+            >
+              <FlipClock onRingingChange={setIsAlarmRinging} />
+            </div>
           </motion.div>
         </div>
       </div>
@@ -680,7 +717,7 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
         todos={todos}
         onAddTodo={onAddTodo}
         onToggleTodo={onToggleTodo}
-        onNavigate={onNavigate}
+        onNavigate={handleItemNavigate}
         habits={habits}
         todayIndex={todayIndex}
         onToggleHabitDay={onToggleHabitDay}
