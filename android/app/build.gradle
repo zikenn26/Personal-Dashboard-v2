@@ -20,9 +20,9 @@ android {
         release {
             if (file('release-key.jks').exists()) {
                 storeFile file('release-key.jks')
-                storePassword 'zikenn2026pass'
-                keyAlias 'zikenn-key'
-                keyPassword 'zikenn2026pass'
+                storePassword System.getenv('RELEASE_KEYSTORE_PASSWORD') ?: (project.findProperty('RELEASE_KEYSTORE_PASSWORD') ?: 'zikenn2026pass')
+                keyAlias System.getenv('RELEASE_KEY_ALIAS') ?: (project.findProperty('RELEASE_KEY_ALIAS') ?: 'zikenn-key')
+                keyPassword System.getenv('RELEASE_KEY_PASSWORD') ?: (project.findProperty('RELEASE_KEY_PASSWORD') ?: 'zikenn2026pass')
             }
         }
     }
