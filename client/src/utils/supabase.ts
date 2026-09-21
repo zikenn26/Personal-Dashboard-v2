@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { Capacitor } from '@capacitor/core';
 
 // Environment variables for Supabase (Vite client)
 const rawUrl = import.meta.env.VITE_SUPABASE_URL || '';
@@ -34,9 +35,17 @@ export const isSupabaseConfigured = (): boolean => {
 /**
  * Checks if running inside an iframe, Cloud Run preview container, or dev environment
  * where third-party requests may be restricted by sandbox or CORS policies.
+ * In native Capacitor (Android), this returns false so requests go directly to Supabase.
  */
 const isIframeOrPreview = (): boolean => {
   if (typeof window === 'undefined') return false;
+  try {
+    if (Capacitor.isNativePlatform()) {
+      return false;
+    }
+  } catch {
+    // Ignore if Capacitor is not present in pure web runtime
+  }
   try {
     const isIframe = window.self !== window.top;
     const isAiStudio =
