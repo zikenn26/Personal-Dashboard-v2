@@ -1,3 +1,5 @@
+import { nativeService } from '../services/nativeService';
+
 // Zero-latency Web Audio API synthesizer for tactile UI feedback
 let audioCtx: AudioContext | null = null;
 
@@ -18,6 +20,7 @@ function getAudioContext(): AudioContext | null {
 export const Sound = {
   click: (enabled = true) => {
     if (!enabled) return;
+    nativeService.triggerHaptic('click');
     try {
       const ctx = getAudioContext();
       if (!ctx) return;
@@ -43,6 +46,7 @@ export const Sound = {
 
   success: (enabled = true) => {
     if (!enabled) return;
+    nativeService.triggerHaptic('success');
     try {
       const ctx = getAudioContext();
       if (!ctx) return;
@@ -73,6 +77,7 @@ export const Sound = {
 
   toggle: (enabled = true) => {
     if (!enabled) return;
+    nativeService.triggerHaptic('selection');
     try {
       const ctx = getAudioContext();
       if (!ctx) return;
@@ -102,6 +107,7 @@ export const Sound = {
 
   error: (enabled = true) => {
     if (!enabled) return;
+    nativeService.triggerHaptic('error');
     try {
       const ctx = getAudioContext();
       if (!ctx) return;

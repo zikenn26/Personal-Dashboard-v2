@@ -3,6 +3,10 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 import './landing.css';
+import { nativeService } from './services/nativeService';
+
+// Initialize Capacitor native listeners (back button, keyboard, network) safely
+nativeService.init();
 
 // Filter out benign SheetJS ZIP streaming data-descriptor console messages
 if (typeof window !== 'undefined' && window.console) {

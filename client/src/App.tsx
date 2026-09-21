@@ -87,6 +87,7 @@ import {
   setCustomWorkspaceIdentifier,
   setCustomWorkspaceEmail,
 } from './utils/supabase';
+import { nativeService } from './services/nativeService';
 
 import {
   Moon,
@@ -616,15 +617,98 @@ export default function App() {
     };
   }, []);
 
-  // 3. Sync Dark Mode class on document root cleanly
+  // 3. Sync Dark Mode class on document root cleanly and native status bar
   useEffect(() => {
     if (settings.darkMode) {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
     }
+    nativeService.updateThemeStatusBar(Boolean(settings.darkMode));
     Storage.setSettings(settings);
   }, [settings]);
+
+  // Hide native splash screen once React UI is mounted
+  useEffect(() => {
+    nativeService.hideSplashScreen();
+  }, []);
+
+  // Android Hardware Back Button Handling
+  useEffect(() => {
+    const unregister = nativeService.registerBackButtonHandler(() => {
+      // 1. Close open modals/overlays in priority order
+      if (isAuthModalOpen) {
+        setIsAuthModalOpen(false);
+        return true;
+      }
+      if (isSettingsOpen) {
+        setIsSettingsOpen(false);
+        return true;
+      }
+      if (isCommandPaletteOpen) {
+        setIsCommandPaletteOpen(false);
+        return true;
+      }
+      if (isApiKeyModalOpen) {
+        setIsApiKeyModalOpen(false);
+        return true;
+      }
+      if (isCommandMappingModalOpen) {
+        setIsCommandMappingModalOpen(false);
+        return true;
+      }
+      if (isChangePasswordOpen) {
+        setIsChangePasswordOpen(false);
+        return true;
+      }
+      if (isGlobalAvatarPickerOpen) {
+        setIsGlobalAvatarPickerOpen(false);
+        return true;
+      }
+      if (isGlobalVoiceModalOpen) {
+        setIsGlobalVoiceModalOpen(false);
+        return true;
+      }
+      if (isZikennPopupOpen) {
+        setIsZikennPopupOpen(false);
+        return true;
+      }
+      if (isAddMenuOpen) {
+        setIsAddMenuOpen(false);
+        return true;
+      }
+      if (isAccountMenuOpen) {
+        setIsAccountMenuOpen(false);
+        return true;
+      }
+      if (isMobileSidebarOpen) {
+        setIsMobileSidebarOpen(false);
+        return true;
+      }
+      // 2. If navigated away from home dashboard, return to home view
+      if (activeView !== 'home') {
+        setActiveView('home');
+        return true;
+      }
+      return false; // Root level: allow system to exit or minimize
+    });
+
+    return unregister;
+  }, [
+    isAuthModalOpen,
+    isSettingsOpen,
+    isCommandPaletteOpen,
+    isApiKeyModalOpen,
+    isCommandMappingModalOpen,
+    isChangePasswordOpen,
+    isGlobalAvatarPickerOpen,
+    isGlobalVoiceModalOpen,
+    isZikennPopupOpen,
+    isAddMenuOpen,
+    isAccountMenuOpen,
+    isMobileSidebarOpen,
+    activeView,
+  ]);
 
   // 4. Global Keyboard Shortcuts (Cmd+K / Ctrl+K and Cmd+\ / Ctrl+\)
   useEffect(() => {

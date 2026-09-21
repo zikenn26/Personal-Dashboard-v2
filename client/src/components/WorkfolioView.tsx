@@ -14,6 +14,7 @@ import { EditProfileModal } from './EditProfileModal';
 import { ResumePreviewModal } from './ResumePreviewModal';
 import { ProjectDetailModal } from './ProjectDetailModal';
 import { Sound } from '../utils/audio';
+import { nativeService } from '../services/nativeService';
 import {
   Download,
   Printer,
@@ -95,13 +96,20 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
     }));
   };
 
-  const handleShareResume = () => {
+  const handleShareResume = async () => {
     Sound.click(soundEnabled);
     const shareUrl = window.location.href;
-    navigator.clipboard.writeText(shareUrl);
+    const shared = await nativeService.shareContent({
+      title: `${profile.name || 'Personal'} - Workfolio & Resume`,
+      text: `Check out ${profile.name || 'my'} professional workfolio and interactive resume!`,
+      url: shareUrl,
+      dialogTitle: 'Share Workfolio & Resume',
+    });
     Sound.success(soundEnabled);
-    setSharedToast(true);
-    setTimeout(() => setSharedToast(false), 2400);
+    if (!shared || !nativeService.isNativeDevice()) {
+      setSharedToast(true);
+      setTimeout(() => setSharedToast(false), 2400);
+    }
   };
 
   const [printStatus, setPrintStatus] = useState<string | null>(null);
