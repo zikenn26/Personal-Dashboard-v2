@@ -302,6 +302,14 @@ describe('1. Expense Commands Routing (20+ tests)', () => {
     expect(res.intent).toBe('EXPENSE_DELETE');
     expect(res.actions[0].targetId).toBe('exp-today-3');
   });
+
+  it('E22: "Show me what I spent today" returns EXPENSE_VIEW intent', () => {
+    const res = analyzeCommandIntent('Show me what I spent today');
+    expect(res.intent).toBe('EXPENSE_VIEW');
+    expect(res.scope).toBe('today');
+    expect(res.requiresConfirmation).toBe(false);
+    expect(res.actions[0].type).toBe('navigate_view');
+  });
 });
 
 describe('2. Habit Commands Routing (16 tests)', () => {

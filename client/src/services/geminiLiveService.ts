@@ -1,5 +1,6 @@
 import { executeSecretaryTool } from './groqService';
 import { Storage } from '../utils/storage';
+import { isRogueTaskCreation } from './commandIntentEngine';
 
 export type LiveVoiceStatus = 'idle' | 'connecting' | 'listening' | 'speaking' | 'error';
 
@@ -300,6 +301,13 @@ export class GeminiLiveVoiceSession {
         toolName = 'toggle_habit';
       }
       if (toolName === 'navigateView') toolName = 'navigate_view';
+
+      if (toolName === 'createTask' || toolName === 'add_task') {
+        if (isRogueTaskCreation(toolName, args)) {
+          console.warn('[Gemini Live Tool] Blocked rogue task creation:', args);
+          return;
+        }
+      }
 
       const res = await executeSecretaryTool(toolName, args);
       if (res.actionChip) {

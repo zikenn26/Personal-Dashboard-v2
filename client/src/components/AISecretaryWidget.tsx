@@ -139,6 +139,8 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
 
   const [inputPrompt, setInputPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [executingOptionId, setExecutingOptionId] = useState<string | null>(null);
+  const [disabledOptionMessageIds, setDisabledOptionMessageIds] = useState<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -379,8 +381,13 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
     }
   };
 
-  const handleOptionClick = async (option: InteractiveOption) => {
+  const handleOptionClick = async (option: InteractiveOption, parentMsgId?: string) => {
+    if (isLoading || executingOptionId) return;
+    setExecutingOptionId(option.id);
     setIsLoading(true);
+    if (parentMsgId) {
+      setDisabledOptionMessageIds((prev) => new Set(prev).add(parentMsgId));
+    }
     try {
       const res = await executeInteractiveOption(option);
       const assistantMessage: ChatMessage = {
@@ -402,6 +409,7 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
+      setExecutingOptionId(null);
     }
   };
 
@@ -854,24 +862,30 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
                 {/* Interactive Selection Options (Pills) */}
                 {(msg as any).options && (msg as any).options.length > 0 && (
                   <div className="mt-2.5 pt-2 border-t border-gray-100 dark:border-gray-800/80 flex flex-wrap gap-1.5">
-                    {(msg as any).options.map((opt: InteractiveOption) => (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        onClick={() => handleOptionClick(opt)}
-                        disabled={isLoading}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border transition-all cursor-pointer ${
-                          opt.isDestructive
-                            ? 'bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800/60'
-                            : opt.id === 'opt-cancel'
-                            ? 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700'
-                            : 'bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800/60'
-                        }`}
-                      >
-                        {opt.isDestructive && <Trash2 className="w-3 h-3 text-rose-500" />}
-                        <span>{opt.label}</span>
-                      </button>
-                    ))}
+                    {disabledOptionMessageIds.has(msg.id) ? (
+                      <span className="text-[11px] italic text-gray-400 dark:text-gray-500 py-0.5">
+                        Selection processed
+                      </span>
+                    ) : (
+                      (msg as any).options.map((opt: InteractiveOption) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => handleOptionClick(opt, msg.id)}
+                          disabled={isLoading || executingOptionId !== null}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                            opt.variant === 'danger' || opt.isDestructive
+                              ? 'bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800/60'
+                              : opt.variant === 'cancel' || opt.id.startsWith('cancel') || opt.id === 'opt-cancel'
+                              ? 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700'
+                              : 'bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800/60'
+                          }`}
+                        >
+                          {(opt.variant === 'danger' || opt.isDestructive) && <Trash2 className="w-3 h-3 text-rose-500" />}
+                          <span>{opt.label}</span>
+                        </button>
+                      ))
+                    )}
                   </div>
                 )}
 

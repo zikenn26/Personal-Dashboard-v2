@@ -420,7 +420,8 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
     const keyword = cleaned
       .replace(/\b(delete|remove|clear|erase|cancel|wipe|drop|discard)\s+/i, '')
       .replace(/\b(the|my|an|a|all|recent|last|latest)\s+/i, '')
-      .replace(/\b(spending|spendings|expense|expenses|transaction|cost|bill|payment|money|paid)\s+(?:for|of|called|titled|on)?\s*/i, '')
+      .replace(/\b(spending|spendings|expense|expenses|transaction|cost|bill|payment|money|paid)\s+(?:for|of|called|titled|on)?\s*/gi, '')
+      .replace(/\s+\b(spending|spendings|expense|expenses|transaction|cost|bill|payment|money|paid)\b/gi, '')
       .replace(/[\s"“”'‘’`«»„.?!,;:\-_(){}\[\]]+$/, '')
       .trim();
 
@@ -520,7 +521,7 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
   if (hasHabitCompletionVerb && hasHabitNoun) {
     const allHabits = Storage.getHabits();
     const todayIdx = getTodayDayIndex();
-    const isBoth = /\b(both|2)\b/i.test(cleaned);
+    const isBoth = /\bboth\b/i.test(cleaned) || /\b(?:2|two)\s+habits?\b/i.test(cleaned);
     const isAll = /\b(all|every|each)\b/i.test(cleaned);
 
     if (allHabits.length === 0) {
@@ -587,11 +588,12 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
       };
     }
 
-    // 3. Specific habit by name: "Check habit meditation as done", "Mark reading as done"
+    // 3. Specific habit by name: "Check habit meditation as done", "Mark reading as done", "Complete my Reading habit", "Check off Drink 2L Water habit"
     const habitName = cleaned
-      .replace(/\b(check|mark|complete|finish|done|toggle)\s+/i, '')
+      .replace(/\b(check\s+off|mark\s+as\s+done|check|mark|complete|finish|done|toggle)\s+/i, '')
       .replace(/\b(the|my|a|an)\s+/i, '')
       .replace(/\b(habit|routine)\s+(?:called|titled|:\s*)?/i, '')
+      .replace(/\s+\b(habit|routine)\b/i, '')
       .replace(/\b(?:as\s+)?(?:done|complete|completed|finished)\b/i, '')
       .trim();
 
@@ -647,12 +649,12 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
   // --------------------------------------------------------------------------
   // D. TASKS / TODOS: INTENT RESOLUTION
   // --------------------------------------------------------------------------
-  // 1. Task Deletion: "Delete task buy milk", "Clear all tasks", "Remove completed tasks"
+  // 1. Task Deletion: "Delete task buy milk", "Clear all tasks", "Remove completed tasks", "Clear completed tasks"
   const hasTaskNoun = /\b(task|tasks|todo|todos|to-do|to-dos|errand|errands)\b/i.test(cleaned);
   if (hasDeleteVerb && hasTaskNoun) {
     const allTodos = Storage.getTodos();
-    const isAll = /\b(all|everything|every)\b/i.test(cleaned);
     const isCompletedOnly = /\b(completed|done|finished)\b/i.test(cleaned);
+    const isAll = /\b(all|everything|every)\b/i.test(cleaned) || (/\b(clear|purge)\b/i.test(cleaned) && isCompletedOnly);
 
     if (allTodos.length === 0) {
       return {
@@ -764,19 +766,29 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
     }
   }
 
-  // 2. Task Completion: "Complete task report", "Mark task gym as done", "Finish groceries"
+  // 2. Task Completion: "Complete task report", "Mark task gym as done", "Finish study polity task", "Finish groceries"
   const hasTaskCompletionVerb = /\b(complete|finish|done|check\s+off|mark\s+(?:as\s+)?done)\b/i.test(cleaned);
   if (hasTaskCompletionVerb && (hasTaskNoun || !hasHabitNoun)) {
     const allTodos = Storage.getTodos();
-    const query = cleaned
+    let query = cleaned
       .replace(/\b(complete|finish|done|check\s+off|mark\s+(?:as\s+)?done)\s+/i, '')
       .replace(/\b(the|my|a|an)\s+/i, '')
       .replace(/\b(task|todo|to-do)\s+(?:called|titled|:\s*)?/i, '')
+      .replace(/\s+(?:as\s+)?(?:done|complete|completed|finished)\b/i, '')
+      .replace(/\s+\b(task|todo|to-do)\b/i, '')
       .trim();
 
-    if (query) {
+    // Guard against ambiguous pronouns like "it", "that", "this" matching tasks
+    if (query && !/^(it|that|this|them|all|something)$/i.test(query)) {
       const pendingTasks = allTodos.filter((t) => !t.completed);
-      const matched = pendingTasks.filter((t) => t.title.toLowerCase().includes(query));
+      const queryLower = query.toLowerCase();
+      // Match by word boundary or exact inclusion of non-trivial token
+      const matched = pendingTasks.filter((t) => {
+        const titleLower = t.title.toLowerCase();
+        if (titleLower.includes(queryLower)) return true;
+        const words = queryLower.split(/\s+/).filter((w) => w.length > 2);
+        return words.length > 0 && words.some((w) => new RegExp(`\\b${w}\\b`, 'i').test(titleLower));
+      });
       if (matched.length > 0) {
         const t = matched[0];
         const actions: ExecutableAction[] = [
@@ -802,9 +814,10 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
     }
   }
 
-  // 3. Task Creation: "Add task buy milk", "Remind me to call mom", "New task: study"
+  // 3. Task Creation: "Add task buy milk", "Remind me to call mom", "New task: study", "Put studying polity on my task list"
   const isTaskCreation =
-    /^(?:add|create|make|schedule|put|insert)\s+(?:a\s+)?(?:new\s+)?(?:task|todo|to-do|item)\b/i.test(cleaned) ||
+    /^(?:add|create|make|schedule|put|insert)\s+(?:a\s+)?(?:new\s+)?(?:(?:urgent|high\s+priority|low\s+priority)\s+)?(?:task|todo|to-do|item)\b/i.test(cleaned) ||
+    /^(?:put|add|insert)\s+.+?\s+(?:on|in|into|to)\s+(?:my\s+)?(?:task\s+list|tasks?|todos?|to-dos?)$/i.test(cleaned) ||
     /^(?:remind me to|remember to|don't forget to|dont forget to)\s+/i.test(cleaned) ||
     /^(?:new\s+task|task\s*:)\s*/i.test(cleaned) ||
     /^(?:add|create)\s+.+?\s+(?:to\s+|in\s+|into\s+)(?:my\s+)?(?:tasks?|todos?|task\s+list)$/i.test(cleaned);
@@ -816,11 +829,15 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
 
   if (isTaskCreation && !containsDestructivePhrase && !containsHabitAction && !containsExpenseAction) {
     let title = cleaned
-      .replace(/^(?:add|create|make|schedule|put|insert)\s+(?:a\s+)?(?:new\s+)?(?:task|todo|to-do|item)\s*(?:called|titled|to|for|:\s*)?/i, '')
+      .replace(/^(?:add|create|make|schedule|put|insert)\s+(?:a\s+)?(?:new\s+)?(?:(?:urgent|high\s+priority|low\s+priority)\s+)?(?:task|todo|to-do|item)\s*(?:called|titled|to|for|:\s*)?/i, '')
+      .replace(/^(?:put|add|insert)\s+/i, '')
       .replace(/^(?:remind me to|remember to|don't forget to|dont forget to)\s*/i, '')
       .replace(/^(?:new\s+task|task\s*:)\s*/i, '')
-      .replace(/\s+(?:to\s+|in\s+|into\s+)(?:my\s+)?(?:tasks?|todos?|task\s+list)$/i, '')
+      .replace(/\s+(?:on|in|into|to)\s+(?:my\s+)?(?:task\s+list|tasks?|todos?|to-dos?)$/i, '')
       .trim();
+
+    // Strip leading colon or punctuation if present (e.g. from "New task: Buy groceries")
+    title = title.replace(/^[:\s-]+/, '').trim();
 
     if (!title) title = 'New Task';
     title = title.charAt(0).toUpperCase() + title.slice(1);
@@ -897,8 +914,55 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
   }
 
   // --------------------------------------------------------------------------
-  // F. NAVIGATION INTENTS: "Go to expenses", "Open tasks", "Show habits"
+  // F. NAVIGATION & VIEW / READ INTENTS
+  // "Show me what I spent today", "Show today's expenses", "Go to expenses", "Open tasks"
   // --------------------------------------------------------------------------
+  if (
+    /^(?:show|tell|display|view|list|what\s+did\s+i\s+spend|how\s+much\s+did\s+i\s+spend)\b/i.test(cleaned) &&
+    hasExpenseNoun
+  ) {
+    const isToday = /\b(today|today's)\b/i.test(cleaned);
+    const isYesterday = /\b(yesterday|yesterday's)\b/i.test(cleaned);
+    const allExpenses = Storage.getExpenses();
+    const todayStr = getTodayDateString();
+
+    let targetExpenses = allExpenses;
+    let periodLabel = 'total';
+    if (isToday) {
+      targetExpenses = allExpenses.filter((e) => !e.date || e.date === todayStr);
+      periodLabel = 'today';
+    } else if (isYesterday) {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yestStr = yesterday.toISOString().split('T')[0];
+      targetExpenses = allExpenses.filter((e) => e.date === yestStr);
+      periodLabel = 'yesterday';
+    }
+
+    const totalSpent = targetExpenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const explanation =
+      targetExpenses.length === 0
+        ? `You have no recorded expenses for ${periodLabel}.`
+        : `You recorded ${targetExpenses.length} expense(s) for ${periodLabel}, totaling ₹${totalSpent.toLocaleString()}.`;
+
+    return {
+      intent: 'EXPENSE_VIEW',
+      entity: 'expense',
+      confidence: 'high',
+      scope: isToday ? 'today' : isYesterday ? 'yesterday' : 'all',
+      actions: [
+        {
+          type: 'navigate_view',
+          params: { view: 'expenses' },
+          description: 'Open expenses workspace',
+        },
+      ],
+      requiresConfirmation: false,
+      matchedEntities: targetExpenses,
+      explanation,
+    };
+  }
+
   const navMatch = cleaned.match(
     /^(?:go\s+to|open|show|switch\s+to|navigate\s+to)\s+(?:the\s+)?(todos?|tasks?|expenses?|budget|spendings?|habits?|journal|diary|notes?|analytics|stats|schedule|timeline|vault|settings|home|dashboard|quotes?|doodle|exams?)$/i
   );
