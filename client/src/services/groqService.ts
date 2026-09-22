@@ -16,6 +16,9 @@ import {
   isRogueTaskCreation,
   setPendingCommandDecision,
   clearPendingCommandDecision,
+  isAtomicPendingLocked,
+  getPendingCommandDecision,
+  lockPendingExpenseDeletion,
   InteractiveOption,
 } from './commandIntentEngine';
 
@@ -1591,6 +1594,20 @@ export async function executeSecretaryTool(
       }
 
       case 'delete_expense': {
+        // Atomic pending state guard: If a pending deletion transaction is locked awaiting confirmation,
+        // block any new unconfirmed deletion calls until the active one is approved or canceled.
+        if (isAtomicPendingLocked() && !args.confirmed && !args.approvePending) {
+          const lockedPending = getPendingCommandDecision();
+          return {
+            data: {
+              success: false,
+              isBlocked: true,
+              message: `Action blocked: A deletion transaction (${lockedPending?.scope || 'batch'}) is currently locked in an atomic pending state. Please approve or cancel that transaction before requesting new deletions.`,
+            },
+            actionChip: '⚠️ Blocked: Pending Transaction Locked',
+          };
+        }
+
         const current = Storage.getExpenses();
         if (current.length === 0) {
           return {
@@ -1863,9 +1880,31 @@ export async function executeSecretaryTool(
           };
         }
 
+        // Multi-record deletion locking: if more than 1 record is matched and confirmation was not explicitly passed
+        if (toDelete.length > 1 && !args.confirmed && !args.skipConfirm) {
+          const txId = `tx-del-${Date.now()}`;
+          lockPendingExpenseDeletion(txId, toDelete, 'multiple');
+          return {
+            data: {
+              success: false,
+              status: 'AWAITING_CONFIRMATION',
+              isLocked: true,
+              requiresConfirmation: true,
+              transactionId: txId,
+              toDelete,
+              totalAmount: toDelete.reduce((s, e) => s + Number(e.amount || 0), 0),
+              message: `You are about to delete ${toDelete.length} expense records totaling ₹${toDelete
+                .reduce((s, e) => s + Number(e.amount || 0), 0)
+                .toLocaleString()}. This transaction is locked in an atomic pending state. Reply "Yes" to approve or "No" to cancel.`,
+            },
+            actionChip: `⚠️ Confirm Deleting ${toDelete.length} Expenses`,
+          };
+        }
+
         const deleteIds = new Set(toDelete.map((e) => e.id));
         const updated = current.filter((e) => !deleteIds.has(e.id));
         Storage.setExpenses(updated);
+        clearPendingCommandDecision();
 
         // Also clean up any orphaned spreadsheet import logs if all records were cleared
         if (updated.length === 0) {

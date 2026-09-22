@@ -46,6 +46,7 @@ export type CommandIntent =
   // Confirmation & Clarification
   | 'CONFIRM_PENDING'
   | 'CANCEL_PENDING'
+  | 'BLOCKED_BY_PENDING'
   | 'AMBIGUOUS_INTENT'
   | 'NEEDS_CLARIFICATION'
   | 'UNKNOWN_INTENT';
@@ -108,6 +109,8 @@ export interface CommandDecision {
   matchedEntities?: any[];
   explanation?: string;
   isDestructive?: boolean;
+  isAtomicLocked?: boolean;
+  transactionId?: string;
 }
 
 export interface ExecutionResult {
@@ -144,6 +147,68 @@ export function getPendingCommandDecision(): CommandDecision | null {
 export function clearPendingCommandDecision(): void {
   currentPendingDecision = null;
   pendingTimestamp = 0;
+}
+
+export function isAtomicPendingLocked(): boolean {
+  const pending = getPendingCommandDecision();
+  if (!pending) return false;
+  return pending.isAtomicLocked === true;
+}
+
+export function setAtomicPendingLock(locked: boolean): void {
+  const pending = getPendingCommandDecision();
+  if (pending) {
+    pending.isAtomicLocked = locked;
+  }
+}
+
+export function lockPendingExpenseDeletion(
+  transactionId: string,
+  items: any[],
+  scope: TargetScope = 'multiple'
+): CommandDecision {
+  const actions: ExecutableAction[] = items.map((item) => ({
+    type: 'delete_expense',
+    targetId: item.id,
+    params: { id: item.id, name: item.name, amount: item.amount },
+    description: `Delete expense "${item.name}" (₹${item.amount})`,
+    isDestructive: true,
+  }));
+
+  const decision: CommandDecision = {
+    intent: 'EXPENSE_DELETE',
+    entity: 'expense',
+    confidence: 'high',
+    scope,
+    actions,
+    requiresConfirmation: true,
+    isDestructive: true,
+    isAtomicLocked: true,
+    transactionId,
+    matchedEntities: items,
+    confirmationPrompt: `Are you sure you want to delete ${items.length} expense record(s)? This transaction is locked in an atomic pending state.`,
+    options: [
+      {
+        id: `confirm-del-${transactionId}`,
+        label: `✓ Approve Deletion (${items.length})`,
+        variant: 'danger',
+        isDestructive: true,
+        actions,
+      },
+      {
+        id: `cancel-del-${transactionId}`,
+        label: '✕ Cancel',
+        variant: 'cancel',
+        actions: [],
+      },
+    ],
+  };
+  setPendingCommandDecision(decision);
+  return decision;
+}
+
+export function unlockPendingExpenseDeletion(): void {
+  clearPendingCommandDecision();
 }
 
 // ============================================================================
@@ -191,16 +256,41 @@ export function matchesDate(itemDate?: string, target?: string): boolean {
 // ============================================================================
 
 export function analyzeCommandIntent(rawInput: string): CommandDecision {
+  const decision = internalAnalyzeCommandIntent(rawInput);
+  return {
+    ...decision,
+    isDestructive: Boolean(decision.isDestructive),
+  };
+}
+
+function internalAnalyzeCommandIntent(rawInput: string): CommandDecision {
   const text = (rawInput || '').trim();
   const lower = text.toLowerCase();
 
   // Strip conversational wrappers
-  const cleaned = lower
+  let cleaned = lower
+    .replace(/[\p{Extended_Pictographic}\uFE0E\uFE0F\u200D]/gu, ' ')
     .replace(/^[\s"“”'‘’`«»„.?!,;:\-_(){}\[\]]+/, '')
     .replace(/[\s"“”'‘’`«»„.?!,;:\-_(){}\[\]]+$/, '')
-    .replace(/^(?:hey\s+)?(?:zikenn|gemini|assistant|there)?\s*/i, '')
-    .replace(/^(?:please\s+|can\s+you\s+|could\s+you\s+|kindly\s+|i\s+want\s+to\s+|i\s+need\s+to\s+|let's\s+|just\s+)+/i, '')
+    .replace(/^(?:hey\s+)?(?:zikenn|gemini|assistant|there)\b[\s,;:]*/i, '')
+    .replace(/^(?:please\s+|can\s+you\s+|could\s+you\s+|kindly\s+|i\s+want\s+to\s+|i\s+need\s+to\s+|let's\s+|just\s+)+[\s,;:]*/i, '')
+    .replace(/^[\s"“”'‘’`«»„.?!,;:\-_(){}\[\]]+/, '')
+    .replace(/[\s"“”'‘’`«»„.?!,;:\-_(){}\[\]]+$/, '')
     .trim();
+
+  // Strip residual outer quotes only (preserving apostrophes inside words like today's)
+  cleaned = cleaned.replace(/^["'`«»„]+|["'`«»„]+$/g, '').trim();
+
+  if (!cleaned) {
+    return {
+      intent: 'UNKNOWN_INTENT',
+      entity: 'unknown',
+      confidence: 'low',
+      scope: 'unknown',
+      actions: [],
+      requiresConfirmation: false,
+    };
+  }
 
   // --------------------------------------------------------------------------
   // A. Check for Confirmation of Pending Action (e.g. "yes", "confirm", "delete them")
@@ -208,11 +298,12 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
   const pending = getPendingCommandDecision();
   if (pending) {
     const isAffirmative =
-      /^(?:yes|yep|yeah|sure|confirm|do\s+it|proceed|go\s+ahead|delete\s+(?:them|all|it)|ok|okay|continue)\b/i.test(cleaned);
+      /^(?:yes|yep|yeah|sure|confirm|do\s+it|proceed|go\s+ahead|delete\s+(?:them|all|it)|ok|okay|continue|approve)\b/i.test(cleaned);
     const isNegative =
-      /^(?:no|nope|cancel|stop|don't|dont|abort|nevermind|never\s+mind)\b/i.test(cleaned);
+      /^(?:no|nope|cancel|stop|don't|dont|abort|nevermind|never\s+mind|reject)\b/i.test(cleaned);
 
     if (isAffirmative) {
+      clearPendingCommandDecision();
       return {
         intent: 'CONFIRM_PENDING',
         entity: 'pending',
@@ -237,6 +328,26 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
         explanation: 'Pending action cancelled by user.',
       };
     }
+
+    // ATOMIC PENDING STATE LOCK:
+    // If an atomic pending transaction (e.g. multi-record or destructive deletion) is awaiting confirmation,
+    // lock the state and BLOCK any other incoming intent until the specific transaction is resolved!
+    if (isAtomicPendingLocked()) {
+      return {
+        intent: 'BLOCKED_BY_PENDING',
+        entity: 'pending',
+        confidence: 'high',
+        scope: pending.scope,
+        actions: [],
+        requiresConfirmation: false,
+        isDestructive: false,
+        explanation: `A pending transaction (${pending.actions.length} action(s)) is locked in an atomic pending state. Please approve ("Yes") or cancel ("No") this specific transaction before running other commands.`,
+        options: pending.options || [
+          { id: 'confirm-pending', label: '✓ Approve Pending Action', variant: 'danger', actions: pending.actions },
+          { id: 'cancel-pending', label: '✕ Cancel', variant: 'cancel', actions: [] },
+        ],
+      };
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -245,10 +356,22 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
   // Combined with: spending, spendings, expense, expenses, money, transaction, cost, paid
   // --------------------------------------------------------------------------
   const hasDeleteVerb = /\b(delete|remove|clear|erase|cancel|wipe|drop|discard|purge|trash)\b/i.test(cleaned);
-  const hasExpenseNoun = /\b(spending|spendings|expense|expenses|transaction|transactions|cost|costs|money|spent|paid|purchase|purchases|bill|bills)\b/i.test(cleaned);
+  const allExpenses = Storage.getExpenses();
+  const cleanedWithoutDeleteVerb = cleaned
+    .replace(/\b(delete|remove|clear|erase|cancel|wipe|drop|discard|purge|trash)\b/i, '')
+    .trim();
+  const matchesExistingExpense =
+    hasDeleteVerb &&
+    cleanedWithoutDeleteVerb.length >= 3 &&
+    allExpenses.some((e) => {
+      const n = (e.name || '').trim().toLowerCase();
+      return n.length >= 3 && (cleaned.includes(n) || n.includes(cleanedWithoutDeleteVerb));
+    });
+  const hasExpenseNoun =
+    matchesExistingExpense ||
+    /\b(spending|spendings|expense|expenses|transaction|transactions|cost|costs|money|spent|spend|paid|purchase|purchases|bill|bills|food|grocery|groceries)\b/i.test(cleaned);
 
-  if (hasDeleteVerb && hasExpenseNoun) {
-    const allExpenses = Storage.getExpenses();
+  if (hasDeleteVerb && hasExpenseNoun && !/\b(task|tasks|todo|todos|to-do|to-dos)\b/i.test(cleaned)) {
     const isToday = /\b(today|today's|tonight)\b/i.test(cleaned);
     const isYesterday = /\b(yesterday|yesterday's)\b/i.test(cleaned);
     const isAll = /\b(all|everything|entire|every)\b/i.test(cleaned) || isToday || isYesterday;
@@ -417,20 +540,82 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
     }
 
     // 5. Specific merchant / keyword matching (e.g. "Delete my Amazon expense", "Remove lunch expense")
-    const keyword = cleaned
+    const rawKeyword = cleaned
       .replace(/\b(delete|remove|clear|erase|cancel|wipe|drop|discard)\s+/i, '')
       .replace(/\b(the|my|an|a|all|recent|last|latest)\s+/i, '')
       .replace(/\b(spending|spendings|expense|expenses|transaction|cost|bill|payment|money|paid)\s+(?:for|of|called|titled|on)?\s*/gi, '')
       .replace(/\s+\b(spending|spendings|expense|expenses|transaction|cost|bill|payment|money|paid)\b/gi, '')
       .replace(/[\s"“”'‘’`«»„.?!,;:\-_(){}\[\]]+$/, '')
       .trim();
+    const keyword = rawKeyword.replace(/["“”'‘’`«»„]/g, '').trim();
+
+    // Multi-record matching: e.g. "Delete Coffee, Swiggy Dinner, and Uber Ride", "Delete Coffee and Swiggy Dinner", "Delete expenses of 150 and 450"
+    if (cleaned.includes(',') || /\b(and|&|both)\b/i.test(cleaned)) {
+      const mentionedExpenses = allExpenses.filter((e) => {
+        const n = (e.name || '').trim().toLowerCase();
+        if (n.length >= 3 && cleaned.includes(n)) return true;
+        const amtStr = String(e.amount);
+        if (amtStr && new RegExp(`\\b${amtStr}\\b`).test(cleaned)) return true;
+        return false;
+      });
+
+      if (mentionedExpenses.length > 1) {
+        const totalAmount = mentionedExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+        const actions: ExecutableAction[] = mentionedExpenses.map((item) => ({
+          type: 'delete_expense',
+          targetId: item.id,
+          targetTitle: item.name,
+          params: { id: item.id },
+          description: `Delete expense "${item.name}" (₹${Number(item.amount).toLocaleString()})`,
+          isDestructive: true,
+        }));
+
+        return {
+          intent: 'EXPENSE_DELETE',
+          entity: 'expense',
+          confidence: 'high',
+          scope: 'multiple',
+          actions,
+          requiresConfirmation: true,
+          confirmationPrompt: `Are you sure you want to delete ${mentionedExpenses.length} expenses totaling ₹${totalAmount.toLocaleString()}?`,
+          options: [
+            {
+              id: 'confirm-del-multi-expenses',
+              label: `Delete ${mentionedExpenses.length} Expenses`,
+              variant: 'danger',
+              actions,
+            },
+            { id: 'cancel-del-multi', label: 'Cancel', variant: 'cancel', actions: [] },
+          ],
+          matchedEntities: mentionedExpenses,
+          isDestructive: true,
+        };
+      }
+    }
 
     if (keyword) {
+      const numericAmountMatch = keyword.match(/(?:rs\.?|inr|₹)?\s*([\d,]+(?:\.\d+)?)/i);
+      const targetAmount = numericAmountMatch ? parseFloat(numericAmountMatch[1].replace(/,/g, '')) : null;
+
       const matched = allExpenses.filter(
         (e) =>
           e.name.toLowerCase().includes(keyword) ||
-          (e.category && e.category.toLowerCase().includes(keyword))
+          (e.category && e.category.toLowerCase().includes(keyword)) ||
+          (targetAmount !== null && !isNaN(targetAmount) && Number(e.amount) === targetAmount)
       );
+
+      if (matched.length === 0) {
+        return {
+          intent: 'EXPENSE_DELETE',
+          entity: 'expense',
+          confidence: 'high',
+          scope: 'single',
+          actions: [],
+          requiresConfirmation: false,
+          explanation: `No expense record matching "${keyword}" was found on your dashboard.`,
+          isDestructive: true,
+        };
+      }
 
       if (matched.length === 1) {
         const item = matched[0];
@@ -458,6 +643,15 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
 
       if (matched.length > 1) {
         // Disambiguation UI: multiple matches found! Present selectable options!
+        const defaultActions: ExecutableAction[] = matched.map((m) => ({
+          type: 'delete_expense',
+          targetId: m.id,
+          targetTitle: m.name,
+          params: { id: m.id },
+          description: `Delete expense "${m.name}" (₹${Number(m.amount).toLocaleString()})`,
+          isDestructive: true,
+        }));
+
         const options: InteractiveOption[] = matched.slice(0, 4).map((m) => ({
           id: `del-exp-${m.id}`,
           label: `₹${Number(m.amount).toLocaleString()} · ${m.name} (${m.date || 'Recent'})`,
@@ -499,7 +693,7 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
           entity: 'expense',
           confidence: 'medium',
           scope: 'multiple',
-          actions: [],
+          actions: defaultActions,
           requiresConfirmation: true,
           clarificationPrompt: `I found ${matched.length} expenses matching "${keyword}". Which one would you like to delete?`,
           options,
@@ -511,22 +705,108 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
   }
 
   // --------------------------------------------------------------------------
-  // C. HABITS: COMPLETION / TOGGLE / MULTI-HABIT INTENT
-  // Keywords: check, mark, complete, finish, done, toggle
-  // Combined with: habit, habits, routine, routines, streak
+  // C. HABITS: ROUTING, DELETION, VIEW, TOGGLE, COMPLETION
   // --------------------------------------------------------------------------
-  const hasHabitCompletionVerb = /\b(check|mark|complete|finish|done|toggle)\b/i.test(cleaned);
   const hasHabitNoun = /\b(habit|habits|routine|routines|daily|momentum)\b/i.test(cleaned);
+
+  // 1. Habit Deletion: "Delete habit Gym Workout", "Remove habit Reading"
+  if (hasDeleteVerb && hasHabitNoun) {
+    const allHabits = Storage.getHabits();
+    const habitName = cleaned
+      .replace(/\b(delete|remove|clear|erase|drop|discard)\s+/i, '')
+      .replace(/\b(the|my|a|an)\s+/i, '')
+      .replace(/\b(habit|routine)\s+(?:called|titled|:\s*)?/i, '')
+      .replace(/\s+\b(habit|routine)\b/i, '')
+      .trim();
+
+    const matched = allHabits.filter((h) => h.title.toLowerCase().includes(habitName));
+    if (matched.length > 0) {
+      const target = matched[0];
+      return {
+        intent: 'HABIT_DELETE',
+        entity: 'habit',
+        confidence: 'high',
+        scope: 'single',
+        actions: [
+          {
+            type: 'delete_habit',
+            targetId: target.id,
+            targetTitle: target.title,
+            params: { id: target.id },
+            description: `Delete habit "${target.title}"`,
+            isDestructive: true,
+          },
+        ],
+        requiresConfirmation: false,
+        matchedEntities: [target],
+        isDestructive: true,
+      };
+    }
+  }
+
+  // 2. Habit View: "Show my habits", "Go to habit tracker", "Did I do my habits today?"
+  if (
+    hasHabitNoun &&
+    (/\b(show|view|display|list|status|tracker|did\s+i|how\s+are)\b/i.test(cleaned) ||
+      /^(?:go\s+to|open)\s+(?:the\s+)?habits?/i.test(cleaned))
+  ) {
+    return {
+      intent: 'HABIT_VIEW',
+      entity: 'habit',
+      confidence: 'high',
+      scope: 'all',
+      actions: [
+        {
+          type: 'navigate_view',
+          params: { view: 'habits' },
+          description: 'Open habits view',
+        },
+      ],
+      requiresConfirmation: false,
+      isDestructive: false,
+    };
+  }
+
+  // 3. Habit Creation: "Create habit Meditate daily", "Add habit Drink water"
+  if (/^(?:create|add|new)\s+(?:a\s+)?habit\b/i.test(cleaned)) {
+    const hTitle = cleaned
+      .replace(/^(?:create|add|new)\s+(?:a\s+)?habit\s+(?:called|titled|:\s*)?/i, '')
+      .trim();
+    return {
+      intent: 'HABIT_CREATE',
+      entity: 'habit',
+      confidence: 'high',
+      scope: 'single',
+      actions: [
+        {
+          type: 'add_habit',
+          params: { name: hTitle, title: hTitle },
+          description: `Create habit "${hTitle}"`,
+        },
+      ],
+      requiresConfirmation: false,
+      isDestructive: false,
+    };
+  }
+
+  // 4. Habit Completion / Toggle / Uncomplete
+  const isUncomplete = /\b(uncomplete|uncheck|not\s+done)\b/i.test(cleaned);
+  const isToggle = /\btoggle\b/i.test(cleaned);
+  const hasHabitCompletionVerb =
+    isUncomplete || isToggle || /\b(check|mark|complete|finish|done)\b/i.test(cleaned);
 
   if (hasHabitCompletionVerb && hasHabitNoun) {
     const allHabits = Storage.getHabits();
     const todayIdx = getTodayDayIndex();
     const isBoth = /\bboth\b/i.test(cleaned) || /\b(?:2|two)\s+habits?\b/i.test(cleaned);
-    const isAll = /\b(all|every|each)\b/i.test(cleaned);
+    const isAll =
+      /\b(all|every|each)\b/i.test(cleaned) ||
+      /\b(my\s+habits|today's\s+habits|the\s+habits)\b/i.test(cleaned) ||
+      (/\bhabits\b/i.test(cleaned) && !isBoth);
 
     if (allHabits.length === 0) {
       return {
-        intent: 'HABIT_COMPLETE',
+        intent: isUncomplete ? 'HABIT_UNCOMPLETE' : 'HABIT_COMPLETE',
         entity: 'habit',
         confidence: 'high',
         scope: 'all',
@@ -536,10 +816,7 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
       };
     }
 
-    // 1. "Check both my habits as done" / "Mark both habits done"
     if (isBoth) {
-      // If there are exactly 2 habits, target both cleanly!
-      // If there are >2 habits, target the first 2 uncompleted ones or the first 2 habits
       const targets =
         allHabits.length === 2
           ? allHabits
@@ -550,12 +827,12 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
         type: 'toggle_habit',
         targetId: h.id,
         targetTitle: h.title,
-        params: { id: h.id, dayIndex: todayIdx, forceComplete: true, both: true },
-        description: `Check off habit "${h.title}" for today`,
+        params: { id: h.id, dayIndex: todayIdx, forceComplete: !isUncomplete, both: true },
+        description: `${isUncomplete ? 'Uncheck' : 'Check off'} habit "${h.title}" for today`,
       }));
 
       return {
-        intent: 'HABIT_COMPLETE',
+        intent: isUncomplete ? 'HABIT_UNCOMPLETE' : 'HABIT_COMPLETE',
         entity: 'habit',
         confidence: 'high',
         scope: 'multiple',
@@ -566,18 +843,17 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
       };
     }
 
-    // 2. "Check all my habits as done" / "Complete all habits"
     if (isAll) {
       const actions: ExecutableAction[] = allHabits.map((h) => ({
         type: 'toggle_habit',
         targetId: h.id,
         targetTitle: h.title,
-        params: { id: h.id, dayIndex: todayIdx, forceComplete: true },
-        description: `Check off habit "${h.title}" for today`,
+        params: { id: h.id, dayIndex: todayIdx, forceComplete: !isUncomplete },
+        description: `${isUncomplete ? 'Uncheck' : 'Check off'} habit "${h.title}" for today`,
       }));
 
       return {
-        intent: 'HABIT_COMPLETE',
+        intent: isUncomplete ? 'HABIT_UNCOMPLETE' : 'HABIT_COMPLETE',
         entity: 'habit',
         confidence: 'high',
         scope: 'all',
@@ -588,13 +864,12 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
       };
     }
 
-    // 3. Specific habit by name: "Check habit meditation as done", "Mark reading as done", "Complete my Reading habit", "Check off Drink 2L Water habit"
     const habitName = cleaned
-      .replace(/\b(check\s+off|mark\s+as\s+done|check|mark|complete|finish|done|toggle)\s+/i, '')
+      .replace(/\b(check\s+off|mark\s+as\s+done|mark\s+as\s+not\s+done|check|mark|complete|finish|done|toggle|uncomplete|uncheck)\s+/i, '')
       .replace(/\b(the|my|a|an)\s+/i, '')
       .replace(/\b(habit|routine)\s+(?:called|titled|:\s*)?/i, '')
       .replace(/\s+\b(habit|routine)\b/i, '')
-      .replace(/\b(?:as\s+)?(?:done|complete|completed|finished)\b/i, '')
+      .replace(/\b(?:as\s+)?(?:done|complete|completed|finished|not\s+done)\b/i, '')
       .trim();
 
     if (habitName) {
@@ -606,36 +881,45 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
             type: 'toggle_habit',
             targetId: target.id,
             targetTitle: target.title,
-            params: { id: target.id, dayIndex: todayIdx, forceComplete: true },
-            description: `Check off habit "${target.title}" for today`,
+            params: { id: target.id, dayIndex: todayIdx, forceComplete: !isUncomplete },
+            description: `${isUncomplete ? 'Uncheck' : 'Check off'} habit "${target.title}" for today`,
           },
         ];
         return {
-          intent: 'HABIT_COMPLETE',
+          intent: isUncomplete ? 'HABIT_UNCOMPLETE' : 'HABIT_COMPLETE',
           entity: 'habit',
           confidence: 'high',
           scope: 'single',
           actions,
           requiresConfirmation: false,
           matchedEntities: [target],
-          explanation: `Marking habit "${target.title}" as completed for today.`,
+          explanation: `${isUncomplete ? 'Unchecking' : 'Marking'} habit "${target.title}" for today.`,
+        };
+      } else {
+        return {
+          intent: isUncomplete ? 'HABIT_UNCOMPLETE' : 'HABIT_COMPLETE',
+          entity: 'habit',
+          confidence: 'low',
+          scope: 'single',
+          actions: [],
+          requiresConfirmation: false,
+          explanation: `Could not find habit "${habitName}".`,
         };
       }
     }
 
-    // Fallback: If user just said "Check my habits done" without specific names
     const uncompleted = allHabits.filter((h) => !h.completedDays?.[todayIdx]);
     const targetHabits = uncompleted.length > 0 ? uncompleted : allHabits;
     const actions: ExecutableAction[] = targetHabits.map((h) => ({
       type: 'toggle_habit',
       targetId: h.id,
       targetTitle: h.title,
-      params: { id: h.id, dayIndex: todayIdx, forceComplete: true },
-      description: `Check off habit "${h.title}" for today`,
+      params: { id: h.id, dayIndex: todayIdx, forceComplete: !isUncomplete },
+      description: `${isUncomplete ? 'Uncheck' : 'Check off'} habit "${h.title}" for today`,
     }));
 
     return {
-      intent: 'HABIT_COMPLETE',
+      intent: isUncomplete ? 'HABIT_UNCOMPLETE' : isToggle ? 'HABIT_TOGGLE' : 'HABIT_COMPLETE',
       entity: 'habit',
       confidence: 'high',
       scope: 'all',
@@ -814,24 +1098,26 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
     }
   }
 
-  // 3. Task Creation: "Add task buy milk", "Remind me to call mom", "New task: study", "Put studying polity on my task list"
+  // 3. Task Creation: "Add task buy milk", "Remind me to call mom", "New task: study", "Put studying polity on my task list", "Need to pay electricity bill"
   const isTaskCreation =
-    /^(?:add|create|make|schedule|put|insert)\s+(?:a\s+)?(?:new\s+)?(?:(?:urgent|high\s+priority|low\s+priority)\s+)?(?:task|todo|to-do|item)\b/i.test(cleaned) ||
+    /^(?:add|create|make|schedule|put|insert)\s+(?:a\s+)?(?:new\s+)?(?:(?:urgent|critical|high\s+priority|important|low\s+priority|minor|someday)\s+)?(?:task|todo|to-do|item)\b/i.test(cleaned) ||
     /^(?:put|add|insert)\s+.+?\s+(?:on|in|into|to)\s+(?:my\s+)?(?:task\s+list|tasks?|todos?|to-dos?)$/i.test(cleaned) ||
-    /^(?:remind me to|remember to|don't forget to|dont forget to)\s+/i.test(cleaned) ||
+    /^(?:remind me to|remember to|don't forget to|dont forget to|need to|have to|got to|must)\s+/i.test(cleaned) ||
     /^(?:new\s+task|task\s*:)\s*/i.test(cleaned) ||
     /^(?:add|create)\s+.+?\s+(?:to\s+|in\s+|into\s+)(?:my\s+)?(?:tasks?|todos?|task\s+list)$/i.test(cleaned);
 
   // CRITICAL SAFEGUARD: Never treat deletion, habit completion, or expense logging as task creation!
   const containsDestructivePhrase = hasDeleteVerb;
   const containsHabitAction = hasHabitNoun && hasHabitCompletionVerb;
-  const containsExpenseAction = hasExpenseNoun;
+  const containsExpenseCreation =
+    /\b(spent|spend|paid|bought)\b/i.test(cleaned) &&
+    /(?:rs\.?|inr|₹|\$|€|£)?\s*[\d,]+(?:\.\d+)?/i.test(cleaned);
 
-  if (isTaskCreation && !containsDestructivePhrase && !containsHabitAction && !containsExpenseAction) {
+  if (isTaskCreation && !containsDestructivePhrase && !containsHabitAction && !containsExpenseCreation) {
     let title = cleaned
-      .replace(/^(?:add|create|make|schedule|put|insert)\s+(?:a\s+)?(?:new\s+)?(?:(?:urgent|high\s+priority|low\s+priority)\s+)?(?:task|todo|to-do|item)\s*(?:called|titled|to|for|:\s*)?/i, '')
+      .replace(/^(?:add|create|make|schedule|put|insert)\s+(?:a\s+)?(?:new\s+)?(?:(?:urgent|critical|high\s+priority|important|low\s+priority|minor|someday)\s+)?(?:task|todo|to-do|item)\s*(?:called|titled|to|for|:\s*)?/i, '')
       .replace(/^(?:put|add|insert)\s+/i, '')
-      .replace(/^(?:remind me to|remember to|don't forget to|dont forget to)\s*/i, '')
+      .replace(/^(?:remind me to|remember to|don't forget to|dont forget to|need to|have to|got to|must)\s*/i, '')
       .replace(/^(?:new\s+task|task\s*:)\s*/i, '')
       .replace(/\s+(?:on|in|into|to)\s+(?:my\s+)?(?:task\s+list|tasks?|todos?|to-dos?)$/i, '')
       .trim();
@@ -843,7 +1129,7 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
     title = title.charAt(0).toUpperCase() + title.slice(1);
 
     let priority: Priority = 'medium';
-    if (/\b(urgent|critical|high priority|asap)\b/i.test(cleaned)) priority = 'high';
+    if (/\b(urgent|critical|high priority|important|asap)\b/i.test(cleaned)) priority = 'high';
     else if (/\b(low priority|someday|minor)\b/i.test(cleaned)) priority = 'low';
 
     const actions: ExecutableAction[] = [
@@ -873,15 +1159,15 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
   const isExpenseCreation =
     /^(?:spent|spend|paid)\s+/i.test(cleaned) ||
     /^(?:add|log|record|enter|track)\s+(?:an?\s+)?(?:new\s+)?(?:expense|spending|cost|bill)\b/i.test(cleaned) ||
-    /^(?:add|log|record)\s+(?:rs\.?|inr|₹)?\s*\d+/i.test(cleaned);
+    /^(?:add|log|record)\s+(?:rs\.?|inr|₹)?\s*[\d,]+/i.test(cleaned);
 
   if (isExpenseCreation && !hasDeleteVerb) {
-    const amountMatch = cleaned.match(/(?:rs\.?|inr|₹)?\s*(\d+(?:\.\d+)?)\s*(?:rs|rupees|inr|bucks)?/i);
-    const amount = amountMatch && amountMatch[1] ? parseFloat(amountMatch[1]) : 100;
+    const amountMatch = cleaned.match(/(?:rs\.?|inr|₹)?\s*([\d,]+(?:\.\d+)?)\s*(?:rs|rupees|inr|bucks)?/i);
+    const amount = amountMatch && amountMatch[1] ? parseFloat(amountMatch[1].replace(/,/g, '')) : 100;
 
     let expName = cleaned
-      .replace(/^(?:spent|spend|paid)\s+(?:rs\.?|inr|₹)?\s*\d+(?:\.\d+)?\s*(?:rs|rupees|inr|bucks)?\s*(?:for|on|towards|called)?\s*/i, '')
-      .replace(/^(?:add|log|record|enter|track)\s+(?:an?\s+)?(?:new\s+)?(?:expense|spending|cost)?\s*(?:of\s+)?(?:rs\.?|inr|₹)?\s*\d+(?:\.\d+)?\s*(?:rs|rupees|inr|bucks)?\s*(?:for|on|towards|called)?\s*/i, '')
+      .replace(/^(?:spent|spend|paid)\s+(?:rs\.?|inr|₹)?\s*[\d,]+(?:\.\d+)?\s*(?:rs|rupees|inr|bucks)?\s*(?:for|on|towards|called)?\s*/i, '')
+      .replace(/^(?:add|log|record|enter|track)\s+(?:an?\s+)?(?:new\s+)?(?:expense|spending|cost)?\s*(?:of\s+)?(?:rs\.?|inr|₹)?\s*[\d,]+(?:\.\d+)?\s*(?:rs|rupees|inr|bucks)?\s*(?:for|on|towards|called)?\s*/i, '')
       .trim();
 
     if (!expName) expName = 'Expense';
@@ -963,8 +1249,27 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
     };
   }
 
+  // Task View Routing: "Show my tasks", "Show tasks"
+  if (/^(?:show|tell|display|view|list)\b/i.test(cleaned) && hasTaskNoun) {
+    return {
+      intent: 'TASK_VIEW',
+      entity: 'task',
+      confidence: 'high',
+      scope: 'all',
+      actions: [
+        {
+          type: 'navigate_view',
+          params: { view: 'tasks' },
+          description: 'Open tasks view',
+        },
+      ],
+      requiresConfirmation: false,
+      explanation: 'Opening your tasks workspace.',
+    };
+  }
+
   const navMatch = cleaned.match(
-    /^(?:go\s+to|open|show|switch\s+to|navigate\s+to)\s+(?:the\s+)?(todos?|tasks?|expenses?|budget|spendings?|habits?|journal|diary|notes?|analytics|stats|schedule|timeline|vault|settings|home|dashboard|quotes?|doodle|exams?)$/i
+    /^(?:go\s+to|open|show|switch\s+to|navigate\s+to)\s+(?:the\s+|my\s+)?(todos?|tasks?|expenses?|budget|spendings?|habits?|journal|diary|notes?|analytics|stats|schedule|timeline|vault|settings|home|dashboard|quotes?|doodle|exams?)$/i
   );
   if (navMatch && navMatch[1]) {
     const rawTarget = navMatch[1].toLowerCase();
@@ -977,7 +1282,10 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
     else if (/^(?:vault)$/.test(rawTarget)) view = 'vault';
     else if (/^(?:quotes?)$/.test(rawTarget)) view = 'quotes';
     else if (/^(?:exams?)$/.test(rawTarget)) view = 'exams';
-    else if (/^(?:home|dashboard)$/.test(rawTarget)) view = 'home';
+    else if (/^(?:settings)$/.test(rawTarget)) view = 'settings';
+    else if (/^(?:analytics|stats)$/.test(rawTarget)) view = 'analytics';
+    else if (/^(?:dashboard)$/.test(rawTarget)) view = 'dashboard';
+    else if (/^(?:home)$/.test(rawTarget)) view = 'home';
 
     const actions: ExecutableAction[] = [
       {
@@ -1019,19 +1327,43 @@ export function analyzeCommandIntent(rawInput: string): CommandDecision {
 /**
  * Checks whether an incoming model tool call is a "rogue" task creation:
  * e.g., the model calls `createTask` with a title like "Delete all the spendings I did today"
- * or "Check both my habits as done".
+ * or "Check both my habits as done", or creates tasks from conversational AI chatter.
  */
 export function isRogueTaskCreation(
-  toolName: string,
-  args: any,
+  toolNameOrText: string,
+  args?: any,
   rawUserPrompt?: string
 ): boolean {
+  // If called directly with a title or text (e.g. in test assertions or guards)
+  if (args === undefined && rawUserPrompt === undefined) {
+    const text = String(toolNameOrText || '').trim().toLowerCase();
+    if (/^(?:sure|here is|i have updated|as an ai|certainly|hello|you're welcome|good morning|thank you)\b/i.test(text)) {
+      return true;
+    }
+    if (/^(?:delete|remove|clear|erase|cancel|wipe|drop|discard|purge)\s+/i.test(text)) {
+      return true;
+    }
+    if (/\b(?:habit|habits|streak|routine)\b/i.test(text) && /\b(?:check|mark|done|complete|toggle|finish)\b/i.test(text)) {
+      return true;
+    }
+    if (/\b(?:spending|spendings|expense|expenses|transaction|transactions)\b/i.test(text)) {
+      return true;
+    }
+    return false;
+  }
+
+  const toolName = toolNameOrText;
   if (toolName !== 'createTask' && toolName !== 'add_task') {
     return false;
   }
 
   const title = String(args?.title || '').trim().toLowerCase();
   const prompt = String(rawUserPrompt || '').trim().toLowerCase();
+
+  // Conversational AI explanations or greetings passed as task title
+  if (/^(?:sure|here is|i have updated|as an ai|certainly|hello|you're welcome|good morning|thank you)\b/i.test(title)) {
+    return true;
+  }
 
   // 1. Title contains deletion words
   if (/^(?:delete|remove|clear|erase|cancel|wipe|drop|discard|purge)\s+/i.test(title)) {
@@ -1068,6 +1400,19 @@ export function isRogueTaskCreation(
 export async function executeCommandDecision(
   decision: CommandDecision
 ): Promise<ExecutionResult> {
+  // If action is blocked by a locked atomic pending state
+  if (decision.intent === 'BLOCKED_BY_PENDING') {
+    return {
+      success: false,
+      status: 'AWAITING_CONFIRMATION',
+      message:
+        decision.explanation ||
+        'Action blocked: A pending transaction is locked awaiting your approval or cancellation.',
+      executedActions: [],
+      options: decision.options,
+    };
+  }
+
   // If the decision requires confirmation and wasn't yet confirmed, save it in session
   if (decision.requiresConfirmation) {
     setPendingCommandDecision(decision);
@@ -1088,7 +1433,7 @@ export async function executeCommandDecision(
     clearPendingCommandDecision();
     return {
       success: true,
-      status: decision.explanation?.includes('No') ? 'NO_MATCH' : 'SUCCESS',
+      status: decision.intent === 'UNKNOWN_INTENT' || decision.explanation?.includes('No') ? 'NO_MATCH' : 'SUCCESS',
       message: decision.explanation || 'No actions required.',
       executedActions: [],
       options: decision.options,
@@ -1222,6 +1567,38 @@ export async function executeCommandDecision(
             actionChips.push(`✓ Habit Done: "${habit.title}"`);
             messages.push(`Completed habit "${habit.title}" for today.`);
           }
+          break;
+        }
+
+        case 'delete_habit': {
+          const current = Storage.getHabits();
+          const targetId = action.params?.id || action.targetId;
+          const updated = current.filter((h) => h.id !== targetId);
+          Storage.setHabits(updated);
+          broadcastDataChanged('habits');
+          executedActions.push(action);
+          actionChips.push(`✓ Removed Habit: "${action.targetTitle || 'Habit'}"`);
+          messages.push(`Removed habit "${action.targetTitle || 'Habit'}".`);
+          break;
+        }
+
+        case 'add_habit': {
+          const current = Storage.getHabits();
+          const title = action.params?.name || action.params?.title || 'New Habit';
+          const newHabit: HabitItem = {
+            id: 'habit-' + Date.now(),
+            title,
+            category: action.params?.category || 'General',
+            icon: 'Target',
+            color: '#10B981',
+            streak: 0,
+            completedDays: [false, false, false, false, false, false, false],
+          };
+          Storage.setHabits([...current, newHabit]);
+          broadcastDataChanged('habits');
+          executedActions.push(action);
+          actionChips.push(`✓ Added Habit: "${title}"`);
+          messages.push(`Added habit "${title}".`);
           break;
         }
 

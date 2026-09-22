@@ -296,6 +296,16 @@ export default function App() {
   } | null>(null);
   const expenseUndoTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Atomic pending state for expense deletion (ensures only that transaction can be confirmed/canceled, blocking all other intents)
+  const [atomicPendingDeletion, setAtomicPendingDeletion] = useState<{
+    transactionId: string;
+    items: ExpenseItem[];
+    totalAmount: number;
+    label: string;
+    isMultiple: boolean;
+    timestamp: number;
+  } | null>(null);
+
   // Cleanup undo timer on unmount
   useEffect(() => {
     return () => {
@@ -484,6 +494,20 @@ export default function App() {
       window.removeEventListener('storage', handleDashboardDataUpdated);
     };
   }, []);
+
+  // Listen for external atomic expense deletion requests
+  useEffect(() => {
+    const handleRequestAtomicExpenseDeletion = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.ids || detail?.id) {
+        handleDeleteExpense(detail.ids || detail.id, false);
+      }
+    };
+    window.addEventListener('request-atomic-expense-deletion', handleRequestAtomicExpenseDeletion);
+    return () => {
+      window.removeEventListener('request-atomic-expense-deletion', handleRequestAtomicExpenseDeletion);
+    };
+  }, [atomicPendingDeletion, expenses]);
 
   // 1. Initial Cloud Hydration & Supabase Realtime WebSocket Listener (Instant Multi-Device Sync)
   useEffect(() => {
@@ -1484,70 +1508,133 @@ export default function App() {
     Storage.setExpenses(updated);
   };
 
-  const handleDeleteExpense = (id: string, skipConfirm = true) => {
-    Sound.click(settings.soundEnabled);
-    const targetId = String(id).trim();
-
-    // 1. Locate item across React state and Storage
+  const executeAtomicExpenseDeletion = (itemsToDelete: ExpenseItem[]) => {
+    const deleteIds = new Set(itemsToDelete.map((e) => String(e.id).trim()));
     const currentStored = Storage.getExpenses();
-    const itemToDelete =
-      expenses.find((e) => String(e.id).trim() === targetId) ||
-      currentStored.find((e) => String(e.id).trim() === targetId);
 
-    if (!itemToDelete) {
-      console.warn(`Expense with ID ${id} not found for deletion`);
-      return;
-    }
+    const nextExpenses = expenses.filter((e) => !deleteIds.has(String(e.id).trim()));
+    const nextStored = currentStored.filter((e) => !deleteIds.has(String(e.id).trim()));
 
-    // 2. Prompt confirmation if not already confirmed in-app
-    if (!skipConfirm) {
-      const itemLabel = `"${itemToDelete.name}" (₹${Number(itemToDelete.amount).toLocaleString()})`;
-      const confirmed = window.confirm(`Are you sure you want to delete ${itemLabel}?`);
-      if (!confirmed) {
-        return;
-      }
-    }
-
-    const itemIndex = expenses.findIndex((e) => String(e.id).trim() === targetId);
-
-    // 3. Compute filtered lists for both state and storage
-    const nextExpenses = expenses.filter((e) => String(e.id).trim() !== targetId);
-    const nextStored = currentStored.filter((e) => String(e.id).trim() !== targetId);
-
-    // 4. Immediately persist synchronously to localStorage (both scoped and unscoped)
+    // 1. Immediately persist synchronously to localStorage (both scoped and unscoped)
     Storage.setExpenses(nextStored);
     try {
       localStorage.setItem(getScopedKey(STORAGE_KEYS.EXPENSES), JSON.stringify(nextStored));
       localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(nextStored));
     } catch {}
 
-    // 5. Immediately update React state with fresh array reference
+    // 2. Clean up spreadsheet logs if all expenses cleared
+    if (nextStored.length === 0) {
+      Storage.setExcelImportLogs([]);
+    }
+
+    // 3. Immediately update React state with fresh array reference
     setExpenses([...nextExpenses]);
 
-    // 6. Dispatch 'dashboard-data-updated' event to notify all listening components
+    // 4. Dispatch 'dashboard-data-updated' event to notify all listening components
     window.dispatchEvent(
       new CustomEvent('dashboard-data-updated', {
-        detail: { module: 'expenses', updatedExpenses: nextExpenses },
+        detail: { module: 'expenses', updatedExpenses: nextExpenses, deletedCount: itemsToDelete.length },
       })
     );
 
-    // 7. Flush auto sync immediately to Supabase
+    // 5. Flush auto sync immediately to Supabase
     flushAutoSyncImmediately({
       ...Storage.getAllDataPayload(),
       expenses: nextExpenses,
     });
 
-    // 8. Trigger Undo Toast
+    // 6. Trigger Undo Toast
     if (expenseUndoTimerRef.current) {
       clearTimeout(expenseUndoTimerRef.current);
     }
+    const primaryItem = itemsToDelete[0];
+    const itemIndex = expenses.findIndex((e) => e.id === primaryItem.id);
     setExpenseUndoToast({
-      item: itemToDelete,
+      item: primaryItem,
       index: itemIndex >= 0 ? itemIndex : 0,
     });
     expenseUndoTimerRef.current = setTimeout(() => {
       setExpenseUndoToast(null);
     }, 6000);
+  };
+
+  const handleDeleteExpense = (idOrIds: string | string[], skipConfirm = true) => {
+    Sound.click(settings.soundEnabled);
+
+    // 1. ATOMIC LOCK CHECK: Block incoming requests if an atomic transaction is already pending
+    if (atomicPendingDeletion) {
+      console.warn('Blocked: An expense deletion transaction is currently locked in an atomic pending state.');
+      return;
+    }
+
+    const targetIds = Array.isArray(idOrIds)
+      ? idOrIds.map((s) => String(s).trim()).filter(Boolean)
+      : [String(idOrIds).trim()].filter(Boolean);
+
+    if (targetIds.length === 0) return;
+
+    // Locate items across React state and Storage
+    const currentStored = Storage.getExpenses();
+    const idSet = new Set(targetIds);
+    const itemsToDelete: ExpenseItem[] = [];
+    const seen = new Set<string>();
+
+    for (const e of expenses) {
+      if (idSet.has(String(e.id).trim()) && !seen.has(e.id)) {
+        itemsToDelete.push(e);
+        seen.add(e.id);
+      }
+    }
+    for (const e of currentStored) {
+      if (idSet.has(String(e.id).trim()) && !seen.has(e.id)) {
+        itemsToDelete.push(e);
+        seen.add(e.id);
+      }
+    }
+
+    if (itemsToDelete.length === 0) {
+      console.warn(`Expense(s) not found for deletion: ${targetIds.join(', ')}`);
+      return;
+    }
+
+    const isMultiple = itemsToDelete.length > 1;
+
+    // 2. Multi-record deletion or unconfirmed deletion locks the atomic pending confirmation state
+    if (isMultiple || !skipConfirm) {
+      const totalAmount = itemsToDelete.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+      const label = isMultiple
+        ? `${itemsToDelete.length} expenses totaling ₹${totalAmount.toLocaleString()}`
+        : `"${itemsToDelete[0].name}" (₹${Number(itemsToDelete[0].amount).toLocaleString()})`;
+
+      const transactionId = `tx-del-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+      setAtomicPendingDeletion({
+        transactionId,
+        items: itemsToDelete,
+        totalAmount,
+        label,
+        isMultiple,
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    // 3. Single record deletion already confirmed
+    executeAtomicExpenseDeletion(itemsToDelete);
+  };
+
+  const handleApproveAtomicExpenseDeletion = () => {
+    if (!atomicPendingDeletion) return;
+    Sound.click(settings.soundEnabled);
+    const { items } = atomicPendingDeletion;
+    setAtomicPendingDeletion(null);
+    executeAtomicExpenseDeletion(items);
+  };
+
+  const handleCancelAtomicExpenseDeletion = () => {
+    if (!atomicPendingDeletion) return;
+    Sound.click(settings.soundEnabled);
+    setAtomicPendingDeletion(null);
   };
 
   const handleUndoDeleteExpense = () => {
@@ -3428,6 +3515,93 @@ export default function App() {
             <X className="w-4 h-4" />
           </button>
         </aside>
+      )}
+
+      {/* Atomic Locked Confirmation Dialog for Expense Deletion */}
+      {atomicPendingDeletion && (
+        <div
+          id="atomic-expense-deletion-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="atomic-deletion-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
+        >
+          <div className="relative w-full max-w-md bg-white dark:bg-gray-900 rounded-2xl border border-rose-200 dark:border-rose-900/60 shadow-2xl p-6 overflow-hidden">
+            {/* Locked indicator badge */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 text-xs font-semibold border border-rose-200 dark:border-rose-800/60">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                <span>Locked Transaction</span>
+              </div>
+              <span className="text-[11px] font-mono text-gray-400 dark:text-gray-500">
+                {atomicPendingDeletion.transactionId.slice(0, 14)}
+              </span>
+            </div>
+
+            <h3
+              id="atomic-deletion-title"
+              className="text-base font-bold text-gray-900 dark:text-white mb-2"
+            >
+              Confirm {atomicPendingDeletion.isMultiple ? 'Multi-Record' : 'Expense'} Deletion
+            </h3>
+
+            <p className="text-xs text-gray-600 dark:text-gray-300 mb-4 leading-relaxed">
+              {atomicPendingDeletion.isMultiple
+                ? `You are about to delete ${atomicPendingDeletion.items.length} expense records. The application is locked in an atomic pending state until this specific transaction is approved or canceled.`
+                : `Are you sure you want to delete this expense record? The transaction is locked in an atomic pending state.`}
+            </p>
+
+            {/* List of items in atomic transaction */}
+            <div className="max-h-48 overflow-y-auto mb-5 p-3 rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-100 dark:border-gray-800 divide-y divide-gray-200 dark:divide-gray-700/60">
+              {atomicPendingDeletion.items.map((item) => (
+                <div key={item.id} className="py-2 first:pt-0 last:pb-0 flex items-center justify-between text-xs">
+                  <div className="min-w-0 pr-2">
+                    <p className="font-semibold text-gray-900 dark:text-white truncate">{item.name}</p>
+                    <p className="text-[11px] text-gray-400 dark:text-gray-500">
+                      {item.category} • {item.date}
+                    </p>
+                  </div>
+                  <span className="font-bold text-rose-600 dark:text-rose-400 shrink-0">
+                    ₹{Number(item.amount).toLocaleString()}
+                  </span>
+                </div>
+              ))}
+              {atomicPendingDeletion.isMultiple && (
+                <div className="pt-2.5 flex items-center justify-between text-xs font-bold text-gray-900 dark:text-white border-t border-gray-200 dark:border-gray-700">
+                  <span>Total Amount</span>
+                  <span className="text-rose-600 dark:text-rose-400">
+                    ₹{atomicPendingDeletion.totalAmount.toLocaleString()}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                id="cancel-atomic-expense-deletion"
+                onClick={handleCancelAtomicExpenseDeletion}
+                className="px-4 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 rounded-xl transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                id="confirm-atomic-expense-deletion"
+                onClick={handleApproveAtomicExpenseDeletion}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs transition-all cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>
+                  {atomicPendingDeletion.isMultiple
+                    ? `Delete ${atomicPendingDeletion.items.length} Records`
+                    : 'Delete Record'}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
