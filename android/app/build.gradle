@@ -20,9 +20,14 @@ android {
         release {
             if (file('release-key.jks').exists()) {
                 storeFile file('release-key.jks')
-                storePassword System.getenv('RELEASE_KEYSTORE_PASSWORD') ?: (project.findProperty('RELEASE_KEYSTORE_PASSWORD') ?: 'zikenn2026pass')
-                keyAlias System.getenv('RELEASE_KEY_ALIAS') ?: (project.findProperty('RELEASE_KEY_ALIAS') ?: 'zikenn-key')
-                keyPassword System.getenv('RELEASE_KEY_PASSWORD') ?: (project.findProperty('RELEASE_KEY_PASSWORD') ?: 'zikenn2026pass')
+                def sPassword = System.getenv('RELEASE_KEYSTORE_PASSWORD') ?: project.findProperty('RELEASE_KEYSTORE_PASSWORD')
+                def kAlias = System.getenv('RELEASE_KEY_ALIAS') ?: (project.findProperty('RELEASE_KEY_ALIAS') ?: 'zikenn-key')
+                def kPassword = System.getenv('RELEASE_KEY_PASSWORD') ?: project.findProperty('RELEASE_KEY_PASSWORD')
+                if (sPassword && kPassword) {
+                    storePassword sPassword
+                    keyAlias kAlias
+                    keyPassword kPassword
+                }
             }
         }
     }

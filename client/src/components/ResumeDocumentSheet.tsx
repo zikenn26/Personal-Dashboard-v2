@@ -125,12 +125,12 @@ export const ResumeDocumentSheet: React.FC<ResumeDocumentSheetProps> = ({
     resume.summary ||
     DEFAULT_ATS_RESUME.summary;
 
-  const displayName = profile.name || 'Gulshan Kumar Nayak';
-  const displayEmail = profile.contactEmail || 'gulnayak1206@gmail.com';
-  const displayPhone = profile.phone || '+91-7304838209';
+  const displayName = profile.name || 'Alex Morgan';
+  const displayEmail = profile.contactEmail || 'alex.morgan@example.com';
+  const displayPhone = profile.phone || '+1 (555) 234-5678';
   const displayGithub = profile.github || 'https://github.com';
   const displayLinkedin = profile.linkedin || 'https://linkedin.com';
-  const displayLocation = profile.location || 'Raipur, Chhattisgarh, India';
+  const displayLocation = profile.location || 'San Francisco, CA';
 
   // Inline Profile Update Handler
   const handleInlineProfileChange = (field: keyof UserProfile, value: string) => {

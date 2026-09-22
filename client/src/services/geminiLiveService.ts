@@ -76,7 +76,8 @@ export class GeminiLiveVoiceSession {
 
       // 4. Setup WebSocket to backend /live
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/live`;
+      const userGeminiKey = Storage.getGeminiApiKey();
+      const wsUrl = `${protocol}//${window.location.host}/live${userGeminiKey ? `?apiKey=${encodeURIComponent(userGeminiKey)}` : ''}`;
       this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {

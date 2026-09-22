@@ -89,7 +89,7 @@ export const fetchCloudCredential = async (
     }
     const acct = data.workspace_data.account;
     if (acct?.user && acct?.passHash) {
-      if (acct.user.id === 'user_gulshan_mock') {
+      if (acct.user.id.includes('mock')) {
         acct.user.id = `usr_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
       }
       return { user: acct.user, passHash: acct.passHash };
@@ -111,7 +111,7 @@ export const Auth = {
         const user = JSON.parse(stored);
         if (user && user.email) {
           // Normalize legacy mock ID if previously saved
-          if (user.id === 'user_gulshan_mock') {
+          if (user.id.includes('mock')) {
             user.id = `usr_${user.email.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
             try {
               localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
@@ -167,7 +167,7 @@ export const Auth = {
       if (stored) {
         const list: AuthUser[] = JSON.parse(stored);
         return list.map((a) => {
-          if (a.id === 'user_gulshan_mock') {
+          if (a.id.includes('mock')) {
             return { ...a, id: `usr_${a.email.toLowerCase().replace(/[^a-z0-9]/g, '_')}` };
           }
           return a;
@@ -238,7 +238,7 @@ export const Auth = {
         : storedPass === cleanPass;
       if (valid) {
         let user = { ...storedRecord.user, lastLoginAt: Date.now() };
-        if (user.id === 'user_gulshan_mock') {
+        if (user.id.includes('mock')) {
           user.id = `usr_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
         }
         await saveLocalCredential(cleanEmail, cleanPass, user);
@@ -257,7 +257,7 @@ export const Auth = {
       const valid = await verifyPasswordHash(cloudRecord.passHash, cleanPass);
       if (valid) {
         let user = { ...cloudRecord.user, lastLoginAt: Date.now() };
-        if (user.id === 'user_gulshan_mock') {
+        if (user.id.includes('mock')) {
           user.id = `usr_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
         }
         // Cache credentials locally on this device for offline availability

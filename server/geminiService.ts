@@ -103,7 +103,7 @@ const dashboardTools: FunctionDeclaration[] = [
   },
   {
     name: "deleteExpense",
-    description: "Delete or remove an existing expense entry from the user's dashboard by description/name, amount, date ('today', 'yesterday'), category, or most recent/latest.",
+    description: "Delete or remove an existing expense entry from the user's dashboard by description/name, amount, date ('today', 'yesterday'), category, or most recent/latest. Supports batch deletion (e.g. 'delete all the spendings I did today' -> date: 'today', all: true).",
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -126,6 +126,10 @@ const dashboardTools: FunctionDeclaration[] = [
         isLatest: {
           type: Type.BOOLEAN,
           description: "Set to true if user wants to delete their most recent or last expense",
+        },
+        all: {
+          type: Type.BOOLEAN,
+          description: "Set to true to delete all matching expenses or all expenses on that date (e.g. 'delete all the spendings I did today')",
         },
       },
     },
@@ -201,7 +205,7 @@ const dashboardTools: FunctionDeclaration[] = [
   },
   {
     name: "toggleHabit",
-    description: "Toggle or check off a daily habit by habit title.",
+    description: "Toggle or check off a daily habit by habit title, or check both habits ('both: true') or all habits ('all: true').",
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -209,8 +213,37 @@ const dashboardTools: FunctionDeclaration[] = [
           type: Type.STRING,
           description: "Name of the habit to toggle, e.g. 'Morning Meditation' or 'Drink 2L Water'",
         },
+        both: {
+          type: Type.BOOLEAN,
+          description: "Set to true to check off both habits (e.g. 'check both my habits as done')",
+        },
+        all: {
+          type: Type.BOOLEAN,
+          description: "Set to true to check off all habits",
+        },
       },
-      required: ["habitTitle"],
+    },
+  },
+  {
+    name: "toggleHabits",
+    description: "Check off or toggle multiple habits at once (e.g. 'check both my habits as done' or 'mark all habits as completed').",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        both: {
+          type: Type.BOOLEAN,
+          description: "Set to true to check off both habits",
+        },
+        all: {
+          type: Type.BOOLEAN,
+          description: "Set to true to check off all habits",
+        },
+        habitTitles: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+          description: "List of habit titles to check off",
+        },
+      },
     },
   },
   {
@@ -292,8 +325,11 @@ export async function handleGeminiChat(req: Request, res: Response) {
     const baseInstruction =
       "You are Zikenn AI, an intelligent personal dashboard assistant, voice companion, and executive chief of staff. " +
       "You help the user manage tasks, track habits, log and delete/modify expenses, organize exams, and reflect in their diary. " +
-      "You have full capability to execute dashboard actions via function tools: createTask, deleteTask, updateTask, logExpense, deleteExpense, updateExpense, toggleHabit, navigateView, queryDashboardData. " +
-      "When the user asks to delete, cancel, or modify an expense or task (such as 'Delete the recent 29 rupees expense for lunch today'), ALWAYS call the appropriate tool (e.g. deleteExpense, deleteTask, updateExpense) immediately rather than apologizing or telling them to do it manually. " +
+      "You have full capability to execute dashboard actions via function tools: createTask, deleteTask, updateTask, logExpense, deleteExpense, updateExpense, toggleHabit, toggleHabits, navigateView, queryDashboardData.\n" +
+      "CRITICAL COMMAND RULES (INTENT DISCIPLINE):\n" +
+      "1. NEVER create a task (createTask) when the user's intent is to delete, remove, or modify existing data. For example, if the user says 'Delete all the spendings I did today', you MUST call deleteExpense with { date: 'today', all: true }. NEVER create a task titled 'delete all the spendings I did today'!\n" +
+      "2. NEVER create a task when the user asks to check off, finish, or toggle habits. If the user says 'Check both my habits as done', you MUST call toggleHabits with { both: true } or toggleHabit with { both: true }. NEVER create a task for habit completion!\n" +
+      "3. When the user asks to delete, cancel, or modify an expense or task (such as 'Delete the recent 29 rupees expense for lunch today'), ALWAYS call the appropriate tool immediately.\n" +
       "Be concise, engaging, and helpful. When you call a tool or understand a user command, confirm clearly what you did.";
 
     const contextPart = dashboardContext
@@ -569,13 +605,31 @@ export function setupGeminiLiveWebSocket(server: HttpServer) {
     }
   });
 
-  wss.on("connection", async (clientWs: WebSocket) => {
+  wss.on("connection", async (clientWs: WebSocket, request?: IncomingMessage) => {
     console.log("[Live API] Client connected to voice stream");
 
-    if (!isGeminiKeyConfigured()) {
+    let customKey: string | undefined;
+    try {
+      if (request?.url) {
+        const parsedUrl = new URL(request.url, `http://${request.headers?.host || "localhost"}`);
+        const queryKey = parsedUrl.searchParams.get("apiKey");
+        if (queryKey && queryKey.trim()) {
+          customKey = queryKey.trim();
+        }
+      }
+    } catch {}
+
+    if (!customKey && request?.headers?.["x-gemini-api-key"]) {
+      const hKey = request.headers["x-gemini-api-key"];
+      if (typeof hKey === "string" && hKey.trim()) {
+        customKey = hKey.trim();
+      }
+    }
+
+    if (!isGeminiKeyConfigured(customKey)) {
       clientWs.send(
         JSON.stringify({
-          error: "GEMINI_API_KEY is not configured on the server. Please set it in Settings > Secrets.",
+          error: "Google Gemini API key is not configured. Please enter your Gemini API key in Settings > AI API Keys.",
         })
       );
       clientWs.close(1008, "API Key Missing");
@@ -583,7 +637,7 @@ export function setupGeminiLiveWebSocket(server: HttpServer) {
     }
 
     try {
-      const ai = getGeminiClient();
+      const ai = getGeminiClient(customKey);
 
       // Connect to Gemini 3.8 Live API session
       const session = await ai.live.connect({

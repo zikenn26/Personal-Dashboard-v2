@@ -75,17 +75,17 @@ export const WebPortfolioView: React.FC<WebPortfolioViewProps> = ({
   const [contactMessage, setContactMessage] = useState('');
   const [contactSent, setContactSent] = useState(false);
 
-  // Fallback data aligning precisely with the target image
-  const displayName = profile.name || 'Gulshan Kumar Nayak';
+  // Fallback data aligning with user profile settings
+  const displayName = profile.name || 'Alex Morgan';
   const displayTitle = profile.title || 'Data & AI Engineer  |  Researcher  |  Problem Solver';
   const displayBio =
     profile.bio ||
     'I build data-driven systems, AI applications and intelligent solutions to solve real-world problems.';
-  const displayEmail = profile.contactEmail || 'gulshan@example.com';
-  const displayLocation = profile.location || 'Bhubaneswar, India';
-  const displayGithub = profile.github || 'github.com/gulshan';
-  const displayLinkedin = profile.linkedin || 'linkedin.com/in/gulshan';
-  const displayWebsite = profile.website || 'portfolio.gulshan.dev';
+  const displayEmail = profile.contactEmail || 'alex.morgan@example.com';
+  const displayLocation = profile.location || 'San Francisco, CA';
+  const displayGithub = profile.github || 'github.com/alexmorgan';
+  const displayLinkedin = profile.linkedin || 'linkedin.com/in/alexmorgan';
+  const displayWebsite = profile.website || 'alexmorgan.dev';
 
   const experiences: JobExperience[] =
     profile.jobExperiences !== undefined
@@ -93,18 +93,18 @@ export const WebPortfolioView: React.FC<WebPortfolioViewProps> = ({
       : [
           {
             id: 'exp-1',
-            company: 'HCLSoftware',
-            role: 'Software Engineer (BigFix)',
+            company: 'Enterprise Tech Solutions',
+            role: 'Software Engineer',
             startDate: 'Jun 2026',
             endDate: 'Present',
             location: 'Noida, India',
-            description: 'Working on BigFix and automation solutions.',
+            description: 'Working on distributed automation, systems architecture, and tooling.',
             keyAchievements: [
-              'Working on BigFix and automation solutions.',
-              'Developed and maintained enterprise tools.',
-              'Collaborated with cross-functional teams.',
+              'Engineered automated diagnostics and enterprise management workflows.',
+              'Developed and maintained high-throughput enterprise tools.',
+              'Collaborated with cross-functional product and infrastructure teams.',
             ],
-            techStack: ['BigFix', 'Automation', 'Python', 'C++'],
+            techStack: ['Automation', 'Enterprise Tools', 'Python', 'C++'],
           },
           {
             id: 'exp-2',
@@ -313,14 +313,14 @@ export const WebPortfolioView: React.FC<WebPortfolioViewProps> = ({
               </div>
             </div>
 
-            {/* Status Line: Currently at HCLSoftware · Based in India · Open to opportunities */}
+            {/* Status Line: Current Role · Based in Location · Open to opportunities */}
             <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs text-gray-600 pt-1">
               <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-              <span className="font-medium text-gray-800">Currently at HCLSoftware</span>
+              <span className="font-medium text-gray-800">{profile.currentCompany ? `Currently at ${profile.currentCompany}` : 'Available for opportunities'}</span>
               <span className="text-gray-300">|</span>
-              <span>Based in India</span>
+              <span>{displayLocation}</span>
               <span className="text-gray-300">|</span>
-              <span className="text-gray-500">Open to opportunities</span>
+              <span className="text-gray-500">{profile.availabilityStatus || 'Open to opportunities'}</span>
             </div>
           </div>
 
@@ -499,10 +499,8 @@ export const WebPortfolioView: React.FC<WebPortfolioViewProps> = ({
                 'Data and AI enthusiast with a strong academic background and hands-on experience in building intelligent systems. Passionate about solving real-world problems through data, machine learning and scalable software solutions.'}
             </p>
             <p>
-              Currently engineering robust enterprise automation tools and security solutions at{' '}
-              <strong className="text-gray-900 font-semibold">HCLSoftware</strong>. Deep academic
-              foundation in distributed architectures, adversarial machine learning, and UAV communication
-              security from <strong className="text-gray-900 font-semibold">NIT Raipur</strong>.
+              Currently engineering robust enterprise automation tools and cloud solutions. Deep academic
+              foundation in distributed architectures, machine learning systems, and secure communications.
             </p>
           </div>
         </section>

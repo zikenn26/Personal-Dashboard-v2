@@ -42,6 +42,13 @@ async function startServer() {
           headers[k] = v;
         }
       }
+      // If client did not supply their own Groq key, inject the server-side environment key
+      if (!headers.authorization || headers.authorization === "Bearer" || headers.authorization === "Bearer ") {
+        const serverKey = process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY;
+        if (serverKey) {
+          headers.authorization = `Bearer ${serverKey.trim()}`;
+        }
+      }
       const fetchOpts: RequestInit = {
         method: req.method,
         headers,

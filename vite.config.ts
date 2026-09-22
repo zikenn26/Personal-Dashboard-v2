@@ -30,9 +30,6 @@ export default defineConfig(({ mode }) => {
     envDir: path.resolve(import.meta.dirname),
     root: path.resolve(import.meta.dirname, "client"),
     define: {
-      "import.meta.env.VITE_GROQ_API_KEY": JSON.stringify(
-        env.VITE_GROQ_API_KEY || process.env.VITE_GROQ_API_KEY || process.env.GROQ_API_KEY || ""
-      ),
       "import.meta.env.VITE_SUPABASE_URL": JSON.stringify(supabaseUrl),
       "import.meta.env.VITE_SUPABASE_ANON_KEY": JSON.stringify(supabaseAnonKey),
     },

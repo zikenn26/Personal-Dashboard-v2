@@ -340,7 +340,7 @@ export const JobExperienceSection: React.FC<JobExperienceSectionProps> = ({
                   <input
                     type="text"
                     required
-                    placeholder="e.g. HCL Software"
+                    placeholder="e.g. Acme Corp"
                     value={formCompany}
                     onChange={(e) => setFormCompany(e.target.value)}
                     className="w-full px-3.5 py-2.5 bg-[#F8FAFC] dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#334155] rounded-xl text-xs text-[#111827] dark:text-white focus:outline-hidden focus:border-[#6366F1]"

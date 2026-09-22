@@ -99,7 +99,7 @@ export const PortfolioShowcase: React.FC<PortfolioShowcaseProps> = ({
   }, [projects, selectedCategory, searchQuery]);
 
   const handleCopyEmail = () => {
-    const email = profile.contactEmail || 'gulnayak1206@gmail.com';
+    const email = profile.contactEmail || 'user@example.com';
     navigator.clipboard.writeText(email);
     Sound.success(soundEnabled);
     setCopiedEmail(true);
@@ -107,9 +107,9 @@ export const PortfolioShowcase: React.FC<PortfolioShowcaseProps> = ({
   };
 
   const handleCopyIntro = () => {
-    const name = profile.name || 'Gulshan Kumar Nayak';
-    const title = profile.title || 'Information Technology Engineer';
-    const pitch = `Hello! I'm ${name}, an ${title}. I specialize in architecting full-stack systems, backend APIs with Spring Boot, and applied machine learning models. Let's connect! Email: ${profile.contactEmail || 'gulnayak1206@gmail.com'} | LinkedIn: ${profile.linkedin || 'https://linkedin.com'}`;
+    const name = profile.name || 'Candidate';
+    const title = profile.title || 'Software Engineer';
+    const pitch = `Hello! I'm ${name}, a ${title}. I specialize in architecting full-stack systems, backend APIs, and applied machine learning models. Let's connect! Email: ${profile.contactEmail || 'user@example.com'} | LinkedIn: ${profile.linkedin || 'https://linkedin.com'}`;
     navigator.clipboard.writeText(pitch);
     Sound.success(soundEnabled);
     setCopiedPitch(true);
@@ -167,7 +167,7 @@ export const PortfolioShowcase: React.FC<PortfolioShowcaseProps> = ({
               ) : (
                 <>
                   <Mail className="w-3.5 h-3.5 text-indigo-500" />
-                  <span>{profile.contactEmail || 'gulnayak1206@gmail.com'}</span>
+                  <span>{profile.contactEmail || 'user@example.com'}</span>
                 </>
               )}
             </button>

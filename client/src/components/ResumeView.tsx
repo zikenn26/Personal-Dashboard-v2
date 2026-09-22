@@ -44,15 +44,15 @@ export const ResumeView: React.FC<ResumeViewProps> = ({
   visibleSections,
   onEditSection,
 }) => {
-  // Extract values with default fallbacks strictly matching the requested profile
-  const displayName = profile.name || 'Gulshan Kumar Nayak';
+  // Extract values with default fallbacks strictly matching profile settings
+  const displayName = profile.name || 'Alex Morgan';
   const displayTitle = profile.title || 'Data & AI Engineer  |  Researcher  |  Problem Solver';
-  const displayEmail = profile.contactEmail || 'gulshan@example.com';
-  const displayPhone = profile.phone || '+91 98765 43210';
-  const displayLocation = profile.location || 'Bhubaneswar, India';
-  const displayLinkedin = profile.linkedin || 'linkedin.com/in/gulshan';
-  const displayGithub = profile.github || 'github.com/gulshan';
-  const displayWebsite = profile.website || 'portfolio.gulshan.dev';
+  const displayEmail = profile.contactEmail || 'alex.morgan@example.com';
+  const displayPhone = profile.phone || '+1 (555) 234-5678';
+  const displayLocation = profile.location || 'San Francisco, CA';
+  const displayLinkedin = profile.linkedin || 'linkedin.com/in/alexmorgan';
+  const displayGithub = profile.github || 'github.com/alexmorgan';
+  const displayWebsite = profile.website || 'alexmorgan.dev';
   const summaryText =
     profile.professionalSummary !== undefined
       ? profile.professionalSummary
@@ -64,16 +64,16 @@ export const ResumeView: React.FC<ResumeViewProps> = ({
       : [
           {
             id: 'exp-1',
-            company: 'HCLSoftware',
-            role: 'Software Engineer (BigFix)',
+            company: 'Enterprise Tech Solutions',
+            role: 'Software Engineer',
             startDate: 'Jun 2026',
             endDate: 'Present',
             location: 'Noida, India',
-            description: 'Working on BigFix and automation solutions.',
+            description: 'Working on distributed automation, systems architecture, and tooling.',
             keyAchievements: [
-              'Working on BigFix and automation solutions.',
-              'Developed and maintained enterprise tools.',
-              'Collaborated with cross-functional teams.',
+              'Engineered automated diagnostics and enterprise management workflows.',
+              'Developed and maintained high-throughput enterprise tools.',
+              'Collaborated with cross-functional product and infrastructure teams.',
             ],
           },
           {

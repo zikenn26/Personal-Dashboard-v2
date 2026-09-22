@@ -740,7 +740,18 @@ export type CommandActionType =
   | 'add_journal'
   | 'add_quote'
   | 'set_alarm'
-  | 'cancel_alarm';
+  | 'cancel_alarm'
+  | 'batch_action';
+
+export interface InteractiveOption {
+  id: string;
+  label: string;
+  description?: string;
+  variant?: 'default' | 'danger' | 'primary' | 'cancel';
+  isDestructive?: boolean;
+  actions?: any[];
+  payload?: any;
+}
 
 export interface CommandMappingParams {
   // For 'add_expense' (maps to handleAddExpense):

@@ -69,9 +69,9 @@ export const PortfolioResumeSheet: React.FC<PortfolioResumeSheetProps> = ({
   const handleCopyMarkdown = () => {
     Sound.click(soundEnabled);
 
-    const name = profile.name || resume.contact?.name || 'GULSHAN KUMAR NAYAK';
-    const phone = profile.phone || resume.contact?.phone || '+91-7304838209';
-    const email = profile.contactEmail || resume.contact?.email || 'gulnayak1206@gmail.com';
+    const name = profile.name || resume.contact?.name || 'ALEX MORGAN';
+    const phone = profile.phone || resume.contact?.phone || '+1 (555) 234-5678';
+    const email = profile.contactEmail || resume.contact?.email || 'alex.morgan@example.com';
     const github = profile.github || resume.contact?.github || 'https://github.com';
     const linkedin = profile.linkedin || resume.contact?.linkedin || 'https://linkedin.com';
     const summary = profile.professionalSummary || profile.bio || resume.summary || '';
@@ -282,22 +282,22 @@ export const PortfolioResumeSheet: React.FC<PortfolioResumeSheetProps> = ({
         {/* Resume Header - Centered ATS Format */}
         <div className="text-center pb-4 border-b-2 border-[#111827] dark:border-white space-y-2">
           <h1 className="text-2xl sm:text-3xl font-black text-[#111827] dark:text-white tracking-wider uppercase">
-            {profile.name || resume.contact?.name || 'GULSHAN KUMAR NAYAK'}
+            {profile.name || resume.contact?.name || 'ALEX MORGAN'}
           </h1>
 
           {/* Contact Strip */}
           <div className="flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-xs text-[#374151] dark:text-[#CBD5E1] font-medium">
             <span>
               <strong className="text-[#111827] dark:text-white">Phone:</strong>{' '}
-              <a href={`tel:${profile.phone || resume.contact?.phone || '+91-7304838209'}`} className="hover:text-[#6366F1]">
-                {profile.phone || resume.contact?.phone || '+91-7304838209'}
+              <a href={`tel:${profile.phone || resume.contact?.phone || '+1 (555) 234-5678'}`} className="hover:text-[#6366F1]">
+                {profile.phone || resume.contact?.phone || '+1 (555) 234-5678'}
               </a>
             </span>
             <span className="text-[#9CA3AF]">•</span>
             <span>
               <strong className="text-[#111827] dark:text-white">Email:</strong>{' '}
-              <a href={`mailto:${profile.contactEmail || resume.contact?.email || 'gulnayak1206@gmail.com'}`} className="hover:text-[#6366F1]">
-                {profile.contactEmail || resume.contact?.email || 'gulnayak1206@gmail.com'}
+              <a href={`mailto:${profile.contactEmail || resume.contact?.email || 'alex.morgan@example.com'}`} className="hover:text-[#6366F1]">
+                {profile.contactEmail || resume.contact?.email || 'alex.morgan@example.com'}
               </a>
             </span>
             <span className="text-[#9CA3AF]">•</span>

@@ -10,6 +10,14 @@ import {
   Priority,
   TaskStatus,
 } from '../types';
+import {
+  analyzeCommandIntent,
+  executeCommandDecision,
+  isRogueTaskCreation,
+  setPendingCommandDecision,
+  clearPendingCommandDecision,
+  InteractiveOption,
+} from './commandIntentEngine';
 
 export interface ChatMessage {
   id: string;
@@ -26,6 +34,8 @@ export interface ChatMessage {
     };
   }>;
   actionChips?: string[];
+  options?: InteractiveOption[];
+  pendingConfirmation?: boolean;
   timestamp: number;
 }
 
@@ -33,6 +43,8 @@ export interface GroqSecretaryResponse {
   reply: string;
   actionChips: string[];
   updatedHistory: ChatMessage[];
+  options?: InteractiveOption[];
+  pendingConfirmation?: boolean;
   error?: string;
 }
 
@@ -79,14 +91,17 @@ export function getActiveGroqModel(): string {
 
 async function postGroqChat(apiKey: string, payload: any): Promise<Response> {
   Storage.recordApiRequest('groq');
-  // First try the local proxy to prevent any browser iframe/CORS/extension blocking
+  // First try the local server proxy (which injects server-side GROQ_API_KEY if client key is omitted)
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (apiKey) {
+      headers.Authorization = `Bearer ${apiKey}`;
+    }
     const proxyRes = await fetch(GROQ_PROXY_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
+      headers,
       body: JSON.stringify(payload),
     });
     // If the proxy responded successfully (2xx) or was a direct auth refusal (401/403), return it directly.
@@ -100,14 +115,27 @@ async function postGroqChat(apiKey: string, payload: any): Promise<Response> {
     console.warn('Local Groq proxy unreachable, trying direct Groq API...', proxyErr);
   }
 
-  return fetch(GROQ_DIRECT_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(payload),
-  });
+  if (apiKey) {
+    return fetch(GROQ_DIRECT_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  // If no personal key and proxy failed/unavailable
+  return new Response(
+    JSON.stringify({
+      error: {
+        message: 'Personal Groq API key required. Please configure your key in Settings -> API Keys.',
+        code: 'missing_api_key',
+      },
+    }),
+    { status: 401, headers: { 'Content-Type': 'application/json' } }
+  );
 }
 
 // Normalizes user-specified dates or natural language phrases (e.g. "9 sept 2026", "yesterday", "2026-09-09")
@@ -561,17 +589,50 @@ export const SECRETARY_TOOLS = [
     function: {
       name: 'toggle_habit',
       description:
-        "Toggle completion of a habit for today or a specific day index (0=Mon, 6=Sun).",
+        "Toggle completion of a habit for today or a specific day index (0=Mon, 6=Sun). Supports single habit by ID or title, both habits ('both: true'), or all habits ('all: true').",
       parameters: {
         type: 'object',
         properties: {
-          id: { type: 'string', description: 'ID of the habit' },
+          id: { type: ['string', 'null'], description: 'ID of the habit' },
+          title: { type: ['string', 'null'], description: 'Name or title of the habit (e.g. "Morning Meditation", "Water")' },
+          query: { type: ['string', 'null'], description: 'Keyword or query matching habit title' },
+          both: { type: ['boolean', 'null'], description: 'Set to true to check off both habits (e.g. "check both my habits as done")' },
+          all: { type: ['boolean', 'null'], description: 'Set to true to check off all habits' },
+          ids: {
+            type: ['array', 'null'],
+            items: { type: 'string' },
+            description: 'Array of habit IDs to toggle',
+          },
           dayIndex: {
             type: ['number', 'null'],
             description: 'Day of week index 0=Mon, 1=Tue... 6=Sun. If omitted, defaults to today.',
           },
         },
-        required: ['id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'toggle_habits',
+      description:
+        "Toggle completion of multiple habits at once, such as checking both habits or all habits as done.",
+      parameters: {
+        type: 'object',
+        properties: {
+          both: { type: ['boolean', 'null'], description: 'Set to true to check off both habits' },
+          all: { type: ['boolean', 'null'], description: 'Set to true to check off all habits' },
+          habitTitles: {
+            type: ['array', 'null'],
+            items: { type: 'string' },
+            description: 'Array of habit titles to check off',
+          },
+          ids: {
+            type: ['array', 'null'],
+            items: { type: 'string' },
+            description: 'Array of habit IDs to check off',
+          },
+        },
       },
     },
   },
@@ -1266,30 +1327,77 @@ export async function executeSecretaryTool(
         };
       }
 
+      case 'toggle_habits':
       case 'toggle_habit': {
         const current = Storage.getHabits();
-        const index = current.findIndex((h) => h.id === args.id);
-        if (index === -1) {
-          return { data: { error: `Habit ${args.id} not found` } };
+        if (current.length === 0) {
+          return {
+            data: { success: false, message: 'No habits found on your dashboard.' },
+            actionChip: '⚠️ No Habits',
+          };
         }
-        const habit = { ...current[index] };
+
         const targetDay =
           typeof args.dayIndex === 'number' ? args.dayIndex : getTodayDayIndex();
-        const updatedDays = [...habit.completedDays];
-        updatedDays[targetDay] = !updatedDays[targetDay];
-        habit.completedDays = updatedDays;
-        if (updatedDays[targetDay]) {
-          habit.streak = (habit.streak || 0) + 1;
-        } else {
-          habit.streak = Math.max(0, (habit.streak || 0) - 1);
+        let toToggle: HabitItem[] = [];
+
+        // Check for "both" habits
+        if (args.both === true) {
+          toToggle = current.length === 2 ? current : current.slice(0, 2);
+        } else if (args.all === true) {
+          toToggle = [...current];
+        } else if (Array.isArray(args.ids) && args.ids.length > 0) {
+          toToggle = current.filter((h) => args.ids.includes(h.id));
+        } else if (Array.isArray(args.habitTitles) && args.habitTitles.length > 0) {
+          const lowerTitles = args.habitTitles.map((t: string) => String(t).toLowerCase());
+          toToggle = current.filter((h) =>
+            lowerTitles.some((lt: string) => h.title.toLowerCase().includes(lt))
+          );
+        } else if (args.id) {
+          const found = current.find((h) => h.id === args.id);
+          if (found) toToggle = [found];
+        } else if (args.title || args.query || args.habitTitle) {
+          const q = String(args.title || args.query || args.habitTitle).toLowerCase();
+          const found = current.find((h) => h.title.toLowerCase().includes(q));
+          if (found) toToggle = [found];
+        } else if (current.length > 0) {
+          toToggle = [current[0]];
         }
-        current[index] = habit;
+
+        if (toToggle.length === 0) {
+          return {
+            data: { success: false, message: 'No matching habit found.' },
+            actionChip: '⚠️ Habit Not Found',
+          };
+        }
+
+        for (const h of toToggle) {
+          const idx = current.findIndex((it) => it.id === h.id);
+          if (idx !== -1) {
+            const updated = { ...current[idx] };
+            const days = [...(updated.completedDays || [false, false, false, false, false, false, false])];
+            days[targetDay] = true; // Mark as done
+            updated.streak = (updated.streak || 0) + 1;
+            updated.completedDays = days;
+            current[idx] = updated;
+          }
+        }
+
         Storage.setHabits([...current]);
         notifyDataChanged('habits');
-        const stateStr = updatedDays[targetDay] ? 'Checked' : 'Unchecked';
+
+        const chip =
+          toToggle.length === 1
+            ? `✓ Habit Checked: "${toToggle[0].title}"`
+            : `✓ Checked ${toToggle.length} Habits`;
+
         return {
-          data: { success: true, habit },
-          actionChip: `✓ Habit ${stateStr}: "${habit.title}"`,
+          data: {
+            success: true,
+            habits: toToggle.map((h) => ({ id: h.id, title: h.title, completed: true })),
+            count: toToggle.length,
+          },
+          actionChip: chip,
         };
       }
 
@@ -2393,23 +2501,28 @@ CRITICAL RULES & GUARDRAILS:
 6. CLARITY: After executing tool actions, briefly summarize what was completed in a friendly, proactive tone.
 7. DATE-SPECIFIC EXPENSE QUERIES: When the user asks about spending on a specific date (e.g. "How much did I spend on 9 sept 2026", "spending on 2026-09-09", "what did I buy yesterday"), invoke fetch_expenses with the date argument (e.g. date: "9 sept 2026"). The tool automatically pre-calculates the exact totalSpent across all matching transactions. State the exact total amount in ₹ and list the individual matching items.
 8. DELETION & DATA REMOVAL:
-   - When the user asks to delete, remove, or clear spendings/expenses (e.g. "delete shipping", "delete chocolate", "delete shipping, shopping expense, and chocolate", "delete spending 500", "remove coffee expense", "delete last spending", "delete these 3 expenses", "clear all spendings", "delete 50 rs"):
+   - When the user asks to delete, remove, or clear spendings/expenses (e.g. "delete shipping", "delete chocolate", "delete shipping, shopping expense, and chocolate", "delete spending 500", "remove coffee expense", "delete last spending", "delete these 3 expenses", "clear all spendings", "delete 50 rs", "delete all the spendings I did today"):
      * Immediately execute the tool call 'delete_expense' or 'clear_all_expenses'.
+     * For "delete all spendings I did today" or today's expenses, invoke 'delete_expense' with date: "today", all: true.
      * For multiple items (e.g. Shipping, Shopping expense, Chocolate), invoke 'delete_expense' with items: ["Shipping", "Shopping expense", "Chocolate"] or query: "Shipping, Shopping expense, Chocolate", all: true.
      * For single items or merchants, pass query: "Shipping" (or name: "Shipping").
      * For amounts, pass amount: 80 or amounts: [80, 50, 10].
      * For deleting all expenses or "these expenses" / "them", invoke 'clear_all_expenses' with confirmed: true, or 'delete_expense' with all: true.
-   - ABSOLUTE ZERO FALSE CONFIRMATIONS: NEVER claim or state in your message that an expense was deleted or removed unless the tool 'delete_expense' or 'clear_all_expenses' was executed in this turn and returned { success: true }. If the tool returned { success: false }, inform the user accurately that no matching expense was found and show recent available expenses.`;
+   - ABSOLUTE ZERO FALSE CONFIRMATIONS: NEVER claim or state in your message that an expense was deleted or removed unless the tool 'delete_expense' or 'clear_all_expenses' was executed in this turn and returned { success: true }. If the tool returned { success: false }, inform the user accurately that no matching expense was found and show recent available expenses.
+9. INTENT & ENTITY DISCIPLINE (NEVER CREATE ROGUE TASKS):
+   - You must NEVER create a task (add_task) when the user asks to delete, remove, or modify existing data.
+     * WRONG: User says "delete all the spendings I did today" -> AI creates task "delete all the spendings I did today" (CRITICAL BUG).
+     * CORRECT: User says "delete all the spendings I did today" -> AI calls delete_expense with { date: "today", all: true }.
+   - You must NEVER create a task when the user asks to complete, check off, or toggle habits.
+     * WRONG: User says "check both my habits as done" -> AI creates task "check both my habits as done" (CRITICAL BUG).
+     * CORRECT: User says "check both my habits as done" -> AI calls toggle_habit or toggle_habits with { both: true }.
+   - Only call 'add_task' when the user explicitly requests adding a new todo item to their task list (e.g. "Add task buy groceries", "Remind me to call John").`;
 
-// Groq API Key loaded securely from Storage, environment variable, or fallback
+// Groq API Key loaded securely from Storage or user input (never exposed in client bundle)
 const DEFAULT_GROQ_KEY = '';
 
 export function getActiveGroqKey(): string {
-  return (
-    Storage.getGroqApiKey() ||
-    (import.meta.env.VITE_GROQ_API_KEY as string | undefined)?.trim() ||
-    DEFAULT_GROQ_KEY
-  );
+  return Storage.getGroqApiKey()?.trim() || DEFAULT_GROQ_KEY;
 }
 
 export async function testGroqApiKey(testKey?: string): Promise<{ success: boolean; message: string }> {
@@ -2472,8 +2585,7 @@ export async function sendSecretaryMessage(
 ): Promise<GroqSecretaryResponse> {
   const apiKey =
     apiKeyOverride ||
-    Storage.getGroqApiKey() ||
-    (import.meta.env.VITE_GROQ_API_KEY as string | undefined)?.trim() ||
+    Storage.getGroqApiKey()?.trim() ||
     DEFAULT_GROQ_KEY;
 
   const userMessage: ChatMessage = {
@@ -2485,20 +2597,88 @@ export async function sendSecretaryMessage(
 
   const updatedHistory = [...existingHistory, userMessage];
 
-  if (!apiKey) {
-    const errorMsg: ChatMessage = {
+  // 1. Run deterministic Command Intent Analysis before remote LLM invocation
+  const intentDecision = analyzeCommandIntent(userPrompt);
+
+  if (intentDecision.intent === 'CANCEL_PENDING') {
+    clearPendingCommandDecision();
+    const assistantMsg: ChatMessage = {
       id: 'msg-' + Date.now(),
       role: 'assistant',
-      content:
-        '⚠️ **Groq API Key Required**\n\nPlease set your Groq API key in project settings or environment variables (`VITE_GROQ_API_KEY`).',
+      content: 'Action cancelled. No changes were made to your dashboard.',
       timestamp: Date.now(),
     };
     return {
-      reply: errorMsg.content,
-      actionChips: [],
-      updatedHistory: [...updatedHistory, errorMsg],
-      error: 'Missing Groq API key',
+      reply: assistantMsg.content,
+      actionChips: ['⚡ Action Cancelled'],
+      updatedHistory: [...updatedHistory, assistantMsg],
     };
+  }
+
+  if (intentDecision.intent === 'CONFIRM_PENDING') {
+    const execResult = await executeCommandDecision(intentDecision);
+    const assistantMsg: ChatMessage = {
+      id: 'msg-' + Date.now(),
+      role: 'assistant',
+      content: execResult.message,
+      timestamp: Date.now(),
+      actionChips: execResult.actionChips,
+    };
+    return {
+      reply: execResult.message,
+      actionChips: execResult.actionChips || [],
+      updatedHistory: [...updatedHistory, assistantMsg],
+    };
+  }
+
+  // If action requires confirmation (e.g. bulk expense deletion or disambiguation)
+  if (intentDecision.requiresConfirmation) {
+    setPendingCommandDecision(intentDecision);
+    const assistantMsg: ChatMessage = {
+      id: 'msg-' + Date.now(),
+      role: 'assistant',
+      content:
+        intentDecision.confirmationPrompt ||
+        intentDecision.clarificationPrompt ||
+        'Please confirm this action:',
+      timestamp: Date.now(),
+      options: intentDecision.options,
+      pendingConfirmation: true,
+    };
+    return {
+      reply: assistantMsg.content,
+      actionChips: ['⚠️ Confirmation Required'],
+      updatedHistory: [...updatedHistory, assistantMsg],
+      options: intentDecision.options,
+    };
+  }
+
+  // If high confidence command with verified intent (e.g. checking both habits, completing habits, or deleting specific expenses)
+  if (
+    intentDecision.confidence === 'high' &&
+    (intentDecision.intent === 'HABIT_COMPLETE' ||
+      intentDecision.intent === 'HABIT_TOGGLE' ||
+      intentDecision.intent === 'EXPENSE_DELETE_BATCH' ||
+      intentDecision.intent === 'EXPENSE_DELETE' ||
+      intentDecision.intent === 'TASK_DELETE')
+  ) {
+    const execResult = await executeCommandDecision(intentDecision);
+    if (execResult.success && execResult.executedActions.length > 0) {
+      const assistantMsg: ChatMessage = {
+        id: 'msg-' + Date.now(),
+        role: 'assistant',
+        content: execResult.message,
+        timestamp: Date.now(),
+        actionChips: execResult.actionChips,
+        options: execResult.options,
+      };
+      return {
+        reply: execResult.message,
+        actionChips: execResult.actionChips || [],
+        updatedHistory: [...updatedHistory, assistantMsg],
+        options: execResult.options,
+      };
+    }
   }
 
   // Convert ChatMessage history to OpenAI format for Groq
@@ -2621,11 +2801,40 @@ export async function sendSecretaryMessage(
               callArgs = {};
             }
 
-            const toolResult = await executeSecretaryTool(call.function.name, callArgs);
+            let effectiveTool = call.function.name;
+            let effectiveArgs = callArgs;
+
+            // INTERCEPT ROGUE TASK CREATION:
+            // Prevents AI from creating a task titled "delete all the spendings I did today" or "check both my habits as done"
+            if (isRogueTaskCreation(call.function.name, callArgs, userPrompt)) {
+              console.warn('[Groq] Intercepted rogue task creation:', callArgs.title);
+              const correctedDecision = analyzeCommandIntent(callArgs.title || userPrompt);
+              if (
+                correctedDecision.intent === 'EXPENSE_DELETE_BATCH' ||
+                correctedDecision.intent === 'EXPENSE_DELETE'
+              ) {
+                effectiveTool = 'delete_expense';
+                effectiveArgs = correctedDecision.actions[0]?.params || { date: 'today', all: true };
+              } else if (correctedDecision.intent === 'EXPENSE_CLEAR_ALL') {
+                effectiveTool = 'clear_all_expenses';
+                effectiveArgs = { confirmed: true };
+              } else if (
+                correctedDecision.intent === 'HABIT_COMPLETE' ||
+                correctedDecision.intent === 'HABIT_TOGGLE'
+              ) {
+                effectiveTool = 'toggle_habits';
+                effectiveArgs = correctedDecision.actions[0]?.params || { both: true };
+              } else if (correctedDecision.intent === 'TASK_DELETE') {
+                effectiveTool = 'delete_task';
+                effectiveArgs = correctedDecision.actions[0]?.params || {};
+              }
+            }
+
+            const toolResult = await executeSecretaryTool(effectiveTool, effectiveArgs);
             const isToolSuccess = toolResult.data?.success !== false && !toolResult.data?.error;
             executedToolEvents.push({
-              name: call.function.name,
-              args: callArgs,
+              name: effectiveTool,
+              args: effectiveArgs,
               success: isToolSuccess,
               data: toolResult.data,
             });
@@ -2802,7 +3011,9 @@ export async function sendSecretaryMessage(
 
   // If all candidate models failed, report the error clearly
   let friendlyError: string;
-  if (lastGroqError.includes('405') || lastGroqError.includes('Method Not Allowed')) {
+  if (lastGroqError.includes('missing_api_key') || lastGroqError.includes('Personal Groq API key required')) {
+    friendlyError = '⚠️ **Personal Groq API Key Required**\n\nTo use the AI Assistant on this device, please add your personal Groq API key in Settings -> API Keys (obtain free from console.groq.com).';
+  } else if (lastGroqError.includes('405') || lastGroqError.includes('Method Not Allowed')) {
     friendlyError = `⚠️ **Zikenn AI**: Direct connection re-routed. Please retry your request with Zikenn AI.`;
   } else if (lastGroqError.includes('decommissioned') || lastGroqError.includes('mixtral') || lastGroqError.includes('llama3-') || lastGroqError.includes('model_not_found')) {
     friendlyError = `⚠️ **Zikenn AI Updated**: Switched to high-performance model **GPT OSS 120B**. Please send your message again.`;
@@ -2936,8 +3147,7 @@ export async function generateDailyInsightAI(
 
   const apiKey =
     apiKeyOverride ||
-    Storage.getGroqApiKey() ||
-    (import.meta.env.VITE_GROQ_API_KEY as string | undefined)?.trim() ||
+    Storage.getGroqApiKey()?.trim() ||
     DEFAULT_GROQ_KEY;
 
   if (!apiKey) {

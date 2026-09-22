@@ -148,6 +148,13 @@ const ACTION_META: Record<
     bg: 'bg-gray-50 dark:bg-gray-950/40 border-gray-200 dark:border-gray-800/40',
     icon: <Clock className="w-3.5 h-3.5 text-gray-700 dark:text-gray-300" />,
   },
+  batch_action: {
+    label: 'Batch Multi-Action',
+    functionName: 'commandIntentEngine.executeCommandDecision',
+    color: 'text-purple-700 dark:text-purple-300',
+    bg: 'bg-purple-50 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800/40',
+    icon: <Zap className="w-3.5 h-3.5 text-purple-700 dark:text-purple-300" />,
+  },
 };
 
 const EXPENSE_CATEGORIES: ExpenseCategory[] = [

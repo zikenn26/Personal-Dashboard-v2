@@ -164,7 +164,7 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
         heightLeft -= pageHeight;
       }
 
-      const cleanName = (profile.name || 'Gulshan_Kumar_Nayak').trim().replace(/\s+/g, '_');
+      const cleanName = (profile.name || 'Candidate').trim().replace(/\s+/g, '_');
       pdf.save(`${cleanName}_Resume.pdf`);
       Sound.success(soundEnabled);
     } catch (err) {
@@ -221,7 +221,7 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
           <!DOCTYPE html>
           <html>
             <head>
-              <title>${(profile.name || 'Gulshan Kumar Nayak')} - Resume</title>
+              <title>${(profile.name || 'Candidate')} - Resume</title>
               <meta charset="utf-8" />
               <meta name="viewport" content="width=device-width, initial-scale=1" />
               ${styleSheets}

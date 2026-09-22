@@ -396,20 +396,20 @@ export const INITIAL_EDUCATION_RECORDS: EducationRecord[] = [
 
 export const INITIAL_JOB_EXPERIENCES: JobExperience[] = [
   {
-    id: 'exp-hcl-2026',
-    role: 'Software Engineer (BigFix)',
-    company: 'HCLSoftware',
+    id: 'exp-tech-2026',
+    role: 'Software Engineer',
+    company: 'Enterprise Tech Solutions',
     startDate: 'Jun 2026',
     endDate: 'Present',
     location: 'Noida, India',
     description:
-      'Working on BigFix and automation solutions.',
+      'Working on distributed automation, systems architecture, and tooling.',
     keyAchievements: [
-      'Working on BigFix and automation solutions.',
-      'Developed and maintained enterprise tools.',
-      'Collaborated with cross-functional teams.',
+      'Engineered automated diagnostics and enterprise management workflows.',
+      'Developed and maintained high-throughput enterprise tools.',
+      'Collaborated with cross-functional product and infrastructure teams.',
     ],
-    techStack: ['BigFix', 'Automation', 'Enterprise Tools', 'Python', 'C++'],
+    techStack: ['Automation', 'Enterprise Tools', 'Python', 'C++', 'TypeScript'],
   },
   {
     id: 'exp-nit-raipur-research',
@@ -521,12 +521,12 @@ export const INITIAL_LANGUAGES: Array<{ id: string; name: string; proficiency: s
 
 // Clean Base User Profile formatted according to verified resume
 export const INITIAL_PROFILE: UserProfile = {
-  name: 'Gulshan Kumar Nayak',
+  name: 'Alex Morgan',
   caption: 'Data & AI Engineer | Researcher | Problem Solver',
-  handle: '@gulshan',
+  handle: '@alex',
   title: 'Data & AI Engineer | Researcher | Problem Solver',
   bio: 'I build data-driven systems, AI applications and intelligent solutions to solve real-world problems.',
-  location: 'Bhubaneswar, India',
+  location: 'San Francisco, CA',
   statusText: 'Open to opportunities',
   statusEmoji: '💼',
   avatarUrl: STOCK_IMAGES.avatar,
@@ -535,12 +535,12 @@ export const INITIAL_PROFILE: UserProfile = {
   bannerBg: 'linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 50%, #FDF4FF 100%)',
   staticCoverImage: STOCK_IMAGES.workspaceCover,
   coverImageEnabled: true,
-  contactEmail: 'gulshan@example.com',
-  phone: '+91 98765 43210',
-  github: 'github.com/gulshan',
-  linkedin: 'linkedin.com/in/gulshan',
+  contactEmail: 'alex.morgan@example.com',
+  phone: '+1 (555) 234-5678',
+  github: 'github.com/alexmorgan',
+  linkedin: 'linkedin.com/in/alexmorgan',
   twitter: '',
-  website: 'portfolio.gulshan.dev',
+  website: 'alexmorgan.dev',
   resumeAvailable: true,
   services: ['Data & AI Systems', 'Machine Learning & LLMs', 'Full-Stack Engineering', 'Distributed Computing'],
   tools: ['Python', 'PyTorch', 'Java', 'Spring Boot', 'React', 'TypeScript', 'SQL', 'Git'],
@@ -559,8 +559,8 @@ export const INITIAL_PROFILE: UserProfile = {
     'Aspiring to contribute as a Software Engineer and Data Analyst, leveraging robust backend skills, AI integrations, and high-impact analytics.',
   availabilityStatus: 'Open to opportunities',
   yearsOfExperience: '2+',
-  currentCompany: 'HCLSoftware',
-  currentDesignation: 'Software Engineer (BigFix)',
+  currentCompany: 'Enterprise Tech Solutions',
+  currentDesignation: 'Software Engineer',
 };
 
 // Empty Clean State Collections (No fake/mock data for new accounts)
@@ -913,7 +913,7 @@ export const DEMO_TIMELINE: LifeMilestone[] = [
     id: 'ms-1',
     year: 2024,
     dateStr: '2024 - Present',
-    title: 'Software Engineer at HCL Software',
+    title: 'Software Engineer at Enterprise Systems',
     description: 'Engineering scalable enterprise systems, modern microservices, and high-performance digital tools.',
     category: 'Career',
     icon: 'Briefcase',
@@ -1012,18 +1012,18 @@ export const INITIAL_PHOTOS = [
 ];
 
 export const DEFAULT_ATS_RESUME: ResumeDocument = {
-  fileName: 'Gulshan_Kumar_Nayak_Resume.pdf',
+  fileName: 'Resume_Template.pdf',
   fileSize: '128 KB',
   uploadedAt: 'Verified ATS Format',
   summary:
-    'Passionate and goal-driven Information Technology student with a strong academic foundation and hands-on experience in backend development, full-stack applications, Data Science and Analytics, and AI-integrated systems. Skilled in a wide range of technologies including Java, Spring Boot, React, Python, Networking, Power BI, Generative AI, LLM, and APIs. Strong problem solving skills, leadership qualities, and commitment to continuous learning and development.',
+    'Passionate and goal-driven software engineer with a strong academic foundation and hands-on experience in backend development, full-stack applications, Data Science and Analytics, and AI-integrated systems. Skilled in a wide range of technologies including Java, Spring Boot, React, Python, Networking, Power BI, Generative AI, LLM, and APIs. Strong problem solving skills, leadership qualities, and commitment to continuous learning and development.',
   contact: {
-    name: 'GULSHAN KUMAR NAYAK',
-    phone: '+91-7304838209',
-    email: 'gulnayak1206@gmail.com',
+    name: 'ALEX MORGAN',
+    phone: '+1 (555) 234-5678',
+    email: 'alex.morgan@example.com',
     github: 'https://github.com',
     linkedin: 'https://linkedin.com',
-    location: 'Raipur, Chhattisgarh, India',
+    location: 'San Francisco, CA',
     portfolio: 'https://github.com',
   },
   skills: [

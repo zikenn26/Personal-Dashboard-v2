@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <!-- Allow secure local WebView scheme -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">supabase.co</domain>
+        <domain includeSubdomains="true">groq.com</domain>
+    </domain-config>
+</network-security-config>

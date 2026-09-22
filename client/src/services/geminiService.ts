@@ -8,6 +8,14 @@ import {
   inferExpenseCategory,
   broadcastDataChanged,
 } from './commandMappingService';
+import {
+  analyzeCommandIntent,
+  executeCommandDecision,
+  isRogueTaskCreation,
+  setPendingCommandDecision,
+  clearPendingCommandDecision,
+  InteractiveOption,
+} from './commandIntentEngine';
 
 // Backend server error detection tracker
 let backendServerErrorDetected = false;
@@ -29,6 +37,8 @@ export interface GeminiChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   actionChips?: string[];
+  options?: InteractiveOption[];
+  pendingConfirmation?: boolean;
   modelUsed?: string;
   timestamp: number;
 }
@@ -263,6 +273,7 @@ export async function executeLocalClientVoiceFallback(
   reply: string;
   actionChips: string[];
   model: string;
+  options?: InteractiveOption[];
   updatedHistory: GeminiChatMessage[];
 }> {
   // Strip leading and trailing punctuation, quotes, question marks, and excessive whitespace
@@ -303,7 +314,37 @@ export async function executeLocalClientVoiceFallback(
     }
   }
 
-  // 2. Comprehensive simplified mock & local storage operation handler
+  // 2. Deterministic Command Intent Engine Check
+  const fallbackIntent = analyzeCommandIntent(cleaned);
+  if (fallbackIntent.intent !== 'UNKNOWN_INTENT' && fallbackIntent.intent !== 'TASK_CREATE') {
+    const execRes = await executeCommandDecision(fallbackIntent);
+    if (execRes.success || execRes.status === 'AWAITING_CONFIRMATION') {
+      const userMessage: GeminiChatMessage = {
+        id: 'msg-user-' + Date.now(),
+        role: 'user',
+        content: message,
+        timestamp: Date.now() - 1,
+      };
+      const assistantMessage: GeminiChatMessage = {
+        id: 'msg-fallback-' + Date.now(),
+        role: 'assistant',
+        content: execRes.message,
+        actionChips: execRes.actionChips,
+        options: execRes.options,
+        modelUsed: 'Command Intent Engine (Local)',
+        timestamp: Date.now(),
+      };
+      return {
+        reply: execRes.message,
+        actionChips: execRes.actionChips || [],
+        model: 'Command Intent Engine (Local)',
+        options: execRes.options,
+        updatedHistory: [...history, userMessage, assistantMessage],
+      };
+    }
+  }
+
+  // 3. Heuristic fallback for simple commands
   const lower = cleaned.toLowerCase();
   const handlers = getRegisteredHandlers();
   let reply = '';
@@ -516,9 +557,123 @@ export async function sendGeminiMessage(params: {
   reply: string;
   actionChips: string[];
   model: string;
+  options?: InteractiveOption[];
   updatedHistory: GeminiChatMessage[];
 }> {
   const { message, history, model = 'gemini-3.1-flash-lite', roleId, customSystemInstruction } = params;
+
+  // 1. Analyze command intent via deterministic Command Intent Engine
+  const intentDecision = analyzeCommandIntent(message);
+
+  if (intentDecision.intent === 'CANCEL_PENDING') {
+    clearPendingCommandDecision();
+    const userMsg: GeminiChatMessage = {
+      id: 'msg-' + Date.now(),
+      role: 'user',
+      content: message,
+      timestamp: Date.now() - 1,
+    };
+    const asstMsg: GeminiChatMessage = {
+      id: 'msg-' + Date.now(),
+      role: 'assistant',
+      content: 'Action cancelled. No changes were made.',
+      timestamp: Date.now(),
+      actionChips: ['⚡ Action Cancelled'],
+    };
+    return {
+      reply: asstMsg.content,
+      actionChips: ['⚡ Action Cancelled'],
+      model: 'Command Intent Engine',
+      updatedHistory: [...history, userMsg, asstMsg],
+    };
+  }
+
+  if (intentDecision.intent === 'CONFIRM_PENDING') {
+    const execResult = await executeCommandDecision(intentDecision);
+    const userMsg: GeminiChatMessage = {
+      id: 'msg-' + Date.now(),
+      role: 'user',
+      content: message,
+      timestamp: Date.now() - 1,
+    };
+    const asstMsg: GeminiChatMessage = {
+      id: 'msg-' + Date.now(),
+      role: 'assistant',
+      content: execResult.message,
+      timestamp: Date.now(),
+      actionChips: execResult.actionChips,
+    };
+    return {
+      reply: execResult.message,
+      actionChips: execResult.actionChips || [],
+      model: 'Command Intent Engine',
+      updatedHistory: [...history, userMsg, asstMsg],
+    };
+  }
+
+  if (intentDecision.requiresConfirmation) {
+    setPendingCommandDecision(intentDecision);
+    const userMsg: GeminiChatMessage = {
+      id: 'msg-' + Date.now(),
+      role: 'user',
+      content: message,
+      timestamp: Date.now() - 1,
+    };
+    const promptText =
+      intentDecision.confirmationPrompt ||
+      intentDecision.clarificationPrompt ||
+      'Please confirm this action:';
+    const asstMsg: GeminiChatMessage = {
+      id: 'msg-' + Date.now(),
+      role: 'assistant',
+      content: promptText,
+      timestamp: Date.now(),
+      actionChips: ['⚠️ Confirmation Required'],
+      options: intentDecision.options,
+      pendingConfirmation: true,
+    };
+    return {
+      reply: promptText,
+      actionChips: ['⚠️ Confirmation Required'],
+      model: 'Command Intent Engine',
+      options: intentDecision.options,
+      updatedHistory: [...history, userMsg, asstMsg],
+    };
+  }
+
+  if (
+    intentDecision.confidence === 'high' &&
+    (intentDecision.intent === 'HABIT_COMPLETE' ||
+      intentDecision.intent === 'HABIT_TOGGLE' ||
+      intentDecision.intent === 'EXPENSE_DELETE_BATCH' ||
+      intentDecision.intent === 'EXPENSE_DELETE' ||
+      intentDecision.intent === 'TASK_DELETE')
+  ) {
+    const execResult = await executeCommandDecision(intentDecision);
+    if (execResult.success && execResult.executedActions.length > 0) {
+      const userMsg: GeminiChatMessage = {
+        id: 'msg-' + Date.now(),
+        role: 'user',
+        content: message,
+        timestamp: Date.now() - 1,
+      };
+      const asstMsg: GeminiChatMessage = {
+        id: 'msg-' + Date.now(),
+        role: 'assistant',
+        content: execResult.message,
+        timestamp: Date.now(),
+        actionChips: execResult.actionChips,
+        options: execResult.options,
+      };
+      return {
+        reply: execResult.message,
+        actionChips: execResult.actionChips || [],
+        model: 'Command Intent Engine',
+        options: execResult.options,
+        updatedHistory: [...history, userMsg, asstMsg],
+      };
+    }
+  }
 
   // If backend server returned a 405 or other error previously, route directly through local fallback
   if (backendServerErrorDetected) {
@@ -619,7 +774,7 @@ export async function sendGeminiMessage(params: {
     for (const fc of data.functionCalls) {
       try {
         let toolName = fc.name;
-        const args = fc.args || {};
+        let args = fc.args || {};
 
         // Map function names to existing executeSecretaryTool if needed
         if (toolName === 'createTask') toolName = 'add_task';
@@ -628,6 +783,7 @@ export async function sendGeminiMessage(params: {
         if (toolName === 'logExpense') toolName = 'add_expense';
         if (toolName === 'deleteExpense') toolName = 'delete_expense';
         if (toolName === 'updateExpense') toolName = 'update_expense';
+        if (toolName === 'toggleHabits') toolName = 'toggle_habits';
         if (toolName === 'toggleHabit') {
           // find habit id by title if habitTitle passed
           if (args.habitTitle && !args.id) {
@@ -639,6 +795,31 @@ export async function sendGeminiMessage(params: {
           toolName = 'toggle_habit';
         }
         if (toolName === 'navigateView') toolName = 'navigate_view';
+
+        // Intercept rogue task creation from Gemini
+        if (isRogueTaskCreation(toolName, args, message)) {
+          console.warn('[Gemini] Intercepted rogue task creation:', args.title);
+          const correctedDecision = analyzeCommandIntent(args.title || message);
+          if (
+            correctedDecision.intent === 'EXPENSE_DELETE_BATCH' ||
+            correctedDecision.intent === 'EXPENSE_DELETE'
+          ) {
+            toolName = 'delete_expense';
+            args = correctedDecision.actions[0]?.params || { date: 'today', all: true };
+          } else if (correctedDecision.intent === 'EXPENSE_CLEAR_ALL') {
+            toolName = 'clear_all_expenses';
+            args = { confirmed: true };
+          } else if (
+            correctedDecision.intent === 'HABIT_COMPLETE' ||
+            correctedDecision.intent === 'HABIT_TOGGLE'
+          ) {
+            toolName = 'toggle_habits';
+            args = correctedDecision.actions[0]?.params || { both: true };
+          } else if (correctedDecision.intent === 'TASK_DELETE') {
+            toolName = 'delete_task';
+            args = correctedDecision.actions[0]?.params || {};
+          }
+        }
 
         const execRes = await executeSecretaryTool(toolName, args);
         if (execRes.actionChip) {
@@ -867,10 +1048,17 @@ export async function transcribeAudioWithGroqWhisper(audioBlob: Blob): Promise<s
     formData.append('language', 'en');
     formData.append('response_format', 'json');
 
+    const clientKey = Storage.getGroqApiKey?.();
+
     // 1. Try server proxy route first
     try {
+      const headers: Record<string, string> = {};
+      if (clientKey?.trim()) {
+        headers['Authorization'] = `Bearer ${clientKey.trim()}`;
+      }
       const proxyRes = await fetch('/api/groq/audio/transcriptions', {
         method: 'POST',
+        headers,
         body: formData,
       });
       if (proxyRes.ok) {
@@ -880,7 +1068,6 @@ export async function transcribeAudioWithGroqWhisper(audioBlob: Blob): Promise<s
     } catch {}
 
     // 2. Try direct Groq endpoint if user has client-configured key
-    const clientKey = Storage.getGroqApiKey?.() || (import.meta as any).env?.VITE_GROQ_API_KEY;
     if (clientKey?.trim()) {
       const directRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
         method: 'POST',
