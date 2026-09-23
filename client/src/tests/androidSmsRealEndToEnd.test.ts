@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
 import { parseSmsTransaction } from '../services/smsParser';
-import { smsExpenseService, SmsTransaction, smsPluginWebImpl } from '../services/smsExpenseService';
+import { smsExpenseService, SmsTransaction, smsPluginWebImpl, sanitizeSmsForLog } from '../services/smsExpenseService';
 import { Storage } from '../utils/storage';
 import { ExpenseItem } from '../types';
 
@@ -317,6 +317,102 @@ describe('Real Android Device SMS Pipeline & End-to-End Test', () => {
       const merchants = expenses.map((e) => e.name);
       expect(merchants).toContain('Starbucks');
       expect(merchants).toContain('Zepto');
+    });
+  });
+
+  describe('3. Robust Diagnostic Logging & Sanitization Pipeline', () => {
+    it('sanitizes sensitive 16-digit cards, bank accounts, and OTPs for logcat privacy', () => {
+      const rawText = 'Rs 4,500 spent on Card 4111 2222 3333 4444 A/c 12345678901 OTP 482019 at Amazon';
+      const sanitized = sanitizeSmsForLog(rawText);
+
+      expect(sanitized).not.toContain('4111 2222 3333 4444');
+      expect(sanitized).toContain('****-****-****-4444');
+      expect(sanitized).not.toContain('12345678901');
+      expect(sanitized).toContain('A/c ****');
+      expect(sanitized).not.toContain('482019');
+      expect(sanitized).toContain('OTP ******');
+    });
+
+    it('outputs diagnostic logs capturing raw payload, financial identification, and pre-duplicate data object', () => {
+      const consoleInfoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const validSms =
+        'Dear UPI user A/C 9876 debited by 1200.00 on 23Sep26 transfer to MOHIT SHARMA Ref No 429482938492.';
+      const res = smsExpenseService.processSms(validSms, 'SBIUPI', Date.now(), false);
+
+      expect(res.success).toBe(true);
+      expect(res.status).toBe('logged');
+
+      // 1. Check raw payload was captured before parser
+      const rawCall = consoleInfoSpy.mock.calls.find((call) =>
+        call[0].includes('LifeOS_SMS:RAW_PAYLOAD')
+      );
+      expect(rawCall).toBeDefined();
+      expect(rawCall![0]).toContain('Incoming SMS captured before parser');
+      expect(rawCall![0]).toContain('SBIUPI');
+
+      // 2. Check full data object was logged before duplicate check
+      const financialCall = consoleInfoSpy.mock.calls.find((call) =>
+        call[0].includes('LifeOS_SMS:FINANCIAL_IDENTIFIED')
+      );
+      expect(financialCall).toBeDefined();
+      expect(financialCall![0]).toContain('Pre-Duplicate Check Data Object');
+      expect(financialCall![0]).toContain('"amount": 1200');
+      expect(financialCall![0]).toContain('"merchant": "Mohit Sharma"');
+      expect(financialCall![0]).toContain('"referenceId": "429482938492"');
+
+      // 3. Check final confirmation logged to Spending
+      const loggedCall = consoleInfoSpy.mock.calls.find((call) =>
+        call[0].includes('LifeOS_SMS:LOGGED_TO_SPENDING')
+      );
+      expect(loggedCall).toBeDefined();
+      expect(loggedCall![0]).toContain('Mohit Sharma');
+
+      consoleInfoSpy.mockRestore();
+      consoleWarnSpy.mockRestore();
+    });
+
+    it('outputs diagnostic warning with exact skip reason when non-financial message arrives', () => {
+      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const otpSms = 'Your OTP for HDFC NetBanking is 592810. Do not share this OTP with anyone.';
+      const res = smsExpenseService.processSms(otpSms, 'HDFCBK', Date.now(), false);
+
+      expect(res.success).toBe(false);
+      expect(res.status).toBe('ignored_not_financial');
+
+      const skippedCall = consoleWarnSpy.mock.calls.find((call) =>
+        call[0].includes('LifeOS_SMS:SKIPPED_NOT_FINANCIAL')
+      );
+      expect(skippedCall).toBeDefined();
+      expect(skippedCall![0]).toContain('whySkipped');
+      expect(skippedCall![0]).toMatch(/OTP|verification|Unrelated/i);
+
+      consoleWarnSpy.mockRestore();
+    });
+
+    it('outputs diagnostic warning when duplicate transaction is intercepted', () => {
+      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const sms = 'Dear UPI user A/C 9876 debited by 1200.00 on 23Sep26 transfer to MOHIT SHARMA Ref No 429482938492.';
+
+      // First run - successfully logged
+      smsExpenseService.processSms(sms, 'SBIUPI', Date.now(), false);
+
+      // Second run - should be flagged as duplicate in diagnostics
+      const res2 = smsExpenseService.processSms(sms, 'SBIUPI', Date.now(), false);
+      expect(res2.success).toBe(false);
+      expect(res2.status).toBe('duplicate_skipped');
+
+      const dupCall = consoleWarnSpy.mock.calls.find((call) =>
+        call[0].includes('LifeOS_SMS:SKIPPED_DUPLICATE')
+      );
+      expect(dupCall).toBeDefined();
+      expect(dupCall![0]).toContain('Duplicate transaction detected');
+      expect(dupCall![0]).toContain('Mohit Sharma');
+
+      consoleWarnSpy.mockRestore();
     });
   });
 });

@@ -16,6 +16,7 @@ export interface SmsTransactionPluginInterface {
   getPendingSms(): Promise<{ messages: Array<{ sender: string; body: string; timestamp: number }> }>;
   clearPendingSms(): Promise<{ success: boolean }>;
   readRecentSms(options?: { limit?: number }): Promise<{ messages: Array<{ sender: string; body: string; timestamp: number }> }>;
+  logDiagnostic?(options: { tag?: string; level?: 'info' | 'warn' | 'error' | 'debug'; message: string }): Promise<void>;
   addListener(
     eventName: 'onSmsReceived',
     listenerFunc: (data: { sender: string; body: string; timestamp: number }) => void
@@ -31,8 +32,75 @@ export const smsPluginWebImpl = {
   getPendingSms: async () => ({ messages: [] as Array<{ sender: string; body: string; timestamp: number }> }),
   clearPendingSms: async () => ({ success: true }),
   readRecentSms: async () => ({ messages: [] as Array<{ sender: string; body: string; timestamp: number }> }),
+  logDiagnostic: async () => {},
   addListener: async () => ({ remove: () => {} }),
 };
+
+/**
+ * Sanitizes sensitive banking and identity data from SMS texts
+ * before outputting diagnostic logs to device Logcat or console.
+ */
+export function sanitizeSmsForLog(text: string): string {
+  if (!text) return '';
+  return text
+    // Mask 12-16 digit card / account sequences
+    .replace(/\b(\d{4})[ -]?(\d{4})[ -]?(\d{4})[ -]?(\d{4})\b/g, '****-****-****-$4')
+    // Mask bank accounts
+    .replace(/(a\/c|acct|acc|account|card)\s*(?:no\.?)?\s*[:#]?\s*([X*]*\d{4,})/gi, '$1 ****')
+    // Mask OTP codes
+    .replace(/(otp|code|secret)\s*(?:is|:)?\s*\b\d{4,8}\b/gi, '$1 ******')
+    // Mask phone numbers in UPI handles
+    .replace(/\b(\d{6})(\d{4})@([a-zA-Z]+)\b/g, '******$2@$3');
+}
+
+/**
+ * Robust diagnostic logger that outputs directly to Android Logcat
+ * (via Capacitor console bridge and native SmsTransaction.logDiagnostic)
+ */
+export function logDeviceDiagnostic(
+  level: 'info' | 'warn' | 'error' | 'debug',
+  tag: string,
+  message: string,
+  payload?: Record<string, any> | string
+) {
+  const formattedPayload =
+    payload !== undefined
+      ? typeof payload === 'string'
+        ? payload
+        : JSON.stringify(payload, null, 2)
+      : '';
+  const fullLog = formattedPayload ? `[${tag}] ${message}\nDATA: ${formattedPayload}` : `[${tag}] ${message}`;
+
+  // 1. Output to standard console (automatically redirected to Android Logcat by Capacitor / Chromium)
+  switch (level) {
+    case 'error':
+      console.error(fullLog);
+      break;
+    case 'warn':
+      console.warn(fullLog);
+      break;
+    case 'debug':
+      console.debug(fullLog);
+      break;
+    case 'info':
+    default:
+      console.info(fullLog);
+      break;
+  }
+
+  // 2. Direct native logcat output when running on device
+  try {
+    if (Capacitor.isNativePlatform() && SmsTransaction.logDiagnostic) {
+      SmsTransaction.logDiagnostic({
+        tag: tag.split(':')[0] || 'LifeOS_SMS',
+        level,
+        message: fullLog,
+      }).catch(() => {});
+    }
+  } catch {
+    // Ignore bridge errors in test/mock environments
+  }
+}
 
 export const SmsTransaction = registerPlugin<SmsTransactionPluginInterface>('SmsTransaction', {
   web: () => smsPluginWebImpl,
@@ -223,33 +291,96 @@ class SmsExpenseService {
     expense?: ExpenseItem;
     parsed: ParsedSmsTransaction;
   } {
+    const sanitizedBody = sanitizeSmsForLog(body);
+
+    // =========================================================================
+    // 1. DIAGNOSTIC LOGCAT: RAW CAPTURE BEFORE PARSER
+    // =========================================================================
+    logDeviceDiagnostic('info', 'LifeOS_SMS:RAW_PAYLOAD', 'Incoming SMS captured before parser', {
+      sender: sender || '(unknown)',
+      timestampISO: new Date(timestamp).toISOString(),
+      timestampMs: timestamp,
+      rawBodyLength: body ? body.length : 0,
+      sanitizedContent: sanitizedBody,
+      isAutoTrackingEnabled: this.isAutoTrackingEnabled(),
+      platform: Capacitor.getPlatform(),
+    });
+
+    // Execute semantic extraction
     const parsed = parseSmsTransaction(body, sender, timestamp);
 
-    // 1. Not a financial transaction
+    // =========================================================================
+    // 2. DIAGNOSTIC LOGCAT: FINANCIAL CLASSIFICATION CHECK
+    // =========================================================================
     if (!parsed.isTransaction) {
+      const skipReason = parsed.ignoreReason || 'Unrelated message (OTP, promotional advertisement, service alert, or non-transactional text)';
+
+      logDeviceDiagnostic('warn', 'LifeOS_SMS:SKIPPED_NOT_FINANCIAL', 'Message was NOT identified as a financial transaction', {
+        sender: sender || '(unknown)',
+        whySkipped: skipReason,
+        sanitizedPreview: sanitizedBody.slice(0, 140),
+      });
+
       const logItem: SmsTransactionLogItem = {
         id: `sms-log-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
         timestamp,
         sender,
         rawSms: body,
         status: 'ignored_not_financial',
-        reason: parsed.ignoreReason || 'Unrelated message (OTP, promotion, or service notice)',
+        reason: skipReason,
       };
       Storage.addSmsTransactionLog(logItem);
 
       return {
         success: false,
         status: 'ignored_not_financial',
-        reason: logItem.reason,
+        reason: skipReason,
         parsed,
       };
     }
 
-    // 2. Check for duplicate transaction
+    // =========================================================================
+    // 3. DIAGNOSTIC LOGCAT: FULL DATA OBJECT BEFORE DUPLICATE CHECK
+    // =========================================================================
+    const preDuplicateDataObject = {
+      amount: parsed.amount,
+      currency: parsed.currency || 'INR',
+      type: parsed.type,
+      merchant: parsed.merchant,
+      category: parsed.category,
+      paymentMethod: parsed.paymentMethod,
+      bankOrAccount: parsed.bankOrAccount,
+      referenceId: parsed.referenceId || null,
+      balance: parsed.balance !== undefined ? parsed.balance : null,
+      date: parsed.date,
+      time: parsed.time,
+      fingerprint: parsed.fingerprint,
+      confidence: parsed.confidence,
+      source: 'sms_auto',
+    };
+
+    logDeviceDiagnostic(
+      'info',
+      'LifeOS_SMS:FINANCIAL_IDENTIFIED',
+      'SMS identified as financial transaction (Pre-Duplicate Check Data Object)',
+      preDuplicateDataObject
+    );
+
+    // =========================================================================
+    // 4. DUPLICATE CHECK EVALUATION
+    // =========================================================================
     const existingExpenses = Storage.getExpenses();
     const dupCheck = this.checkIsDuplicate(parsed, existingExpenses);
 
     if (dupCheck.isDuplicate) {
+      logDeviceDiagnostic('warn', 'LifeOS_SMS:SKIPPED_DUPLICATE', 'Duplicate transaction detected; skipping auto-logging to Spending', {
+        merchant: parsed.merchant,
+        amount: parsed.amount,
+        referenceId: parsed.referenceId,
+        reason: dupCheck.reason,
+        fingerprint: parsed.fingerprint,
+      });
+
       // Mark fingerprint as processed so repeated SMS broadcasts don't re-trigger
       Storage.addProcessedSmsFingerprint(parsed.fingerprint);
 
@@ -279,7 +410,7 @@ class SmsExpenseService {
       };
     }
 
-    // 3. Construct and auto-log new Expense entry
+    // 5. Construct and auto-log new Expense entry
     const notesParts: string[] = [];
     if (parsed.bankOrAccount) notesParts.push(parsed.bankOrAccount);
     if (parsed.referenceId) notesParts.push(`Ref: ${parsed.referenceId}`);
@@ -327,6 +458,21 @@ class SmsExpenseService {
       },
     };
     Storage.addSmsTransactionLog(logItem);
+
+    // =========================================================================
+    // 6. DIAGNOSTIC LOGCAT: LOGGED TO SPENDING
+    // =========================================================================
+    logDeviceDiagnostic('info', 'LifeOS_SMS:LOGGED_TO_SPENDING', `Transaction auto-logged to Spending: ${newExpense.name} (₹${newExpense.amount})`, {
+      expenseId: newExpense.id,
+      merchant: newExpense.name,
+      amount: newExpense.amount,
+      category: newExpense.category,
+      paymentMethod: newExpense.paymentMethod,
+      referenceId: newExpense.smsReferenceId,
+      date: newExpense.date,
+      time: newExpense.time,
+      bankOrAccount: newExpense.bankOrAccount,
+    });
 
     // Dispatch system events so dashboard views update immediately
     broadcastDataChanged('expenses', { newExpense });

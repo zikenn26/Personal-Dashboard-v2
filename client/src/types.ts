@@ -151,6 +151,8 @@ export interface ParsedSmsTransaction {
   timestamp: number;
   fingerprint: string;
   ignoreReason?: string;
+  balance?: number;
+  confidence?: number;
 }
 
 export interface SmsTransactionLogItem {

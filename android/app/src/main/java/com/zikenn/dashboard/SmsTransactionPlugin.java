@@ -4,9 +4,11 @@ import android.Manifest;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
@@ -52,19 +54,72 @@ public class SmsTransactionPlugin extends Plugin {
     public static final String KEY_SMS_AUTO_ENABLED = "sms_auto_logging_enabled";
     public static final String KEY_PENDING_SMS = "pending_sms_transactions";
 
+    private BroadcastReceiver dynamicReceiver;
+
     @Override
     public void load() {
         super.load();
         instance = this;
-        Log.d(TAG, "SmsTransactionPlugin loaded successfully");
+        Log.i(TAG, "SmsTransactionPlugin loaded successfully");
+
+        // Dynamically register SmsReceiver while the app is active in foreground/background.
+        // This ensures reliable broadcast receipt on OEM ROMs (MIUI, ColorOS, OneUI)
+        // that may throttle static manifest receivers.
+        try {
+            dynamicReceiver = new SmsReceiver();
+            IntentFilter filter = new IntentFilter("android.provider.Telephony.SMS_RECEIVED");
+            filter.setPriority(999);
+            Context context = getContext();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(dynamicReceiver, filter, Context.RECEIVER_EXPORTED);
+            } else {
+                context.registerReceiver(dynamicReceiver, filter);
+            }
+            Log.i(TAG, "Dynamic SmsReceiver registered successfully with priority 999");
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to register dynamic SmsReceiver", e);
+        }
     }
 
     @Override
     protected void handleOnDestroy() {
+        if (dynamicReceiver != null) {
+            try {
+                getContext().unregisterReceiver(dynamicReceiver);
+                Log.i(TAG, "Dynamic SmsReceiver unregistered");
+            } catch (Exception e) {
+                Log.w(TAG, "Error unregistering dynamic SmsReceiver: " + e.getMessage());
+            }
+            dynamicReceiver = null;
+        }
         if (instance == this) {
             instance = null;
         }
         super.handleOnDestroy();
+    }
+
+    @PluginMethod
+    public void logDiagnostic(PluginCall call) {
+        String tag = call.getString("tag", "LifeOS_SMS");
+        String level = call.getString("level", "info");
+        String message = call.getString("message", "");
+
+        switch (level != null ? level.toLowerCase() : "info") {
+            case "error":
+                Log.e(tag, message);
+                break;
+            case "warn":
+                Log.w(tag, message);
+                break;
+            case "debug":
+                Log.d(tag, message);
+                break;
+            case "info":
+            default:
+                Log.i(tag, message);
+                break;
+        }
+        call.resolve();
     }
 
     @PluginMethod
@@ -258,10 +313,10 @@ public class SmsTransactionPlugin extends Plugin {
             }
 
             prefs.edit().putString(KEY_PENDING_SMS, arr.toString()).apply();
-            Log.d(TAG, "Successfully queued incoming transaction SMS from: " + sender);
+            Log.i(TAG, "[PLUGIN_SMS] Successfully queued incoming SMS from: " + sender + " (live_listener=" + (instance != null) + ")");
 
-            // 3. Show subtle notification to user if app is in background/closed
-            if (instance == null) {
+            // 3. Show subtle notification to user if app is in background/closed AND message is likely financial
+            if (instance == null && SmsReceiver.isLikelyFinancialTransaction(sender, body)) {
                 showBackgroundNotification(context, sender, body);
             }
         } catch (Exception e) {
