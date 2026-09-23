@@ -1,14 +1,20 @@
 package com.zikenn.dashboard;
 
 import android.Manifest;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Build;
 import android.util.Log;
 
+import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.JSArray;
@@ -75,8 +81,9 @@ public class SmsTransactionPlugin extends Plugin {
         boolean hasReceive = ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED;
         boolean hasRead = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED;
 
+        // On Android, RECEIVE_SMS is the primary permission required for incoming transaction logging
         JSObject ret = new JSObject();
-        ret.put("sms", (hasReceive && hasRead) ? "granted" : "prompt");
+        ret.put("sms", hasReceive ? "granted" : "prompt");
         ret.put("receiveSms", hasReceive ? "granted" : "prompt");
         ret.put("readSms", hasRead ? "granted" : "prompt");
         call.resolve(ret);
@@ -89,7 +96,22 @@ public class SmsTransactionPlugin extends Plugin {
 
     @PermissionCallback
     private void smsPermissionCallback(PluginCall call) {
-        this.checkPermissions(call);
+        Context context = getContext();
+        boolean hasReceive = ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED;
+        boolean hasRead = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED;
+
+        if (hasReceive) {
+            // Automatically ensure tracking is enabled in SharedPreferences when permission is granted
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            prefs.edit().putBoolean(KEY_SMS_AUTO_ENABLED, true).apply();
+            Log.d(TAG, "SMS permissions granted; enabled KEY_SMS_AUTO_ENABLED");
+        }
+
+        JSObject ret = new JSObject();
+        ret.put("sms", hasReceive ? "granted" : "prompt");
+        ret.put("receiveSms", hasReceive ? "granted" : "prompt");
+        ret.put("readSms", hasRead ? "granted" : "prompt");
+        call.resolve(ret);
     }
 
     @PluginMethod
@@ -210,7 +232,7 @@ public class SmsTransactionPlugin extends Plugin {
                 instance.notifyListeners("onSmsReceived", data);
             }
 
-            // 2. Also persist in pending queue so background arrivals are guaranteed processed
+            // 2. Persist in pending queue so background arrivals are guaranteed processed
             SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
             String current = prefs.getString(KEY_PENDING_SMS, "[]");
             JSONArray arr;
@@ -237,8 +259,61 @@ public class SmsTransactionPlugin extends Plugin {
 
             prefs.edit().putString(KEY_PENDING_SMS, arr.toString()).apply();
             Log.d(TAG, "Successfully queued incoming transaction SMS from: " + sender);
+
+            // 3. Show subtle notification to user if app is in background/closed
+            if (instance == null) {
+                showBackgroundNotification(context, sender, body);
+            }
         } catch (Exception e) {
             Log.e(TAG, "Failed to handle incoming SMS", e);
+        }
+    }
+
+    /**
+     * Shows a clean Android system notification when a transaction SMS is logged in the background
+     */
+    private static void showBackgroundNotification(Context context, String sender, String body) {
+        try {
+            NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm == null) return;
+
+            String channelId = "lifeos_sms_transactions";
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                NotificationChannel channel = new NotificationChannel(
+                    channelId,
+                    "SMS Expense Auto-Logging",
+                    NotificationManager.IMPORTANCE_DEFAULT
+                );
+                channel.setDescription("Alerts when financial transactions received via SMS are auto-logged");
+                nm.createNotificationChannel(channel);
+            }
+
+            Intent launchIntent = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
+            PendingIntent pendingIntent = null;
+            if (launchIntent != null) {
+                int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    flags |= PendingIntent.FLAG_IMMUTABLE;
+                }
+                pendingIntent = PendingIntent.getActivity(context, 0, launchIntent, flags);
+            }
+
+            String summary = body.length() > 60 ? body.substring(0, 57) + "..." : body;
+
+            NotificationCompat.Builder builder = new NotificationCompat.Builder(context, channelId)
+                .setSmallIcon(android.R.drawable.stat_notify_more)
+                .setContentTitle("💳 Spending Auto-Logged (" + sender + ")")
+                .setContentText(summary)
+                .setAutoCancel(true)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT);
+
+            if (pendingIntent != null) {
+                builder.setContentIntent(pendingIntent);
+            }
+
+            nm.notify((int) (System.currentTimeMillis() % 100000), builder.build());
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to post background SMS notification", e);
         }
     }
 }

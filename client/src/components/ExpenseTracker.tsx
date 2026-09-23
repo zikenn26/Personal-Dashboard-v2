@@ -1093,14 +1093,31 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     return list;
   }, [expenses, modalCategoryFilter, modalSortBy, modalDateRange]);
 
+  const resolveCategoryDef = (category: string) => {
+    const lower = (category || '').toLowerCase().trim();
+    return EXPENSE_CATEGORIES.find((c) => {
+      const cLower = c.name.toLowerCase();
+      if (cLower === lower) return true;
+      if (cLower === 'food & dining' && (lower === 'dining out' || lower === 'food & drinks')) return true;
+      if (cLower === 'groceries' && lower === 'groceries & food') return true;
+      if (cLower === 'transport' && (lower === 'taxi & transit' || lower === 'commute')) return true;
+      if (cLower === 'shopping' && lower === 'shopping & retail') return true;
+      if (cLower === 'subscriptions' && lower === 'tech & subscriptions') return true;
+      if (cLower === 'health & wellness' && (lower === 'health & fitness' || lower === 'fitness')) return true;
+      if (cLower === 'travel' && lower === 'travel & leisure') return true;
+      if (cLower === 'others' && lower === 'other') return true;
+      return false;
+    });
+  };
+
   const getCategoryBadge = (category: string) => {
-    const cat = EXPENSE_CATEGORIES.find((c) => c.name.toLowerCase() === category.toLowerCase());
+    const cat = resolveCategoryDef(category);
     return cat ? cat.badgeBg : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
   };
 
   const getCategoryIcon = (category: string, itemIcon?: string) => {
     if (itemIcon) return itemIcon;
-    const cat = EXPENSE_CATEGORIES.find((c) => c.name.toLowerCase() === category.toLowerCase());
+    const cat = resolveCategoryDef(category);
     return cat ? cat.icon : '🏷️';
   };
 

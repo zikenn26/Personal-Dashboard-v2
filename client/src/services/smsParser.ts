@@ -70,11 +70,20 @@ export function inferExpenseCategory(text: string, merchant: string = ''): Expen
 
   // Transportation & Commute
   if (
-    /\b(uber|ola|rapido|metro|petrol|fuel|diesel|cng|indian oil|bharat petroleum|hpcl|shell|fastag|toll|parking|irctc|railways|redbus|bus|train|flight|airline|indigo|air india|vistara|spicejet)\b/i.test(
+    /\b(uber|ola|rapido|metro|petrol|fuel|diesel|cng|indian oil|bharat petroleum|hpcl|shell|fastag|toll|parking|taxi|transit|cab)\b/i.test(
       combined
     )
   ) {
     return 'Taxi & Transit';
+  }
+
+  // Travel (Flights, Trains, Hotels)
+  if (
+    /\b(irctc|railways|redbus|bus|train|flight|airline|indigo|air india|vistara|spicejet|makemytrip|goibibo|cleartrip|yatra|hotel|resort|airbnb|booking\.com)\b/i.test(
+      combined
+    )
+  ) {
+    return 'Travel & Leisure';
   }
 
   // Shopping & E-Commerce
@@ -95,16 +104,25 @@ export function inferExpenseCategory(text: string, merchant: string = ''): Expen
     return 'Bills & Utilities';
   }
 
-  // Entertainment & Subscriptions
+  // Subscriptions & Tech
   if (
-    /\b(netflix|spotify|prime video|hotstar|bookmyshow|pvr|inox|cinema|movie|youtube|apple\.com|steam|sonyliv|zee5|disney|playstation)\b/i.test(
+    /\b(netflix|spotify|prime video|hotstar|youtube|apple\.com|google play|openai|chatgpt|github|aws|domain|hosting)\b/i.test(
+      combined
+    )
+  ) {
+    return 'Tech & Subscriptions';
+  }
+
+  // Entertainment
+  if (
+    /\b(bookmyshow|pvr|inox|cinema|movie|steam|sonyliv|zee5|disney|playstation|game)\b/i.test(
       combined
     )
   ) {
     return 'Entertainment';
   }
 
-  // Health & Fitness / Pharmacy
+  // Health & Wellness / Pharmacy
   if (
     /\b(apollo|pharmacy|chemist|medplus|practo|netmeds|hospital|clinic|lab|1mg|tata 1mg|pharmeasy|dental|gym|cult\.fit|cult fit|doctor|medicines)\b/i.test(
       combined
@@ -401,20 +419,20 @@ export function parseSmsTransaction(
 
   // Bank name extraction from sender or body
   const knownBanks = [
-    { name: 'HDFC Bank', test: /\b(hdfc|hdfcbk)\b/i },
-    { name: 'State Bank of India', test: /\b(sbi|sbiinb)\b/i },
-    { name: 'ICICI Bank', test: /\b(icici|icicib)\b/i },
-    { name: 'Axis Bank', test: /\b(axis|axisbk)\b/i },
-    { name: 'Kotak Bank', test: /\b(kotak|kotakb)\b/i },
-    { name: 'Punjab National Bank', test: /\b(pnb)\b/i },
-    { name: 'Bank of Baroda', test: /\b(bob|baroda)\b/i },
-    { name: 'IDFC FIRST Bank', test: /\b(idfc)\b/i },
-    { name: 'IndusInd Bank', test: /\b(indusind)\b/i },
-    { name: 'Yes Bank', test: /\b(yes\s*bank)\b/i },
-    { name: 'Canara Bank', test: /\b(canara)\b/i },
-    { name: 'Standard Chartered', test: /\b(scb|standard\s*chartered)\b/i },
-    { name: 'Citi Bank', test: /\b(citi|citibank)\b/i },
-    { name: 'Chase Bank', test: /\b(chase)\b/i },
+    { name: 'HDFC Bank', test: /(hdfc|hdfcbk)/i },
+    { name: 'State Bank of India', test: /(sbi|sbiinb|sbiupi)/i },
+    { name: 'ICICI Bank', test: /(icici|icicib)/i },
+    { name: 'Axis Bank', test: /(axis|axisbk)/i },
+    { name: 'Kotak Bank', test: /(kotak|kotakb)/i },
+    { name: 'Punjab National Bank', test: /(pnb|pnbsms)/i },
+    { name: 'Bank of Baroda', test: /(bob|baroda)/i },
+    { name: 'IDFC FIRST Bank', test: /(idfc)/i },
+    { name: 'IndusInd Bank', test: /(indusind)/i },
+    { name: 'Yes Bank', test: /(yes\s*bank)/i },
+    { name: 'Canara Bank', test: /(canara)/i },
+    { name: 'Standard Chartered', test: /(scb|standard\s*chartered)/i },
+    { name: 'Citi Bank', test: /(citi|citibank)/i },
+    { name: 'Chase Bank', test: /(chase)/i },
     { name: 'American Express', test: /\b(amex|american\s*express)\b/i },
     { name: 'Paytm Payments Bank', test: /\b(paytm)\b/i },
     { name: 'PhonePe', test: /\b(phonepe)\b/i },
@@ -478,6 +496,7 @@ export function parseSmsTransaction(
     // Debit merchant patterns
     const merchantPatterns = [
       /\b(?:paid to|transfer to|transferred to|sent to)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:via|on|ref|using|upi|dated|rrn|avl|\.|\n|$))/i,
+      /\b(?:towards|for)\s+(?:vpa\s+)?([A-Za-z0-9\s._@\-]+?)(?:\s+(?:via|on|ref|using|upi|dated|rrn|avl|bal|\(|\.|\n|$))/i,
       /\bat\s+([A-Za-z0-9\s&'.-]+?)(?:\s+(?:on|via|ref|using|upi|dated|rrn|avl|bal|\.|\n|$))/i,
       /\b(?:purchase at|purchase of [A-Za-z0-9.]+\s+at|used at)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:on|via|ref|using|upi|dated|rrn|avl|\.|\n|$))/i,
       /\b(?:to|vpa)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:on|via|ref|using|upi|dated|rrn|avl|bal|\.|\n|$))/i,

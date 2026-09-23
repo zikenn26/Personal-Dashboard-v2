@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 export interface SmsTransactionPluginInterface {
   isAvailable(): Promise<{ available: boolean; platform: string }>;
   checkPermissions(): Promise<{ sms: 'granted' | 'denied' | 'prompt'; receiveSms?: string; readSms?: string }>;
-  requestPermissions(): Promise<{ sms: 'granted' | 'denied' | 'prompt' }>;
+  requestPermissions(): Promise<{ sms: 'granted' | 'denied' | 'prompt'; receiveSms?: string; readSms?: string }>;
   setEnabled(options: { enabled: boolean }): Promise<{ success: boolean; enabled: boolean }>;
   isEnabled(): Promise<{ enabled: boolean }>;
   getPendingSms(): Promise<{ messages: Array<{ sender: string; body: string; timestamp: number }> }>;
@@ -22,7 +22,21 @@ export interface SmsTransactionPluginInterface {
   ): Promise<{ remove: () => void }>;
 }
 
-export const SmsTransaction = registerPlugin<SmsTransactionPluginInterface>('SmsTransaction');
+export const smsPluginWebImpl = {
+  isAvailable: async () => ({ available: false, platform: 'web' }),
+  checkPermissions: async () => ({ sms: 'prompt' as const }),
+  requestPermissions: async () => ({ sms: 'granted' as const, receiveSms: 'granted' }),
+  setEnabled: async (opts: { enabled: boolean }) => ({ success: true, enabled: opts.enabled }),
+  isEnabled: async () => ({ enabled: true }),
+  getPendingSms: async () => ({ messages: [] as Array<{ sender: string; body: string; timestamp: number }> }),
+  clearPendingSms: async () => ({ success: true }),
+  readRecentSms: async () => ({ messages: [] as Array<{ sender: string; body: string; timestamp: number }> }),
+  addListener: async () => ({ remove: () => {} }),
+};
+
+export const SmsTransaction = registerPlugin<SmsTransactionPluginInterface>('SmsTransaction', {
+  web: () => smsPluginWebImpl,
+});
 
 class SmsExpenseService {
   private isInitialized = false;
@@ -63,6 +77,13 @@ class SmsExpenseService {
    */
   public async setAutoTrackingEnabled(enabled: boolean): Promise<void> {
     Storage.setSmsAutoTrackingEnabled(enabled);
+    if (typeof window !== 'undefined') {
+      if (!enabled) {
+        localStorage.setItem('lifeos_sms_explicitly_disabled', 'true');
+      } else {
+        localStorage.removeItem('lifeos_sms_explicitly_disabled');
+      }
+    }
 
     if (await this.isNativePluginAvailable()) {
       try {
@@ -88,7 +109,7 @@ class SmsExpenseService {
     try {
       if (Capacitor.isNativePlatform()) {
         const res = await SmsTransaction.checkPermissions();
-        return res.sms || 'prompt';
+        return (res.sms || (res.receiveSms === 'granted' ? 'granted' : 'prompt')) as any;
       }
       return 'prompt';
     } catch {
@@ -106,7 +127,7 @@ class SmsExpenseService {
     try {
       if (Capacitor.isNativePlatform()) {
         const res = await SmsTransaction.requestPermissions();
-        const status = res.sms || 'prompt';
+        const status = (res.sms || (res.receiveSms === 'granted' ? 'granted' : 'prompt')) as any;
         if (status === 'granted') {
           await this.setAutoTrackingEnabled(true);
         }
@@ -424,12 +445,27 @@ class SmsExpenseService {
     if (this.isInitialized) return;
     this.isInitialized = true;
 
-    // Check if auto-tracking is enabled
-    const enabled = this.isAutoTrackingEnabled();
-
     if (await this.isNativePluginAvailable()) {
       try {
-        // Register native real-time incoming SMS event listener
+        // 1. Check native permissions
+        const permRes = await SmsTransaction.checkPermissions();
+        const hasPermission = permRes.sms === 'granted' || permRes.receiveSms === 'granted';
+
+        // 2. If Android permission is granted, ensure auto-tracking is enabled
+        // unless the user explicitly disabled it previously
+        const isExplicitlyDisabled =
+          typeof window !== 'undefined' &&
+          localStorage.getItem('lifeos_sms_explicitly_disabled') === 'true';
+
+        if (hasPermission && !isExplicitlyDisabled) {
+          Storage.setSmsAutoTrackingEnabled(true);
+          await SmsTransaction.setEnabled({ enabled: true });
+        } else {
+          // Sync current setting to native SharedPreferences
+          await SmsTransaction.setEnabled({ enabled: this.isAutoTrackingEnabled() });
+        }
+
+        // 3. Register native real-time incoming SMS event listener
         const handle = await SmsTransaction.addListener('onSmsReceived', (data) => {
           if (!this.isAutoTrackingEnabled()) return;
           this.processSms(data.body, data.sender, data.timestamp, true);
@@ -440,8 +476,8 @@ class SmsExpenseService {
         };
         this.isListening = true;
 
-        // If enabled, sync any background transactions intercepted while app was closed
-        if (enabled) {
+        // 4. Always sync any background transactions intercepted while app was closed
+        if (this.isAutoTrackingEnabled()) {
           await this.syncPendingBackgroundMessages();
         }
       } catch (err) {
@@ -449,10 +485,15 @@ class SmsExpenseService {
       }
     }
 
-    // Also listen for app resume / visibility change to flush background SMS
+    // 5. Also listen for app resume / visibility change / window focus to flush background SMS
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible' && this.isAutoTrackingEnabled()) {
+          this.syncPendingBackgroundMessages();
+        }
+      });
+      window.addEventListener('focus', () => {
+        if (this.isAutoTrackingEnabled()) {
           this.syncPendingBackgroundMessages();
         }
       });
