@@ -20,6 +20,7 @@ import {
   getPendingCommandDecision,
   lockPendingExpenseDeletion,
   InteractiveOption,
+  CommandContext,
 } from './commandIntentEngine';
 
 export interface ChatMessage {
@@ -2620,8 +2621,19 @@ export async function testGroqApiKey(testKey?: string): Promise<{ success: boole
 export async function sendSecretaryMessage(
   userPrompt: string,
   existingHistory: ChatMessage[],
-  apiKeyOverride?: string
+  apiKeyOverrideOrContext?: string | CommandContext,
+  contextOverride?: CommandContext
 ): Promise<GroqSecretaryResponse> {
+  let apiKeyOverride: string | undefined;
+  let context: CommandContext | undefined;
+
+  if (typeof apiKeyOverrideOrContext === 'string') {
+    apiKeyOverride = apiKeyOverrideOrContext;
+    context = contextOverride;
+  } else if (apiKeyOverrideOrContext && typeof apiKeyOverrideOrContext === 'object') {
+    context = apiKeyOverrideOrContext;
+  }
+
   const apiKey =
     apiKeyOverride ||
     Storage.getGroqApiKey()?.trim() ||
@@ -2637,7 +2649,7 @@ export async function sendSecretaryMessage(
   const updatedHistory = [...existingHistory, userMessage];
 
   // 1. Run deterministic Command Intent Analysis before remote LLM invocation
-  const intentDecision = analyzeCommandIntent(userPrompt);
+  const intentDecision = analyzeCommandIntent(userPrompt, context);
 
   if (intentDecision.intent === 'CANCEL_PENDING') {
     clearPendingCommandDecision();
@@ -2692,14 +2704,20 @@ export async function sendSecretaryMessage(
     };
   }
 
-  // If high confidence command with verified intent (e.g. checking both habits, completing habits, or deleting specific expenses)
+  // If high confidence command with verified intent (e.g. reading expenses, completing habits, or deleting specific records)
   if (
     intentDecision.confidence === 'high' &&
     (intentDecision.intent === 'HABIT_COMPLETE' ||
       intentDecision.intent === 'HABIT_TOGGLE' ||
       intentDecision.intent === 'EXPENSE_DELETE_BATCH' ||
       intentDecision.intent === 'EXPENSE_DELETE' ||
-      intentDecision.intent === 'TASK_DELETE')
+      intentDecision.intent === 'TASK_DELETE' ||
+      intentDecision.intent === 'EXPENSE_VIEW' ||
+      intentDecision.intent === 'TASK_VIEW' ||
+      intentDecision.intent === 'HABIT_VIEW' ||
+      intentDecision.intent === 'EXPENSE_CREATE' ||
+      intentDecision.intent === 'TASK_CREATE' ||
+      intentDecision.intent === 'NAVIGATE_VIEW')
   ) {
     const execResult = await executeCommandDecision(intentDecision);
     if (execResult.success && execResult.executedActions.length > 0) {
@@ -2844,10 +2862,10 @@ export async function sendSecretaryMessage(
             let effectiveArgs = callArgs;
 
             // INTERCEPT ROGUE TASK CREATION:
-            // Prevents AI from creating a task titled "delete all the spendings I did today" or "check both my habits as done"
+            // Prevents AI from creating a task titled "delete all the spendings I did today", "show me what I spent today", or "check both my habits as done"
             if (isRogueTaskCreation(call.function.name, callArgs, userPrompt)) {
-              console.warn('[Groq] Intercepted rogue task creation:', callArgs.title);
-              const correctedDecision = analyzeCommandIntent(callArgs.title || userPrompt);
+              console.warn('[Groq] Intercepted rogue task creation:', callArgs.title || userPrompt);
+              const correctedDecision = analyzeCommandIntent(callArgs.title || userPrompt, context);
               if (
                 correctedDecision.intent === 'EXPENSE_DELETE_BATCH' ||
                 correctedDecision.intent === 'EXPENSE_DELETE'
@@ -2866,6 +2884,17 @@ export async function sendSecretaryMessage(
               } else if (correctedDecision.intent === 'TASK_DELETE') {
                 effectiveTool = 'delete_task';
                 effectiveArgs = correctedDecision.actions[0]?.params || {};
+              } else if (correctedDecision.intent === 'EXPENSE_VIEW') {
+                effectiveTool = 'navigate_view';
+                effectiveArgs = { view: 'expenses' };
+              } else if (correctedDecision.intent === 'TASK_VIEW') {
+                effectiveTool = 'navigate_view';
+                effectiveArgs = { view: 'tasks' };
+              } else if (correctedDecision.intent === 'HABIT_VIEW') {
+                effectiveTool = 'navigate_view';
+                effectiveArgs = { view: 'habits' };
+              } else if (correctedDecision.intent === 'UNKNOWN_INTENT') {
+                continue;
               }
             }
 

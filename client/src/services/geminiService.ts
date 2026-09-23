@@ -15,6 +15,7 @@ import {
   setPendingCommandDecision,
   clearPendingCommandDecision,
   InteractiveOption,
+  CommandContext,
 } from './commandIntentEngine';
 
 // Backend server error detection tracker
@@ -553,6 +554,7 @@ export async function sendGeminiMessage(params: {
   model?: string;
   roleId?: string;
   customSystemInstruction?: string;
+  context?: CommandContext;
 }): Promise<{
   reply: string;
   actionChips: string[];
@@ -560,10 +562,10 @@ export async function sendGeminiMessage(params: {
   options?: InteractiveOption[];
   updatedHistory: GeminiChatMessage[];
 }> {
-  const { message, history, model = 'gemini-3.1-flash-lite', roleId, customSystemInstruction } = params;
+  const { message, history, model = 'gemini-3.1-flash-lite', roleId, customSystemInstruction, context } = params;
 
   // 1. Analyze command intent via deterministic Command Intent Engine
-  const intentDecision = analyzeCommandIntent(message);
+  const intentDecision = analyzeCommandIntent(message, context);
 
   if (intentDecision.intent === 'CANCEL_PENDING') {
     clearPendingCommandDecision();
@@ -583,7 +585,7 @@ export async function sendGeminiMessage(params: {
     return {
       reply: asstMsg.content,
       actionChips: ['⚡ Action Cancelled'],
-      model: 'Command Intent Engine',
+      model,
       updatedHistory: [...history, userMsg, asstMsg],
     };
   }
@@ -606,7 +608,7 @@ export async function sendGeminiMessage(params: {
     return {
       reply: execResult.message,
       actionChips: execResult.actionChips || [],
-      model: 'Command Intent Engine',
+      model,
       updatedHistory: [...history, userMsg, asstMsg],
     };
   }
@@ -635,7 +637,7 @@ export async function sendGeminiMessage(params: {
     return {
       reply: promptText,
       actionChips: ['⚠️ Confirmation Required'],
-      model: 'Command Intent Engine',
+      model,
       options: intentDecision.options,
       updatedHistory: [...history, userMsg, asstMsg],
     };
@@ -647,7 +649,13 @@ export async function sendGeminiMessage(params: {
       intentDecision.intent === 'HABIT_TOGGLE' ||
       intentDecision.intent === 'EXPENSE_DELETE_BATCH' ||
       intentDecision.intent === 'EXPENSE_DELETE' ||
-      intentDecision.intent === 'TASK_DELETE')
+      intentDecision.intent === 'TASK_DELETE' ||
+      intentDecision.intent === 'EXPENSE_VIEW' ||
+      intentDecision.intent === 'TASK_VIEW' ||
+      intentDecision.intent === 'HABIT_VIEW' ||
+      intentDecision.intent === 'EXPENSE_CREATE' ||
+      intentDecision.intent === 'TASK_CREATE' ||
+      intentDecision.intent === 'NAVIGATE_VIEW')
   ) {
     const execResult = await executeCommandDecision(intentDecision);
     if (execResult.success && execResult.executedActions.length > 0) {
@@ -668,7 +676,7 @@ export async function sendGeminiMessage(params: {
       return {
         reply: execResult.message,
         actionChips: execResult.actionChips || [],
-        model: 'Command Intent Engine',
+        model,
         options: execResult.options,
         updatedHistory: [...history, userMsg, asstMsg],
       };
@@ -798,8 +806,8 @@ export async function sendGeminiMessage(params: {
 
         // Intercept rogue task creation from Gemini
         if (isRogueTaskCreation(toolName, args, message)) {
-          console.warn('[Gemini] Intercepted rogue task creation:', args.title);
-          const correctedDecision = analyzeCommandIntent(args.title || message);
+          console.warn('[Gemini] Intercepted rogue task creation:', args.title || message);
+          const correctedDecision = analyzeCommandIntent(args.title || message, context);
           if (
             correctedDecision.intent === 'EXPENSE_DELETE_BATCH' ||
             correctedDecision.intent === 'EXPENSE_DELETE'
@@ -818,6 +826,17 @@ export async function sendGeminiMessage(params: {
           } else if (correctedDecision.intent === 'TASK_DELETE') {
             toolName = 'delete_task';
             args = correctedDecision.actions[0]?.params || {};
+          } else if (correctedDecision.intent === 'EXPENSE_VIEW') {
+            toolName = 'navigate_view';
+            args = { view: 'expenses' };
+          } else if (correctedDecision.intent === 'TASK_VIEW') {
+            toolName = 'navigate_view';
+            args = { view: 'tasks' };
+          } else if (correctedDecision.intent === 'HABIT_VIEW') {
+            toolName = 'navigate_view';
+            args = { view: 'habits' };
+          } else if (correctedDecision.intent === 'UNKNOWN_INTENT') {
+            continue;
           }
         }
 

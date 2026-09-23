@@ -66,6 +66,7 @@ interface AISecretaryWidgetProps {
   isPopup?: boolean;
   onClosePopup?: () => void;
   onOpenCommandMappings?: () => void;
+  activeView?: string;
 }
 
 const STORAGE_KEY = 'ai_secretary_chat_history_v2';
@@ -88,6 +89,7 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
   isPopup = false,
   onClosePopup,
   onOpenCommandMappings,
+  activeView,
 }) => {
   // Engine Provider: 'gemini' (Default, with voice assist & commands) vs 'groq'
   const [provider, setProvider] = useState<'gemini' | 'groq'>(() => {
@@ -324,6 +326,7 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
           history: geminiHistory,
           model: selectedGeminiModel,
           roleId: selectedRole,
+          context: { activeView },
         });
 
         const assistantMessage: GeminiChatMessage = {
@@ -346,7 +349,7 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
           timestamp: m.timestamp,
         }));
 
-        const res = await sendSecretaryMessage(prompt, groqHistory);
+        const res = await sendSecretaryMessage(prompt, groqHistory, { activeView });
 
         const assistantMessage: ChatMessage = {
           id: 'groq-' + Date.now(),
@@ -892,8 +895,8 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
                 {/* Speaker TTS Read Aloud Control (Assistant messages only) */}
                 {!isUser && (
                   <div className="mt-2 pt-1.5 border-t border-gray-100 dark:border-gray-800/80 flex items-center justify-between text-[10px] text-gray-400">
-                    <span className="font-mono text-[9px] uppercase tracking-wider text-gray-400">
-                      {(msg as any).modelUsed || (provider === 'gemini' ? 'Gemini 3.8' : 'Groq')}
+                    <span className="font-sans text-[10px] text-gray-400 dark:text-gray-500 font-medium">
+                      Zikenn AI
                     </span>
                     <button
                       type="button"

@@ -3076,6 +3076,7 @@ export default function App() {
               {/* VIEW: Personalized Zikenn AI */}
               {activeView === 'assistant' && (
                 <AIAssistantView
+                  activeView={activeView}
                   onNavigate={handleNavigate}
                   onOpenCommandMappings={() => setIsCommandMappingModalOpen(true)}
                 />
@@ -3371,6 +3372,7 @@ export default function App() {
         >
           <AISecretaryWidget
             isPopup={true}
+            activeView={activeView}
             onClosePopup={() => setIsZikennPopupOpen(false)}
             onNavigate={(view, tabOrFilter) => {
               setIsZikennPopupOpen(false);

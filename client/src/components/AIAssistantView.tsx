@@ -5,11 +5,13 @@ import { AISecretaryWidget } from './AISecretaryWidget';
 interface AIAssistantViewProps {
   onNavigate: (view: any) => void;
   onOpenCommandMappings?: () => void;
+  activeView?: string;
 }
 
 export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
   onNavigate,
   onOpenCommandMappings,
+  activeView,
 }) => {
   return (
     <div className="space-y-5 max-w-4xl mx-auto pb-6">
@@ -49,6 +51,7 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
           isExpandedView={true}
           onNavigate={onNavigate}
           onOpenCommandMappings={onOpenCommandMappings}
+          activeView={activeView}
         />
       </div>
     </div>

@@ -1004,4 +1004,113 @@ describe('Reliability Suite: Intent Engine & Interceptor Logic', () => {
       expect(result.executedActions).toHaveLength(0);
     });
   });
+
+  describe('6. Semantic Context-Aware Intent Resolution & Read-Query Bug Safeguards', () => {
+    it('SEM-01: Critical Bug Fix: "Show me what I spent today" must map to EXPENSE_VIEW, never CREATE_TASK', () => {
+      const decision = analyzeCommandIntent('Show me what I spent today');
+      expect(decision.intent).toBe('EXPENSE_VIEW');
+      expect(decision.entity).toBe('expense');
+      expect(decision.scope).toBe('today');
+      expect(decision.isDestructive).toBe(false);
+      expect(decision.actions[0]?.type).toBe('navigate_view');
+      expect(decision.actions[0]?.params?.view).toBe('expenses');
+    });
+
+    it('SEM-02: "What did I spend today?" must map to EXPENSE_VIEW', () => {
+      const decision = analyzeCommandIntent('What did I spend today?');
+      expect(decision.intent).toBe('EXPENSE_VIEW');
+      expect(decision.entity).toBe('expense');
+      expect(decision.scope).toBe('today');
+    });
+
+    it('SEM-03: "How much did I spend today?" must map to EXPENSE_VIEW', () => {
+      const decision = analyzeCommandIntent('How much did I spend today?');
+      expect(decision.intent).toBe('EXPENSE_VIEW');
+      expect(decision.entity).toBe('expense');
+      expect(decision.scope).toBe('today');
+    });
+
+    it('SEM-04: "Show my pending tasks" must map to TASK_VIEW', () => {
+      const decision = analyzeCommandIntent('Show my pending tasks');
+      expect(decision.intent).toBe('TASK_VIEW');
+      expect(decision.entity).toBe('task');
+      expect(decision.actions[0]?.type).toBe('navigate_view');
+      expect(decision.actions[0]?.params?.view).toBe('tasks');
+    });
+
+    it('SEM-05: "What tasks do I have left?" must map to TASK_VIEW', () => {
+      const decision = analyzeCommandIntent('What tasks do I have left?');
+      expect(decision.intent).toBe('TASK_VIEW');
+      expect(decision.entity).toBe('task');
+    });
+
+    it('SEM-06: "Show my habits" must map to HABIT_VIEW', () => {
+      const decision = analyzeCommandIntent('Show my habits');
+      expect(decision.intent).toBe('HABIT_VIEW');
+      expect(decision.entity).toBe('habit');
+      expect(decision.actions[0]?.type).toBe('navigate_view');
+      expect(decision.actions[0]?.params?.view).toBe('habits');
+    });
+
+    it('SEM-07: "Which habits did I complete today?" must map to HABIT_VIEW', () => {
+      const decision = analyzeCommandIntent('Which habits did I complete today?');
+      expect(decision.intent).toBe('HABIT_VIEW');
+      expect(decision.entity).toBe('habit');
+    });
+
+    it('SEM-08: "Put studying polity on my task list" creates task with title "Studying polity"', () => {
+      const decision = analyzeCommandIntent('Put studying polity on my task list');
+      expect(decision.intent).toBe('TASK_CREATE');
+      expect(decision.entity).toBe('task');
+      expect(decision.actions[0]?.params?.title).toBe('Studying polity');
+    });
+
+    it('SEM-09: "I need to study polity" creates task with title "Study polity"', () => {
+      const decision = analyzeCommandIntent('I need to study polity');
+      expect(decision.intent).toBe('TASK_CREATE');
+      expect(decision.entity).toBe('task');
+      expect(decision.actions[0]?.params?.title).toBe('Study polity');
+    });
+
+    it('SEM-10: Context Resolution: on tasks page, "What\'s left?" resolves to TASK_VIEW', () => {
+      const decision = analyzeCommandIntent("What's left?", { activeView: 'tasks' });
+      expect(decision.intent).toBe('TASK_VIEW');
+      expect(decision.entity).toBe('task');
+    });
+
+    it('SEM-11: Context Resolution: on habits page, "Which ones did I finish today?" resolves to HABIT_VIEW', () => {
+      const decision = analyzeCommandIntent('Which ones did I finish today?', { activeView: 'habits' });
+      expect(decision.intent).toBe('HABIT_VIEW');
+      expect(decision.entity).toBe('habit');
+    });
+
+    it('SEM-12: Context Resolution: on expenses page, "How much today?" resolves to EXPENSE_VIEW', () => {
+      const decision = analyzeCommandIntent('How much today?', { activeView: 'expenses' });
+      expect(decision.intent).toBe('EXPENSE_VIEW');
+      expect(decision.entity).toBe('expense');
+      expect(decision.scope).toBe('today');
+    });
+
+    it('SEM-13: Explicit User Language Precedence: "Add task review quarterly report" on expenses page creates task', () => {
+      const decision = analyzeCommandIntent('Add task review quarterly report', { activeView: 'expenses' });
+      expect(decision.intent).toBe('TASK_CREATE');
+      expect(decision.entity).toBe('task');
+      expect(decision.actions[0]?.params?.title).toContain('Review quarterly report');
+    });
+
+    it('SEM-14: Ambiguous Input: "Delete that" prompts for clarification and never creates task', () => {
+      const decision = analyzeCommandIntent('Delete that');
+      expect(decision.intent).toBe('UNKNOWN_INTENT');
+      expect(decision.clarificationPrompt).toBeDefined();
+      expect(decision.actions).toHaveLength(0);
+    });
+
+    it('SEM-15: Rogue Task Creation Interceptor catches query strings from model tool calls', () => {
+      expect(isRogueTaskCreation('createTask', { title: 'Show me what I spent today' })).toBe(true);
+      expect(isRogueTaskCreation('createTask', { title: 'What did I spend today?' })).toBe(true);
+      expect(isRogueTaskCreation('createTask', { title: 'Delete all the spendings I did today' })).toBe(true);
+      expect(isRogueTaskCreation('createTask', { title: 'Check both my habits as done' })).toBe(true);
+      expect(isRogueTaskCreation('createTask', { title: 'Buy groceries' })).toBe(false);
+    });
+  });
 });

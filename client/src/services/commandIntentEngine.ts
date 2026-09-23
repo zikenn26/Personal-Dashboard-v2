@@ -122,6 +122,13 @@ export interface ExecutionResult {
   options?: InteractiveOption[];
 }
 
+export interface CommandContext {
+  activeView?: string;
+  selectedCategory?: string;
+  activeDate?: string;
+  filter?: string;
+}
+
 // ============================================================================
 // 3. PENDING ACTION SESSION MANAGER (For interactive confirmations)
 // ============================================================================
@@ -255,15 +262,21 @@ export function matchesDate(itemDate?: string, target?: string): boolean {
 // 5. NATURAL LANGUAGE COMMAND INTENT ANALYZER
 // ============================================================================
 
-export function analyzeCommandIntent(rawInput: string): CommandDecision {
-  const decision = internalAnalyzeCommandIntent(rawInput);
+export function analyzeCommandIntent(
+  rawInput: string,
+  context?: CommandContext
+): CommandDecision {
+  const decision = internalAnalyzeCommandIntent(rawInput, context);
   return {
     ...decision,
     isDestructive: Boolean(decision.isDestructive),
   };
 }
 
-function internalAnalyzeCommandIntent(rawInput: string): CommandDecision {
+function internalAnalyzeCommandIntent(
+  rawInput: string,
+  context?: CommandContext
+): CommandDecision {
   const text = (rawInput || '').trim();
   const lower = text.toLowerCase();
 
@@ -273,7 +286,7 @@ function internalAnalyzeCommandIntent(rawInput: string): CommandDecision {
     .replace(/^[\s"“”'‘’`«»„.?!,;:\-_(){}\[\]]+/, '')
     .replace(/[\s"“”'‘’`«»„.?!,;:\-_(){}\[\]]+$/, '')
     .replace(/^(?:hey\s+)?(?:zikenn|gemini|assistant|there)\b[\s,;:]*/i, '')
-    .replace(/^(?:please\s+|can\s+you\s+|could\s+you\s+|kindly\s+|i\s+want\s+to\s+|i\s+need\s+to\s+|let's\s+|just\s+)+[\s,;:]*/i, '')
+    .replace(/^(?:please\s+|can\s+you\s+|could\s+you\s+|kindly\s+|let's\s+|just\s+)+[\s,;:]*/i, '')
     .replace(/^[\s"“”'‘’`«»„.?!,;:\-_(){}\[\]]+/, '')
     .replace(/[\s"“”'‘’`«»„.?!,;:\-_(){}\[\]]+$/, '')
     .trim();
@@ -351,11 +364,255 @@ function internalAnalyzeCommandIntent(rawInput: string): CommandDecision {
   }
 
   // --------------------------------------------------------------------------
+  // B0. AMBIGUOUS / VAGUE COMMANDS WITHOUT SPECIFIC ENTITY
+  // e.g. "show me that", "delete that", "do that", "finish it", "get rid of it",
+  // "handle this", "check it", "remove it", "delete the one from yesterday" (no entity)
+  // These must never guess randomly, perform unintended actions, or create rogue tasks!
+  // --------------------------------------------------------------------------
+  const isVagueCommand =
+    /^(?:show\s+me\s+that|delete\s+that|do\s+that|finish\s+it|get\s+rid\s+of\s+it|handle\s+this|check\s+it|remove\s+it)\b/i.test(cleaned) ||
+    /^(?:delete|remove)\s+(?:the\s+)?(?:one|item)\s+from\s+(?:yesterday|today)$/i.test(cleaned) ||
+    /^(?:do\s+something\s+with\s+(?:my\s+)?expenses)$/i.test(cleaned);
+
+  if (isVagueCommand) {
+    return {
+      intent: 'UNKNOWN_INTENT',
+      entity: 'unknown',
+      confidence: 'low',
+      scope: 'unknown',
+      actions: [],
+      requiresConfirmation: false,
+      clarificationPrompt: 'Which one do you mean?',
+      explanation: 'Which one do you mean?',
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // B1. EXPLICIT TASK CREATION OVERRIDE
+  // e.g. "Create a task called Delete my old expenses", "Create a task called Review my expenses"
+  // Explicit user command ALWAYS takes precedence over page context or keywords inside the title!
+  // --------------------------------------------------------------------------
+  const explicitTaskMatch = cleaned.match(
+    /^(?:create|add|make|schedule)\s+(?:a\s+)?(?:new\s+)?task\s+(?:called|named|titled|to|for|:\s*)?\s*(.+)$/i
+  );
+  if (explicitTaskMatch && explicitTaskMatch[1]) {
+    let taskTitle = explicitTaskMatch[1].trim();
+    // Strip leading "to ", "for ", quotes or punctuation
+    taskTitle = taskTitle.replace(/^(?:to|for)\s+/i, '').replace(/^["'`:]+|["'`:]+$/g, '').trim();
+    if (taskTitle) {
+      taskTitle = taskTitle.charAt(0).toUpperCase() + taskTitle.slice(1);
+      const actions: ExecutableAction[] = [
+        {
+          type: 'add_task',
+          targetTitle: taskTitle,
+          params: { title: taskTitle, priority: 'medium', category: 'Personal' },
+          description: `Add task "${taskTitle}"`,
+        },
+      ];
+      return {
+        intent: 'TASK_CREATE',
+        entity: 'task',
+        confidence: 'high',
+        scope: 'single',
+        actions,
+        requiresConfirmation: false,
+        explanation: `Added task "${taskTitle}" to your dashboard.`,
+      };
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // B2. OPERATION-FIRST: READ / VIEW / QUERY INTENTS
+  // e.g. "Show me what I spent today", "What did I spend today?", "How much did I spend today?",
+  // "Show today's expenses", "What did I spend this month?", "How much have I spent on food?",
+  // "Show my recent transactions", "Show my pending tasks", "What tasks do I have left?",
+  // "Which tasks are due today?", "Show my habits", "Which habits did I complete today?"
+  // Context-aware queries: e.g. "What's left?" (on tasks page) or "Which ones did I finish today?" (on habits page)
+  // --------------------------------------------------------------------------
+  const hasDeleteVerb = /\b(delete|remove|clear|erase|cancel|wipe|drop|discard|purge|trash)\b/i.test(cleaned);
+  const isQuestionOrInquiry =
+    /^(?:which|what|how|did\s+i|have\s+i)\b/i.test(cleaned) ||
+    /\?$/.test(cleaned.trim()) ||
+    /^(?:show|tell|display|view|list|find|inspect|analyze|can\s+you\s+(?:show|tell|check))\b/i.test(cleaned) ||
+    /\b(?:what\s+did\s+i\s+spend|how\s+much\s+did\s+i\s+spend|what\s+have\s+i\s+spent|how\s+much\s+have\s+i\s+spent|what\s+i\s+spent|how\s+much\s+spent|what's\s+left|what\s+do\s+i\s+have\s+left|what\s+do\s+i\s+need\s+to\s+do|how\s+are\s+my\s+habits|which\s+ones?\s+did\s+i\s+finish|spending\s+summary|summary\s+of\s+expenses)\b/i.test(cleaned);
+
+  const hasHabitCompletionVerb =
+    !isQuestionOrInquiry &&
+    /\b(check|mark|done|complete|completed|toggle|finish|finished|uncheck)\b/i.test(cleaned);
+
+  const isQueryPattern = isQuestionOrInquiry || /^(?:check)\b/i.test(cleaned);
+
+  if (!hasDeleteVerb && !hasHabitCompletionVerb && isQueryPattern) {
+    // 1. EXPENSE READ / QUERY
+    const hasExplicitExpenseDomain =
+      /\b(spending|spendings|expense|expenses|transaction|transactions|cost|costs|money|spent|spend|paid|purchase|purchases|bill|bills)\b/i.test(cleaned) ||
+      /\b(food|grocery|groceries)\b/i.test(cleaned);
+
+    const isExpenseRead =
+      hasExplicitExpenseDomain ||
+      /^(?:what\s+did\s+i\s+spend|how\s+much\s+did\s+i\s+spend|what\s+have\s+i\s+spent|how\s+much\s+have\s+i\s+spent|what\s+i\s+spent|how\s+much\s+spent)\b/i.test(cleaned) ||
+      /^(?:show|tell|check|display|view|give\s+me)\s+(?:me\s+)?(?:what\s+i\s+spent|my\s+spending|my\s+expenses|today's\s+expenses|recent\s+expenses|recent\s+transactions)/i.test(cleaned) ||
+      ((context?.activeView === 'expenses' || context?.activeView === 'subscriptions' || context?.activeView === 'budgets') &&
+        !/\b(tasks?|todos?|to-dos?|habits?)\b/i.test(cleaned));
+
+    if (isExpenseRead) {
+      const isToday = /\b(today|today's|so\s+far\s+today|tonight)\b/i.test(cleaned);
+      const isYesterday = /\b(yesterday|yesterday's)\b/i.test(cleaned);
+      const isMonth = /\b(this\s+month|month|monthly)\b/i.test(cleaned);
+      const isRecent = /\b(recent|latest|last|transactions)\b/i.test(cleaned);
+      const allExpenses = Storage.getExpenses();
+      const todayStr = getTodayDateString();
+
+      let targetExpenses = allExpenses;
+      let scopeVal: TargetScope = 'all';
+      let periodLabel = 'total';
+
+      if (isToday) {
+        targetExpenses = allExpenses.filter((e) => !e.date || e.date === todayStr);
+        periodLabel = 'today';
+        scopeVal = 'today';
+      } else if (isYesterday) {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yestStr = yesterday.toISOString().split('T')[0];
+        targetExpenses = allExpenses.filter((e) => e.date === yestStr);
+        periodLabel = 'yesterday';
+        scopeVal = 'yesterday';
+      } else if (isMonth) {
+        const monthPrefix = todayStr.slice(0, 7);
+        targetExpenses = allExpenses.filter((e) => (e.date || todayStr).startsWith(monthPrefix));
+        periodLabel = 'this month';
+        scopeVal = 'date_range';
+      } else if (isRecent) {
+        targetExpenses = allExpenses.slice(0, 5);
+        periodLabel = 'recent';
+        scopeVal = 'latest';
+      }
+
+      // Check for category filter: "on food", "on groceries", "on dining"
+      const catMatch = cleaned.match(/\b(?:on|for)\s+(food|grocery|groceries|dining|travel|bills|coffee)\b/i);
+      if (catMatch && catMatch[1]) {
+        const catWord = catMatch[1].toLowerCase();
+        targetExpenses = targetExpenses.filter((e) =>
+          (e.name || '').toLowerCase().includes(catWord) ||
+          (e.category || '').toLowerCase().includes(catWord)
+        );
+        periodLabel = catWord;
+      }
+
+      const totalSpent = targetExpenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+      const explanation =
+        targetExpenses.length === 0
+          ? `You have no recorded expenses for ${periodLabel}.`
+          : `Here's what you spent ${periodLabel}: ₹${totalSpent.toLocaleString()} across ${targetExpenses.length} expense(s).`;
+
+      return {
+        intent: 'EXPENSE_VIEW',
+        entity: 'expense',
+        confidence: 'high',
+        scope: scopeVal,
+        actions: [
+          {
+            type: 'navigate_view',
+            params: { view: 'expenses' },
+            description: 'Open expenses workspace',
+          },
+        ],
+        requiresConfirmation: false,
+        matchedEntities: targetExpenses,
+        explanation,
+      };
+    }
+
+    // 2. TASK READ / QUERY
+    const hasExplicitTaskDomain =
+      /\b(tasks?|todos?|to-dos?|task\s+list|items?\s+on\s+my\s+list)\b/i.test(cleaned);
+
+    const isTaskRead =
+      hasExplicitTaskDomain ||
+      (context?.activeView === 'tasks' &&
+        /^(?:what's\s+left|what\s+do\s+i\s+have\s+left|what\s+do\s+i\s+need\s+to\s+do|show\s+my\s+tasks|show\s+pending)\b/i.test(cleaned)) ||
+      /^(?:show|display|view|list)\s+(?:my\s+)?(?:pending\s+)?(?:tasks|todos|to-dos|unfinished\s+tasks)/i.test(cleaned) ||
+      /^(?:what\s+tasks?\s+are\s+pending|which\s+tasks?\s+are\s+due|what\s+tasks?\s+do\s+i\s+have\s+left|what's\s+left\s+on\s+my\s+task\s+list)/i.test(cleaned);
+
+    if (isTaskRead) {
+      const allTodos = Storage.getTodos();
+      const isDueToday = /\b(due\s+today|today)\b/i.test(cleaned);
+      const isPendingOnly = /\b(pending|left|unfinished|to\s+do)\b/i.test(cleaned);
+      const pendingTodos = allTodos.filter((t) => !t.completed);
+      const dueTodayTodos = allTodos.filter((t) => !t.completed && matchesDate(t.dueDate, 'today'));
+
+      const matchedEntities = isDueToday ? dueTodayTodos : isPendingOnly ? pendingTodos : allTodos;
+      const explanation = isDueToday
+        ? dueTodayTodos.length === 0
+          ? 'You have no tasks due today.'
+          : `You have ${dueTodayTodos.length} task(s) due today.`
+        : pendingTodos.length === 0
+        ? 'You have no pending tasks.'
+        : `You have ${pendingTodos.length} pending task(s).`;
+
+      return {
+        intent: 'TASK_VIEW',
+        entity: 'task',
+        confidence: 'high',
+        scope: isDueToday ? 'today' : isPendingOnly ? 'single' : 'all',
+        actions: [
+          {
+            type: 'navigate_view',
+            params: { view: 'tasks' },
+            description: 'Open tasks workspace',
+          },
+        ],
+        requiresConfirmation: false,
+        matchedEntities,
+        explanation,
+      };
+    }
+
+    // 3. HABIT READ / QUERY
+    const hasExplicitHabitDomain =
+      /\b(habits?|routines?|streaks?)\b/i.test(cleaned);
+
+    const isHabitRead =
+      hasExplicitHabitDomain ||
+      (context?.activeView === 'habits' &&
+        /^(?:which\s+ones?\s+did\s+i\s+finish|how\s+are\s+(?:they|my\s+habits)\s+going|show\s+my\s+habits)\b/i.test(cleaned)) ||
+      /^(?:show|view|display|list|check)\s+(?:my\s+)?habits\b/i.test(cleaned) ||
+      /^(?:which\s+habits\s+did\s+i\s+complete|how\s+are\s+my\s+habits\s+going|check\s+today's\s+habits)/i.test(cleaned);
+
+    if (isHabitRead) {
+      const allHabits = Storage.getHabits();
+      const dayIdx = getTodayDayIndex();
+      const completedToday = allHabits.filter((h) => h.completedDays?.[dayIdx]);
+      const explanation =
+        allHabits.length === 0
+          ? 'You have no habits tracked on your dashboard.'
+          : `You've completed ${completedToday.length} of ${allHabits.length} habits today.`;
+
+      return {
+        intent: 'HABIT_VIEW',
+        entity: 'habit',
+        confidence: 'high',
+        scope: 'today',
+        actions: [
+          {
+            type: 'navigate_view',
+            params: { view: 'habits' },
+            description: 'Open habits workspace',
+          },
+        ],
+        requiresConfirmation: false,
+        matchedEntities: allHabits,
+        explanation,
+      };
+    }
+  }
+
+  // --------------------------------------------------------------------------
   // B. EXPENSES / SPENDINGS: DELETION INTENT
   // Keywords: delete, remove, clear, erase, cancel, wipe, drop, discard
   // Combined with: spending, spendings, expense, expenses, money, transaction, cost, paid
   // --------------------------------------------------------------------------
-  const hasDeleteVerb = /\b(delete|remove|clear|erase|cancel|wipe|drop|discard|purge|trash)\b/i.test(cleaned);
   const allExpenses = Storage.getExpenses();
   const cleanedWithoutDeleteVerb = cleaned
     .replace(/\b(delete|remove|clear|erase|cancel|wipe|drop|discard|purge|trash)\b/i, '')
@@ -792,10 +1049,10 @@ function internalAnalyzeCommandIntent(rawInput: string): CommandDecision {
   // 4. Habit Completion / Toggle / Uncomplete
   const isUncomplete = /\b(uncomplete|uncheck|not\s+done)\b/i.test(cleaned);
   const isToggle = /\btoggle\b/i.test(cleaned);
-  const hasHabitCompletionVerb =
-    isUncomplete || isToggle || /\b(check|mark|complete|finish|done)\b/i.test(cleaned);
+  const isHabitCompletionOrToggle =
+    isUncomplete || isToggle || hasHabitCompletionVerb || /\b(check|mark|complete|finish|done)\b/i.test(cleaned);
 
-  if (hasHabitCompletionVerb && hasHabitNoun) {
+  if (isHabitCompletionOrToggle && hasHabitNoun) {
     const allHabits = Storage.getHabits();
     const todayIdx = getTodayDayIndex();
     const isBoth = /\bboth\b/i.test(cleaned) || /\b(?:2|two)\s+habits?\b/i.test(cleaned);
@@ -1102,7 +1359,7 @@ function internalAnalyzeCommandIntent(rawInput: string): CommandDecision {
   const isTaskCreation =
     /^(?:add|create|make|schedule|put|insert)\s+(?:a\s+)?(?:new\s+)?(?:(?:urgent|critical|high\s+priority|important|low\s+priority|minor|someday)\s+)?(?:task|todo|to-do|item)\b/i.test(cleaned) ||
     /^(?:put|add|insert)\s+.+?\s+(?:on|in|into|to)\s+(?:my\s+)?(?:task\s+list|tasks?|todos?|to-dos?)$/i.test(cleaned) ||
-    /^(?:remind me to|remember to|don't forget to|dont forget to|need to|have to|got to|must)\s+/i.test(cleaned) ||
+    /^(?:i\s+)?(?:remind me to|remember to|don't forget to|dont forget to|need to|have to|got to|must)\s+/i.test(cleaned) ||
     /^(?:new\s+task|task\s*:)\s*/i.test(cleaned) ||
     /^(?:add|create)\s+.+?\s+(?:to\s+|in\s+|into\s+)(?:my\s+)?(?:tasks?|todos?|task\s+list)$/i.test(cleaned);
 
@@ -1117,7 +1374,7 @@ function internalAnalyzeCommandIntent(rawInput: string): CommandDecision {
     let title = cleaned
       .replace(/^(?:add|create|make|schedule|put|insert)\s+(?:a\s+)?(?:new\s+)?(?:(?:urgent|critical|high\s+priority|important|low\s+priority|minor|someday)\s+)?(?:task|todo|to-do|item)\s*(?:called|titled|to|for|:\s*)?/i, '')
       .replace(/^(?:put|add|insert)\s+/i, '')
-      .replace(/^(?:remind me to|remember to|don't forget to|dont forget to|need to|have to|got to|must)\s*/i, '')
+      .replace(/^(?:i\s+)?(?:remind me to|remember to|don't forget to|dont forget to|need to|have to|got to|must)\s*/i, '')
       .replace(/^(?:new\s+task|task\s*:)\s*/i, '')
       .replace(/\s+(?:on|in|into|to)\s+(?:my\s+)?(?:task\s+list|tasks?|todos?|to-dos?)$/i, '')
       .trim();
@@ -1157,7 +1414,7 @@ function internalAnalyzeCommandIntent(rawInput: string): CommandDecision {
   // Keywords: spent, spend, paid, log expense, add expense, record expense
   // --------------------------------------------------------------------------
   const isExpenseCreation =
-    /^(?:spent|spend|paid)\s+/i.test(cleaned) ||
+    /^(?:i\s+)?(?:spent|spend|paid)\s+/i.test(cleaned) ||
     /^(?:add|log|record|enter|track)\s+(?:an?\s+)?(?:new\s+)?(?:expense|spending|cost|bill)\b/i.test(cleaned) ||
     /^(?:add|log|record)\s+(?:rs\.?|inr|₹)?\s*[\d,]+/i.test(cleaned);
 
@@ -1166,7 +1423,7 @@ function internalAnalyzeCommandIntent(rawInput: string): CommandDecision {
     const amount = amountMatch && amountMatch[1] ? parseFloat(amountMatch[1].replace(/,/g, '')) : 100;
 
     let expName = cleaned
-      .replace(/^(?:spent|spend|paid)\s+(?:rs\.?|inr|₹)?\s*[\d,]+(?:\.\d+)?\s*(?:rs|rupees|inr|bucks)?\s*(?:for|on|towards|called)?\s*/i, '')
+      .replace(/^(?:i\s+)?(?:spent|spend|paid)\s+(?:rs\.?|inr|₹)?\s*[\d,]+(?:\.\d+)?\s*(?:rs|rupees|inr|bucks)?\s*(?:for|on|towards|called)?\s*/i, '')
       .replace(/^(?:add|log|record|enter|track)\s+(?:an?\s+)?(?:new\s+)?(?:expense|spending|cost)?\s*(?:of\s+)?(?:rs\.?|inr|₹)?\s*[\d,]+(?:\.\d+)?\s*(?:rs|rupees|inr|bucks)?\s*(?:for|on|towards|called)?\s*/i, '')
       .trim();
 
@@ -1340,14 +1597,26 @@ export function isRogueTaskCreation(
     if (/^(?:sure|here is|i have updated|as an ai|certainly|hello|you're welcome|good morning|thank you)\b/i.test(text)) {
       return true;
     }
+    // Read / query commands must never be treated as task creations
+    if (/^(?:show|tell|what|which|how\s+much|how\s+many|check|view|display|list|give\s+me)\b/i.test(text)) {
+      if (!/^(?:create\s+(?:a\s+)?(?:new\s+)?task|add\s+task|new\s+task|remind\s+me)\b/i.test(text)) {
+        return true;
+      }
+    }
     if (/^(?:delete|remove|clear|erase|cancel|wipe|drop|discard|purge)\s+/i.test(text)) {
-      return true;
+      if (!/^(?:create\s+(?:a\s+)?(?:new\s+)?task|add\s+task|new\s+task|remind\s+me)\b/i.test(text)) {
+        return true;
+      }
     }
     if (/\b(?:habit|habits|streak|routine)\b/i.test(text) && /\b(?:check|mark|done|complete|toggle|finish)\b/i.test(text)) {
-      return true;
+      if (!/^(?:create\s+(?:a\s+)?(?:new\s+)?task|add\s+task|new\s+task|remind\s+me)\b/i.test(text)) {
+        return true;
+      }
     }
-    if (/\b(?:spending|spendings|expense|expenses|transaction|transactions)\b/i.test(text)) {
-      return true;
+    if (/\b(?:spending|spendings|expense|expenses|transaction|transactions|spent|spend)\b/i.test(text)) {
+      if (!/^(?:create\s+(?:a\s+)?(?:new\s+)?task|add\s+task|new\s+task|remind\s+me)\b/i.test(text)) {
+        return true;
+      }
     }
     return false;
   }
@@ -1360,27 +1629,40 @@ export function isRogueTaskCreation(
   const title = String(args?.title || '').trim().toLowerCase();
   const prompt = String(rawUserPrompt || '').trim().toLowerCase();
 
+  // If prompt explicitly ordered task creation: e.g. "Create a task called Delete my old expenses"
+  if (prompt && /^(?:create|add|make|schedule)\s+(?:a\s+)?(?:new\s+)?task\s+(?:called|named|titled)?/i.test(prompt)) {
+    return false;
+  }
+
   // Conversational AI explanations or greetings passed as task title
   if (/^(?:sure|here is|i have updated|as an ai|certainly|hello|you're welcome|good morning|thank you)\b/i.test(title)) {
     return true;
   }
 
-  // 1. Title contains deletion words
+  // 1. Read / Query commands passed as task title or prompt
+  if (/^(?:show|tell|what|which|how\s+much|how\s+many|view|display|list|give\s+me)\b/i.test(title)) {
+    return true;
+  }
+  if (prompt && /^(?:show|tell|what|which|how\s+much|how\s+many|view|display|list|give\s+me)\b/i.test(prompt)) {
+    return true;
+  }
+
+  // 2. Title contains deletion words
   if (/^(?:delete|remove|clear|erase|cancel|wipe|drop|discard|purge)\s+/i.test(title)) {
     return true;
   }
 
-  // 2. Title mentions habit completion
+  // 3. Title mentions habit completion
   if (/\b(?:habit|habits|streak|routine)\b/i.test(title) && /\b(?:check|mark|done|complete|toggle|finish)\b/i.test(title)) {
     return true;
   }
 
-  // 3. Title mentions spending / expenses
-  if (/\b(?:spending|spendings|expense|expenses|transaction|transactions)\b/i.test(title)) {
+  // 4. Title mentions spending / expenses
+  if (/\b(?:spending|spendings|expense|expenses|transaction|transactions|spent|spend)\b/i.test(title)) {
     return true;
   }
 
-  // 4. Original prompt was clearly a deletion or habit command
+  // 5. Original prompt was clearly a deletion or habit command
   if (prompt) {
     if (/\b(delete|remove|clear)\s+(?:all\s+)?(?:the\s+)?(?:spending|spendings|expense|expenses)/i.test(prompt)) {
       return true;
