@@ -35,6 +35,7 @@ interface GeminiLiveVoiceModalProps {
   onListeningChange?: (isListening: boolean) => void;
   onOpenCommandMappings?: () => void;
   onCommandExecuted?: (commandText: string) => void;
+  activeView?: string;
 }
 
 interface CommandAcknowledgment {
@@ -50,6 +51,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
   onNavigate,
   onListeningChange,
   onCommandExecuted,
+  activeView,
 }) => {
   // Server deployment health & API key status
   const [serverHealth, setServerHealth] = useState<{ status: string; hasApiKey: boolean } | null>(null);
@@ -242,6 +244,7 @@ export const GeminiLiveVoiceModal: React.FC<GeminiLiveVoiceModalProps> = ({
         const response = await sendGeminiMessage({
           message: cleaned || trimmed,
           history: [],
+          context: { activeView },
         });
 
         const reply = response.reply || 'Command processed.';

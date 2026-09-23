@@ -1130,7 +1130,9 @@ function internalAnalyzeCommandIntent(
       .trim();
 
     if (habitName) {
-      const matched = allHabits.filter((h) => h.title.toLowerCase().includes(habitName));
+      const matched = allHabits.filter((h) =>
+        (h.title || (h as any).name || '').toLowerCase().includes(habitName)
+      );
       if (matched.length > 0) {
         const target = matched[0];
         const actions: ExecutableAction[] = [
@@ -2001,11 +2003,11 @@ export async function executeCommandDecision(
 
   const success = executedActions.length > 0;
   const finalMessage =
-    messages.length > 0
+    decision.intent !== 'CONFIRM_PENDING' && decision.explanation
+      ? decision.explanation
+      : messages.length > 0
       ? messages.join('\n')
-      : success
-      ? 'Action completed successfully.'
-      : 'No changes were made.';
+      : decision.explanation || (success ? 'Action completed successfully.' : 'No changes were made.');
 
   return {
     success,

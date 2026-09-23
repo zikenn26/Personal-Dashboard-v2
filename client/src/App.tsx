@@ -3463,6 +3463,7 @@ export default function App() {
         isOpen={isGlobalVoiceModalOpen}
         onClose={() => setIsGlobalVoiceModalOpen(false)}
         onNavigate={handleNavigate}
+        activeView={activeView}
         onListeningChange={handleVoiceListeningChange}
         onCommandExecuted={handleVoiceCommandExecuted}
         onOpenCommandMappings={() => setIsCommandMappingModalOpen(true)}

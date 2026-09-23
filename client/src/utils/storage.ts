@@ -1462,6 +1462,9 @@ export const Storage = {
       Storage.setProfile({ ...profile, geminiApiKey: trimmed });
     }
   },
+  removeGeminiApiKey: (): void => {
+    Storage.setGeminiApiKey('');
+  },
 
   getGroqApiKey: (): string => {
     const scopedKey = getScopedKey('groq_api_key');
@@ -1487,6 +1490,9 @@ export const Storage = {
     if (profile) {
       Storage.setProfile({ ...profile, groqApiKey: trimmed });
     }
+  },
+  removeGroqApiKey: (): void => {
+    Storage.setGroqApiKey('');
   },
 
   getSections: (): DashboardSection[] => loadFromStorage(STORAGE_KEYS.SECTIONS, INITIAL_SECTIONS),

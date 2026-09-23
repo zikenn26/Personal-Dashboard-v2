@@ -275,6 +275,7 @@ export async function executeLocalClientVoiceFallback(
   actionChips: string[];
   model: string;
   options?: InteractiveOption[];
+  pendingConfirmation?: boolean;
   updatedHistory: GeminiChatMessage[];
 }> {
   // Strip leading and trailing punctuation, quotes, question marks, and excessive whitespace
@@ -317,7 +318,31 @@ export async function executeLocalClientVoiceFallback(
 
   // 2. Deterministic Command Intent Engine Check
   const fallbackIntent = analyzeCommandIntent(cleaned);
-  if (fallbackIntent.intent !== 'UNKNOWN_INTENT' && fallbackIntent.intent !== 'TASK_CREATE') {
+  if (fallbackIntent.clarificationPrompt) {
+    const userMessage: GeminiChatMessage = {
+      id: 'msg-user-' + Date.now(),
+      role: 'user',
+      content: message,
+      timestamp: Date.now() - 1,
+    };
+    const assistantMessage: GeminiChatMessage = {
+      id: 'msg-fallback-' + Date.now(),
+      role: 'assistant',
+      content: fallbackIntent.clarificationPrompt,
+      options: fallbackIntent.options,
+      modelUsed: 'Command Intent Engine (Local)',
+      timestamp: Date.now(),
+    };
+    return {
+      reply: fallbackIntent.clarificationPrompt,
+      actionChips: [],
+      model: 'Command Intent Engine (Local)',
+      options: fallbackIntent.options,
+      updatedHistory: [...history, userMessage, assistantMessage],
+    };
+  }
+
+  if (fallbackIntent.intent !== 'UNKNOWN_INTENT') {
     const execRes = await executeCommandDecision(fallbackIntent);
     if (execRes.success || execRes.status === 'AWAITING_CONFIRMATION') {
       const userMessage: GeminiChatMessage = {
@@ -333,6 +358,7 @@ export async function executeLocalClientVoiceFallback(
         actionChips: execRes.actionChips,
         options: execRes.options,
         modelUsed: 'Command Intent Engine (Local)',
+        pendingConfirmation: execRes.status === 'AWAITING_CONFIRMATION',
         timestamp: Date.now(),
       };
       return {
@@ -340,6 +366,7 @@ export async function executeLocalClientVoiceFallback(
         actionChips: execRes.actionChips || [],
         model: 'Command Intent Engine (Local)',
         options: execRes.options,
+        pendingConfirmation: execRes.status === 'AWAITING_CONFIRMATION',
         updatedHistory: [...history, userMessage, assistantMessage],
       };
     }
@@ -560,6 +587,7 @@ export async function sendGeminiMessage(params: {
   actionChips: string[];
   model: string;
   options?: InteractiveOption[];
+  pendingConfirmation?: boolean;
   updatedHistory: GeminiChatMessage[];
 }> {
   const { message, history, model = 'gemini-3.1-flash-lite', roleId, customSystemInstruction, context } = params;
@@ -637,6 +665,30 @@ export async function sendGeminiMessage(params: {
     return {
       reply: promptText,
       actionChips: ['⚠️ Confirmation Required'],
+      model,
+      options: intentDecision.options,
+      pendingConfirmation: true,
+      updatedHistory: [...history, userMsg, asstMsg],
+    };
+  }
+
+  if (intentDecision.clarificationPrompt) {
+    const userMsg: GeminiChatMessage = {
+      id: 'msg-' + Date.now(),
+      role: 'user',
+      content: message,
+      timestamp: Date.now() - 1,
+    };
+    const asstMsg: GeminiChatMessage = {
+      id: 'msg-' + Date.now(),
+      role: 'assistant',
+      content: intentDecision.clarificationPrompt,
+      timestamp: Date.now(),
+      options: intentDecision.options,
+    };
+    return {
+      reply: intentDecision.clarificationPrompt,
+      actionChips: [],
       model,
       options: intentDecision.options,
       updatedHistory: [...history, userMsg, asstMsg],
