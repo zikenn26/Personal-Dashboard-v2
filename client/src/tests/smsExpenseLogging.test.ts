@@ -1,0 +1,295 @@
+import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
+import { parseSmsTransaction, inferExpenseCategory } from '../services/smsParser';
+import { smsExpenseService } from '../services/smsExpenseService';
+import { Storage, STORAGE_KEYS } from '../utils/storage';
+import { ExpenseItem } from '../types';
+
+function setupMockStorage() {
+  if (typeof globalThis.localStorage === 'undefined') {
+    const store: Record<string, string> = {};
+    globalThis.localStorage = {
+      getItem: (key: string) => store[key] ?? null,
+      setItem: (key: string, val: string) => {
+        store[key] = String(val);
+      },
+      removeItem: (key: string) => {
+        delete store[key];
+      },
+      clear: () => {
+        Object.keys(store).forEach((k) => delete store[k]);
+      },
+      key: (idx: number) => Object.keys(store)[idx] ?? null,
+      length: 0,
+    } as any;
+  }
+}
+
+describe('Android SMS Expense & Transaction Auto-Logging Suite', () => {
+  beforeAll(() => {
+    setupMockStorage();
+  });
+
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  describe('1. Non-Transaction and Safety Rejections', () => {
+    it('strictly rejects authentication OTP messages containing an amount', () => {
+      const otpSms =
+        'Your OTP for transaction of Rs.500 at Swiggy is 492810. Do not share this OTP with anyone. Valid for 10 mins.';
+      const res = parseSmsTransaction(otpSms, 'HDFCBK');
+
+      expect(res.isTransaction).toBe(false);
+      expect(res.ignoreReason).toContain('OTP');
+    });
+
+    it('strictly rejects promotional loan offers with amounts', () => {
+      const loanSms =
+        'Congratulations! You are eligible for pre-approved personal loan up to Rs. 5,00,000. Apply now: https://short.url';
+      const res = parseSmsTransaction(loanSms, 'BAJAJ');
+
+      expect(res.isTransaction).toBe(false);
+      expect(res.ignoreReason).toContain('Promotional');
+    });
+
+    it('strictly rejects upcoming unpaid bill due reminders', () => {
+      const billDueSms =
+        'Your electricity bill of Rs 1,450 is due on 28-Sep. Pay now to avoid late fee and disconnection.';
+      const res = parseSmsTransaction(billDueSms, 'BESCOM');
+
+      expect(res.isTransaction).toBe(false);
+      expect(res.ignoreReason).toContain('Upcoming Bill Due');
+    });
+
+    it('strictly rejects telecom plan and data quota expiry messages', () => {
+      const dataSms =
+        'Your daily data pack has expired. Recharge with Rs 19 to get 1GB high speed data.';
+      const res = parseSmsTransaction(dataSms, 'JIO');
+
+      expect(res.isTransaction).toBe(false);
+      expect(res.ignoreReason).toBeDefined();
+    });
+
+    it('strictly rejects failed or declined transactions', () => {
+      const failedSms =
+        'Transaction of Rs 850.00 at DMart was DECLINED due to incorrect PIN. Please retry.';
+      const res = parseSmsTransaction(failedSms, 'SBIINB');
+
+      expect(res.isTransaction).toBe(false);
+      expect(res.ignoreReason).toContain('declined');
+    });
+
+    it('strictly rejects empty or blank SMS text', () => {
+      const res = parseSmsTransaction('   ', 'UNKNOWN');
+      expect(res.isTransaction).toBe(false);
+    });
+  });
+
+  describe('2. Real Bank SMS Parsing & Extraction', () => {
+    it('correctly extracts HDFC Bank UPI debit for Food & Dining', () => {
+      const text =
+        'Rs.450.00 debited from HDFC Bank A/c **4120 on 23-Sep-26 to SWIGGY. UPI: 429384928342. Avl bal: Rs.14,200.00.';
+      const res = parseSmsTransaction(text, 'HDFCBK');
+
+      expect(res.isTransaction).toBe(true);
+      expect(res.type).toBe('expense');
+      expect(res.amount).toBe(450);
+      expect(res.currency).toBe('₹');
+      expect(res.merchant).toBe('Swiggy');
+      expect(res.category).toBe('Dining Out');
+      expect(res.referenceId).toBe('429384928342');
+      expect(res.accountLast4).toBe('4120');
+      expect(res.paymentMethod).toBe('UPI');
+      expect(res.bankOrAccount).toContain('HDFC Bank');
+    });
+
+    it('correctly extracts SBI UPI person-to-person transfer', () => {
+      const text =
+        'Dear UPI user A/C 9876 debited by 1200.00 on 23Sep26 transfer to MOHIT SHARMA Ref No 429482938492.';
+      const res = parseSmsTransaction(text, 'SBIINB');
+
+      expect(res.isTransaction).toBe(true);
+      expect(res.type).toBe('expense');
+      expect(res.amount).toBe(1200);
+      expect(res.merchant).toBe('Mohit Sharma');
+      expect(res.referenceId).toBe('429482938492');
+      expect(res.accountLast4).toBe('9876');
+      expect(res.bankOrAccount).toContain('State Bank of India');
+    });
+
+    it('correctly extracts ICICI Credit Card purchase for Shopping', () => {
+      const text =
+        'Your ICICI Bank Credit Card XX2004 has been used for purchase of INR 2,499.00 at AMAZON INDIA on 23-Sep-2026. Avl Lmt: INR 85,000.';
+      const res = parseSmsTransaction(text, 'ICICIB');
+
+      expect(res.isTransaction).toBe(true);
+      expect(res.type).toBe('expense');
+      expect(res.amount).toBe(2499);
+      expect(res.merchant).toBe('Amazon India');
+      expect(res.category).toBe('Shopping & Retail');
+      expect(res.paymentMethod).toBe('Credit Card');
+      expect(res.accountLast4).toBe('2004');
+    });
+
+    it('correctly extracts Axis Bank card purchase for Coffee & Snacks', () => {
+      const text =
+        'Axis Bank: INR 350.00 spent on Card ending 4412 at STARBUCKS on 23-09-2026 14:15:30. Avail Bal: INR 12,500.00.';
+      const res = parseSmsTransaction(text, 'AXISBK');
+
+      expect(res.isTransaction).toBe(true);
+      expect(res.amount).toBe(350);
+      expect(res.merchant).toBe('Starbucks');
+      expect(res.category).toBe('Snacks & Coffee');
+      expect(res.time).toBe('14:15');
+      expect(res.paymentMethod).toBe('Credit Card');
+    });
+
+    it('correctly extracts Zepto grocery order via GPay', () => {
+      const text = 'Paid Rs.199 to ZEPTO via Google Pay UPI. Txn ID: 40928392834.';
+      const res = parseSmsTransaction(text, 'GPAY');
+
+      expect(res.isTransaction).toBe(true);
+      expect(res.amount).toBe(199);
+      expect(res.merchant).toBe('Zepto');
+      expect(res.category).toBe('Groceries & Food');
+      expect(res.paymentMethod).toBe('UPI');
+      expect(res.referenceId).toBe('40928392834');
+    });
+
+    it('correctly extracts ATM Cash Withdrawal', () => {
+      const text =
+        'Rs.2000.00 withdrawn from ATM using Debit Card **1234 on 23-Sep-26. Avl bal: Rs.8,500.';
+      const res = parseSmsTransaction(text, 'HDFCBK');
+
+      expect(res.isTransaction).toBe(true);
+      expect(res.type).toBe('expense');
+      expect(res.amount).toBe(2000);
+      expect(res.merchant).toBe('ATM Cash Withdrawal');
+      expect(res.paymentMethod).toBe('Debit Card');
+      expect(res.accountLast4).toBe('1234');
+    });
+
+    it('correctly extracts Salary or Income Credit', () => {
+      const text = 'A/c *4512 credited with INR 45,000.00 on 23-Sep-26 by Salary. Avl Bal: INR 52,000.';
+      const res = parseSmsTransaction(text, 'HDFCBK');
+
+      expect(res.isTransaction).toBe(true);
+      expect(res.type).toBe('income');
+      expect(res.amount).toBe(45000);
+      expect(res.merchant).toContain('Salary');
+    });
+  });
+
+  describe('3. Automated Expense Logging & Duplicate Prevention', () => {
+    it('creates an ExpenseItem in Storage when valid financial SMS arrives', () => {
+      Storage.setExpenses([]);
+      Storage.setSmsAutoTrackingEnabled(true);
+
+      const smsText =
+        'Rs.320.00 debited from HDFC Bank A/c **4120 on 23-Sep-26 to KFC. UPI: 998877665544.';
+      const result = smsExpenseService.processSms(smsText, 'HDFCBK', Date.now(), false);
+
+      expect(result.success).toBe(true);
+      expect(result.status).toBe('logged');
+      expect(result.expense).toBeDefined();
+      expect(result.expense?.amount).toBe(320);
+      expect(result.expense?.name).toBe('Kfc');
+      expect(result.expense?.source).toBe('sms_auto');
+
+      // Verify stored in Storage.getExpenses()
+      const stored = Storage.getExpenses();
+      expect(stored.length).toBe(1);
+      expect(stored[0].id).toBe(result.expense?.id);
+
+      // Verify audit log
+      const logs = Storage.getSmsTransactionLogs();
+      expect(logs.length).toBe(1);
+      expect(logs[0].status).toBe('logged');
+    });
+
+    it('intelligently prevents duplicate entry when identical SMS arrives twice', () => {
+      Storage.setExpenses([]);
+      Storage.setSmsAutoTrackingEnabled(true);
+
+      const smsText =
+        'Paid Rs.150 to Chai Point via PhonePe UPI. UPI Ref: 123456789012.';
+
+      // First delivery
+      const first = smsExpenseService.processSms(smsText, 'PHONEPE', Date.now(), false);
+      expect(first.status).toBe('logged');
+      expect(Storage.getExpenses().length).toBe(1);
+
+      // Duplicate delivery (e.g. telecom retry or dual SMS alert)
+      const second = smsExpenseService.processSms(smsText, 'PHONEPE', Date.now(), false);
+      expect(second.status).toBe('duplicate_skipped');
+      expect(second.reason).toBeDefined();
+
+      // Total expenses should still strictly be 1!
+      expect(Storage.getExpenses().length).toBe(1);
+    });
+
+    it('prevents duplicate when transaction already logged with matching reference ID', () => {
+      // Pre-seed an existing expense with matching reference ID
+      const existing: ExpenseItem = {
+        id: 'exp-manual-1',
+        name: 'Dominos Pizza',
+        amount: 650,
+        category: 'Food & Dining',
+        date: '2026-09-23',
+        smsReferenceId: 'REF-DOMINOS-9988',
+      };
+      Storage.setExpenses([existing]);
+
+      const smsText =
+        'INR 650.00 debited from Card **1111 at DOMINOS on 23-Sep-26. Txn ID: REF-DOMINOS-9988.';
+      const res = smsExpenseService.processSms(smsText, 'HDFCBK', Date.now(), false);
+
+      expect(res.status).toBe('duplicate_skipped');
+      expect(res.reason).toContain('REF-DOMINOS-9988');
+      expect(Storage.getExpenses().length).toBe(1);
+    });
+
+    it('prevents duplicate when matching same amount, same date, and same merchant name', () => {
+      const existing: ExpenseItem = {
+        id: 'exp-manual-2',
+        name: 'Starbucks',
+        amount: 350,
+        category: 'Snacks & Coffee',
+        date: '2026-09-23',
+      };
+      Storage.setExpenses([existing]);
+
+      const smsText =
+        'Axis Bank: INR 350.00 spent on Card ending 4412 at STARBUCKS on 23-09-2026.';
+      const res = smsExpenseService.processSms(smsText, 'AXISBK', Date.now(), false);
+
+      expect(res.status).toBe('duplicate_skipped');
+      expect(Storage.getExpenses().length).toBe(1);
+    });
+  });
+
+  describe('4. Settings Toggle and State Persistence', () => {
+    it('persists enabled state in Storage', async () => {
+      expect(Storage.isSmsAutoTrackingEnabled()).toBe(false);
+
+      await smsExpenseService.setAutoTrackingEnabled(true);
+      expect(Storage.isSmsAutoTrackingEnabled()).toBe(true);
+
+      await smsExpenseService.setAutoTrackingEnabled(false);
+      expect(Storage.isSmsAutoTrackingEnabled()).toBe(false);
+    });
+
+    it('maintains and clears SMS audit logs properly', () => {
+      Storage.clearSmsTransactionLogs();
+      expect(Storage.getSmsTransactionLogs().length).toBe(0);
+
+      smsExpenseService.processSms('Random non-financial text', 'FRIEND', Date.now(), false);
+      expect(Storage.getSmsTransactionLogs().length).toBe(1);
+      expect(Storage.getSmsTransactionLogs()[0].status).toBe('ignored_not_financial');
+
+      Storage.clearSmsTransactionLogs();
+      expect(Storage.getSmsTransactionLogs().length).toBe(0);
+    });
+  });
+});

@@ -34,6 +34,7 @@ import {
   fetchAccountDevices,
   revokeDeviceSession,
 } from '../utils/devices';
+import { smsExpenseService } from '../services/smsExpenseService';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -51,6 +52,7 @@ interface SettingsModalProps {
   onSignOut?: () => void;
   onOpenChangePassword?: () => void;
   onOpenCommandMappings?: () => void;
+  onOpenSmsSettings?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -69,7 +71,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onSignOut,
   onOpenChangePassword,
   onOpenCommandMappings,
+  onOpenSmsSettings,
 }) => {
+  // SMS Auto-Tracking State
+  const [smsTrackingEnabled, setSmsTrackingEnabled] = useState<boolean>(() =>
+    Storage.isSmsAutoTrackingEnabled()
+  );
   // Master PIN state
   const [newPin, setNewPin] = useState(settings.masterPin);
   const [pinSaved, setPinSaved] = useState(false);
@@ -852,6 +859,77 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <Zap className="w-3.5 h-3.5" />
                 <span>Configure Triggers</span>
               </button>
+            </div>
+          </div>
+
+          {/* SECTION: ANDROID SMS EXPENSE AUTO-LOGGING */}
+          <div className="space-y-3 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold flex items-center gap-1.5">
+                <Smartphone className="w-3.5 h-3.5 text-emerald-500" />
+                <span>SMS Expense &amp; Transaction Auto-Logging</span>
+              </span>
+              <span
+                className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                  smsTrackingEnabled
+                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                    : 'bg-gray-100 dark:bg-gray-800 text-gray-500'
+                }`}
+              >
+                {smsTrackingEnabled ? 'Active' : 'Disabled'}
+              </span>
+            </div>
+
+            <p className="text-xs text-[#6B7280] dark:text-[#9CA3AF]">
+              On Android, incoming bank transaction alerts, UPI payments, and card purchase SMS messages are automatically converted into spending records.
+            </p>
+
+            <div className="p-3.5 rounded-xl border border-[#E5E7EB] dark:border-[#1F2937] bg-[#F9FAFB] dark:bg-[#1F2937]/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-1">
+                <div className="text-xs font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
+                  <Smartphone className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>Automatic Bank SMS Detection</span>
+                </div>
+                <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                  {smsTrackingEnabled
+                    ? 'Monitoring active. Transactions are verified locally to prevent duplicates.'
+                    : 'Turn on to automatically record spendings whenever bank SMS alerts arrive.'}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const next = !smsTrackingEnabled;
+                    setSmsTrackingEnabled(next);
+                    await smsExpenseService.setAutoTrackingEnabled(next);
+                    Sound.click(settings.soundEnabled);
+                  }}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                    smsTrackingEnabled ? 'bg-emerald-600' : 'bg-gray-300 dark:bg-gray-700'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                      smsTrackingEnabled ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+
+                {onOpenSmsSettings && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenSmsSettings();
+                    }}
+                    className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors cursor-pointer shadow-xs"
+                  >
+                    Configure
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 

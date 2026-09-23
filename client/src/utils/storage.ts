@@ -34,6 +34,7 @@ import {
   PublicationItem,
   ResumeSectionConfig,
   ResumeThemeStyle,
+  SmsTransactionLogItem,
 } from '../types';
 import { STOCK_IMAGES } from '../assets/stockImages';
 import { decryptJson, encryptJson, isEncryptedPayload, EncryptedPayload } from './crypto';
@@ -71,6 +72,9 @@ export const STORAGE_KEYS = {
   COMMAND_MAPPINGS: 'notion_os_v4_command_mappings',
   API_REQUEST_COUNTS: 'notion_os_v4_api_request_counts',
   API_MONTHLY_THRESHOLD: 'notion_os_v4_api_monthly_threshold',
+  SMS_AUTO_TRACKING_ENABLED: 'notion_os_v4_sms_auto_tracking_enabled',
+  SMS_PROCESSED_FINGERPRINTS: 'notion_os_v4_sms_processed_fingerprints',
+  SMS_TRANSACTION_LOGS: 'notion_os_v4_sms_transaction_logs',
 };
 
 export const DEFAULT_COMMAND_MAPPINGS: CommandMapping[] = [
@@ -1996,6 +2000,50 @@ export const Storage = {
     saveToStorage(STORAGE_KEYS.API_REQUEST_COUNTS, allRecords);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('lifeos_api_request_recorded', { detail: {} }));
+    }
+  },
+
+  isSmsAutoTrackingEnabled: (): boolean => {
+    return loadFromStorage<boolean>(STORAGE_KEYS.SMS_AUTO_TRACKING_ENABLED, false);
+  },
+
+  setSmsAutoTrackingEnabled: (enabled: boolean): void => {
+    saveToStorage(STORAGE_KEYS.SMS_AUTO_TRACKING_ENABLED, enabled);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('sms_tracking_toggled', { detail: { enabled } }));
+    }
+  },
+
+  getProcessedSmsFingerprints: (): string[] => {
+    return loadFromStorage<string[]>(STORAGE_KEYS.SMS_PROCESSED_FINGERPRINTS, []);
+  },
+
+  addProcessedSmsFingerprint: (fingerprint: string): void => {
+    if (!fingerprint) return;
+    const current = loadFromStorage<string[]>(STORAGE_KEYS.SMS_PROCESSED_FINGERPRINTS, []);
+    if (!current.includes(fingerprint)) {
+      const updated = [fingerprint, ...current].slice(0, 500);
+      saveToStorage(STORAGE_KEYS.SMS_PROCESSED_FINGERPRINTS, updated);
+    }
+  },
+
+  getSmsTransactionLogs: (): SmsTransactionLogItem[] => {
+    return loadFromStorage<SmsTransactionLogItem[]>(STORAGE_KEYS.SMS_TRANSACTION_LOGS, []);
+  },
+
+  addSmsTransactionLog: (logItem: SmsTransactionLogItem): void => {
+    const current = loadFromStorage<SmsTransactionLogItem[]>(STORAGE_KEYS.SMS_TRANSACTION_LOGS, []);
+    const updated = [logItem, ...current].slice(0, 100);
+    saveToStorage(STORAGE_KEYS.SMS_TRANSACTION_LOGS, updated);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('sms_transaction_logged', { detail: logItem }));
+    }
+  },
+
+  clearSmsTransactionLogs: (): void => {
+    saveToStorage(STORAGE_KEYS.SMS_TRANSACTION_LOGS, []);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('sms_transaction_logged', { detail: null }));
     }
   },
 };

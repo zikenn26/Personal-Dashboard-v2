@@ -100,7 +100,14 @@ export type ExpenseCategory =
   | 'Personal Care'
   | 'Other';
 
-export type PaymentMethod = 'Credit Card' | 'Debit Card' | 'Cash' | 'Apple / Google Pay' | 'Bank Transfer' | 'Other';
+export type PaymentMethod =
+  | 'Credit Card'
+  | 'Debit Card'
+  | 'Cash'
+  | 'Apple / Google Pay'
+  | 'Bank Transfer'
+  | 'UPI'
+  | 'Other';
 
 export type ExpenseBillingCycle = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'one-time';
 
@@ -118,6 +125,50 @@ export interface ExpenseItem {
   sourceFile?: string;
   importBatchId?: string;
   time?: string;
+  // Optional SMS Auto-Logging Traceability Metadata
+  source?: 'manual' | 'excel' | 'sms_auto';
+  smsReferenceId?: string;
+  rawSmsText?: string;
+  transactionType?: 'expense' | 'income';
+  bankOrAccount?: string;
+}
+
+export interface ParsedSmsTransaction {
+  isTransaction: boolean;
+  type: 'expense' | 'income';
+  amount: number;
+  currency: string;
+  merchant: string;
+  category: ExpenseCategory | string;
+  paymentMethod?: PaymentMethod | string;
+  bankOrAccount?: string;
+  accountLast4?: string;
+  referenceId?: string;
+  date: string; // YYYY-MM-DD
+  time?: string; // HH:mm
+  rawSms: string;
+  sender?: string;
+  timestamp: number;
+  fingerprint: string;
+  ignoreReason?: string;
+}
+
+export interface SmsTransactionLogItem {
+  id: string;
+  timestamp: number;
+  sender: string;
+  rawSms: string;
+  status: 'logged' | 'duplicate_skipped' | 'ignored_not_financial';
+  reason?: string;
+  expenseId?: string;
+  parsed?: {
+    amount: number;
+    merchant: string;
+    category: string;
+    type: string;
+    date: string;
+    referenceId?: string;
+  };
 }
 
 export interface ExcelImportLog {

@@ -44,7 +44,9 @@ import { AchievementsWall } from './components/AchievementsWall';
 import { LifeTimeline } from './components/LifeTimeline';
 import { CommandPalette } from './components/CommandPalette';
 import { SettingsModal } from './components/SettingsModal';
+import { SmsExpenseModal } from './components/SmsExpenseModal';
 import { ApiKeySettingsModal } from './components/ApiKeySettingsModal';
+import { smsExpenseService } from './services/smsExpenseService';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { QuickCaptureBar } from './components/QuickCaptureBar';
 import { BackupRestoreView } from './components/BackupRestoreView';
@@ -248,6 +250,7 @@ export default function App() {
   }, []);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isSmsModalOpen, setIsSmsModalOpen] = useState(false);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [isCommandMappingModalOpen, setIsCommandMappingModalOpen] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
@@ -652,9 +655,18 @@ export default function App() {
     Storage.setSettings(settings);
   }, [settings]);
 
-  // Hide native splash screen once React UI is mounted
+  // Hide native splash screen once React UI is mounted and initialize SMS auto-logging
   useEffect(() => {
     nativeService.hideSplashScreen();
+    smsExpenseService.initialize();
+
+    const handleSmsExpenseLogged = () => {
+      setExpenses(Storage.getExpenses());
+    };
+    window.addEventListener('sms_expense_auto_logged', handleSmsExpenseLogged);
+    return () => {
+      window.removeEventListener('sms_expense_auto_logged', handleSmsExpenseLogged);
+    };
   }, []);
 
   // Android Hardware Back Button Handling
@@ -667,6 +679,10 @@ export default function App() {
       }
       if (isSettingsOpen) {
         setIsSettingsOpen(false);
+        return true;
+      }
+      if (isSmsModalOpen) {
+        setIsSmsModalOpen(false);
         return true;
       }
       if (isCommandPaletteOpen) {
@@ -721,6 +737,7 @@ export default function App() {
   }, [
     isAuthModalOpen,
     isSettingsOpen,
+    isSmsModalOpen,
     isCommandPaletteOpen,
     isApiKeyModalOpen,
     isCommandMappingModalOpen,
@@ -3319,6 +3336,14 @@ export default function App() {
         onSignOut={handleSignOut}
         onOpenChangePassword={() => setIsChangePasswordOpen(true)}
         onOpenCommandMappings={() => setIsCommandMappingModalOpen(true)}
+        onOpenSmsSettings={() => setIsSmsModalOpen(true)}
+      />
+
+      {/* Android SMS Expense Auto-Logger Modal */}
+      <SmsExpenseModal
+        isOpen={isSmsModalOpen}
+        onClose={() => setIsSmsModalOpen(false)}
+        soundEnabled={settings.soundEnabled}
       />
 
       {/* Personal AI API Keys Modal (Per-User Isolated) */}

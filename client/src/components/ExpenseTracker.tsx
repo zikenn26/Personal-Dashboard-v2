@@ -41,6 +41,7 @@ import {
   AlertTriangle,
   ArrowUpDown,
   CalendarRange,
+  Smartphone,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -65,6 +66,7 @@ import { Storage, STORAGE_KEYS } from '../utils/storage';
 import { Sound } from '../utils/audio';
 import { triggerConfetti } from '../utils/confetti';
 import { ExcelImportModal } from './ExcelImportModal';
+import { SmsExpenseModal } from './SmsExpenseModal';
 import { ExpenseDistributionSection } from './ExpenseDistributionSection';
 import { DateRangePicker, type DateRange } from './DateRangePicker';
 
@@ -229,7 +231,19 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   const [selectedMonthIndex, setSelectedMonthIndex] = useState<number>(now.getMonth());
   const [isMonthPickerOpen, setIsMonthPickerOpen] = useState<boolean>(false);
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
+  const [showSmsModal, setShowSmsModal] = useState<boolean>(false);
+  const [isSmsTrackingActive, setIsSmsTrackingActive] = useState<boolean>(() =>
+    Storage.isSmsAutoTrackingEnabled()
+  );
   const [categoryScope, setCategoryScope] = useState<'month' | 'all'>('month');
+
+  useEffect(() => {
+    const handleSmsToggle = () => {
+      setIsSmsTrackingActive(Storage.isSmsAutoTrackingEnabled());
+    };
+    window.addEventListener('sms_tracking_toggled', handleSmsToggle);
+    return () => window.removeEventListener('sms_tracking_toggled', handleSmsToggle);
+  }, []);
 
   // Custom useEffect hooks that monitor the 'expenses' prop and listen for 'dashboard-data-updated'
   // and 'storage' events to force an immediate re-render whenever an item is removed or modified.
@@ -1233,6 +1247,24 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
               </div>
             )}
           </div>
+
+          {/* SMS Expense Auto-Logging Button */}
+          <button
+            type="button"
+            id="btn-sms-auto-log"
+            onClick={() => {
+              Sound.click(soundEnabled);
+              setShowSmsModal(true);
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+            title="Configure Automatic Bank & UPI SMS Expense Detection"
+          >
+            <Smartphone className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>Auto SMS</span>
+            {isSmsTrackingActive && (
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            )}
+          </button>
 
           {/* Upload Excel Button */}
           <button
@@ -2751,6 +2783,13 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
         onClose={() => setShowImportModal(false)}
         onImportSuccess={handleImportSuccess}
         existingExpenses={expenses}
+        soundEnabled={soundEnabled}
+      />
+
+      {/* SMS Expense Auto-Logging Modal */}
+      <SmsExpenseModal
+        isOpen={showSmsModal}
+        onClose={() => setShowSmsModal(false)}
         soundEnabled={soundEnabled}
       />
 
