@@ -236,7 +236,7 @@ function computeTransactionFingerprint(
   time?: string
 ): string {
   const cleanMerchant = merchant.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const cleanRef = (refId || '').trim();
+  const cleanRef = (refId || '').trim().toUpperCase();
   const cleanAcc = (accountLast4 || '').trim();
   const cleanTime = (time || '').trim();
   return `sms_${type}_${amount.toFixed(2)}_${date}_${cleanRef || `${cleanMerchant}_${cleanAcc}_${cleanTime}`}`;
@@ -361,28 +361,50 @@ export function parseSmsTransaction(
   let amount = 0;
   let currency = '₹';
 
-  // Pattern A: "Rs. 450.00", "INR 1,200", "₹500", "USD 25.50", "AED 100"
-  const amountPrefixMatch = text.match(
-    /(?:rs\.?|inr|₹|\$|usd|eur|€|gbp|£|aed)\s*([0-9,]+(?:\.[0-9]{1,2})?)/i
+  // Verb-bound amount (e.g. "debited by 1200.00", "debited by Rs 450", "spent INR 650", "paid Rs 200")
+  const verbAmountMatch = text.match(
+    /\b(?:debited\s*(?:by|for|with)?|credited\s*(?:by|for|with)?|spent|withdrawn|paid|transferred|dr\s*(?:by)?|cr\s*(?:by)?)\s*(?:(?:rs\.?|inr|₹|\$|usd|eur|€|gbp|£|aed)\s*)?([0-9,]+(?:\.[0-9]{1,2})?)\b/i
   );
 
-  // Pattern B: "450.00 Rs", "1200 INR", "500 rupees"
+  // All currency-prefixed amounts: "Rs. 450.00", "INR 1,200", "₹500", "$25.50"
+  const allCurrencyMatches = Array.from(
+    text.matchAll(/(rs\.?|inr|₹|\$|usd|eur|€|gbp|£|aed)\s*([0-9,]+(?:\.[0-9]{1,2})?)/gi)
+  );
+
+  // Find first currency match that is not preceded by balance/limit keywords
+  const nonBalCurrency = allCurrencyMatches.find((m) => {
+    if (m.index === undefined) return false;
+    const prefix = text.substring(Math.max(0, m.index - 30), m.index).toLowerCase();
+    return !/\b(?:bal|balance|avl|avail|available|limit)\s*[:#\-]?\s*$/i.test(prefix) &&
+           !/\b(?:bal|balance|avl\s*bal|avail\s*bal|available\s*bal|credit\s*limit)\b/i.test(prefix);
+  });
+
+  // Amount followed by currency suffix: "450.00 Rs", "1200 INR", "500 rupees"
   const amountSuffixMatch = text.match(
     /\b([0-9,]+(?:\.[0-9]{1,2})?)\s*(?:rs\.?|inr|₹|rupees)\b/i
   );
 
-  // Pattern C: Bare amount following transaction verbs like "debited by 1200.00", "credited with 45000"
+  // Bare amount following transaction verbs
   const bareAmountMatch = text.match(
     /\b(?:debited\s+by|debited\s+for|credited\s+by|credited\s+with|spent|withdrawn|amount\s+of|dr\s+by|cr\s+by)\s+([0-9,]+(?:\.[0-9]{1,2})?)/i
   );
 
-  if (amountPrefixMatch && amountPrefixMatch[1]) {
-    const rawNum = amountPrefixMatch[1].replace(/,/g, '');
+  if (verbAmountMatch && verbAmountMatch[1]) {
+    const rawNum = verbAmountMatch[1].replace(/,/g, '');
     amount = parseFloat(rawNum);
-    if (/[$]|usd/i.test(amountPrefixMatch[0])) currency = '$';
-    else if (/[€]|eur/i.test(amountPrefixMatch[0])) currency = '€';
-    else if (/[£]|gbp/i.test(amountPrefixMatch[0])) currency = '£';
-    else if (/aed/i.test(amountPrefixMatch[0])) currency = 'AED';
+    if (/[$]|usd/i.test(verbAmountMatch[0])) currency = '$';
+    else if (/[€]|eur/i.test(verbAmountMatch[0])) currency = '€';
+    else if (/[£]|gbp/i.test(verbAmountMatch[0])) currency = '£';
+    else if (/aed/i.test(verbAmountMatch[0])) currency = 'AED';
+    else currency = '₹';
+  } else if (nonBalCurrency && nonBalCurrency[2]) {
+    const rawNum = nonBalCurrency[2].replace(/,/g, '');
+    amount = parseFloat(rawNum);
+    const sym = nonBalCurrency[1].toLowerCase();
+    if (/[$]|usd/.test(sym)) currency = '$';
+    else if (/[€]|eur/.test(sym)) currency = '€';
+    else if (/[£]|gbp/.test(sym)) currency = '£';
+    else if (/aed/.test(sym)) currency = 'AED';
     else currency = '₹';
   } else if (amountSuffixMatch && amountSuffixMatch[1]) {
     const rawNum = amountSuffixMatch[1].replace(/,/g, '');
@@ -390,6 +412,10 @@ export function parseSmsTransaction(
     currency = '₹';
   } else if (bareAmountMatch && bareAmountMatch[1]) {
     const rawNum = bareAmountMatch[1].replace(/,/g, '');
+    amount = parseFloat(rawNum);
+    currency = '₹';
+  } else if (allCurrencyMatches.length > 0 && allCurrencyMatches[0][2]) {
+    const rawNum = allCurrencyMatches[0][2].replace(/,/g, '');
     amount = parseFloat(rawNum);
     currency = '₹';
   }
@@ -459,11 +485,44 @@ export function parseSmsTransaction(
   // --------------------------------------------------------------------------
 
   let referenceId: string | undefined;
-  const refMatch = text.match(
-    /\b(?:upi\s*(?:ref|txn|reference|id|no)|ref(?:\s+no)?|rrn|txn\s+id|transaction\s+id|imps\s+ref)\s*[:#\s]*([A-Za-z0-9_-]{5,})\b/i
-  ) || text.match(/\bupi[:#\s]+([A-Za-z0-9_-]{5,})\b/i);
-  if (refMatch && refMatch[1] && refMatch[1].length >= 4) {
-    referenceId = refMatch[1];
+
+  // 1. Standard 12-digit Indian UPI / RRN numbers (NPCI standard: 12 numeric digits)
+  // Handles:
+  // - "UPI:131834525249", "UPI: 131834525249", "UPI: \"131834525249\"", "UPI: '131834525249'"
+  // - "UPI/131834525249/Merchant", "UPI/CR/131834525249/...", "UPI/DR/131834525249/..."
+  // - "Info: UPI/131834525249/...", "towards UPI:131834525249"
+  // - "RRN 131834525249", "UPI Ref 131834525249", "Ref No. 131834525249", "Txn ID 131834525249"
+  const upi12DigitMatch =
+    text.match(
+      /\b(?:upi(?:\s*(?:ref|reference|rrn|txn|id|no))?|rrn|ref(?:\s+no\.?)?|txn\s*(?:id|no\.?)?|trans\s+id|transaction\s+id|utr|imps\s+ref)\s*[:#\/=\s-]*["']?\s*(\d{12})\b/i
+    ) ||
+    text.match(
+      /\bupi[\/:\s]+(?:cr|dr|[a-z0-9_-]+)[\/:\s]+["']?(\d{12})\b/i
+    ) ||
+    text.match(
+      /\b(?:towards|by|via|info:?)\s+upi[:\/]\s*["']?(\d{12})\b/i
+    ) ||
+    text.match(/\bupi[:#\/=\s-]+["']?\s*(\d{12})\b/i);
+
+  // 2. General alphanumeric reference / transaction IDs (e.g., REF-DOMINOS-9988, 100003928194)
+  const generalRefMatch =
+    text.match(
+      /\b(?:upi\s*(?:ref|txn|reference|id|no)|ref(?:\s+no\.?)?|rrn|txn\s*(?:id|no\.?)?|trans\s+id|transaction\s+id|imps\s+ref|utr)\s*[:#\/=\s-]*["']?\s*([A-Za-z0-9_-]{5,30})\b/i
+    ) ||
+    text.match(/\bupi[:#\/=\s]+["']?\s*([A-Za-z0-9_-]{5,30})\b/i);
+
+  let candidateRef = upi12DigitMatch ? upi12DigitMatch[1] : (generalRefMatch ? generalRefMatch[1] : undefined);
+  if (candidateRef) {
+    // Strip surrounding quotes, hyphens, colons, dots
+    candidateRef = candidateRef.replace(/^["'\-_:#]+|["'\-_:#.]+$/g, '').trim();
+    // If it caught a trailing hyphenated merchant name like "131834525249-Merchant", split it
+    const numPrefixMatch = candidateRef.match(/^(\d{6,})-[A-Za-z]/);
+    if (numPrefixMatch) {
+      candidateRef = numPrefixMatch[1];
+    }
+    if (candidateRef.length >= 4) {
+      referenceId = candidateRef;
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -499,12 +558,12 @@ export function parseSmsTransaction(
   } else {
     // Debit merchant patterns
     const merchantPatterns = [
-      /\b(?:paid to|transfer to|transferred to|sent to)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:via|on|ref|using|upi|dated|rrn|avl|\.|\n|$))/i,
-      /\b(?:towards|for)\s+(?:vpa\s+)?([A-Za-z0-9\s._@\-]+?)(?:\s+(?:via|on|ref|using|upi|dated|rrn|avl|bal|\(|\.|\n|$))/i,
-      /\bat\s+([A-Za-z0-9\s&'.-]+?)(?:\s+(?:on|via|ref|using|upi|dated|rrn|avl|bal|\.|\n|$))/i,
-      /\b(?:purchase at|purchase of [A-Za-z0-9.]+\s+at|used at)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:on|via|ref|using|upi|dated|rrn|avl|\.|\n|$))/i,
-      /\b(?:to|vpa)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:on|via|ref|using|upi|dated|rrn|avl|bal|\.|\n|$))/i,
-      /\binfo:\s*([A-Za-z0-9\s._@\-]+?)(?:\s+(?:on|via|ref|\.|\n|$))/i,
+      /\b(?:paid to|transfer to|transferred to|sent to)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:via|on|ref|using|upi|dated|rrn|avl|bal|\()|[\.\n]|\s*$)/i,
+      /\b(?:towards|for)\s+(?:vpa\s+)?([A-Za-z0-9\s._@\-]+?)(?:\s+(?:via|on|ref|using|upi|dated|rrn|avl|bal|\(|\.)|[\.\n]|\s*$)/i,
+      /\bat\s+([A-Za-z0-9\s&'.-]+?)(?:\s+(?:on|via|ref|using|upi|dated|rrn|avl|bal|\()|[\.\n]|\s*$)/i,
+      /\b(?:purchase at|purchase of [A-Za-z0-9.]+\s+at|used at)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:on|via|ref|using|upi|dated|rrn|avl|bal|\()|[\.\n]|\s*$)/i,
+      /\b(?:to|vpa)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:on|via|ref|using|upi|dated|rrn|avl|bal|\()|[\.\n]|\s*$)/i,
+      /\binfo:\s*([A-Za-z0-9\s._@\-]+?)(?:\s+(?:on|via|ref|using|upi|dated|rrn|avl|bal|\()|[\.\n]|\s*$)/i,
     ];
 
     for (const pat of merchantPatterns) {
@@ -514,7 +573,8 @@ export function parseSmsTransaction(
         if (
           candidate &&
           candidate.length >= 2 &&
-          !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs)/i.test(candidate)
+          !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi)/i.test(candidate) &&
+          !/^\d{6,}$/.test(candidate.replace(/\D/g, ''))
         ) {
           rawMerchant = candidate;
           break;

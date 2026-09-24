@@ -418,4 +418,125 @@ describe('Android SMS Expense & Transaction Auto-Logging Suite', () => {
       expect(Storage.getSmsTransactionLogs().length).toBe(0);
     });
   });
+
+  describe('6. Rapid Same-Bank Transactions & UPI Deduplication Priority', () => {
+    it('reliably extracts UPI reference numbers from formats with colon, quotes, or slashes', () => {
+      const sms1 = 'Dear Customer, your Acct ending 1234 has been debited by INR 1748.60 on 24-Sep-26 towards UPI:131834525249. Available Bal: Rs 5000.';
+      const res1 = parseSmsTransaction(sms1, 'AD-ICICIT-S');
+      expect(res1.isTransaction).toBe(true);
+      expect(res1.amount).toBe(1748.60);
+      expect(res1.referenceId).toBe('131834525249');
+
+      const smsQuotes = 'ICICI Bank: Acct XX123 debited with Rs 643.60 on 24-Sep-26. UPI: "132241653425". Avl Bal: INR 4356.40';
+      const resQuotes = parseSmsTransaction(smsQuotes, 'AD-ICICIT-S');
+      expect(resQuotes.isTransaction).toBe(true);
+      expect(resQuotes.amount).toBe(643.60);
+      expect(resQuotes.referenceId).toBe('132241653425');
+
+      const smsSlash = 'ICICI Bank: Acct XX123 debited with Rs 1748.60 on 24-Sep-26. Info: UPI/131834525249/Merchant. Avail Bal: INR 5000';
+      const resSlash = parseSmsTransaction(smsSlash, 'AD-ICICIT-S');
+      expect(resSlash.isTransaction).toBe(true);
+      expect(resSlash.referenceId).toBe('131834525249');
+
+      const smsHyphen = 'ICICI Bank: Acct XX123 debited with Rs 1748.60 on 24-Sep-26. UPI:131834525249-Merchant Name. Avl Bal: INR 5000';
+      const resHyphen = parseSmsTransaction(smsHyphen, 'AD-ICICIT-S');
+      expect(resHyphen.isTransaction).toBe(true);
+      expect(resHyphen.referenceId).toBe('131834525249');
+    });
+
+    it('correctly logs both rapid genuine transactions from the same bank (ICICI Rs 1748.60 & Rs 643.60)', () => {
+      Storage.setExpenses([]);
+      Storage.setSmsAutoTrackingEnabled(true);
+
+      const now = Date.now();
+
+      // Transaction 1: Rs 1748.60 — UPI: "131834525249"
+      const sms1 =
+        'Dear Customer, your Acct ending 1234 has been debited by INR 1748.60 on 24-Sep-26 towards UPI:131834525249. Available Bal: Rs 5000.';
+      const res1 = smsExpenseService.processSms(sms1, 'AD-ICICIT-S', now, false);
+      expect(res1.status).toBe('logged');
+      expect(res1.expense?.amount).toBe(1748.60);
+      expect(res1.expense?.smsReferenceId).toBe('131834525249');
+
+      // Transaction 2: Rs 643.60 — UPI: "132241653425" (arriving 1 minute later from same bank & account)
+      const sms2 =
+        'Dear Customer, your Acct ending 1234 has been debited by INR 643.60 on 24-Sep-26 towards UPI:132241653425. Available Bal: Rs 4356.40.';
+      const res2 = smsExpenseService.processSms(sms2, 'AD-ICICIT-S', now + 60000, false);
+      expect(res2.status).toBe('logged');
+      expect(res2.expense?.amount).toBe(643.60);
+      expect(res2.expense?.smsReferenceId).toBe('132241653425');
+
+      // Verify BOTH transactions are recorded in Spending
+      const expenses = Storage.getExpenses();
+      expect(expenses.length).toBe(2);
+      expect(expenses[0].smsReferenceId).toBe('132241653425');
+      expect(expenses[0].amount).toBe(643.60);
+      expect(expenses[1].smsReferenceId).toBe('131834525249');
+      expect(expenses[1].amount).toBe(1748.60);
+    });
+
+    it('always creates separate Spending entries for different UPI references even with same amount, merchant, and bank within 2 minutes', () => {
+      Storage.setExpenses([]);
+      Storage.setSmsAutoTrackingEnabled(true);
+
+      const baseTime = Date.now();
+
+      // First order: Rs 450 at Swiggy via ICICI UPI Ref: 131834525249
+      const sms1 =
+        'ICICI Bank: Rs 450.00 debited from A/c XX123 on 24-Sep-26 to SWIGGY. UPI:131834525249.';
+      const res1 = smsExpenseService.processSms(sms1, 'AD-ICICIT-S', baseTime, false);
+      expect(res1.status).toBe('logged');
+
+      // Second order: Rs 450 at Swiggy via ICICI UPI Ref: 132241653425 (placed 2 minutes later)
+      const sms2 =
+        'ICICI Bank: Rs 450.00 debited from A/c XX123 on 24-Sep-26 to SWIGGY. UPI:132241653425.';
+      const res2 = smsExpenseService.processSms(sms2, 'AD-ICICIT-S', baseTime + 120000, false);
+      expect(res2.status).toBe('logged');
+
+      // Both must be retained since they have distinct UPI references
+      const expenses = Storage.getExpenses();
+      expect(expenses.length).toBe(2);
+      expect(expenses.map((e) => e.smsReferenceId).sort()).toEqual(['131834525249', '132241653425']);
+    });
+
+    it('prevents duplicate when the exact same UPI reference is delivered again', () => {
+      Storage.setExpenses([]);
+      Storage.setSmsAutoTrackingEnabled(true);
+
+      const sms =
+        'ICICI Bank: Rs 1748.60 debited from A/c XX123 on 24-Sep-26. UPI:131834525249.';
+      const res1 = smsExpenseService.processSms(sms, 'AD-ICICIT-S', Date.now(), false);
+      expect(res1.status).toBe('logged');
+
+      // Re-delivery of identical reference ID
+      const retrySms =
+        'ICICI Bank: Rs 1748.60 debited from A/c XX123 on 24-Sep-26. UPI:131834525249. Repeat notice.';
+      const res2 = smsExpenseService.processSms(retrySms, 'AD-ICICIT-S', Date.now() + 5000, false);
+      expect(res2.status).toBe('duplicate_skipped');
+      expect(res2.reason).toContain('131834525249');
+
+      expect(Storage.getExpenses().length).toBe(1);
+    });
+
+    it('uses the 5-minute duplicate heuristic ONLY when NO transaction/reference ID can be extracted', () => {
+      Storage.setExpenses([]);
+      Storage.setSmsAutoTrackingEnabled(true);
+
+      // SMS without reference ID
+      const smsWithoutRef1 =
+        'Rs 250.00 debited from A/c ending 1234 on 24-Sep-26 at 11:00 to Chaayos.';
+      const res1 = smsExpenseService.processSms(smsWithoutRef1, 'AD-HDFCBK-S', Date.now(), false);
+      expect(res1.status).toBe('logged');
+      expect(res1.expense?.smsReferenceId).toBeUndefined();
+
+      // Similar SMS within 2 minutes without reference ID -> duplicate heuristic triggers
+      const smsWithoutRef2 =
+        'Rs 250.00 debited from A/c ending 1234 on 24-Sep-26 at 11:02 to Chaayos.';
+      const res2 = smsExpenseService.processSms(smsWithoutRef2, 'AD-HDFCBK-S', Date.now() + 120000, false);
+      expect(res2.status).toBe('duplicate_skipped');
+      expect(res2.reason).toContain('Chaayos');
+
+      expect(Storage.getExpenses().length).toBe(1);
+    });
+  });
 });

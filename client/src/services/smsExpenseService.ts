@@ -241,6 +241,22 @@ class SmsExpenseService {
    * Note: A clearly different transaction/reference ID must NEVER be merged
    * merely because amount, merchant, and timestamp are similar.
    */
+  /**
+   * Evaluates if a candidate transaction is a duplicate.
+   *
+   * Priority Hierarchy:
+   * 1. Transaction / Reference ID (UPI Ref, RRN, Txn ID) is the HIGHEST-PRIORITY identity.
+   *    - If two SMS have different transaction/reference IDs, ALWAYS create separate Spending entries,
+   *      even if they are from the same bank, same account, same merchant, and within five minutes.
+   *    - A transaction with a known reference ID is only duplicate if that exact reference ID
+   *      was already processed or exists in Spending.
+   * 2. Raw SMS Identity / Hash:
+   *    - Guards against identical raw SMS broadcast deliveries, retries, and queue reprocessing.
+   * 3. Fallback Heuristic (ONLY when NO transaction/reference ID can be extracted):
+   *    - The 5-minute duplicate heuristic (same amount, same merchant, same date within 5 mins)
+   *      is strictly used ONLY when no reference ID is present on the incoming SMS.
+   *    - Contextual heuristics must NEVER override a valid, different transaction/reference ID.
+   */
   public checkIsDuplicate(
     parsed: ParsedSmsTransaction,
     existingExpenses: ExpenseItem[] = Storage.getExpenses(),
@@ -249,11 +265,15 @@ class SmsExpenseService {
     const processedFingerprints = Storage.getProcessedSmsFingerprints();
 
     // =========================================================================
-    // 1. STRONGEST IDENTIFIER: Transaction / Reference ID (RRN, UPI Ref, Txn ID)
+    // 1. HIGHEST-PRIORITY IDENTITY: Transaction / Reference ID (UPI Ref, RRN, Txn ID)
     // =========================================================================
-    if (parsed.referenceId && parsed.referenceId.trim()) {
-      const cleanRef = parsed.referenceId.trim().toUpperCase();
+    const hasReferenceId = Boolean(parsed.referenceId && parsed.referenceId.trim());
+
+    if (hasReferenceId) {
+      const cleanRef = parsed.referenceId!.trim().toUpperCase();
       const refKey = `ref_id_${cleanRef}`;
+
+      // Check if this exact Reference ID was already processed in fingerprint history
       if (processedFingerprints.includes(refKey)) {
         return {
           isDuplicate: true,
@@ -261,6 +281,7 @@ class SmsExpenseService {
         };
       }
 
+      // Check if an existing Spending entry already has this exact Reference ID
       const matchByRef = existingExpenses.find(
         (e) =>
           (e.smsReferenceId && e.smsReferenceId.trim().toUpperCase() === cleanRef) ||
@@ -272,34 +293,60 @@ class SmsExpenseService {
           reason: `Duplicate: Transaction with Reference ID ${parsed.referenceId} already exists ("${matchByRef.name}")`,
         };
       }
+
+      // Protection against true duplicate SMS broadcasts, retries, and queue reprocessing:
+      // If the raw text is 100% identical to a prior delivery
+      if (rawBody && rawBody.trim()) {
+        const rawHash = `raw_sms_${rawBody.trim().toLowerCase().replace(/\s+/g, ' ')}`;
+        if (processedFingerprints.includes(rawHash)) {
+          return { isDuplicate: true, reason: 'Duplicate: Identical raw SMS payload already processed' };
+        }
+
+        const matchByRawText = existingExpenses.find(
+          (e) => e.rawSmsText && e.rawSmsText.trim().toLowerCase() === rawBody.trim().toLowerCase()
+        );
+        if (matchByRawText) {
+          return { isDuplicate: true, reason: 'Duplicate: Identical raw SMS text already logged in Spending' };
+        }
+      }
+
+      // Also check exact deterministic fingerprint (which incorporates the clean reference ID)
+      if (parsed.fingerprint && processedFingerprints.includes(parsed.fingerprint)) {
+        return { isDuplicate: true, reason: 'Duplicate: Exact SMS fingerprint already processed' };
+      }
+
+      // CRITICAL REQUIREMENT:
+      // If two SMS have different transaction/reference IDs, always create separate Spending entries,
+      // even if they are from the same bank, same account, same merchant, and within five minutes.
+      // The 5-minute duplicate heuristic should be used only when no transaction/reference ID can be extracted.
+      // Since this transaction has a valid, non-duplicate reference ID, IT IS A GENUINE TRANSACTION.
+      return { isDuplicate: false };
     }
 
     // =========================================================================
-    // 2. RAW SMS IDENTITY / HASH (Guards against identical re-broadcasts or retry)
+    // 2. RAW SMS IDENTITY / HASH (When no reference ID is present)
     // =========================================================================
     if (rawBody && rawBody.trim()) {
       const rawHash = `raw_sms_${rawBody.trim().toLowerCase().replace(/\s+/g, ' ')}`;
       if (processedFingerprints.includes(rawHash)) {
-        return { isDuplicate: true, reason: 'Identical raw SMS payload already processed' };
+        return { isDuplicate: true, reason: 'Duplicate: Identical raw SMS payload already processed' };
       }
 
       const matchByRawText = existingExpenses.find(
         (e) => e.rawSmsText && e.rawSmsText.trim().toLowerCase() === rawBody.trim().toLowerCase()
       );
       if (matchByRawText) {
-        return { isDuplicate: true, reason: 'Identical raw SMS text already logged in Spending' };
+        return { isDuplicate: true, reason: 'Duplicate: Identical raw SMS text already logged in Spending' };
       }
     }
 
     if (parsed.fingerprint && processedFingerprints.includes(parsed.fingerprint)) {
-      return { isDuplicate: true, reason: 'Duplicate SMS fingerprint already processed' };
+      return { isDuplicate: true, reason: 'Duplicate: Duplicate SMS fingerprint already processed' };
     }
 
     // =========================================================================
-    // 3. CONTEXTUAL MATCHING ONLY AS A FALLBACK
+    // 3. CONTEXTUAL & 5-MINUTE HEURISTIC (Strictly Fallback ONLY when NO Reference ID exists)
     // =========================================================================
-    // Rule: A clearly different transaction/reference ID must NEVER be merged
-    // merely because amount, merchant, and timestamp are similar.
     const cleanMerchant = parsed.merchant.toLowerCase().replace(/[^a-z0-9]/g, '');
 
     const matchByDetails = existingExpenses.find((e) => {
@@ -309,14 +356,6 @@ class SmsExpenseService {
       // Must match exact amount
       if (Math.abs(Number(e.amount) - parsed.amount) > 0.01) return false;
 
-      // CRITICAL RULE: If both transactions have reference IDs and they differ,
-      // they are strictly separate transactions and MUST NOT be merged.
-      if (e.smsReferenceId && parsed.referenceId) {
-        if (e.smsReferenceId.trim().toUpperCase() !== parsed.referenceId.trim().toUpperCase()) {
-          return false;
-        }
-      }
-
       // Check merchant name similarity
       const existingNameClean = e.name.toLowerCase().replace(/[^a-z0-9]/g, '');
       const merchantMatches =
@@ -324,15 +363,12 @@ class SmsExpenseService {
         (existingNameClean.includes(cleanMerchant) || cleanMerchant.includes(existingNameClean));
       if (!merchantMatches) return false;
 
-      // Time verification:
-      // If both transactions have recorded times, avoid falsely merging distinct transactions
+      // 5-minute duplicate heuristic:
       if (e.time && parsed.time) {
         const [eH, eM] = e.time.split(':').map(Number);
         const [pH, pM] = parsed.time.split(':').map(Number);
         if (!isNaN(eH) && !isNaN(eM) && !isNaN(pH) && !isNaN(pM)) {
           const diffMinutes = Math.abs((eH * 60 + eM) - (pH * 60 + pM));
-          // Two genuinely separate purchases from the same merchant for the same amount
-          // occurring > 5 minutes apart must BOTH be retained.
           if (diffMinutes > 5) {
             return false;
           }
@@ -345,7 +381,7 @@ class SmsExpenseService {
     if (matchByDetails) {
       return {
         isDuplicate: true,
-        reason: `Identical transaction of ₹${parsed.amount} at "${matchByDetails.name}" already logged for ${parsed.date}`,
+        reason: `Duplicate: Identical transaction of ₹${parsed.amount} at "${matchByDetails.name}" already logged for ${parsed.date}`,
       };
     }
 
@@ -523,7 +559,7 @@ class SmsExpenseService {
         Storage.addProcessedSmsFingerprint(parsed.fingerprint);
         Storage.addProcessedSmsFingerprint(`raw_sms_${body.trim().toLowerCase().replace(/\s+/g, ' ')}`);
         if (parsed.referenceId) {
-          Storage.addProcessedSmsFingerprint(`ref_id_${parsed.referenceId}`);
+          Storage.addProcessedSmsFingerprint(`ref_id_${parsed.referenceId.trim().toUpperCase()}`);
         }
 
         const logItem: SmsTransactionLogItem = {
@@ -583,7 +619,7 @@ class SmsExpenseService {
       Storage.addProcessedSmsFingerprint(parsed.fingerprint);
       Storage.addProcessedSmsFingerprint(`raw_sms_${body.trim().toLowerCase().replace(/\s+/g, ' ')}`);
       if (parsed.referenceId) {
-        Storage.addProcessedSmsFingerprint(`ref_id_${parsed.referenceId}`);
+        Storage.addProcessedSmsFingerprint(`ref_id_${parsed.referenceId.trim().toUpperCase()}`);
       }
 
       // Record audit log
