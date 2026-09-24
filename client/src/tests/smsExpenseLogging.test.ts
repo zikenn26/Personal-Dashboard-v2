@@ -188,7 +188,7 @@ describe('Android SMS Expense & Transaction Auto-Logging Suite', () => {
 
       const smsText =
         'Rs.320.00 debited from HDFC Bank A/c **4120 on 23-Sep-26 to KFC. UPI: 998877665544.';
-      const result = smsExpenseService.processSms(smsText, 'HDFCBK', Date.now(), false);
+      const result = smsExpenseService.processSms(smsText, 'AD-HDFCBK-S', Date.now(), false);
 
       expect(result.success).toBe(true);
       expect(result.status).toBe('logged');
@@ -216,12 +216,12 @@ describe('Android SMS Expense & Transaction Auto-Logging Suite', () => {
         'Paid Rs.150 to Chai Point via PhonePe UPI. UPI Ref: 123456789012.';
 
       // First delivery
-      const first = smsExpenseService.processSms(smsText, 'PHONEPE', Date.now(), false);
+      const first = smsExpenseService.processSms(smsText, 'AD-PHONEPE-S', Date.now(), false);
       expect(first.status).toBe('logged');
       expect(Storage.getExpenses().length).toBe(1);
 
       // Duplicate delivery (e.g. telecom retry or dual SMS alert)
-      const second = smsExpenseService.processSms(smsText, 'PHONEPE', Date.now(), false);
+      const second = smsExpenseService.processSms(smsText, 'AD-PHONEPE-S', Date.now(), false);
       expect(second.status).toBe('duplicate_skipped');
       expect(second.reason).toBeDefined();
 
@@ -243,7 +243,7 @@ describe('Android SMS Expense & Transaction Auto-Logging Suite', () => {
 
       const smsText =
         'INR 650.00 debited from Card **1111 at DOMINOS on 23-Sep-26. Txn ID: REF-DOMINOS-9988.';
-      const res = smsExpenseService.processSms(smsText, 'HDFCBK', Date.now(), false);
+      const res = smsExpenseService.processSms(smsText, 'AD-HDFCBK-S', Date.now(), false);
 
       expect(res.status).toBe('duplicate_skipped');
       expect(res.reason).toContain('REF-DOMINOS-9988');
@@ -262,7 +262,7 @@ describe('Android SMS Expense & Transaction Auto-Logging Suite', () => {
 
       const smsText =
         'Axis Bank: INR 350.00 spent on Card ending 4412 at STARBUCKS on 23-09-2026.';
-      const res = smsExpenseService.processSms(smsText, 'AXISBK', Date.now(), false);
+      const res = smsExpenseService.processSms(smsText, 'AX-AXISBK-S', Date.now(), false);
 
       expect(res.status).toBe('duplicate_skipped');
       expect(Storage.getExpenses().length).toBe(1);

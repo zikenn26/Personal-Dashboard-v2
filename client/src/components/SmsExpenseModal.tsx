@@ -34,42 +34,42 @@ interface SmsExpenseModalProps {
 const SAMPLE_BANK_SMS = [
   {
     title: 'HDFC Bank (Swiggy)',
-    sender: 'HDFCBK',
+    sender: 'AD-HDFCBK-S',
     text: 'Rs.450.00 debited from HDFC Bank A/c **4120 on 23-Sep-26 to SWIGGY. UPI: 429384928342. Avl bal: Rs.14,200.00.',
   },
   {
     title: 'SBI UPI (Mohit Sharma)',
-    sender: 'SBIINB',
+    sender: 'AD-SBIUPI-S',
     text: 'Dear UPI user A/C 9876 debited by 1200.00 on 23Sep26 transfer to MOHIT SHARMA Ref No 429482938492. Avail Bal: Rs 4,500.',
   },
   {
-    title: 'ICICI Credit Card (Amazon)',
-    sender: 'ICICIB',
+    title: 'ICICI Bank (Amazon)',
+    sender: 'AD-ICICIT-S',
     text: 'Your ICICI Bank Credit Card XX2004 has been used for purchase of INR 2,499.00 at AMAZON INDIA on 23-Sep-2026. Avl Lmt: INR 85,000.',
   },
   {
     title: 'Axis Bank (Starbucks)',
-    sender: 'AXISBK',
+    sender: 'AX-AXISBK-S',
     text: 'Axis Bank: INR 350.00 spent on Card ending 4412 at STARBUCKS on 23-09-2026 14:15:30. Avail Bal: INR 12,500.00.',
   },
   {
-    title: 'Zepto Quick Grocery',
-    sender: 'GPAY',
-    text: 'Paid Rs.199 to ZEPTO via Google Pay UPI. Txn ID: 40928392834.',
+    title: 'IRCTC Ticket Booking',
+    sender: 'VM-IRCTCi-S',
+    text: 'Payment of Rs.785.00 for IRCTC PNR 2849281944 was successful. Trans ID 100003928194.',
   },
   {
-    title: 'ATM Cash Withdrawal',
-    sender: 'HDFCBK',
-    text: 'Rs.2000.00 withdrawn from ATM using Debit Card **1234 on 23-Sep-26. Avl bal: Rs.8,500.',
+    title: 'Union Bank of India',
+    sender: 'VA-UNIONB-S',
+    text: 'A/c *5678 debited by Rs.1,500.00 on 23-09-2026 by UPI/P2A/Ref 50928392810. Bal Rs.18,340.00.',
   },
   {
-    title: 'Bank OTP (Should be Ignored)',
-    sender: 'HDFCBK',
+    title: 'Bank OTP (Service SMS, Ignored)',
+    sender: 'AD-HDFCBK-S',
     text: 'Your OTP for transaction of Rs.500 at Swiggy is 492810. Do not share this OTP with anyone. Valid for 10 mins.',
   },
   {
-    title: 'Personal Loan Offer (Should be Ignored)',
-    sender: 'BAJAJ',
+    title: 'Promo Offer (-P header, Ignored)',
+    sender: 'AD-BAJAJF-P',
     text: 'Congratulations! You are eligible for pre-approved instant personal loan up to Rs. 5,00,000. Click here to claim: https://sample.link',
   },
 ];
@@ -248,29 +248,33 @@ export const SmsExpenseModal: React.FC<SmsExpenseModalProps> = ({
         <div className="p-6 overflow-y-auto space-y-5 flex-1">
           {activeTab === 'settings' && (
             <>
-              {/* Privacy & Security Guarantee Banner */}
+              {/* Privacy & Regulatory Guarantee Banner */}
               <div className="p-4 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-800/60 text-xs space-y-2">
                 <div className="flex items-center gap-2 font-bold text-emerald-800 dark:text-emerald-300">
                   <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>100% On-Device Privacy Guaranteed</span>
+                  <span>On-Device Privacy & TRAI Service Filter</span>
                 </div>
                 <p className="text-emerald-700/90 dark:text-emerald-400/90 leading-relaxed text-[11px]">
-                  All SMS processing happens locally on your Android phone. No SMS text or financial details ever leave your device or reach any server. Unrelated SMS messages (OTPs, personal chats, promotional ads) are immediately ignored and never logged.
+                  The app processes eligible transaction/service SMS for expense detection and ignores unrelated SMS such as OTPs, personal messages, and promotional ads. All processing happens 100% locally on your phone—no SMS data or financial details ever leave your device.
                 </p>
               </div>
 
-              {/* Main Toggle Switch */}
+              {/* Main Toggle Switch & Status */}
               <div className="p-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 flex items-center justify-between gap-4">
                 <div className="space-y-0.5">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-bold text-gray-900 dark:text-white">
-                      Automatic SMS Expense Detection
+                      SMS Expense Detection
                     </span>
-                    {enabled && (
-                      <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                        Active
-                      </span>
-                    )}
+                    <span
+                      className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${
+                        enabled
+                          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                          : 'bg-gray-200/70 text-gray-600 dark:bg-gray-800 dark:text-gray-400 border-gray-300 dark:border-gray-700'
+                      }`}
+                    >
+                      {enabled ? 'Enabled' : 'Disabled'}
+                    </span>
                   </div>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     Instantly create spending records whenever a bank debit, card purchase, or UPI confirmation SMS arrives.
@@ -282,6 +286,7 @@ export const SmsExpenseModal: React.FC<SmsExpenseModalProps> = ({
                   className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
                     enabled ? 'bg-emerald-600' : 'bg-gray-300 dark:bg-gray-700'
                   }`}
+                  title={enabled ? 'Click to disable SMS detection' : 'Click to enable SMS detection'}
                 >
                   <span
                     className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
@@ -291,7 +296,7 @@ export const SmsExpenseModal: React.FC<SmsExpenseModalProps> = ({
                 </button>
               </div>
 
-              {/* Permission Status & Action */}
+              {/* Permission Explanation & Request */}
               <div className="p-4 rounded-xl border border-gray-200 dark:border-gray-800 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -312,7 +317,7 @@ export const SmsExpenseModal: React.FC<SmsExpenseModalProps> = ({
                 </div>
 
                 <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                  Requires <code className="text-[11px] bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">RECEIVE_SMS</code> and <code className="text-[11px] bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">READ_SMS</code> to detect incoming transaction messages in the background and verify against duplicate alerts.
+                  SMS permission is required so LifeOS can detect incoming transaction notifications from your bank or UPI app in real time. It operates on an event-driven basis with zero background battery drain.
                 </p>
 
                 {permissionStatus !== 'granted' && (
@@ -397,14 +402,17 @@ export const SmsExpenseModal: React.FC<SmsExpenseModalProps> = ({
               {/* Custom Input */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs text-gray-500">
-                  <label htmlFor="test-sender-input">Sender ID:</label>
+                  <div className="flex items-center gap-1.5">
+                    <label htmlFor="test-sender-input" className="font-semibold text-gray-700 dark:text-gray-300">Sender ID:</label>
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">(TRAI Header: Must end with -S)</span>
+                  </div>
                   <input
                     id="test-sender-input"
                     type="text"
                     value={testSender}
                     onChange={(e) => setTestSender(e.target.value)}
-                    className="px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700 text-xs bg-transparent dark:text-white w-28"
-                    placeholder="e.g. HDFCBK"
+                    className="px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700 text-xs bg-transparent dark:text-white w-32 font-mono uppercase"
+                    placeholder="AD-SBIUPI-S"
                   />
                 </div>
                 <textarea

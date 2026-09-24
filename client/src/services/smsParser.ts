@@ -421,8 +421,10 @@ export function parseSmsTransaction(
   const knownBanks = [
     { name: 'HDFC Bank', test: /(hdfc|hdfcbk)/i },
     { name: 'State Bank of India', test: /(sbi|sbiinb|sbiupi)/i },
-    { name: 'ICICI Bank', test: /(icici|icicib)/i },
+    { name: 'ICICI Bank', test: /(icici|icicib|icicit)/i },
     { name: 'Axis Bank', test: /(axis|axisbk)/i },
+    { name: 'Union Bank of India', test: /(unionb|union\s*bank)/i },
+    { name: 'IRCTC', test: /(irctc|irctci)/i },
     { name: 'Kotak Bank', test: /(kotak|kotakb)/i },
     { name: 'Punjab National Bank', test: /(pnb|pnbsms)/i },
     { name: 'Bank of Baroda', test: /(bob|baroda)/i },
@@ -524,10 +526,23 @@ export function parseSmsTransaction(
 
   // If merchant extraction yielded generic noise or nothing, try sender or fallback
   if (!merchant || /^(bank|transaction|account|card|upi|rs|inr)$/i.test(merchant)) {
-    if (sender && !/^(bank|sms|alert|txn|otp|info|vm-|vk-|bz-|ad-|ax-|id-)/i.test(sender)) {
-      merchant = cleanMerchantName(sender);
-    } else {
-      merchant = paymentMethod === 'UPI' ? 'UPI Payment' : `${paymentMethod} Expense`;
+    // If sender is a TRAI Service Header like "VM-IRCTCi-S", extract entity "IRCTC"
+    const traiMatch = sender.match(/^[A-Za-z]{2}-([A-Za-z0-9]+)-[sS]$/);
+    if (traiMatch && !/^(bank|sms|alert|txn|otp|info)/i.test(traiMatch[1])) {
+      const entity = traiMatch[1];
+      if (/irctc/i.test(entity)) {
+        merchant = 'IRCTC';
+      } else if (!/(sbi|hdfc|icici|axis|kotak|pnb|bob|idfc|canara|unionb)/i.test(entity)) {
+        merchant = cleanMerchantName(entity);
+      }
+    }
+
+    if (!merchant || /^(bank|transaction|account|card|upi|rs|inr)$/i.test(merchant)) {
+      if (sender && !/^(bank|sms|alert|txn|otp|info|vm-|vk-|bz-|ad-|ax-|id-)/i.test(sender)) {
+        merchant = cleanMerchantName(sender);
+      } else {
+        merchant = paymentMethod === 'UPI' ? 'UPI Payment' : `${paymentMethod} Expense`;
+      }
     }
   }
 

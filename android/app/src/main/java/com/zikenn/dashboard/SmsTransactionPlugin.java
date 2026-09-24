@@ -54,44 +54,15 @@ public class SmsTransactionPlugin extends Plugin {
     public static final String KEY_SMS_AUTO_ENABLED = "sms_auto_logging_enabled";
     public static final String KEY_PENDING_SMS = "pending_sms_transactions";
 
-    private BroadcastReceiver dynamicReceiver;
-
     @Override
     public void load() {
         super.load();
         instance = this;
         Log.i(TAG, "SmsTransactionPlugin loaded successfully");
-
-        // Dynamically register SmsReceiver while the app is active in foreground/background.
-        // This ensures reliable broadcast receipt on OEM ROMs (MIUI, ColorOS, OneUI)
-        // that may throttle static manifest receivers.
-        try {
-            dynamicReceiver = new SmsReceiver();
-            IntentFilter filter = new IntentFilter("android.provider.Telephony.SMS_RECEIVED");
-            filter.setPriority(999);
-            Context context = getContext();
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.registerReceiver(dynamicReceiver, filter, Context.RECEIVER_EXPORTED);
-            } else {
-                context.registerReceiver(dynamicReceiver, filter);
-            }
-            Log.i(TAG, "Dynamic SmsReceiver registered successfully with priority 999");
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to register dynamic SmsReceiver", e);
-        }
     }
 
     @Override
     protected void handleOnDestroy() {
-        if (dynamicReceiver != null) {
-            try {
-                getContext().unregisterReceiver(dynamicReceiver);
-                Log.i(TAG, "Dynamic SmsReceiver unregistered");
-            } catch (Exception e) {
-                Log.w(TAG, "Error unregistering dynamic SmsReceiver: " + e.getMessage());
-            }
-            dynamicReceiver = null;
-        }
         if (instance == this) {
             instance = null;
         }
@@ -251,7 +222,8 @@ public class SmsTransactionPlugin extends Plugin {
                     String body = cursor.getString(cursor.getColumnIndexOrThrow("body"));
                     long date = cursor.getLong(cursor.getColumnIndexOrThrow("date"));
 
-                    if (SmsReceiver.isLikelyFinancialTransaction(address, body)) {
+                    // Target only TRAI Service SMS (ending with -S) and financial transactions
+                    if (SmsReceiver.isTraiServiceSender(address) && SmsReceiver.isLikelyFinancialTransaction(address, body)) {
                         JSObject item = new JSObject();
                         item.put("sender", address);
                         item.put("body", body);
@@ -277,6 +249,12 @@ public class SmsTransactionPlugin extends Plugin {
      */
     public static void handleIncomingSms(Context context, String sender, String body, long timestamp) {
         try {
+            // Under TRAI regulations, only SMS headers ending with -S are monitored
+            if (!SmsReceiver.isTraiServiceSender(sender)) {
+                Log.i(TAG, "[PLUGIN_SMS] Dropped non-service SMS from: " + sender + " (not ending in -S)");
+                return;
+            }
+
             JSObject data = new JSObject();
             data.put("sender", sender);
             data.put("body", body);
@@ -295,6 +273,16 @@ public class SmsTransactionPlugin extends Plugin {
                 arr = new JSONArray(current);
             } catch (Exception e) {
                 arr = new JSONArray();
+            }
+
+            // Redundancy Prevention: Check if this SMS is already queued
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject existing = arr.getJSONObject(i);
+                if (sender.equalsIgnoreCase(existing.optString("sender")) &&
+                    body.equals(existing.optString("body"))) {
+                    Log.i(TAG, "[PLUGIN_SMS] SMS already in pending queue; skipping redundant insertion.");
+                    return;
+                }
             }
 
             JSONObject newObj = new JSONObject();

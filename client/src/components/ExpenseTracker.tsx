@@ -1265,19 +1265,33 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
             )}
           </div>
 
-          {/* SMS Expense Auto-Logging Button */}
+          {/* SMS Expense Auto-Detection Button / Toggle */}
           <button
             type="button"
-            id="btn-sms-auto-log"
+            id="btn-sms-detection"
             onClick={() => {
               Sound.click(soundEnabled);
               setShowSmsModal(true);
             }}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold shadow-2xs transition-colors cursor-pointer"
-            title="Configure Automatic Bank & UPI SMS Expense Detection"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shadow-2xs transition-colors cursor-pointer border ${
+              isSmsTrackingActive
+                ? 'bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 font-bold'
+                : 'bg-gray-50 dark:bg-[#242C3D] hover:bg-gray-100 dark:hover:bg-[#2D3748] border-gray-200 dark:border-[#2D3748] text-gray-700 dark:text-gray-300'
+            }`}
+            title={
+              isSmsTrackingActive
+                ? 'SMS Detection is ON: Click to view details, test parser, or change settings'
+                : 'Click to Enable SMS Detection for bank & UPI transaction expenses'
+            }
           >
-            <Smartphone className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>Auto SMS</span>
+            <Smartphone
+              className={`w-3.5 h-3.5 ${
+                isSmsTrackingActive
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-gray-400 dark:text-gray-500'
+              }`}
+            />
+            <span>{isSmsTrackingActive ? 'SMS Detection: ON' : 'Enable SMS Detection'}</span>
             {isSmsTrackingActive && (
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
             )}

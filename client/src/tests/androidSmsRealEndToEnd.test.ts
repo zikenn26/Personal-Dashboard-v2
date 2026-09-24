@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
 import { parseSmsTransaction } from '../services/smsParser';
-import { smsExpenseService, SmsTransaction, smsPluginWebImpl, sanitizeSmsForLog } from '../services/smsExpenseService';
+import { smsExpenseService, SmsTransaction, smsPluginWebImpl, sanitizeSmsForLog, isTraiServiceSender } from '../services/smsExpenseService';
 import { Storage } from '../utils/storage';
 import { ExpenseItem } from '../types';
 
@@ -30,6 +30,11 @@ function setupMockStorage() {
 function simulatedAndroidSmsReceiver(sender: string, body: string, isReceiverEnabled: boolean = true) {
   if (!isReceiverEnabled) return { accepted: false, reason: 'disabled' };
   if (!body || !body.trim()) return { accepted: false, reason: 'empty' };
+
+  // 0. TRAI Service Message Header Check: Must end with -S (e.g. AD-ICICIT-S, AX-AXISBK-S, VM-IRCTCi-S, VA-UNIONB-S, AD-SBIUPI-S)
+  if (!isTraiServiceSender(sender)) {
+    return { accepted: false, reason: 'not_trai_service' };
+  }
 
   const lower = body.toLowerCase();
 
@@ -132,60 +137,78 @@ describe('Real Android Device SMS Pipeline & End-to-End Test', () => {
   });
 
   describe('1. Realistic Indian Bank SMS Receiver Filtering', () => {
+    it('successfully accepts TRAI service SMS headers ending in -S (AD-SBIUPI-S, AD-ICICIT-S, AX-AXISBK-S, VM-IRCTCi-S, VA-UNIONB-S)', () => {
+      expect(isTraiServiceSender('AD-ICICIT-S')).toBe(true);
+      expect(isTraiServiceSender('AX-AXISBK-S')).toBe(true);
+      expect(isTraiServiceSender('VM-IRCTCi-S')).toBe(true);
+      expect(isTraiServiceSender('VA-UNIONB-S')).toBe(true);
+      expect(isTraiServiceSender('AD-SBIUPI-S')).toBe(true);
+      expect(isTraiServiceSender('ad-sbiupi-s')).toBe(true);
+    });
+
+    it('rejects non-service SMS headers not ending with S (e.g. personal numbers, promo P headers, raw bank names)', () => {
+      expect(isTraiServiceSender('+919876543210')).toBe(false);
+      expect(isTraiServiceSender('BAJAJ')).toBe(false);
+      expect(isTraiServiceSender('AD-BAJAJF-P')).toBe(false);
+      expect(isTraiServiceSender('AX-PROMO-P')).toBe(false);
+      expect(isTraiServiceSender('HDFCBK')).toBe(false);
+      expect(isTraiServiceSender('SBIUPI')).toBe(false);
+    });
+
     it('successfully accepts SBI UPI transaction (which has no currency prefix)', () => {
       const sbiSms =
         'Dear UPI user A/C 9876 debited by 1200.00 on 23Sep26 transfer to MOHIT SHARMA Ref No 429482938492.';
-      const res = simulatedAndroidSmsReceiver('SBIUPI', sbiSms, true);
+      const res = simulatedAndroidSmsReceiver('AD-SBIUPI-S', sbiSms, true);
       expect(res.accepted).toBe(true);
     });
 
     it('successfully accepts HDFC SMS with compact amount (Rs450.00 without space)', () => {
       const hdfcSms =
         'Rs450.00 debited from HDFC Bank A/c **4120 on 23-Sep-26 to SWIGGY. UPI: 429384928342.';
-      const res = simulatedAndroidSmsReceiver('HDFCBK', hdfcSms, true);
+      const res = simulatedAndroidSmsReceiver('AD-HDFCBK-S', hdfcSms, true);
       expect(res.accepted).toBe(true);
     });
 
     it('successfully accepts Google Pay UPI payment', () => {
       const gpaySms = 'Paid Rs.199 to ZEPTO via Google Pay UPI. Txn ID: 40928392834.';
-      const res = simulatedAndroidSmsReceiver('GPAY', gpaySms, true);
+      const res = simulatedAndroidSmsReceiver('AD-GPAY-S', gpaySms, true);
       expect(res.accepted).toBe(true);
     });
 
     it('successfully accepts ICICI Credit Card spending', () => {
       const iciciSms =
         'Your ICICI Bank Credit Card XX2004 has been used for purchase of INR 2,499.00 at AMAZON INDIA on 23-Sep-2026.';
-      const res = simulatedAndroidSmsReceiver('ICICIB', iciciSms, true);
+      const res = simulatedAndroidSmsReceiver('AD-ICICIT-S', iciciSms, true);
       expect(res.accepted).toBe(true);
     });
 
     it('successfully accepts Axis Bank cafe transaction', () => {
       const axisSms =
         'Axis Bank: INR 350.00 spent on Card ending 4412 at STARBUCKS on 23-09-2026 14:15:30.';
-      const res = simulatedAndroidSmsReceiver('AXISBK', axisSms, true);
+      const res = simulatedAndroidSmsReceiver('AX-AXISBK-S', axisSms, true);
       expect(res.accepted).toBe(true);
     });
 
-    it('rejects bank OTP message with explicit reason', () => {
+    it('rejects bank OTP message with explicit reason even if from TRAI service header', () => {
       const otpSms =
         'Your OTP for transaction of Rs.500 at Swiggy is 492810. Do not share this OTP with anyone.';
-      const res = simulatedAndroidSmsReceiver('HDFCBK', otpSms, true);
+      const res = simulatedAndroidSmsReceiver('AD-HDFCBK-S', otpSms, true);
       expect(res.accepted).toBe(false);
       expect(res.reason).toBe('otp');
     });
 
-    it('rejects personal loan spam with explicit reason', () => {
+    it('rejects personal loan spam from promo header (-P)', () => {
       const loanSms =
         'Congratulations! You are eligible for pre-approved personal loan up to Rs. 5,00,000. Apply now.';
-      const res = simulatedAndroidSmsReceiver('BAJAJ', loanSms, true);
+      const res = simulatedAndroidSmsReceiver('AD-BAJAJF-P', loanSms, true);
       expect(res.accepted).toBe(false);
-      expect(res.reason).toBe('loan_ad');
+      expect(res.reason).toBe('not_trai_service');
     });
 
     it('rejects failed transaction with explicit reason', () => {
       const failedSms =
         'Transaction of Rs 850.00 at DMart was DECLINED due to insufficient balance.';
-      const res = simulatedAndroidSmsReceiver('SBIINB', failedSms, true);
+      const res = simulatedAndroidSmsReceiver('VA-UNIONB-S', failedSms, true);
       expect(res.accepted).toBe(false);
       expect(res.reason).toBe('failed');
     });
@@ -199,7 +222,7 @@ describe('Real Android Device SMS Pipeline & End-to-End Test', () => {
       // 2. Incoming real SBI UPI transaction SMS
       const sbiSms =
         'Dear UPI user A/C 9876 debited by 1200.00 on 23Sep26 transfer to MOHIT SHARMA Ref No 429482938492.';
-      const sender = 'SBIUPI';
+      const sender = 'AD-SBIUPI-S';
 
       // 3. Process through smsExpenseService
       const processResult = smsExpenseService.processSms(sbiSms, sender, Date.now(), false);
@@ -226,14 +249,14 @@ describe('Real Android Device SMS Pipeline & End-to-End Test', () => {
       const logs = Storage.getSmsTransactionLogs();
       expect(logs.length).toBe(1);
       expect(logs[0].status).toBe('logged');
-      expect(logs[0].sender).toBe('SBIUPI');
+      expect(logs[0].sender).toBe('AD-SBIUPI-S');
     });
 
     it('executes full flow for HDFC Swiggy order and assigns Dining Out category', () => {
       const hdfcSms =
         'Rs.450.00 debited from HDFC Bank A/c **4120 on 23-Sep-26 to SWIGGY. UPI: 429384928342. Avl bal: Rs.14,200.00.';
 
-      const result = smsExpenseService.processSms(hdfcSms, 'HDFCBK', Date.now(), false);
+      const result = smsExpenseService.processSms(hdfcSms, 'AD-HDFCBK-S', Date.now(), false);
       expect(result.success).toBe(true);
 
       const expenses = Storage.getExpenses();
@@ -249,12 +272,12 @@ describe('Real Android Device SMS Pipeline & End-to-End Test', () => {
         'Rs.320.00 debited from HDFC Bank A/c **4120 on 23-Sep-26 to KFC. UPI: 998877665544.';
 
       // First delivery: logged
-      const res1 = smsExpenseService.processSms(sms, 'HDFCBK', Date.now(), false);
+      const res1 = smsExpenseService.processSms(sms, 'AD-HDFCBK-S', Date.now(), false);
       expect(res1.status).toBe('logged');
       expect(Storage.getExpenses().length).toBe(1);
 
       // Second delivery: skipped as duplicate
-      const res2 = smsExpenseService.processSms(sms, 'HDFCBK', Date.now(), false);
+      const res2 = smsExpenseService.processSms(sms, 'AD-HDFCBK-S', Date.now(), false);
       expect(res2.status).toBe('duplicate_skipped');
       expect(res2.reason).toContain('Duplicate');
 
@@ -272,13 +295,13 @@ describe('Real Android Device SMS Pipeline & End-to-End Test', () => {
       // 1. Bank SMS
       const bankSms =
         'Update: Rs. 199.00 debited from Bank A/c *5678 on 23-Sep-26 towards ZEPTO. UPI Ref: 554433221100.';
-      const res1 = smsExpenseService.processSms(bankSms, 'HDFCBK', Date.now(), false);
+      const res1 = smsExpenseService.processSms(bankSms, 'AD-HDFCBK-S', Date.now(), false);
       expect(res1.status).toBe('logged');
 
       // 2. UPI App notification SMS received 5 seconds later for same purchase
       const upiSms =
         'Paid Rs.199 to ZEPTO via Google Pay UPI on 23-Sep-26. UPI Ref: 554433221100.';
-      const res2 = smsExpenseService.processSms(upiSms, 'GPAY', Date.now(), false);
+      const res2 = smsExpenseService.processSms(upiSms, 'AD-GPAY-S', Date.now(), false);
 
       expect(res2.status).toBe('duplicate_skipped');
       expect(res2.reason).toContain('Duplicate');
@@ -289,12 +312,12 @@ describe('Real Android Device SMS Pipeline & End-to-End Test', () => {
       // Setup mock plugin responses
       const mockPendingMessages = [
         {
-          sender: 'AXISBK',
+          sender: 'AX-AXISBK-S',
           body: 'Axis Bank: INR 350.00 spent on Card ending 4412 at STARBUCKS on 23-09-2026 14:15:30.',
           timestamp: Date.now(),
         },
         {
-          sender: 'GPAY',
+          sender: 'AD-GPAY-S',
           body: 'Paid Rs.199 to ZEPTO via Google Pay UPI. Txn ID: 40928392834.',
           timestamp: Date.now(),
         },
@@ -339,7 +362,7 @@ describe('Real Android Device SMS Pipeline & End-to-End Test', () => {
 
       const validSms =
         'Dear UPI user A/C 9876 debited by 1200.00 on 23Sep26 transfer to MOHIT SHARMA Ref No 429482938492.';
-      const res = smsExpenseService.processSms(validSms, 'SBIUPI', Date.now(), false);
+      const res = smsExpenseService.processSms(validSms, 'AD-SBIUPI-S', Date.now(), false);
 
       expect(res.success).toBe(true);
       expect(res.status).toBe('logged');
@@ -350,7 +373,7 @@ describe('Real Android Device SMS Pipeline & End-to-End Test', () => {
       );
       expect(rawCall).toBeDefined();
       expect(rawCall![0]).toContain('Incoming SMS captured before parser');
-      expect(rawCall![0]).toContain('SBIUPI');
+      expect(rawCall![0]).toContain('AD-SBIUPI-S');
 
       // 2. Check full data object was logged before duplicate check
       const financialCall = consoleInfoSpy.mock.calls.find((call) =>
@@ -377,7 +400,7 @@ describe('Real Android Device SMS Pipeline & End-to-End Test', () => {
       const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       const otpSms = 'Your OTP for HDFC NetBanking is 592810. Do not share this OTP with anyone.';
-      const res = smsExpenseService.processSms(otpSms, 'HDFCBK', Date.now(), false);
+      const res = smsExpenseService.processSms(otpSms, 'AD-HDFCBK-S', Date.now(), false);
 
       expect(res.success).toBe(false);
       expect(res.status).toBe('ignored_not_financial');
@@ -398,10 +421,10 @@ describe('Real Android Device SMS Pipeline & End-to-End Test', () => {
       const sms = 'Dear UPI user A/C 9876 debited by 1200.00 on 23Sep26 transfer to MOHIT SHARMA Ref No 429482938492.';
 
       // First run - successfully logged
-      smsExpenseService.processSms(sms, 'SBIUPI', Date.now(), false);
+      smsExpenseService.processSms(sms, 'AD-SBIUPI-S', Date.now(), false);
 
       // Second run - should be flagged as duplicate in diagnostics
-      const res2 = smsExpenseService.processSms(sms, 'SBIUPI', Date.now(), false);
+      const res2 = smsExpenseService.processSms(sms, 'AD-SBIUPI-S', Date.now(), false);
       expect(res2.success).toBe(false);
       expect(res2.status).toBe('duplicate_skipped');
 
