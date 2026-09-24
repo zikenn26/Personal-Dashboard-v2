@@ -3489,8 +3489,8 @@ export default function App() {
         </aside>
       )}
 
-      {/* Floating Action Buttons: Live Voice Assist & Zikenn AI */}
-      {!isZikennPopupOpen && (
+      {/* Floating Action Buttons: Live Voice Assist & Zikenn AI (Desktop only - hidden on Android) */}
+      {!isAndroidView && !isZikennPopupOpen && (
         <div className="fixed bottom-6 right-6 z-40 flex items-center gap-3">
           {/* Dedicated Live Voice Assist Button with Framer Motion Waveform Visualizer */}
           <button

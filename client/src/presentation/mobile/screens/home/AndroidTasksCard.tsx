@@ -1,12 +1,16 @@
-import React from 'react';
-import { CheckSquare, CheckCircle2, Circle, ArrowRight, Plus } from 'lucide-react';
+import React, { useState } from 'react';
+import { CheckSquare, CheckCircle2, ArrowRight, Plus, Check, Trash2, Edit3 } from 'lucide-react';
 import { TodoItem, Priority } from '../../../../types';
 import { nativeService } from '../../../../services/nativeService';
 import { CARD_SURFACE_CLASSES, CARD_HEADER_CLASSES, CARD_TITLE_CLASSES, CARD_BODY_CLASSES } from '../../design-system/materialYou';
+import { SwipeActionRow } from '../../gestures/SwipeActionRow';
+import { useLongPress } from '../../gestures/useLongPress';
+import { AndroidActionSheet, ActionSheetItem } from '../../components/AndroidActionSheet';
 
 export interface AndroidTasksCardProps {
   todos: TodoItem[];
   onToggleTodo: (id: string) => void;
+  onDeleteTodo?: (id: string) => void;
   onNavigateToTasks: () => void;
   onOpenAddTask: () => void;
 }
@@ -14,6 +18,7 @@ export interface AndroidTasksCardProps {
 export const AndroidTasksCard: React.FC<AndroidTasksCardProps> = ({
   todos,
   onToggleTodo,
+  onDeleteTodo,
   onNavigateToTasks,
   onOpenAddTask,
 }) => {
@@ -21,16 +26,34 @@ export const AndroidTasksCard: React.FC<AndroidTasksCardProps> = ({
   const pendingTodos = todos.filter((t) => !t.completed && t.status !== 'complete');
   const displayTodos = pendingTodos.slice(0, 4);
 
+  const [activeActionTodo, setActiveActionTodo] = useState<TodoItem | null>(null);
+
   const getPriorityBadge = (p: Priority) => {
     switch (p) {
       case 'urgent':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300">Urgent</span>;
+        return (
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300">
+            URGENT
+          </span>
+        );
       case 'high':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-700 dark:bg-orange-950/80 dark:text-orange-300">High</span>;
+        return (
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-700 dark:bg-orange-950/80 dark:text-orange-300">
+            HIGH
+          </span>
+        );
       case 'medium':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-950/80 dark:text-amber-300">Med</span>;
+        return (
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-100 text-violet-700 dark:bg-violet-950/80 dark:text-violet-300">
+            MEDIUM
+          </span>
+        );
       case 'low':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-950/80 dark:text-blue-300">Low</span>;
+        return (
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-950/80 dark:text-blue-300">
+            LOW
+          </span>
+        );
     }
   };
 
@@ -38,6 +61,29 @@ export const AndroidTasksCard: React.FC<AndroidTasksCardProps> = ({
     void nativeService.triggerHaptic('success');
     onToggleTodo(id);
   };
+
+  const actionItems: ActionSheetItem[] = activeActionTodo
+    ? [
+        {
+          label: activeActionTodo.completed ? 'Mark as Pending' : 'Mark as Complete',
+          icon: <Check className="w-4 h-4" />,
+          onClick: () => handleToggle(activeActionTodo.id),
+        },
+        {
+          label: 'View All Tasks',
+          icon: <Edit3 className="w-4 h-4" />,
+          onClick: onNavigateToTasks,
+        },
+        {
+          label: 'Delete Task',
+          icon: <Trash2 className="w-4 h-4" />,
+          isDestructive: true,
+          onClick: () => {
+            if (onDeleteTodo) onDeleteTodo(activeActionTodo.id);
+          },
+        },
+      ]
+    : [];
 
   return (
     <div className={CARD_SURFACE_CLASSES}>
@@ -96,52 +142,96 @@ export const AndroidTasksCard: React.FC<AndroidTasksCardProps> = ({
         ) : (
           <div className="space-y-2">
             {displayTodos.map((todo) => (
-              <div
+              <TaskItemRow
                 key={todo.id}
-                onClick={() => handleToggle(todo.id)}
-                className="flex items-center justify-between p-3 rounded-2xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] active:scale-[0.99] transition-all cursor-pointer select-none"
-              >
-                <div className="flex items-center gap-3 min-w-0 flex-1 pr-2">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleToggle(todo.id);
-                    }}
-                    className="text-gray-400 hover:text-violet-600 transition-colors shrink-0 cursor-pointer"
-                    aria-label="Toggle complete"
-                  >
-                    {todo.completed ? (
-                      <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                    ) : (
-                      <Circle className="w-5 h-5 text-gray-400 dark:text-gray-500" />
-                    )}
-                  </button>
-
-                  <div className="min-w-0 flex-1">
-                    <span
-                      className={`text-xs font-semibold block truncate leading-snug ${
-                        todo.completed
-                          ? 'line-through text-gray-400 dark:text-gray-500'
-                          : 'text-gray-900 dark:text-white'
-                      }`}
-                    >
-                      {todo.title}
-                    </span>
-                    {todo.category && (
-                      <span className="text-[10px] text-gray-500 dark:text-gray-400 block truncate">
-                        {todo.category}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="shrink-0">{getPriorityBadge(todo.priority)}</div>
-              </div>
+                todo={todo}
+                onToggle={() => handleToggle(todo.id)}
+                onDelete={() => {
+                  if (onDeleteTodo) {
+                    void nativeService.triggerHaptic('warning');
+                    onDeleteTodo(todo.id);
+                  }
+                }}
+                onLongPress={() => setActiveActionTodo(todo)}
+                priorityBadge={getPriorityBadge(todo.priority)}
+              />
             ))}
           </div>
         )}
       </div>
+
+      {/* Long-press Contextual Action Sheet */}
+      <AndroidActionSheet
+        isOpen={Boolean(activeActionTodo)}
+        onClose={() => setActiveActionTodo(null)}
+        title={activeActionTodo?.title || 'Task Options'}
+        subtitle={`Priority: ${activeActionTodo?.priority.toUpperCase()} · Category: ${activeActionTodo?.category || 'General'}`}
+        actions={actionItems}
+      />
     </div>
+  );
+};
+
+interface TaskItemRowProps {
+  todo: TodoItem;
+  onToggle: () => void;
+  onDelete: () => void;
+  onLongPress: () => void;
+  priorityBadge: React.ReactNode;
+}
+
+const TaskItemRow: React.FC<TaskItemRowProps> = ({
+  todo,
+  onToggle,
+  onDelete,
+  onLongPress,
+  priorityBadge,
+}) => {
+  const longPressProps = useLongPress(() => {
+    onLongPress();
+  });
+
+  return (
+    <SwipeActionRow
+      onSwipeRight={onToggle}
+      onSwipeLeft={onDelete}
+      leftActionContent={<Check className="w-5 h-5" />}
+      rightActionContent={<Trash2 className="w-5 h-5" />}
+      leftActionColor="bg-emerald-600"
+      rightActionColor="bg-rose-600"
+    >
+      <div
+        {...longPressProps}
+        onClick={onToggle}
+        className="flex items-center justify-between p-3 rounded-2xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] active:scale-[0.99] transition-all cursor-pointer select-none"
+      >
+        <div className="flex items-center gap-3 min-w-0 flex-1 pr-2">
+          {/* Circular checkbox matching Reference Screen B */}
+          <div
+            className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors shrink-0 ${
+              todo.completed
+                ? 'bg-violet-600 border-violet-600 text-white'
+                : 'border-gray-300 dark:border-gray-600 hover:border-violet-500'
+            }`}
+          >
+            {todo.completed && <Check className="w-3 h-3 text-white stroke-[3]" />}
+          </div>
+
+          <span
+            className={`text-xs font-semibold truncate ${
+              todo.completed
+                ? 'line-through text-gray-400 dark:text-gray-500'
+                : 'text-gray-900 dark:text-white'
+            }`}
+          >
+            {todo.title}
+          </span>
+        </div>
+
+        <div className="shrink-0 flex items-center gap-1.5">
+          {priorityBadge}
+        </div>
+      </div>
+    </SwipeActionRow>
   );
 };

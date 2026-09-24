@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Quote as QuoteIcon, Plus, CheckSquare, CreditCard, Flame, FileText, BookOpen, Film, Briefcase, Calendar } from 'lucide-react';
+import { Quote as QuoteIcon, CheckSquare, CreditCard, Flame, FileText, BookOpen, Film, Briefcase } from 'lucide-react';
 import {
   UserProfile,
   TodoItem,
@@ -16,6 +16,7 @@ import { INITIAL_QUOTES } from '../../../../utils/storage';
 import { nativeService } from '../../../../services/nativeService';
 import { HorizontalPager } from '../../gestures/HorizontalPager';
 import { AndroidWeatherWidget } from './AndroidWeatherWidget';
+import { AndroidDateStrip } from '../../components/AndroidDateStrip';
 import { AndroidTasksCard } from './AndroidTasksCard';
 import { AndroidScheduleCard } from './AndroidScheduleCard';
 import { AndroidSpendingCard } from './AndroidSpendingCard';
@@ -34,6 +35,7 @@ export interface AndroidHomeScreenProps {
   schedule?: WeeklyScheduleData;
   onNavigate: (view: MainNavView) => void;
   onToggleTodo: (id: string) => void;
+  onDeleteTodo?: (id: string) => void;
   onToggleHabitDay: (habitId: string, dayIndex: number) => void;
   onAddTodo?: (title: string, priority: Priority, category: string, dueDate?: string, status?: TaskStatus) => void;
   onAddExpense?: (item: Omit<ExpenseItem, 'id'>) => void;
@@ -50,6 +52,7 @@ export const AndroidHomeScreen: React.FC<AndroidHomeScreenProps> = ({
   schedule,
   onNavigate,
   onToggleTodo,
+  onDeleteTodo,
   onToggleHabitDay,
   onAddTodo,
   onAddExpense,
@@ -62,49 +65,44 @@ export const AndroidHomeScreen: React.FC<AndroidHomeScreenProps> = ({
   const [isHabitSheetOpen, setIsHabitSheetOpen] = useState(false);
   const [isNoteSheetOpen, setIsNoteSheetOpen] = useState(false);
 
-  // Time-aware greeting
-  const greetingText = (() => {
+  // Time-aware greeting & sun/moon emoji matching Screen B
+  const { greetingText, timeEmoji } = (() => {
     const hour = new Date().getHours();
-    if (hour < 12) return 'Good morning';
-    if (hour < 17) return 'Good afternoon';
-    return 'Good evening';
+    if (hour < 12) return { greetingText: 'Good morning', timeEmoji: '🌅' };
+    if (hour < 17) return { greetingText: 'Good afternoon', timeEmoji: '☀️' };
+    return { greetingText: 'Good evening', timeEmoji: '🌙' };
   })();
 
-  const userName = profile?.name ? profile.name.split(' ')[0] : 'Gulshan';
-
-  // Format today's date
-  const todayFormatted = new Intl.DateTimeFormat('en-US', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  }).format(new Date());
+  const fullName = profile?.name || 'Gulshan Kumar Nayak';
 
   // Use existing quotes or fallback to INITIAL_QUOTES
   const availableQuotes = quotes && quotes.length > 0 ? quotes : INITIAL_QUOTES;
 
   return (
-    <div className="w-full max-w-lg mx-auto space-y-4 px-3.5 pb-24 pt-1">
-      {/* 1. COMPACT GREETING & TODAY'S DATE */}
-      <div className="flex items-center justify-between pt-1 px-1">
-        <div>
-          <h2 className="text-xl font-extrabold text-gray-900 dark:text-white tracking-tight leading-tight">
-            {greetingText}, {userName}! 👋
+    <div className="w-full max-w-lg mx-auto space-y-3.5 px-3.5 pb-24 pt-1">
+      {/* 1. COMPACT GREETING matching Screen B */}
+      <div className="pt-2 px-1">
+        <span className="text-sm font-semibold text-gray-600 dark:text-gray-300 block leading-tight">
+          {greetingText},
+        </span>
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <h2 className="text-lg font-bold text-gray-900 dark:text-white tracking-tight leading-tight">
+            {fullName}!
           </h2>
-          <div className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 mt-0.5">
-            <Calendar className="w-3.5 h-3.5 text-violet-500" />
-            <span>{todayFormatted}</span>
-          </div>
+          <span className="text-lg">{timeEmoji}</span>
         </div>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          Stay consistent. You&apos;re doing great!
+        </p>
       </div>
 
-      {/* 2. QUOTE CAROUSEL (Immediately below greeting, horizontal swipe with pager dots) */}
+      {/* 2. QUOTE CAROUSEL (Horizontal swipe with pager dots) */}
       <div className="w-full">
         <HorizontalPager showDots={true} className="w-full">
           {availableQuotes.map((q) => (
             <div
               key={q.id}
-              className="w-full p-4 rounded-3xl bg-gradient-to-br from-violet-600 to-indigo-700 text-white shadow-md shadow-violet-500/20 relative overflow-hidden"
+              className="w-full p-4 rounded-3xl bg-gradient-to-br from-violet-600 via-indigo-600 to-purple-700 text-white shadow-md shadow-violet-500/20 relative overflow-hidden"
             >
               {/* Subtle decorative watermark */}
               <QuoteIcon className="w-20 h-20 text-white/10 absolute -right-3 -bottom-3 pointer-events-none" />
@@ -129,12 +127,15 @@ export const AndroidHomeScreen: React.FC<AndroidHomeScreenProps> = ({
         </HorizontalPager>
       </div>
 
-      {/* 3. WEATHER / CURRENT INFORMATION */}
+      {/* 3. WEATHER / CURRENT INFORMATION (Screen B) */}
       <AndroidWeatherWidget />
 
+      {/* 4. HORIZONTAL DATE STRIP (Screen B) */}
+      <AndroidDateStrip />
+
       {/* 5. QUICK ACCESS GRID (Row 1: Actions, Row 2: Navigation) */}
-      <div className="space-y-2">
-        <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider px-1">
+      <div className="space-y-2 pt-1">
+        <span className="text-xs font-bold text-gray-600 dark:text-gray-300 tracking-tight px-1">
           Quick Access
         </span>
 
@@ -244,16 +245,16 @@ export const AndroidHomeScreen: React.FC<AndroidHomeScreenProps> = ({
             </span>
           </button>
 
-          {/* 3. Library (Media) */}
+          {/* 3. Library */}
           <button
             type="button"
             onClick={() => {
               void nativeService.triggerHaptic('selection');
               onNavigate('media');
             }}
-            className="flex flex-col items-center justify-center p-2.5 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs hover:border-fuchsia-300 active:scale-95 transition-all cursor-pointer group"
+            className="flex flex-col items-center justify-center p-2.5 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs hover:border-blue-300 active:scale-95 transition-all cursor-pointer group"
           >
-            <div className="w-10 h-10 rounded-xl bg-fuchsia-100 dark:bg-fuchsia-950/80 text-fuchsia-600 dark:text-fuchsia-400 flex items-center justify-center mb-1.5 shadow-2xs group-hover:scale-105 transition-transform">
+            <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-950/80 text-blue-600 dark:text-blue-400 flex items-center justify-center mb-1.5 shadow-2xs group-hover:scale-105 transition-transform">
               <Film className="w-5 h-5" />
             </div>
             <span className="text-[11px] font-bold text-gray-800 dark:text-gray-200 text-center leading-tight">
@@ -261,16 +262,16 @@ export const AndroidHomeScreen: React.FC<AndroidHomeScreenProps> = ({
             </span>
           </button>
 
-          {/* 4. Portfolio (Workfolio) */}
+          {/* 4. Portfolio */}
           <button
             type="button"
             onClick={() => {
               void nativeService.triggerHaptic('selection');
               onNavigate('workfolio');
             }}
-            className="flex flex-col items-center justify-center p-2.5 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs hover:border-purple-300 active:scale-95 transition-all cursor-pointer group"
+            className="flex flex-col items-center justify-center p-2.5 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs hover:border-indigo-300 active:scale-95 transition-all cursor-pointer group"
           >
-            <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-950/80 text-purple-600 dark:text-purple-400 flex items-center justify-center mb-1.5 shadow-2xs group-hover:scale-105 transition-transform">
+            <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mb-1.5 shadow-2xs group-hover:scale-105 transition-transform">
               <Briefcase className="w-5 h-5" />
             </div>
             <span className="text-[11px] font-bold text-gray-800 dark:text-gray-200 text-center leading-tight">
@@ -284,12 +285,16 @@ export const AndroidHomeScreen: React.FC<AndroidHomeScreenProps> = ({
       <AndroidTasksCard
         todos={todos}
         onToggleTodo={onToggleTodo}
+        onDeleteTodo={onDeleteTodo}
         onNavigateToTasks={() => onNavigate('tasks')}
         onOpenAddTask={() => setIsTaskSheetOpen(true)}
       />
 
       {/* 7. THIS WEEK'S SCHEDULE CARD */}
-      <AndroidScheduleCard schedule={schedule} />
+      <AndroidScheduleCard
+        schedule={schedule}
+        onNavigateToSchedule={() => onNavigate('tasks')}
+      />
 
       {/* 8. SPENDING SNAPSHOT CARD */}
       <AndroidSpendingCard
@@ -298,7 +303,7 @@ export const AndroidHomeScreen: React.FC<AndroidHomeScreenProps> = ({
         onOpenAddExpense={() => setIsExpenseSheetOpen(true)}
       />
 
-      {/* 9. HABITS & PROGRESS SECTION */}
+      {/* 9. HABITS & MOMENTUM CARD */}
       <AndroidHabitsCard
         habits={habits}
         onToggleHabitDay={onToggleHabitDay}
@@ -306,30 +311,38 @@ export const AndroidHomeScreen: React.FC<AndroidHomeScreenProps> = ({
         onOpenAddHabit={() => setIsHabitSheetOpen(true)}
       />
 
-      {/* QUICK BOTTOM SHEETS */}
-      <QuickTaskSheet
-        isOpen={isTaskSheetOpen}
-        onClose={() => setIsTaskSheetOpen(false)}
-        onAddTodo={onAddTodo}
-      />
+      {/* QUICK MODAL BOTTOM SHEETS */}
+      {onAddTodo && (
+        <QuickTaskSheet
+          isOpen={isTaskSheetOpen}
+          onClose={() => setIsTaskSheetOpen(false)}
+          onAddTodo={onAddTodo}
+        />
+      )}
 
-      <QuickExpenseSheet
-        isOpen={isExpenseSheetOpen}
-        onClose={() => setIsExpenseSheetOpen(false)}
-        onAddExpense={onAddExpense}
-      />
+      {onAddExpense && (
+        <QuickExpenseSheet
+          isOpen={isExpenseSheetOpen}
+          onClose={() => setIsExpenseSheetOpen(false)}
+          onAddExpense={onAddExpense}
+        />
+      )}
 
-      <QuickHabitSheet
-        isOpen={isHabitSheetOpen}
-        onClose={() => setIsHabitSheetOpen(false)}
-        onAddHabit={onAddHabit}
-      />
+      {onAddHabit && (
+        <QuickHabitSheet
+          isOpen={isHabitSheetOpen}
+          onClose={() => setIsHabitSheetOpen(false)}
+          onAddHabit={onAddHabit}
+        />
+      )}
 
-      <QuickNoteSheet
-        isOpen={isNoteSheetOpen}
-        onClose={() => setIsNoteSheetOpen(false)}
-        onAddDiaryEntry={onAddDiaryEntry}
-      />
+      {onAddDiaryEntry && (
+        <QuickNoteSheet
+          isOpen={isNoteSheetOpen}
+          onClose={() => setIsNoteSheetOpen(false)}
+          onAddDiaryEntry={onAddDiaryEntry}
+        />
+      )}
     </div>
   );
 };

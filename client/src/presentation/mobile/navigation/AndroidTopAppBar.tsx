@@ -8,13 +8,12 @@ export interface AndroidTopAppBarProps {
   onOpenSearch: () => void;
   onOpenProfile: () => void;
   title?: string;
-  subtitle?: string;
   className?: string;
 }
 
 /**
  * Material You Android Top App Bar
- * Compact, modern, featuring brand badge, title, search, and avatar.
+ * Reproducing Screen B: compact single-line bar with small brand icon, compact title, Search, and Avatar.
  */
 export const AndroidTopAppBar: React.FC<AndroidTopAppBarProps> = ({
   profile,
@@ -37,29 +36,27 @@ export const AndroidTopAppBar: React.FC<AndroidTopAppBarProps> = ({
     <header
       className={`sticky top-0 z-40 w-full bg-[#F7F6FC]/95 dark:bg-[#0B0F19]/95 backdrop-blur-md border-b border-[#E8E5F3] dark:border-[#1E2638] pt-[env(safe-area-inset-top)] px-4 transition-colors ${className}`}
     >
-      <div className="h-14 flex items-center justify-between gap-3 max-w-lg mx-auto">
-        {/* Left: Brand / Icon + App Title */}
+      <div className="h-13 flex items-center justify-between gap-3 max-w-lg mx-auto">
+        {/* Left: Small Brand Icon + Compact Single-Line Title */}
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 flex items-center justify-center text-white shadow-sm shadow-violet-500/20 shrink-0">
-            <Sparkles className="w-4 h-4 text-violet-100" />
+          <div className="w-7 h-7 rounded-full bg-violet-600 flex items-center justify-center text-white shadow-xs shrink-0">
+            <Sparkles className="w-3.5 h-3.5 text-white" />
           </div>
-          <div className="min-w-0">
-            <h1 className="text-base font-extrabold text-gray-900 dark:text-white tracking-tight truncate leading-tight">
-              {title}
-            </h1>
-          </div>
+          <span className="text-[15px] font-semibold text-gray-900 dark:text-gray-100 tracking-tight truncate leading-none">
+            {title}
+          </span>
         </div>
 
         {/* Right: Search Icon + Profile Avatar */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           {/* Search Button */}
           <button
             type="button"
             onClick={handleSearchClick}
             aria-label="Search dashboard"
-            className="w-9 h-9 rounded-full flex items-center justify-center text-gray-700 dark:text-gray-200 bg-white dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs hover:bg-violet-50 dark:hover:bg-violet-950/40 active:scale-95 transition-all cursor-pointer"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-gray-600 dark:text-gray-300 hover:text-violet-600 dark:hover:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/40 active:scale-95 transition-all cursor-pointer"
           >
-            <Search className="w-4 h-4 text-violet-600 dark:text-violet-400" />
+            <Search className="w-4 h-4" />
           </button>
 
           {/* Profile / Avatar Button */}
@@ -67,7 +64,7 @@ export const AndroidTopAppBar: React.FC<AndroidTopAppBarProps> = ({
             type="button"
             onClick={handleProfileClick}
             aria-label="Open profile settings"
-            className="w-9 h-9 rounded-full overflow-hidden border-2 border-violet-500/40 dark:border-violet-400/40 shadow-2xs active:scale-95 transition-all cursor-pointer flex items-center justify-center bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300 font-bold text-xs"
+            className="w-8 h-8 rounded-full overflow-hidden ring-1 ring-violet-500/40 shadow-2xs active:scale-95 transition-all cursor-pointer flex items-center justify-center bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300 font-bold text-xs"
           >
             {profile.avatarUrl ? (
               <img
@@ -79,7 +76,7 @@ export const AndroidTopAppBar: React.FC<AndroidTopAppBarProps> = ({
                 }}
               />
             ) : (
-              <span>{(profile.name || 'U').charAt(0).toUpperCase()}</span>
+              <span>{profile.name ? profile.name.charAt(0).toUpperCase() : 'G'}</span>
             )}
           </button>
         </div>
