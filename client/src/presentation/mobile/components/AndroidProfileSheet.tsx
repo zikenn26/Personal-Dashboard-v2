@@ -1,5 +1,5 @@
 import React from 'react';
-import { User, Moon, Sun, Volume2, VolumeX, Smartphone, Shield, LogOut, Sparkles } from 'lucide-react';
+import { User, Moon, Sun, Volume2, VolumeX, ChevronRight } from 'lucide-react';
 import { UserProfile, AppSettings } from '../../../types';
 import { nativeService } from '../../../services/nativeService';
 import { BottomSheet } from '../gestures/BottomSheet';
@@ -9,8 +9,9 @@ export interface AndroidProfileSheetProps {
   onClose: () => void;
   profile: UserProfile;
   settings: AppSettings;
-  onUpdateSettings?: (updates: Partial<AppSettings>) => void;
-  onOpenFullSettings?: () => void;
+  onOpenProfile?: () => void;
+  onToggleDarkMode?: () => void;
+  onToggleSound?: () => void;
 }
 
 export const AndroidProfileSheet: React.FC<AndroidProfileSheetProps> = ({
@@ -18,22 +19,33 @@ export const AndroidProfileSheet: React.FC<AndroidProfileSheetProps> = ({
   onClose,
   profile,
   settings,
-  onUpdateSettings,
-  onOpenFullSettings,
+  onOpenProfile,
+  onToggleDarkMode,
+  onToggleSound,
 }) => {
   const isDarkMode = settings.darkMode;
 
-  const handleToggleTheme = () => {
+  const handleOpenProfile = () => {
     void nativeService.triggerHaptic('selection');
-    if (onUpdateSettings) {
-      onUpdateSettings({ darkMode: !isDarkMode });
+    onClose();
+    if (onOpenProfile) {
+      onOpenProfile();
     }
   };
 
-  const handleToggleSound = () => {
+  const handleToggleTheme = (e: React.MouseEvent) => {
+    e.stopPropagation();
     void nativeService.triggerHaptic('selection');
-    if (onUpdateSettings) {
-      onUpdateSettings({ soundEnabled: !settings.soundEnabled });
+    if (onToggleDarkMode) {
+      onToggleDarkMode();
+    }
+  };
+
+  const handleToggleSound = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    void nativeService.triggerHaptic('selection');
+    if (onToggleSound) {
+      onToggleSound();
     }
   };
 
@@ -41,12 +53,16 @@ export const AndroidProfileSheet: React.FC<AndroidProfileSheetProps> = ({
     <BottomSheet
       isOpen={isOpen}
       onClose={onClose}
-      title="User Profile & Preferences"
-      subtitle="Android-First Personal Dashboard"
+      title="User Account & Preferences"
+      subtitle="Android Quick Settings"
     >
-      <div className="p-4 space-y-4 pb-8">
-        {/* User Card */}
-        <div className="flex items-center gap-3 p-3.5 rounded-3xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40]">
+      <div className="p-4 space-y-3.5 pb-8">
+        {/* 1. Profile Section Button */}
+        <button
+          type="button"
+          onClick={handleOpenProfile}
+          className="w-full flex items-center gap-3 p-3.5 rounded-3xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] text-left active:scale-[0.98] transition-all cursor-pointer group hover:border-violet-400"
+        >
           <div className="w-12 h-12 rounded-full overflow-hidden ring-2 ring-violet-500/50 shrink-0 bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300 font-bold flex items-center justify-center text-base">
             {profile.avatarUrl ? (
               <img
@@ -55,30 +71,36 @@ export const AndroidProfileSheet: React.FC<AndroidProfileSheetProps> = ({
                 className="w-full h-full object-cover"
               />
             ) : (
-              profile.name.charAt(0)
+              profile.name ? profile.name.charAt(0) : 'U'
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="text-sm font-extrabold text-gray-900 dark:text-white truncate">
-              {profile.name}
-            </h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-              {profile.handle || '@gulshankumar'}
-            </p>
-            <p className="text-[11px] text-violet-600 dark:text-violet-400 mt-0.5 truncate">
-              {profile.title || 'Full Stack Engineer'}
+            <div className="flex items-center gap-1.5">
+              <h3 className="text-sm font-extrabold text-gray-900 dark:text-white truncate">
+                {profile.name || 'User Profile'}
+              </h3>
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300">
+                Profile
+              </span>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
+              {profile.handle || '@lifeos'} · View &amp; Edit Details
             </p>
           </div>
-        </div>
+          <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-violet-600 group-hover:translate-x-0.5 transition-all shrink-0" />
+        </button>
 
-        {/* Quick Toggles */}
+        {/* Quick Toggles List */}
         <div className="space-y-2">
           <span className="text-xs font-bold text-gray-600 dark:text-gray-300 px-1 uppercase tracking-wider">
             Quick Settings
           </span>
 
-          {/* Dark Mode */}
-          <div className="flex items-center justify-between p-3 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs">
+          {/* 2. Dark Mode Toggle (Independent - does NOT open Profile) */}
+          <div
+            onClick={handleToggleTheme}
+            className="flex items-center justify-between p-3 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs cursor-pointer select-none"
+          >
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-xl bg-violet-100 dark:bg-violet-950 text-violet-600 dark:text-violet-400 flex items-center justify-center">
                 {isDarkMode ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
@@ -99,6 +121,7 @@ export const AndroidProfileSheet: React.FC<AndroidProfileSheetProps> = ({
               className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
                 isDarkMode ? 'bg-violet-600' : 'bg-gray-300 dark:bg-gray-700'
               }`}
+              aria-label="Toggle dark mode"
             >
               <div
                 className={`w-5 h-5 rounded-full bg-white transition-transform shadow-xs absolute top-0.5 left-0.5 ${
@@ -108,8 +131,11 @@ export const AndroidProfileSheet: React.FC<AndroidProfileSheetProps> = ({
             </button>
           </div>
 
-          {/* Sound Effects */}
-          <div className="flex items-center justify-between p-3 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs">
+          {/* 3. Sound Effects Toggle (Independent - does NOT open Profile) */}
+          <div
+            onClick={handleToggleSound}
+            className="flex items-center justify-between p-3 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs cursor-pointer select-none"
+          >
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
                 {settings.soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
@@ -130,6 +156,7 @@ export const AndroidProfileSheet: React.FC<AndroidProfileSheetProps> = ({
               className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
                 settings.soundEnabled ? 'bg-emerald-600' : 'bg-gray-300 dark:bg-gray-700'
               }`}
+              aria-label="Toggle sound effects"
             >
               <div
                 className={`w-5 h-5 rounded-full bg-white transition-transform shadow-xs absolute top-0.5 left-0.5 ${
@@ -140,13 +167,13 @@ export const AndroidProfileSheet: React.FC<AndroidProfileSheetProps> = ({
           </div>
         </div>
 
-        {/* App Info */}
+        {/* App Info Footer */}
         <div className="p-3 rounded-2xl bg-gray-50 dark:bg-[#1A2234] text-center text-xs text-gray-500 dark:text-gray-400 space-y-1">
           <p className="font-bold text-gray-700 dark:text-gray-300">
-            Personal Dashboard v2.0 (Material You)
+            Personal Dashboard (Material You)
           </p>
           <p className="text-[10px]">
-            Capacitor Android Native Runtime · Phase 2 Active
+            Capacitor Android Native Runtime · All data synchronized
           </p>
         </div>
       </div>

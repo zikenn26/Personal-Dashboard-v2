@@ -1,25 +1,51 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BottomSheet } from '../gestures/BottomSheet';
 import { ExpenseItem } from '../../../types';
 import { nativeService } from '../../../services/nativeService';
-import { Plus, CreditCard, Tag, Calendar, Building2 } from 'lucide-react';
+import { Plus, CreditCard, Tag, Calendar, Building2, Trash2, CheckCircle2 } from 'lucide-react';
 
 export interface QuickExpenseSheetProps {
   isOpen: boolean;
   onClose: () => void;
+  initialExpense?: ExpenseItem | null;
   onAddExpense?: (item: Omit<ExpenseItem, 'id'>) => void;
+  onUpdateExpense?: (id: string, updates: Partial<ExpenseItem>) => void;
+  onDeleteExpense?: (id: string) => void;
 }
 
 export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
   isOpen,
   onClose,
+  initialExpense,
   onAddExpense,
+  onUpdateExpense,
+  onDeleteExpense,
 }) => {
+  const isEditing = Boolean(initialExpense);
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('Dining Out');
   const [paymentMethod, setPaymentMethod] = useState<'UPI' | 'Credit Card' | 'Debit Card' | 'Cash' | 'Net Banking'>('UPI');
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [notes, setNotes] = useState('');
+
+  useEffect(() => {
+    if (initialExpense) {
+      setTitle(initialExpense.name || '');
+      setAmount(initialExpense.amount ? String(initialExpense.amount) : '');
+      setCategory(initialExpense.category || 'Dining Out');
+      setPaymentMethod((initialExpense.paymentMethod as any) || 'UPI');
+      setDate(initialExpense.date || new Date().toISOString().split('T')[0]);
+      setNotes(initialExpense.notes || '');
+    } else {
+      setTitle('');
+      setAmount('');
+      setCategory('Dining Out');
+      setPaymentMethod('UPI');
+      setDate(new Date().toISOString().split('T')[0]);
+      setNotes('');
+    }
+  }, [initialExpense, isOpen]);
 
   const categories = [
     'Dining Out',
@@ -44,27 +70,52 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
     e.preventDefault();
     const parsedAmount = parseFloat(amount);
     const cleanTitle = title.trim();
-    if (!cleanTitle || isNaN(parsedAmount) || parsedAmount <= 0 || !onAddExpense) return;
+    if (!cleanTitle || isNaN(parsedAmount) || parsedAmount <= 0) return;
 
-    void nativeService.triggerHaptic('success');
-    onAddExpense({
-      name: cleanTitle,
-      amount: parsedAmount,
-      category,
-      paymentMethod,
-      date,
-      billingCycle: 'one-time',
-      active: true,
-      notes: 'Added from Android quick access',
-    });
+    if (isEditing && initialExpense && onUpdateExpense) {
+      void nativeService.triggerHaptic('success');
+      onUpdateExpense(initialExpense.id, {
+        name: cleanTitle,
+        amount: parsedAmount,
+        category,
+        paymentMethod,
+        date,
+        notes: notes.trim(),
+      });
+      onClose();
+    } else if (onAddExpense) {
+      void nativeService.triggerHaptic('success');
+      onAddExpense({
+        name: cleanTitle,
+        amount: parsedAmount,
+        category,
+        paymentMethod,
+        date,
+        billingCycle: 'one-time',
+        active: true,
+        notes: notes.trim() || 'Added from Android quick access',
+      });
+      setTitle('');
+      setAmount('');
+      setNotes('');
+      onClose();
+    }
+  };
 
-    setTitle('');
-    setAmount('');
+  const handleDelete = () => {
+    if (!initialExpense || !onDeleteExpense) return;
+    void nativeService.triggerHaptic('warning');
+    onDeleteExpense(initialExpense.id);
     onClose();
   };
 
   return (
-    <BottomSheet isOpen={isOpen} onClose={onClose} title="Add Expense" subtitle="Quickly track a spending transaction">
+    <BottomSheet
+      isOpen={isOpen}
+      onClose={onClose}
+      title={isEditing ? 'Edit Transaction' : 'Add Expense'}
+      subtitle={isEditing ? 'Modify or delete this expense entry' : 'Quickly track a spending transaction'}
+    >
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Amount Input */}
         <div>
@@ -79,7 +130,7 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
               type="number"
               step="any"
               required
-              autoFocus
+              autoFocus={!isEditing}
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="0.00"
@@ -173,16 +224,36 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
           </div>
         </div>
 
-        {/* Submit */}
-        <div className="pt-2">
+        {/* Submit Actions */}
+        <div className="pt-2 space-y-2">
           <button
             type="submit"
             disabled={!title.trim() || !amount}
             className="w-full py-3 px-4 rounded-full bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-bold text-sm shadow-md shadow-violet-500/25 flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer"
           >
-            <Plus className="w-4 h-4" />
-            <span>Log Expense</span>
+            {isEditing ? (
+              <>
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Save Changes</span>
+              </>
+            ) : (
+              <>
+                <Plus className="w-4 h-4" />
+                <span>Log Expense</span>
+              </>
+            )}
           </button>
+
+          {isEditing && onDeleteExpense && (
+            <button
+              type="button"
+              onClick={handleDelete}
+              className="w-full py-2.5 px-4 rounded-full bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 font-semibold text-xs flex items-center justify-center gap-1.5 active:scale-98 transition-all cursor-pointer hover:bg-rose-100 dark:hover:bg-rose-900/50"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete Transaction</span>
+            </button>
+          )}
         </div>
       </form>
     </BottomSheet>

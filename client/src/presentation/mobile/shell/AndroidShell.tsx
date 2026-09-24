@@ -27,7 +27,6 @@ import { AndroidTopAppBar } from '../navigation/AndroidTopAppBar';
 import { AndroidBottomNav } from '../navigation/AndroidBottomNav';
 import { AndroidMoreSheet } from '../navigation/AndroidMoreSheet';
 import { AndroidHomeScreen } from '../screens/home/AndroidHomeScreen';
-import { PullToRefresh } from '../gestures/PullToRefresh';
 
 // Android-first dedicated presentation screens
 import { AndroidTasksScreen } from '../screens/tasks/AndroidTasksScreen';
@@ -131,6 +130,7 @@ export interface AndroidShellProps {
   onOpenSearch?: () => void;
   onOpenProfile?: () => void;
   onOpenSettings?: () => void;
+  onOpenSmsSettings?: () => void;
   onToggleDarkMode?: () => void;
   onToggleSound?: () => void;
   onRefresh?: () => Promise<void> | void;
@@ -205,6 +205,7 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
   onOpenSearch,
   onOpenProfile,
   onOpenSettings,
+  onOpenSmsSettings,
   onToggleDarkMode,
   onToggleSound,
   onRefresh,
@@ -281,13 +282,6 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
     }
   };
 
-  const handleRefresh = async () => {
-    void nativeService.triggerHaptic('impactLight');
-    if (onRefresh) {
-      await onRefresh();
-    }
-  };
-
   return (
     <div className="min-h-screen bg-[#F7F6FC] dark:bg-[#0B0F19] text-gray-900 dark:text-gray-100 flex flex-col font-sans select-none antialiased">
       {/* 1. TOP APP BAR */}
@@ -354,53 +348,54 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
         </header>
       )}
 
-      {/* 2. MAIN SCROLLABLE CONTENT WITH PULL TO REFRESH */}
+      {/* 2. MAIN SCROLLABLE CONTENT */}
       <main className="flex-1 w-full overflow-y-auto">
-        <PullToRefresh onRefresh={handleRefresh}>
-          {/* HOME SCREEN */}
-          {activeView === 'home' && (
-            <AndroidHomeScreen
-              profile={profile}
-              todos={todos}
-              habits={habits}
-              quotes={quotes}
-              expenses={expenses}
-              schedule={schedule}
-              onNavigate={onNavigate}
-              onToggleTodo={onToggleTodo}
-              onDeleteTodo={onDeleteTodo}
-              onToggleHabitDay={onToggleHabitDay}
-              onAddTodo={onAddTodo}
-              onAddExpense={onAddExpense}
-              onAddHabit={onAddHabit}
-              onAddDiaryEntry={onAddDiaryEntry}
-            />
-          )}
+        {/* HOME SCREEN */}
+        {activeView === 'home' && (
+          <AndroidHomeScreen
+            profile={profile}
+            todos={todos}
+            habits={habits}
+            quotes={quotes}
+            expenses={expenses}
+            schedule={schedule}
+            onNavigate={onNavigate}
+            onToggleTodo={onToggleTodo}
+            onUpdateTodo={onUpdateTodo}
+            onDeleteTodo={onDeleteTodo}
+            onToggleHabitDay={onToggleHabitDay}
+            onAddTodo={onAddTodo}
+            onAddExpense={onAddExpense}
+            onAddHabit={onAddHabit}
+            onAddDiaryEntry={onAddDiaryEntry}
+          />
+        )}
 
-          {/* TASKS VIEW */}
-          {activeView === 'tasks' && (
-            <AndroidTasksScreen
-              todos={todos}
-              onToggleTodo={onToggleTodo}
-              onAddTodo={onAddTodo}
-              onUpdateTodo={onUpdateTodo}
-              onDeleteTodo={onDeleteTodo}
-              onClearCompleted={onClearCompletedTodos}
-            />
-          )}
+        {/* TASKS VIEW */}
+        {activeView === 'tasks' && (
+          <AndroidTasksScreen
+            todos={todos}
+            onToggleTodo={onToggleTodo}
+            onAddTodo={onAddTodo}
+            onUpdateTodo={onUpdateTodo}
+            onDeleteTodo={onDeleteTodo}
+            onClearCompleted={onClearCompletedTodos}
+          />
+        )}
 
-          {/* MONEY / EXPENSES VIEW */}
-          {(activeView === 'expenses' || activeView === 'subscriptions') && (
-            <AndroidMoneyScreen
-              expenses={expenses}
-              importLogs={excelImportLogs}
-              onAddExpense={onAddExpense}
-              onUpdateExpense={onUpdateExpense}
-              onDeleteExpense={onDeleteExpense}
-            />
-          )}
+        {/* MONEY / EXPENSES VIEW */}
+        {(activeView === 'expenses' || activeView === 'subscriptions') && (
+          <AndroidMoneyScreen
+            expenses={expenses}
+            importLogs={excelImportLogs}
+            onAddExpense={onAddExpense}
+            onUpdateExpense={onUpdateExpense}
+            onDeleteExpense={onDeleteExpense}
+            onOpenSmsSettings={onOpenSmsSettings}
+          />
+        )}
 
-          {/* HABITS VIEW */}
+        {/* HABITS VIEW */}
           {activeView === 'habits' && (
             <AndroidHabitsScreen
               habits={habits}
@@ -495,7 +490,6 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
               onResetData={onResetData}
             />
           )}
-        </PullToRefresh>
       </main>
 
       {/* 3. ANDROID BOTTOM NAVIGATION (Persistent) */}
@@ -532,14 +526,15 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
         goals={goals}
       />
 
-      {/* 6. PROFILE SHEET */}
+      {/* 6. PROFILE SHEET (Independent actions) */}
       <AndroidProfileSheet
         isOpen={isProfileOpen}
         onClose={() => setIsProfileOpen(false)}
         profile={profile}
         settings={settings}
-        onUpdateSettings={onOpenSettings}
-        onOpenFullSettings={onOpenSettings}
+        onOpenProfile={onOpenProfile || onOpenSettings}
+        onToggleDarkMode={onToggleDarkMode}
+        onToggleSound={onToggleSound}
       />
     </div>
   );

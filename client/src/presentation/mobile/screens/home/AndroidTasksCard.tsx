@@ -6,10 +6,12 @@ import { CARD_SURFACE_CLASSES, CARD_HEADER_CLASSES, CARD_TITLE_CLASSES, CARD_BOD
 import { SwipeActionRow } from '../../gestures/SwipeActionRow';
 import { useLongPress } from '../../gestures/useLongPress';
 import { AndroidActionSheet, ActionSheetItem } from '../../components/AndroidActionSheet';
+import { QuickTaskSheet } from '../../components/QuickTaskSheet';
 
 export interface AndroidTasksCardProps {
   todos: TodoItem[];
   onToggleTodo: (id: string) => void;
+  onUpdateTodo?: (id: string, updates: Partial<TodoItem>) => void;
   onDeleteTodo?: (id: string) => void;
   onNavigateToTasks: () => void;
   onOpenAddTask: () => void;
@@ -18,6 +20,7 @@ export interface AndroidTasksCardProps {
 export const AndroidTasksCard: React.FC<AndroidTasksCardProps> = ({
   todos,
   onToggleTodo,
+  onUpdateTodo,
   onDeleteTodo,
   onNavigateToTasks,
   onOpenAddTask,
@@ -26,6 +29,9 @@ export const AndroidTasksCard: React.FC<AndroidTasksCardProps> = ({
   const pendingTodos = todos.filter((t) => !t.completed && t.status !== 'complete');
   const displayTodos = pendingTodos.slice(0, 4);
 
+  const [editingTodo, setEditingTodo] = useState<TodoItem | null>(null);
+  const [confirmCompleteTodo, setConfirmCompleteTodo] = useState<TodoItem | null>(null);
+  const [confirmDeleteTodo, setConfirmDeleteTodo] = useState<TodoItem | null>(null);
   const [activeActionTodo, setActiveActionTodo] = useState<TodoItem | null>(null);
 
   const getPriorityBadge = (p: Priority) => {
@@ -62,16 +68,32 @@ export const AndroidTasksCard: React.FC<AndroidTasksCardProps> = ({
     onToggleTodo(id);
   };
 
+  const handleDelete = (id: string) => {
+    if (onDeleteTodo) {
+      void nativeService.triggerHaptic('warning');
+      onDeleteTodo(id);
+    }
+  };
+
   const actionItems: ActionSheetItem[] = activeActionTodo
     ? [
         {
+          label: 'Edit Task',
+          icon: <Edit3 className="w-4 h-4" />,
+          onClick: () => {
+            setEditingTodo(activeActionTodo);
+          },
+        },
+        {
           label: activeActionTodo.completed ? 'Mark as Pending' : 'Mark as Complete',
           icon: <Check className="w-4 h-4" />,
-          onClick: () => handleToggle(activeActionTodo.id),
+          onClick: () => {
+            setConfirmCompleteTodo(activeActionTodo);
+          },
         },
         {
           label: 'View All Tasks',
-          icon: <Edit3 className="w-4 h-4" />,
+          icon: <ArrowRight className="w-4 h-4" />,
           onClick: onNavigateToTasks,
         },
         {
@@ -79,7 +101,7 @@ export const AndroidTasksCard: React.FC<AndroidTasksCardProps> = ({
           icon: <Trash2 className="w-4 h-4" />,
           isDestructive: true,
           onClick: () => {
-            if (onDeleteTodo) onDeleteTodo(activeActionTodo.id);
+            setConfirmDeleteTodo(activeActionTodo);
           },
         },
       ]
@@ -117,9 +139,9 @@ export const AndroidTasksCard: React.FC<AndroidTasksCardProps> = ({
       {/* Body */}
       <div className={CARD_BODY_CLASSES}>
         {displayTodos.length === 0 ? (
-          <div className="py-6 flex flex-col items-center justify-center text-center">
-            <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-2">
-              <CheckCircle2 className="w-6 h-6" />
+          <div className="py-5 flex flex-col items-center justify-center text-center">
+            <div className="w-11 h-11 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-1.5">
+              <CheckCircle2 className="w-5 h-5" />
             </div>
             <p className="text-sm font-bold text-gray-900 dark:text-white">
               All caught up! 🎉
@@ -133,7 +155,7 @@ export const AndroidTasksCard: React.FC<AndroidTasksCardProps> = ({
                 void nativeService.triggerHaptic('selection');
                 onOpenAddTask();
               }}
-              className="mt-3 px-4 py-1.5 rounded-full bg-violet-50 dark:bg-violet-950/60 border border-violet-200 dark:border-violet-800 text-xs font-semibold text-violet-600 dark:text-violet-300 flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+              className="mt-2.5 px-4 py-1.5 rounded-full bg-violet-50 dark:bg-violet-950/60 border border-violet-200 dark:border-violet-800 text-xs font-semibold text-violet-600 dark:text-violet-300 flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add a task</span>
@@ -145,12 +167,15 @@ export const AndroidTasksCard: React.FC<AndroidTasksCardProps> = ({
               <TaskItemRow
                 key={todo.id}
                 todo={todo}
-                onToggle={() => handleToggle(todo.id)}
-                onDelete={() => {
-                  if (onDeleteTodo) {
-                    void nativeService.triggerHaptic('warning');
-                    onDeleteTodo(todo.id);
-                  }
+                onTap={() => {
+                  void nativeService.triggerHaptic('selection');
+                  setEditingTodo(todo);
+                }}
+                onSwipeComplete={() => {
+                  setConfirmCompleteTodo(todo);
+                }}
+                onSwipeDelete={() => {
+                  setConfirmDeleteTodo(todo);
                 }}
                 onLongPress={() => setActiveActionTodo(todo)}
                 priorityBadge={getPriorityBadge(todo.priority)}
@@ -159,6 +184,63 @@ export const AndroidTasksCard: React.FC<AndroidTasksCardProps> = ({
           </div>
         )}
       </div>
+
+      {/* Edit Task Sheet */}
+      <QuickTaskSheet
+        isOpen={Boolean(editingTodo)}
+        onClose={() => setEditingTodo(null)}
+        initialTodo={editingTodo}
+        onUpdateTodo={onUpdateTodo}
+        onDeleteTodo={(id) => {
+          handleDelete(id);
+          setEditingTodo(null);
+        }}
+      />
+
+      {/* Safe Swipe Complete Confirmation Sheet */}
+      <AndroidActionSheet
+        isOpen={Boolean(confirmCompleteTodo)}
+        onClose={() => setConfirmCompleteTodo(null)}
+        title={confirmCompleteTodo?.completed ? 'Mark Task Incomplete?' : 'Mark Task Complete?'}
+        subtitle={confirmCompleteTodo ? `"${confirmCompleteTodo.title}"` : undefined}
+        actions={
+          confirmCompleteTodo
+            ? [
+                {
+                  label: confirmCompleteTodo.completed ? 'Mark Incomplete' : 'Complete Task',
+                  icon: <Check className="w-4 h-4" />,
+                  onClick: () => {
+                    handleToggle(confirmCompleteTodo.id);
+                    setConfirmCompleteTodo(null);
+                  },
+                },
+              ]
+            : []
+        }
+      />
+
+      {/* Safe Swipe Delete Confirmation Sheet */}
+      <AndroidActionSheet
+        isOpen={Boolean(confirmDeleteTodo)}
+        onClose={() => setConfirmDeleteTodo(null)}
+        title="Delete Task?"
+        subtitle={confirmDeleteTodo ? `Are you sure you want to delete "${confirmDeleteTodo.title}"?` : undefined}
+        actions={
+          confirmDeleteTodo
+            ? [
+                {
+                  label: 'Delete Task',
+                  icon: <Trash2 className="w-4 h-4" />,
+                  isDestructive: true,
+                  onClick: () => {
+                    handleDelete(confirmDeleteTodo.id);
+                    setConfirmDeleteTodo(null);
+                  },
+                },
+              ]
+            : []
+        }
+      />
 
       {/* Long-press Contextual Action Sheet */}
       <AndroidActionSheet
@@ -174,16 +256,18 @@ export const AndroidTasksCard: React.FC<AndroidTasksCardProps> = ({
 
 interface TaskItemRowProps {
   todo: TodoItem;
-  onToggle: () => void;
-  onDelete: () => void;
+  onTap: () => void;
+  onSwipeComplete: () => void;
+  onSwipeDelete: () => void;
   onLongPress: () => void;
   priorityBadge: React.ReactNode;
 }
 
 const TaskItemRow: React.FC<TaskItemRowProps> = ({
   todo,
-  onToggle,
-  onDelete,
+  onTap,
+  onSwipeComplete,
+  onSwipeDelete,
   onLongPress,
   priorityBadge,
 }) => {
@@ -193,8 +277,8 @@ const TaskItemRow: React.FC<TaskItemRowProps> = ({
 
   return (
     <SwipeActionRow
-      onSwipeRight={onToggle}
-      onSwipeLeft={onDelete}
+      onSwipeRight={onSwipeComplete}
+      onSwipeLeft={onSwipeDelete}
       leftActionContent={<Check className="w-5 h-5" />}
       rightActionContent={<Trash2 className="w-5 h-5" />}
       leftActionColor="bg-emerald-600"
@@ -202,11 +286,11 @@ const TaskItemRow: React.FC<TaskItemRowProps> = ({
     >
       <div
         {...longPressProps}
-        onClick={onToggle}
-        className="flex items-center justify-between p-3 rounded-2xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] active:scale-[0.99] transition-all cursor-pointer select-none"
+        onClick={onTap}
+        className="flex items-center justify-between p-3 rounded-2xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] active:scale-[0.99] transition-all cursor-pointer select-none hover:border-violet-300 dark:hover:border-violet-800"
       >
         <div className="flex items-center gap-3 min-w-0 flex-1 pr-2">
-          {/* Circular checkbox matching Reference Screen B */}
+          {/* Circular status indicator matching Reference Screen B */}
           <div
             className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors shrink-0 ${
               todo.completed

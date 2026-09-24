@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { CreditCard, Plus, Trash2, ArrowUpRight, TrendingDown, TrendingUp, Calendar, Tag, DollarSign, Wallet, FileSpreadsheet } from 'lucide-react';
+import { CreditCard, Plus, Trash2, ArrowUpRight, TrendingDown, TrendingUp, Calendar, Tag, DollarSign, Wallet, FileSpreadsheet, MessageSquare, Edit3 } from 'lucide-react';
 import { ExpenseItem, ExcelImportLog } from '../../../../types';
 import { nativeService } from '../../../../services/nativeService';
 import { CARD_SURFACE_CLASSES } from '../../design-system/materialYou';
@@ -14,6 +14,7 @@ export interface AndroidMoneyScreenProps {
   onAddExpense?: (item: Omit<ExpenseItem, 'id'>) => void;
   onUpdateExpense?: (id: string, updates: Partial<ExpenseItem>) => void;
   onDeleteExpense?: (id: string) => void;
+  onOpenSmsSettings?: () => void;
 }
 
 type PeriodFilter = 'month' | 'today' | 'all';
@@ -24,10 +25,13 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   onAddExpense,
   onUpdateExpense,
   onDeleteExpense,
+  onOpenSmsSettings,
 }) => {
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('month');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<ExpenseItem | null>(null);
+  const [confirmDeleteExpense, setConfirmDeleteExpense] = useState<ExpenseItem | null>(null);
   const [activeActionExpense, setActiveActionExpense] = useState<ExpenseItem | null>(null);
 
   const now = new Date();
@@ -93,16 +97,25 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   const actionItems: ActionSheetItem[] = activeActionExpense
     ? [
         {
+          label: 'Edit Transaction',
+          icon: <Edit3 className="w-4 h-4" />,
+          onClick: () => {
+            setEditingExpense(activeActionExpense);
+          },
+        },
+        {
           label: 'Delete Transaction',
           icon: <Trash2 className="w-4 h-4" />,
           isDestructive: true,
-          onClick: () => handleDelete(activeActionExpense.id),
+          onClick: () => {
+            setConfirmDeleteExpense(activeActionExpense);
+          },
         },
       ]
     : [];
 
   return (
-    <div className="w-full max-w-lg mx-auto px-3.5 pb-24 pt-2 space-y-3.5">
+    <div className="w-full max-w-lg mx-auto px-3.5 pb-24 pt-1 space-y-2.5">
       {/* Top Banner */}
       <div className="flex items-center justify-between px-1">
         <div>
@@ -114,19 +127,36 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
           </p>
         </div>
 
-        {onAddExpense && (
-          <button
-            type="button"
-            onClick={() => {
-              void nativeService.triggerHaptic('selection');
-              setIsAddSheetOpen(true);
-            }}
-            className="px-3.5 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Add Expense</span>
-          </button>
-        )}
+        <div className="flex items-center gap-1.5">
+          {onOpenSmsSettings && (
+            <button
+              type="button"
+              onClick={() => {
+                void nativeService.triggerHaptic('selection');
+                onOpenSmsSettings();
+              }}
+              className="px-2.5 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 font-semibold text-xs flex items-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
+              title="SMS Permission & Auto-Logging"
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>Allow SMS</span>
+            </button>
+          )}
+
+          {onAddExpense && (
+            <button
+              type="button"
+              onClick={() => {
+                void nativeService.triggerHaptic('selection');
+                setIsAddSheetOpen(true);
+              }}
+              className="px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Spending Summary Card */}
@@ -236,7 +266,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
               No transactions recorded
             </p>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              Tap &ldquo;Add Expense&rdquo; to log your spending or import transactions.
+              Tap &ldquo;Add&rdquo; to log your spending or import transactions.
             </p>
           </div>
         ) : (
@@ -244,7 +274,13 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
             <ExpenseItemRow
               key={item.id}
               expense={item}
-              onDelete={() => handleDelete(item.id)}
+              onTap={() => {
+                void nativeService.triggerHaptic('selection');
+                setEditingExpense(item);
+              }}
+              onSwipeDelete={() => {
+                setConfirmDeleteExpense(item);
+              }}
               onLongPress={() => setActiveActionExpense(item)}
             />
           ))
@@ -260,6 +296,41 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         />
       )}
 
+      {/* Edit Expense Sheet */}
+      <QuickExpenseSheet
+        isOpen={Boolean(editingExpense)}
+        onClose={() => setEditingExpense(null)}
+        initialExpense={editingExpense}
+        onUpdateExpense={onUpdateExpense}
+        onDeleteExpense={(id) => {
+          handleDelete(id);
+          setEditingExpense(null);
+        }}
+      />
+
+      {/* Safe Swipe Delete Confirmation Sheet */}
+      <AndroidActionSheet
+        isOpen={Boolean(confirmDeleteExpense)}
+        onClose={() => setConfirmDeleteExpense(null)}
+        title="Delete Transaction?"
+        subtitle={confirmDeleteExpense ? `Are you sure you want to delete "${confirmDeleteExpense.name}" (₹${confirmDeleteExpense.amount})?` : undefined}
+        actions={
+          confirmDeleteExpense
+            ? [
+                {
+                  label: 'Delete Transaction',
+                  icon: <Trash2 className="w-4 h-4" />,
+                  isDestructive: true,
+                  onClick: () => {
+                    handleDelete(confirmDeleteExpense.id);
+                    setConfirmDeleteExpense(null);
+                  },
+                },
+              ]
+            : []
+        }
+      />
+
       {/* Long-press Contextual Action Sheet */}
       <AndroidActionSheet
         isOpen={Boolean(activeActionExpense)}
@@ -274,13 +345,15 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
 
 interface ExpenseItemRowProps {
   expense: ExpenseItem;
-  onDelete: () => void;
+  onTap: () => void;
+  onSwipeDelete: () => void;
   onLongPress: () => void;
 }
 
 const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
   expense,
-  onDelete,
+  onTap,
+  onSwipeDelete,
   onLongPress,
 }) => {
   const longPressProps = useLongPress(() => {
@@ -289,13 +362,14 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
 
   return (
     <SwipeActionRow
-      onSwipeLeft={onDelete}
+      onSwipeLeft={onSwipeDelete}
       rightActionContent={<Trash2 className="w-5 h-5" />}
       rightActionColor="bg-rose-600"
     >
       <div
         {...longPressProps}
-        className="flex items-center justify-between p-3.5 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] active:scale-[0.99] transition-all select-none shadow-2xs"
+        onClick={onTap}
+        className="flex items-center justify-between p-3.5 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] active:scale-[0.99] transition-all select-none shadow-2xs cursor-pointer hover:border-emerald-300 dark:hover:border-emerald-800"
       >
         <div className="flex items-center gap-3 min-w-0 flex-1 pr-3">
           <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">

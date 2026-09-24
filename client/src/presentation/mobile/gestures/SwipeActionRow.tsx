@@ -27,35 +27,37 @@ export const SwipeActionRow: React.FC<SwipeActionRowProps> = ({
   rightActionContent,
   leftActionColor = 'bg-emerald-500',
   rightActionColor = 'bg-rose-500',
-  threshold = 75,
+  threshold = 95,
   className = '',
   disabled = false,
 }) => {
   const x = useMotionValue(0);
   const hasTriggeredRef = useRef(false);
 
-  // Background action opacity
-  const leftOpacity = useTransform(x, [10, threshold], [0.3, 1]);
-  const rightOpacity = useTransform(x, [-threshold, -10], [1, 0.3]);
+  // Background action opacity: reveals gradually and smoothly
+  const leftOpacity = useTransform(x, [20, threshold], [0.15, 1]);
+  const rightOpacity = useTransform(x, [-threshold, -20], [1, 0.15]);
 
   const handleDragEnd = (_: any, info: any) => {
     if (disabled) return;
 
     const offset = info.offset.x;
-    if (offset > threshold && onSwipeRight) {
-      void nativeService.triggerHaptic('success');
+    // Firm, deliberate threshold check
+    if (offset >= threshold && onSwipeRight) {
+      void nativeService.triggerHaptic('selection');
       onSwipeRight();
-    } else if (offset < -threshold && onSwipeLeft) {
-      void nativeService.triggerHaptic('warning');
+    } else if (offset <= -threshold && onSwipeLeft) {
+      void nativeService.triggerHaptic('selection');
       onSwipeLeft();
     }
+    // Any accidental partial swipe automatically snaps back without firing anything
     hasTriggeredRef.current = false;
   };
 
   const handleDrag = (_: any, info: any) => {
     if (disabled) return;
     const offset = Math.abs(info.offset.x);
-    if (offset > threshold && !hasTriggeredRef.current) {
+    if (offset >= threshold && !hasTriggeredRef.current) {
       hasTriggeredRef.current = true;
       void nativeService.triggerHaptic('selection');
     } else if (offset < threshold && hasTriggeredRef.current) {
@@ -85,11 +87,13 @@ export const SwipeActionRow: React.FC<SwipeActionRowProps> = ({
         </motion.div>
       )}
 
-      {/* Foreground Draggable Content */}
+      {/* Foreground Draggable Content with snap-back to origin */}
       <motion.div
         drag={disabled ? false : 'x'}
-        dragConstraints={{ left: rightActionContent ? -90 : 0, right: leftActionContent ? 90 : 0 }}
-        dragElastic={0.2}
+        dragSnapToOrigin={true}
+        dragConstraints={{ left: rightActionContent ? -110 : 0, right: leftActionContent ? 110 : 0 }}
+        dragElastic={0.12}
+        dragTransition={{ bounceStiffness: 500, bounceDamping: 35 }}
         style={{ x }}
         onDrag={handleDrag}
         onDragEnd={handleDragEnd}

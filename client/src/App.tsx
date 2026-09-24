@@ -2174,6 +2174,7 @@ export default function App() {
           onOpenSearch={() => setIsCommandPaletteOpen(true)}
           onOpenProfile={() => setIsSettingsOpen(true)}
           onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenSmsSettings={() => setIsSmsModalOpen(true)}
           onToggleDarkMode={handleToggleDarkMode}
           onToggleSound={handleToggleSound}
           onRefresh={() => {

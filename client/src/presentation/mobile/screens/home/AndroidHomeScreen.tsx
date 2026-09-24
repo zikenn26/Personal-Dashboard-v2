@@ -35,6 +35,7 @@ export interface AndroidHomeScreenProps {
   schedule?: WeeklyScheduleData;
   onNavigate: (view: MainNavView) => void;
   onToggleTodo: (id: string) => void;
+  onUpdateTodo?: (id: string, updates: Partial<TodoItem>) => void;
   onDeleteTodo?: (id: string) => void;
   onToggleHabitDay: (habitId: string, dayIndex: number) => void;
   onAddTodo?: (title: string, priority: Priority, category: string, dueDate?: string, status?: TaskStatus) => void;
@@ -52,6 +53,7 @@ export const AndroidHomeScreen: React.FC<AndroidHomeScreenProps> = ({
   schedule,
   onNavigate,
   onToggleTodo,
+  onUpdateTodo,
   onDeleteTodo,
   onToggleHabitDay,
   onAddTodo,
@@ -79,9 +81,9 @@ export const AndroidHomeScreen: React.FC<AndroidHomeScreenProps> = ({
   const availableQuotes = quotes && quotes.length > 0 ? quotes : INITIAL_QUOTES;
 
   return (
-    <div className="w-full max-w-lg mx-auto space-y-3.5 px-3.5 pb-24 pt-1">
+    <div className="w-full max-w-lg mx-auto space-y-2.5 px-3.5 pb-24 pt-0">
       {/* 1. COMPACT GREETING matching Screen B */}
-      <div className="pt-2 px-1">
+      <div className="pt-1 px-1">
         <span className="text-sm font-semibold text-gray-600 dark:text-gray-300 block leading-tight">
           {greetingText},
         </span>
@@ -91,7 +93,7 @@ export const AndroidHomeScreen: React.FC<AndroidHomeScreenProps> = ({
           </h2>
           <span className="text-lg">{timeEmoji}</span>
         </div>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
           Stay consistent. You&apos;re doing great!
         </p>
       </div>
@@ -130,8 +132,8 @@ export const AndroidHomeScreen: React.FC<AndroidHomeScreenProps> = ({
       {/* 3. WEATHER / CURRENT INFORMATION (Screen B) */}
       <AndroidWeatherWidget />
 
-      {/* 4. HORIZONTAL DATE STRIP (Screen B) */}
-      <AndroidDateStrip />
+      {/* 4. CALENDAR GRID / DATE STRIP (Temporarily hidden, underlying component preserved) */}
+      {/* <AndroidDateStrip /> */}
 
       {/* 5. QUICK ACCESS GRID (Row 1: Actions, Row 2: Navigation) */}
       <div className="space-y-2 pt-1">
@@ -285,6 +287,7 @@ export const AndroidHomeScreen: React.FC<AndroidHomeScreenProps> = ({
       <AndroidTasksCard
         todos={todos}
         onToggleTodo={onToggleTodo}
+        onUpdateTodo={onUpdateTodo}
         onDeleteTodo={onDeleteTodo}
         onNavigateToTasks={() => onNavigate('tasks')}
         onOpenAddTask={() => setIsTaskSheetOpen(true)}

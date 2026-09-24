@@ -30,6 +30,9 @@ export const AndroidTasksScreen: React.FC<AndroidTasksScreenProps> = ({
   const [filterTab, setFilterTab] = useState<FilterTab>('pending');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
+  const [editingTodo, setEditingTodo] = useState<TodoItem | null>(null);
+  const [confirmCompleteTodo, setConfirmCompleteTodo] = useState<TodoItem | null>(null);
+  const [confirmDeleteTodo, setConfirmDeleteTodo] = useState<TodoItem | null>(null);
   const [activeActionTodo, setActiveActionTodo] = useState<TodoItem | null>(null);
 
   // Extract unique categories
@@ -98,9 +101,18 @@ export const AndroidTasksScreen: React.FC<AndroidTasksScreenProps> = ({
   const actionItems: ActionSheetItem[] = activeActionTodo
     ? [
         {
+          label: 'Edit Task Details',
+          icon: <CheckSquare className="w-4 h-4" />,
+          onClick: () => {
+            setEditingTodo(activeActionTodo);
+          },
+        },
+        {
           label: activeActionTodo.completed ? 'Mark as Incomplete' : 'Mark as Complete',
           icon: <Check className="w-4 h-4" />,
-          onClick: () => handleToggle(activeActionTodo.id),
+          onClick: () => {
+            setConfirmCompleteTodo(activeActionTodo);
+          },
         },
         {
           label: 'Set as Urgent Priority',
@@ -120,13 +132,15 @@ export const AndroidTasksScreen: React.FC<AndroidTasksScreenProps> = ({
           label: 'Delete Task',
           icon: <Trash2 className="w-4 h-4" />,
           isDestructive: true,
-          onClick: () => handleDelete(activeActionTodo.id),
+          onClick: () => {
+            setConfirmDeleteTodo(activeActionTodo);
+          },
         },
       ]
     : [];
 
   return (
-    <div className="w-full max-w-lg mx-auto px-3.5 pb-24 pt-2 space-y-3.5">
+    <div className="w-full max-w-lg mx-auto px-3.5 pb-24 pt-1 space-y-2.5">
       {/* Page Title Banner */}
       <div className="flex items-center justify-between px-1">
         <div>
@@ -215,8 +229,16 @@ export const AndroidTasksScreen: React.FC<AndroidTasksScreenProps> = ({
             <TaskItemRow
               key={todo.id}
               todo={todo}
-              onToggle={() => handleToggle(todo.id)}
-              onDelete={() => handleDelete(todo.id)}
+              onTap={() => {
+                void nativeService.triggerHaptic('selection');
+                setEditingTodo(todo);
+              }}
+              onSwipeComplete={() => {
+                setConfirmCompleteTodo(todo);
+              }}
+              onSwipeDelete={() => {
+                setConfirmDeleteTodo(todo);
+              }}
               onLongPress={() => setActiveActionTodo(todo)}
               priorityBadge={getPriorityBadge(todo.priority)}
             />
@@ -248,6 +270,63 @@ export const AndroidTasksScreen: React.FC<AndroidTasksScreenProps> = ({
         />
       )}
 
+      {/* Edit Task Sheet */}
+      <QuickTaskSheet
+        isOpen={Boolean(editingTodo)}
+        onClose={() => setEditingTodo(null)}
+        initialTodo={editingTodo}
+        onUpdateTodo={onUpdateTodo}
+        onDeleteTodo={(id) => {
+          handleDelete(id);
+          setEditingTodo(null);
+        }}
+      />
+
+      {/* Safe Swipe Complete Confirmation Sheet */}
+      <AndroidActionSheet
+        isOpen={Boolean(confirmCompleteTodo)}
+        onClose={() => setConfirmCompleteTodo(null)}
+        title={confirmCompleteTodo?.completed ? 'Mark Task Incomplete?' : 'Mark Task Complete?'}
+        subtitle={confirmCompleteTodo ? `"${confirmCompleteTodo.title}"` : undefined}
+        actions={
+          confirmCompleteTodo
+            ? [
+                {
+                  label: confirmCompleteTodo.completed ? 'Mark Incomplete' : 'Complete Task',
+                  icon: <Check className="w-4 h-4" />,
+                  onClick: () => {
+                    handleToggle(confirmCompleteTodo.id);
+                    setConfirmCompleteTodo(null);
+                  },
+                },
+              ]
+            : []
+        }
+      />
+
+      {/* Safe Swipe Delete Confirmation Sheet */}
+      <AndroidActionSheet
+        isOpen={Boolean(confirmDeleteTodo)}
+        onClose={() => setConfirmDeleteTodo(null)}
+        title="Delete Task?"
+        subtitle={confirmDeleteTodo ? `Are you sure you want to delete "${confirmDeleteTodo.title}"?` : undefined}
+        actions={
+          confirmDeleteTodo
+            ? [
+                {
+                  label: 'Delete Task',
+                  icon: <Trash2 className="w-4 h-4" />,
+                  isDestructive: true,
+                  onClick: () => {
+                    handleDelete(confirmDeleteTodo.id);
+                    setConfirmDeleteTodo(null);
+                  },
+                },
+              ]
+            : []
+        }
+      />
+
       {/* Long-press Contextual Action Sheet */}
       <AndroidActionSheet
         isOpen={Boolean(activeActionTodo)}
@@ -262,16 +341,18 @@ export const AndroidTasksScreen: React.FC<AndroidTasksScreenProps> = ({
 
 interface TaskItemRowProps {
   todo: TodoItem;
-  onToggle: () => void;
-  onDelete: () => void;
+  onTap: () => void;
+  onSwipeComplete: () => void;
+  onSwipeDelete: () => void;
   onLongPress: () => void;
   priorityBadge: React.ReactNode;
 }
 
 const TaskItemRow: React.FC<TaskItemRowProps> = ({
   todo,
-  onToggle,
-  onDelete,
+  onTap,
+  onSwipeComplete,
+  onSwipeDelete,
   onLongPress,
   priorityBadge,
 }) => {
@@ -281,8 +362,8 @@ const TaskItemRow: React.FC<TaskItemRowProps> = ({
 
   return (
     <SwipeActionRow
-      onSwipeRight={onToggle}
-      onSwipeLeft={onDelete}
+      onSwipeRight={onSwipeComplete}
+      onSwipeLeft={onSwipeDelete}
       leftActionContent={<Check className="w-5 h-5" />}
       rightActionContent={<Trash2 className="w-5 h-5" />}
       leftActionColor="bg-emerald-600"
@@ -290,11 +371,11 @@ const TaskItemRow: React.FC<TaskItemRowProps> = ({
     >
       <div
         {...longPressProps}
-        onClick={onToggle}
-        className="flex items-center justify-between p-3.5 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] active:scale-[0.99] transition-all cursor-pointer select-none shadow-2xs"
+        onClick={onTap}
+        className="flex items-center justify-between p-3.5 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] active:scale-[0.99] transition-all cursor-pointer select-none shadow-2xs hover:border-violet-300 dark:hover:border-violet-800"
       >
         <div className="flex items-center gap-3 min-w-0 flex-1 pr-2">
-          {/* Circular checkbox matching Reference Screen B */}
+          {/* Circular status indicator matching Reference Screen B */}
           <div
             className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors shrink-0 ${
               todo.completed
