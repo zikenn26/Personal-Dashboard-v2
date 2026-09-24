@@ -63,6 +63,8 @@ import { AuthModal } from './components/AuthModal';
 import { AvatarPickerModal } from './components/AvatarPickerModal';
 import { STOCK_IMAGES } from './assets/stockImages';
 import LandingPage from './components/LandingPage';
+import { usePlatformMode } from './presentation/mobile/shell/usePlatformMode';
+import { AndroidShell } from './presentation/mobile/shell/AndroidShell';
 import {
   checkAndRollOverHabits,
   getMondayOfWeek,
@@ -204,6 +206,7 @@ export default function App() {
   const [schedule, setSchedule] = useState<WeeklyScheduleData>(Storage.getSchedule);
 
   // 2. Navigation & Sidebar State
+  const { isAndroidView } = usePlatformMode();
   const [activeView, setActiveView] = useState<MainNavView>('home');
   const [mediaInitialTab, setMediaInitialTab] = useState<string>('all');
 
@@ -2101,7 +2104,84 @@ export default function App() {
 
   return (
     <div className="h-screen w-full bg-[#FBFBFA] dark:bg-[#0F172A] text-[#37352F] dark:text-white selection:bg-[#EEF2FF] selection:text-[#6366F1] dark:selection:bg-indigo-900/50 dark:selection:text-indigo-200 transition-colors duration-200 font-sans flex flex-col overflow-hidden">
-      <div className="w-full h-full bg-white dark:bg-[#0F172A] flex flex-col overflow-hidden">
+      {isAndroidView ? (
+        <AndroidShell
+          activeView={activeView}
+          onNavigate={handleNavigate}
+          profile={profile}
+          todos={todos}
+          habits={habits}
+          quotes={quotes}
+          expenses={expenses}
+          schedule={schedule}
+          journal={journal}
+          goals={goals}
+          media={media}
+          vault={vault}
+          settings={settings}
+          excelImportLogs={excelImportLogs}
+          resume={resume}
+          exams={exams}
+          projects={projects}
+          milestones={milestones}
+          skills={skills}
+          onToggleTodo={handleToggleTodo}
+          onAddTodo={handleAddTodo}
+          onUpdateTodo={handleUpdateTodo}
+          onUpdateTaskStatus={handleUpdateTaskStatus}
+          onDeleteTodo={handleDeleteTodo}
+          onClearCompletedTodos={handleClearCompletedTodos}
+          onAddExpense={handleAddExpense}
+          onUpdateExpense={handleUpdateExpense}
+          onBatchAddExpenses={handleBatchAddExpenses}
+          onToggleExpense={handleToggleExpense}
+          onDeleteExpense={handleDeleteExpense}
+          onDeleteBatchExpenses={handleDeleteBatchExpenses}
+          onDeleteImportLog={handleDeleteImportLog}
+          onToggleHabitDay={handleToggleHabitDay}
+          onAddHabit={handleAddHabit}
+          onDeleteHabit={handleDeleteHabit}
+          onResetHabitWeek={handleResetHabitWeek}
+          onSimulateMondayRollover={handleSimulateMondayRollover}
+          onToggleHistoricalHabitDay={handleToggleHistoricalHabitDay}
+          onAddHistoricalHabit={handleAddHistoricalHabit}
+          onDeleteHistoricalHabit={handleDeleteHistoricalHabit}
+          habitHistory={habitHistory}
+          habitActivities={habitActivities}
+          onAddDiaryEntry={handleAddDiaryEntry}
+          onDeleteDiaryEntry={handleDeleteJournalEntry}
+          onAddQuote={handleAddQuote}
+          onUpdateQuote={handleUpdateQuote}
+          onDeleteQuote={handleDeleteQuote}
+          onAddGoal={handleAddGoal}
+          onUpdateGoal={handleUpdateGoal}
+          onDeleteGoal={handleDeleteGoal}
+          onUpdateExams={handleUpdateExams}
+          onUpdateProfile={handleUpdateProfile}
+          onUpdateProjects={handleUpdateProjects}
+          onUpdateSkills={handleUpdateSkills}
+          onUpdateResume={handleUpdateResume}
+          onAddProject={handleAddProject}
+          onDeleteProject={handleDeleteProject}
+          onAddMedia={handleAddMedia}
+          onUpdateMediaRating={handleUpdateMediaRating}
+          onDeleteMedia={handleDeleteMedia}
+          onAddVaultSecret={handleAddVaultSecret}
+          onDeleteVaultSecret={handleDeleteVaultSecret}
+          onExportData={handleExportData}
+          onImportData={handleImportData}
+          onResetData={handleResetData}
+          onOpenSearch={() => setIsCommandPaletteOpen(true)}
+          onOpenProfile={() => setIsSettingsOpen(true)}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          onToggleDarkMode={handleToggleDarkMode}
+          onToggleSound={handleToggleSound}
+          onRefresh={() => {
+            scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 50);
+          }}
+        />
+      ) : (
+        <div className="w-full h-full bg-white dark:bg-[#0F172A] flex flex-col overflow-hidden">
         {/* ===================================================================== */}
         {/* 1. TOP GLOBAL NAVIGATION HEADER */}
         {/* ===================================================================== */}
@@ -3293,6 +3373,7 @@ export default function App() {
           </main>
         </div>
       </div>
+      )}
 
       {/* Super-Powered Command Palette Modal (Cmd+K) */}
       <CommandPalette
