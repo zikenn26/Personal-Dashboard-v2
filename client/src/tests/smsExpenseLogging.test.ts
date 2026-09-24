@@ -250,7 +250,7 @@ describe('Android SMS Expense & Transaction Auto-Logging Suite', () => {
       expect(Storage.getExpenses().length).toBe(1);
     });
 
-    it('prevents duplicate when matching same amount, same date, and same merchant name', () => {
+    it('prevents duplicate when matching same amount, same date, and same merchant name without time variance', () => {
       const existing: ExpenseItem = {
         id: 'exp-manual-2',
         name: 'Starbucks',
@@ -267,9 +267,135 @@ describe('Android SMS Expense & Transaction Auto-Logging Suite', () => {
       expect(res.status).toBe('duplicate_skipped');
       expect(Storage.getExpenses().length).toBe(1);
     });
+
+    it('correctly retains TWO genuinely separate purchases from the same merchant for the same amount (different Ref IDs)', () => {
+      Storage.setExpenses([]);
+      Storage.setSmsAutoTrackingEnabled(true);
+
+      // Morning purchase at Starbucks
+      const sms1 =
+        'Axis Bank: INR 350.00 spent on Card ending 4412 at STARBUCKS on 23-09-2026 10:00:00. Txn ID: AX-STB-001.';
+      const res1 = smsExpenseService.processSms(sms1, 'AX-AXISBK-S', Date.now(), false);
+      expect(res1.status).toBe('logged');
+      expect(Storage.getExpenses().length).toBe(1);
+
+      // Afternoon purchase at same Starbucks for same amount, but different Txn ID & timestamp
+      const sms2 =
+        'Axis Bank: INR 350.00 spent on Card ending 4412 at STARBUCKS on 23-09-2026 15:30:00. Txn ID: AX-STB-002.';
+      const res2 = smsExpenseService.processSms(sms2, 'AX-AXISBK-S', Date.now(), false);
+      expect(res2.status).toBe('logged');
+      // BOTH distinct purchases must be retained!
+      expect(Storage.getExpenses().length).toBe(2);
+      expect(Storage.getExpenses()[0].smsReferenceId).toBe('AX-STB-002');
+      expect(Storage.getExpenses()[1].smsReferenceId).toBe('AX-STB-001');
+    });
+
+    it('correctly retains TWO separate purchases without Ref IDs if timestamps are separated by > 5 minutes', () => {
+      Storage.setExpenses([]);
+      Storage.setSmsAutoTrackingEnabled(true);
+
+      const sms1 =
+        'Rs.120.00 debited from A/c *1234 on 23-Sep-26 at 09:15 to Chai Point.';
+      const res1 = smsExpenseService.processSms(sms1, 'AD-HDFCBK-S', Date.now(), false);
+      expect(res1.status).toBe('logged');
+      expect(Storage.getExpenses().length).toBe(1);
+
+      const sms2 =
+        'Rs.120.00 debited from A/c *1234 on 23-Sep-26 at 16:45 to Chai Point.';
+      const res2 = smsExpenseService.processSms(sms2, 'AD-HDFCBK-S', Date.now(), false);
+      expect(res2.status).toBe('logged');
+      expect(Storage.getExpenses().length).toBe(2);
+    });
+
+    it('strictly ignores any SMS not originating from a sender ending in -S (case-insensitive)', () => {
+      Storage.setExpenses([]);
+      Storage.setSmsAutoTrackingEnabled(true);
+
+      // Senders not ending in -S
+      const nonSSenders = ['FRIEND', '9876543210', 'VM-PROMO-P', 'AD-HDFC-B', 'HDFCBANK', 'GOOGLE'];
+      for (const sender of nonSSenders) {
+        const sms = 'Rs. 500 debited from A/c *1234 to Merchant. UPI: 11223344.';
+        const res = smsExpenseService.processSms(sms, sender, Date.now(), false);
+        expect(res.status).toBe('ignored_not_financial');
+        expect(res.reason).toContain("does not end with '-S'");
+      }
+
+      // Expenses should strictly remain 0!
+      expect(Storage.getExpenses().length).toBe(0);
+    });
+
+    it('strictly ignores OTP and promotional SMS even if sent from a valid -S header', () => {
+      Storage.setExpenses([]);
+      Storage.setSmsAutoTrackingEnabled(true);
+
+      const otpSms =
+        'Your OTP for transaction of Rs.500 at Swiggy is 492810. Do not share this OTP with anyone.';
+      const otpRes = smsExpenseService.processSms(otpSms, 'AD-HDFCBK-S', Date.now(), false);
+      expect(otpRes.status).toBe('ignored_not_financial');
+      expect(otpRes.reason).toContain('OTP');
+
+      const promoSms =
+        'Congratulations! You are eligible for pre-approved personal loan up to Rs. 5,00,000. Apply now.';
+      const promoRes = smsExpenseService.processSms(promoSms, 'AX-AXISBK-S', Date.now(), false);
+      expect(promoRes.status).toBe('ignored_not_financial');
+
+      expect(Storage.getExpenses().length).toBe(0);
+    });
+
+    it('prevents duplicate after app restart/retry simulation', () => {
+      Storage.setExpenses([]);
+      Storage.setSmsAutoTrackingEnabled(true);
+
+      const smsText =
+        'Rs.450.00 debited from HDFC Bank A/c **4120 on 23-Sep-26 to SWIGGY. UPI: 429384928342.';
+      const first = smsExpenseService.processSms(smsText, 'AD-HDFCBK-S', Date.now(), false);
+      expect(first.status).toBe('logged');
+      expect(Storage.getExpenses().length).toBe(1);
+
+      // Simulate app restart / retry pass reading the same SMS
+      const retry = smsExpenseService.processSms(smsText, 'AD-HDFCBK-S', Date.now(), false);
+      expect(retry.status).toBe('duplicate_skipped');
+      expect(Storage.getExpenses().length).toBe(1);
+    });
   });
 
-  describe('4. Settings Toggle and State Persistence', () => {
+  describe('4. Complete End-to-End Workflow', () => {
+    it('Enable SMS Detection → grant permission → receive genuine -S transaction SMS → correctly categorize → exactly one Spending entry', async () => {
+      // Setup fresh state
+      Storage.setExpenses([]);
+      Storage.setSmsAutoTrackingEnabled(false);
+      expect(Storage.isSmsAutoTrackingEnabled()).toBe(false);
+
+      // Step 1: Enable SMS Detection & grant permission
+      vi.spyOn(smsExpenseService, 'isAndroidDevice').mockReturnValue(true);
+      const permResult = await smsExpenseService.requestPermission();
+      expect(permResult).toBe('granted');
+      expect(Storage.isSmsAutoTrackingEnabled()).toBe(true);
+
+      // Step 2: Receive genuine -S transaction SMS
+      const sms =
+        'Rs.785.00 debited from SBI Bank A/c *8899 on 23-Sep-26 to IRCTC. UPI Ref: 334455667788.';
+      const sender = 'AD-SBIUPI-S';
+
+      const result = smsExpenseService.processSms(sms, sender, Date.now(), false);
+      expect(result.success).toBe(true);
+      expect(result.status).toBe('logged');
+
+      // Step 3: Verify categorization
+      expect(result.expense?.category).toBe('Travel & Leisure');
+      expect(result.expense?.amount).toBe(785);
+      expect(result.expense?.name).toBe('Irctc');
+      expect(result.expense?.smsReferenceId).toBe('334455667788');
+
+      // Step 4: Verify exactly one Spending entry is created
+      const allExpenses = Storage.getExpenses();
+      expect(allExpenses.length).toBe(1);
+      expect(allExpenses[0].id).toBe(result.expense?.id);
+      expect(allExpenses[0].amount).toBe(785);
+    });
+  });
+
+  describe('5. Settings Toggle and State Persistence', () => {
     it('persists enabled state in Storage', async () => {
       expect(Storage.isSmsAutoTrackingEnabled()).toBe(false);
 

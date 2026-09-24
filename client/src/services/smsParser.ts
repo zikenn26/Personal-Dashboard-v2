@@ -232,12 +232,14 @@ function computeTransactionFingerprint(
   date: string,
   merchant: string,
   accountLast4?: string,
-  refId?: string
+  refId?: string,
+  time?: string
 ): string {
   const cleanMerchant = merchant.toLowerCase().replace(/[^a-z0-9]/g, '');
   const cleanRef = (refId || '').trim();
   const cleanAcc = (accountLast4 || '').trim();
-  return `sms_${type}_${amount.toFixed(2)}_${date}_${cleanRef || `${cleanMerchant}_${cleanAcc}`}`;
+  const cleanTime = (time || '').trim();
+  return `sms_${type}_${amount.toFixed(2)}_${date}_${cleanRef || `${cleanMerchant}_${cleanAcc}_${cleanTime}`}`;
 }
 
 /**
@@ -560,7 +562,8 @@ export function parseSmsTransaction(
     date,
     merchant,
     accountLast4,
-    referenceId
+    referenceId,
+    time
   );
 
   return {

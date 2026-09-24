@@ -231,73 +231,108 @@ class SmsExpenseService {
    * 3. Existing expenses with identical reference ID
    * 4. Same date, same amount, and matching merchant within tolerance
    */
+  /**
+   * Checks whether a parsed transaction is a duplicate of an existing entry.
+   * Compares against strictly prioritized criteria:
+   * 1. Transaction / Reference ID (strongest identifier)
+   * 2. Raw SMS identity / payload hash
+   * 3. Contextual matching (date, amount, merchant, time) only as a fallback
+   *
+   * Note: A clearly different transaction/reference ID must NEVER be merged
+   * merely because amount, merchant, and timestamp are similar.
+   */
   public checkIsDuplicate(
     parsed: ParsedSmsTransaction,
     existingExpenses: ExpenseItem[] = Storage.getExpenses(),
     rawBody?: string
   ): { isDuplicate: boolean; reason?: string } {
-    // 1. Fingerprint check
     const processedFingerprints = Storage.getProcessedSmsFingerprints();
-    if (processedFingerprints.includes(parsed.fingerprint)) {
-      return { isDuplicate: true, reason: 'Duplicate SMS fingerprint already processed' };
-    }
 
-    // 2. Raw Body hash check (catches identical SMS re-broadcasts)
-    if (rawBody) {
-      const rawHash = `raw_sms_${rawBody.trim().toLowerCase().replace(/\s+/g, ' ')}`;
-      if (processedFingerprints.includes(rawHash)) {
-        return { isDuplicate: true, reason: 'Identical raw SMS payload already processed' };
-      }
-    }
-
-    // 3. Reference ID match
-    if (parsed.referenceId) {
-      if (processedFingerprints.includes(`ref_id_${parsed.referenceId}`)) {
+    // =========================================================================
+    // 1. STRONGEST IDENTIFIER: Transaction / Reference ID (RRN, UPI Ref, Txn ID)
+    // =========================================================================
+    if (parsed.referenceId && parsed.referenceId.trim()) {
+      const cleanRef = parsed.referenceId.trim().toUpperCase();
+      const refKey = `ref_id_${cleanRef}`;
+      if (processedFingerprints.includes(refKey)) {
         return {
           isDuplicate: true,
-          reason: `Transaction with Reference ID ${parsed.referenceId} already processed`,
+          reason: `Duplicate: Transaction with Reference ID ${parsed.referenceId} already processed`,
         };
       }
 
       const matchByRef = existingExpenses.find(
         (e) =>
-          e.smsReferenceId === parsed.referenceId ||
-          (e.notes && e.notes.includes(parsed.referenceId!))
+          (e.smsReferenceId && e.smsReferenceId.trim().toUpperCase() === cleanRef) ||
+          (e.notes && e.notes.toUpperCase().includes(cleanRef))
       );
       if (matchByRef) {
         return {
           isDuplicate: true,
-          reason: `Transaction with Reference ID ${parsed.referenceId} already exists ("${matchByRef.name}")`,
+          reason: `Duplicate: Transaction with Reference ID ${parsed.referenceId} already exists ("${matchByRef.name}")`,
         };
       }
     }
 
-    // 4. Exact Amount + Exact Date + Similar Merchant heuristic with smart time validation
+    // =========================================================================
+    // 2. RAW SMS IDENTITY / HASH (Guards against identical re-broadcasts or retry)
+    // =========================================================================
+    if (rawBody && rawBody.trim()) {
+      const rawHash = `raw_sms_${rawBody.trim().toLowerCase().replace(/\s+/g, ' ')}`;
+      if (processedFingerprints.includes(rawHash)) {
+        return { isDuplicate: true, reason: 'Identical raw SMS payload already processed' };
+      }
+
+      const matchByRawText = existingExpenses.find(
+        (e) => e.rawSmsText && e.rawSmsText.trim().toLowerCase() === rawBody.trim().toLowerCase()
+      );
+      if (matchByRawText) {
+        return { isDuplicate: true, reason: 'Identical raw SMS text already logged in Spending' };
+      }
+    }
+
+    if (parsed.fingerprint && processedFingerprints.includes(parsed.fingerprint)) {
+      return { isDuplicate: true, reason: 'Duplicate SMS fingerprint already processed' };
+    }
+
+    // =========================================================================
+    // 3. CONTEXTUAL MATCHING ONLY AS A FALLBACK
+    // =========================================================================
+    // Rule: A clearly different transaction/reference ID must NEVER be merged
+    // merely because amount, merchant, and timestamp are similar.
     const cleanMerchant = parsed.merchant.toLowerCase().replace(/[^a-z0-9]/g, '');
+
     const matchByDetails = existingExpenses.find((e) => {
+      // Must match exact date
       if (e.date !== parsed.date) return false;
+
+      // Must match exact amount
       if (Math.abs(Number(e.amount) - parsed.amount) > 0.01) return false;
 
-      // Merchant comparison
+      // CRITICAL RULE: If both transactions have reference IDs and they differ,
+      // they are strictly separate transactions and MUST NOT be merged.
+      if (e.smsReferenceId && parsed.referenceId) {
+        if (e.smsReferenceId.trim().toUpperCase() !== parsed.referenceId.trim().toUpperCase()) {
+          return false;
+        }
+      }
+
+      // Check merchant name similarity
       const existingNameClean = e.name.toLowerCase().replace(/[^a-z0-9]/g, '');
       const merchantMatches =
         cleanMerchant &&
         (existingNameClean.includes(cleanMerchant) || cleanMerchant.includes(existingNameClean));
       if (!merchantMatches) return false;
 
-      // If one transaction has a specific reference ID and the other has a different reference ID,
-      // they are distinct transactions
-      if (e.smsReferenceId && parsed.referenceId && e.smsReferenceId !== parsed.referenceId) {
-        return false;
-      }
-
-      // If both transactions have recorded times, avoid falsely merging distinct transactions:
+      // Time verification:
+      // If both transactions have recorded times, avoid falsely merging distinct transactions
       if (e.time && parsed.time) {
         const [eH, eM] = e.time.split(':').map(Number);
         const [pH, pM] = parsed.time.split(':').map(Number);
         if (!isNaN(eH) && !isNaN(eM) && !isNaN(pH) && !isNaN(pM)) {
           const diffMinutes = Math.abs((eH * 60 + eM) - (pH * 60 + pM));
-          // If transactions occurred > 5 minutes apart, they are genuinely different purchases
+          // Two genuinely separate purchases from the same merchant for the same amount
+          // occurring > 5 minutes apart must BOTH be retained.
           if (diffMinutes > 5) {
             return false;
           }
@@ -338,11 +373,11 @@ class SmsExpenseService {
     // =========================================================================
     // 0. TRAI SERVICE SENDER FILTER (TRAI Regulation Check)
     // =========================================================================
-    // Target only SMS whose title ends with -S (e.g. AD-ICICIT-S, AX-AXISBK-S,
-    // VM-IRCTCi-S, VA-UNIONB-S, AD-SBIUPI-S). All other SMS not having 'S' in the end
-    // must NOT be detected.
+    // Target only SMS whose sender/header ends with '-S' (case-insensitive, e.g. AD-ICICIT-S,
+    // AX-AXISBK-S, VM-IRCTCi-S, VA-UNIONB-S, AD-SBIUPI-S). All other SMS not originating
+    // from a sender ending in '-S' are rejected immediately before parsing/storage.
     if (!isTraiServiceSender(sender)) {
-      const skipReason = `SMS ignored: Sender title "${sender || '(empty)'}" does not end with '-S'. Under TRAI regulations, only service messages ending with 'S' (e.g., AD-ICICIT-S, AX-AXISBK-S, VM-IRCTCi-S, VA-UNIONB-S, AD-SBIUPI-S) are monitored for transactions.`;
+      const skipReason = `SMS ignored: Sender title "${sender || '(empty)'}" does not end with '-S'. Rejected immediately before parsing/storage.`;
       logDeviceDiagnostic('warn', 'LifeOS_SMS:SKIPPED_NOT_TRAI_SERVICE', skipReason, {
         sender: sender || '(unknown)',
         sanitizedPreview: sanitizedBody.slice(0, 100),
@@ -362,7 +397,22 @@ class SmsExpenseService {
         success: false,
         status: 'ignored_not_financial',
         reason: skipReason,
-        parsed: parseSmsTransaction(body, sender, timestamp),
+        parsed: {
+          isTransaction: false,
+          amount: 0,
+          currency: '₹',
+          type: 'expense',
+          merchant: 'Unknown',
+          category: 'Others',
+          paymentMethod: 'Other',
+          confidence: 0,
+          date: '',
+          rawSms: body,
+          sender,
+          timestamp,
+          ignoreReason: skipReason,
+          fingerprint: '',
+        },
       };
     }
 
