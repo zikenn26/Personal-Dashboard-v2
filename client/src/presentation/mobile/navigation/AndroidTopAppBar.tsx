@@ -34,7 +34,7 @@ export const AndroidTopAppBar: React.FC<AndroidTopAppBarProps> = ({
 
   return (
     <header
-      className={`sticky top-0 z-40 w-full bg-[#F7F6FC]/95 dark:bg-[#0B0F19]/95 backdrop-blur-md border-b border-[#E8E5F3] dark:border-[#1E2638] pt-[env(safe-area-inset-top)] px-4 transition-colors ${className}`}
+      className={`sticky top-0 z-40 w-full bg-[#F7F6FC]/95 dark:bg-[#0B0F19]/95 backdrop-blur-md border-b border-[#E8E5F3] dark:border-[#1E2638] pt-[env(safe-area-inset-top,0px)] px-4 transition-colors shrink-0 ${className}`}
     >
       <div className="h-11 sm:h-12 flex items-center justify-between gap-3 max-w-lg mx-auto">
         {/* Left: Small Brand Icon + Compact Single-Line Title */}

@@ -283,7 +283,7 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#F7F6FC] dark:bg-[#0B0F19] text-gray-900 dark:text-gray-100 flex flex-col font-sans select-none antialiased">
+    <div className="h-full flex-1 w-full bg-[#F7F6FC] dark:bg-[#0B0F19] text-gray-900 dark:text-gray-100 flex flex-col font-sans select-none antialiased overflow-hidden">
       {/* 1. TOP APP BAR */}
       {activeView === 'home' ? (
         <AndroidTopAppBar
@@ -293,7 +293,7 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
           title="Personal Dashboard"
         />
       ) : (
-        <header className="sticky top-0 z-40 w-full bg-[#F7F6FC]/95 dark:bg-[#0B0F19]/95 backdrop-blur-md border-b border-[#E8E5F3] dark:border-[#1E2638] pt-[env(safe-area-inset-top)] px-4">
+        <header className="sticky top-0 z-40 w-full bg-[#F7F6FC]/95 dark:bg-[#0B0F19]/95 backdrop-blur-md border-b border-[#E8E5F3] dark:border-[#1E2638] pt-[env(safe-area-inset-top,0px)] px-4 shrink-0">
           <div className="h-11 sm:h-12 flex items-center justify-between gap-3 max-w-lg mx-auto">
             <div className="flex items-center gap-2.5">
               <button

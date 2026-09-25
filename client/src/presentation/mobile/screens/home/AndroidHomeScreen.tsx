@@ -18,7 +18,6 @@ import { HorizontalPager } from '../../gestures/HorizontalPager';
 import { AndroidWeatherWidget } from './AndroidWeatherWidget';
 import { AndroidDateStrip } from '../../components/AndroidDateStrip';
 import { AndroidTasksCard } from './AndroidTasksCard';
-import { AndroidScheduleCard } from './AndroidScheduleCard';
 import { AndroidSpendingCard } from './AndroidSpendingCard';
 import { AndroidHabitsCard } from './AndroidHabitsCard';
 import { QuickTaskSheet } from '../../components/QuickTaskSheet';
@@ -290,20 +289,14 @@ export const AndroidHomeScreen: React.FC<AndroidHomeScreenProps> = ({
         onOpenAddTask={() => setIsTaskSheetOpen(true)}
       />
 
-      {/* 7. THIS WEEK'S SCHEDULE CARD (Hidden from Android Home per spec, functionality and data preserved) */}
-      {/* <AndroidScheduleCard
-        schedule={schedule}
-        onNavigateToSchedule={() => onNavigate('tasks')}
-      /> */}
-
-      {/* 8. SPENDING SNAPSHOT CARD */}
+      {/* 7. SPENDING SNAPSHOT CARD */}
       <AndroidSpendingCard
         expenses={expenses}
         onNavigateToMoney={() => onNavigate('expenses')}
         onOpenAddExpense={() => setIsExpenseSheetOpen(true)}
       />
 
-      {/* 9. HABITS & MOMENTUM CARD */}
+      {/* 8. HABITS & MOMENTUM CARD */}
       <AndroidHabitsCard
         habits={habits}
         onToggleHabitDay={onToggleHabitDay}

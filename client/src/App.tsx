@@ -3470,7 +3470,7 @@ export default function App() {
       />
 
       {/* Floating Bottom-Right Popup: Personalized Zikenn AI */}
-      {isZikennPopupOpen && (
+      {!isAndroidView && isZikennPopupOpen && (
         <aside
           id="zikenn-ai-popup"
           role="dialog"
@@ -3567,7 +3567,7 @@ export default function App() {
 
       {/* Global Gemini 3.8 Live Voice Modal */}
       <GeminiLiveVoiceModal
-        isOpen={isGlobalVoiceModalOpen}
+        isOpen={!isAndroidView && isGlobalVoiceModalOpen}
         onClose={() => setIsGlobalVoiceModalOpen(false)}
         onNavigate={handleNavigate}
         activeView={activeView}

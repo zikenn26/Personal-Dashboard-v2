@@ -52,7 +52,7 @@ h1 { font:700 clamp(52px, 6vw, 80px)/.95 'DM Serif Display', Georgia, serif; let
 
 /* Persistent access to signup while exploring the page */
 .site-header { position: fixed; top: 0; left: 0; right: 0; width: 100%; max-width: none; margin: 0; padding-left: max(28px, calc((100vw - 1240px) / 2)); padding-right: max(28px, calc((100vw - 1240px) / 2)); background: rgba(248,247,242,.82); border-bottom: 1px solid rgba(231,228,223,.72); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
-main { padding-top: 78px; }
-@media (max-width:850px) { .site-header { padding-left:20px; padding-right:20px; } main { padding-top:68px; } }
+.site-shell main { padding-top: 78px; }
+@media (max-width:850px) { .site-header { padding-left:20px; padding-right:20px; } .site-shell main { padding-top:68px; } }
 
 /* Landing page is intentionally loaded as a separate visual surface. */
