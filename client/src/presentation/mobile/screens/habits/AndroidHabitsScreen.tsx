@@ -115,29 +115,36 @@ export const AndroidHabitsScreen: React.FC<AndroidHabitsScreenProps> = ({
         </div>
       </div>
 
+      {/* Header bar with count */}
+      <div className="flex items-center justify-between px-1 pt-1">
+        <span className="text-xs font-bold text-gray-600 dark:text-gray-300">
+          Habits ({habits.length})
+        </span>
+      </div>
+
       {/* Habit List */}
-      <div className="space-y-2.5">
-        {habits.length === 0 ? (
-          <div className="p-8 text-center rounded-3xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40]">
-            <Flame className="w-10 h-10 text-amber-400 mx-auto mb-2 opacity-60" />
-            <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
-              No habits configured yet
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              Build lasting daily routines. Tap &ldquo;Add Habit&rdquo; above!
-            </p>
-          </div>
-        ) : (
-          habits.map((habit) => (
+      {habits.length === 0 ? (
+        <div className="p-8 text-center rounded-3xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40]">
+          <Flame className="w-10 h-10 text-amber-400 mx-auto mb-2 opacity-60" />
+          <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
+            No habits configured yet
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            Build lasting daily routines. Tap &ldquo;Add Habit&rdquo; above!
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          {habits.map((habit) => (
             <HabitItemCard
               key={habit.id}
               habit={habit}
               onToggleDay={(dayIdx) => handleToggleDay(habit.id, dayIdx)}
               onLongPress={() => setActiveActionHabit(habit)}
             />
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Add Habit Sheet */}
       {onAddHabit && (

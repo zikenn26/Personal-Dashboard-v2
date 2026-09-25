@@ -6,6 +6,7 @@ import { SplashScreen } from '@capacitor/splash-screen';
 import { Keyboard } from '@capacitor/keyboard';
 import { Share } from '@capacitor/share';
 import { Network } from '@capacitor/network';
+import { Geolocation } from '@capacitor/geolocation';
 
 export type HapticFeedbackType =
   | 'click'
@@ -201,6 +202,106 @@ class NativeService {
     Network.addListener('networkStatusChange', (status) => {
       window.dispatchEvent(
         new CustomEvent('networkStatusChange', { detail: status })
+      );
+    });
+  }
+
+  /**
+   * Check runtime location permission status without prompting.
+   * Returns 'prompt' | 'granted' | 'denied'.
+   */
+  public async checkLocationPermission(): Promise<'prompt' | 'granted' | 'denied'> {
+    if (this.isNative) {
+      try {
+        const checkStatus = await Geolocation.checkPermissions();
+        if (checkStatus.location === 'granted' || checkStatus.coarseLocation === 'granted') {
+          return 'granted';
+        }
+        if (checkStatus.location === 'denied' && checkStatus.coarseLocation === 'denied') {
+          return 'denied';
+        }
+        return 'prompt';
+      } catch {
+        return 'prompt';
+      }
+    }
+
+    // Web Permissions API query
+    if (typeof navigator !== 'undefined' && 'permissions' in navigator) {
+      try {
+        const p = await navigator.permissions.query({ name: 'geolocation' as any });
+        if (p.state === 'granted') return 'granted';
+        if (p.state === 'denied') return 'denied';
+        return 'prompt';
+      } catch {
+        return 'prompt';
+      }
+    }
+    return 'prompt';
+  }
+
+  /**
+   * Request native Android runtime location permission and obtain actual device GPS position.
+   * If permission is denied, throws an Error with code 1 / PERMISSION_DENIED.
+   */
+  public async requestLocationAndGetPosition(): Promise<{ latitude: number; longitude: number }> {
+    if (this.isNative) {
+      try {
+        const checkStatus = await Geolocation.checkPermissions();
+        if (checkStatus.location !== 'granted' && checkStatus.coarseLocation !== 'granted') {
+          // Trigger the Android runtime OS permission dialog
+          const req = await Geolocation.requestPermissions();
+          if (req.location !== 'granted' && req.coarseLocation !== 'granted') {
+            const err = new Error('PERMISSION_DENIED');
+            (err as any).code = 1;
+            throw err;
+          }
+        }
+
+        const pos = await Geolocation.getCurrentPosition({
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 120000,
+        });
+
+        return {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        };
+      } catch (err: any) {
+        if (
+          err?.message === 'PERMISSION_DENIED' ||
+          err?.code === 1 ||
+          (typeof err?.message === 'string' && err.message.toLowerCase().includes('denied'))
+        ) {
+          const deniedErr = new Error('PERMISSION_DENIED');
+          (deniedErr as any).code = 1;
+          throw deniedErr;
+        }
+        // Fallback to browser geolocation below if native plugin threw a non-denial error
+      }
+    }
+
+    // Web fallback for mobile browser preview or web environment
+    return new Promise((resolve, reject) => {
+      if (typeof navigator === 'undefined' || !navigator.geolocation) {
+        const err = new Error('GEOLOCATION_UNAVAILABLE');
+        (err as any).code = 2;
+        reject(err);
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          resolve({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+          });
+        },
+        (err) => {
+          reject(err);
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 120000 }
       );
     });
   }

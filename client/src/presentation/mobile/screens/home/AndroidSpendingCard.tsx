@@ -1,5 +1,5 @@
 import React from 'react';
-import { CreditCard, ArrowRight, TrendingUp, Plus } from 'lucide-react';
+import { CreditCard, ArrowRight, Plus } from 'lucide-react';
 import { ExpenseItem } from '../../../../types';
 import { nativeService } from '../../../../services/nativeService';
 import { CARD_SURFACE_CLASSES, CARD_HEADER_CLASSES, CARD_TITLE_CLASSES, CARD_BODY_CLASSES } from '../../design-system/materialYou';
@@ -26,7 +26,7 @@ export const AndroidSpendingCard: React.FC<AndroidSpendingCardProps> = ({
   });
 
   const totalMonthSpending = monthExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-  const recentExpenses = [...expenses].reverse().slice(0, 3);
+  const recentExpenses = [...expenses].reverse().slice(0, 4);
 
   return (
     <div className={CARD_SURFACE_CLASSES}>
@@ -55,12 +55,12 @@ export const AndroidSpendingCard: React.FC<AndroidSpendingCardProps> = ({
       {/* Body */}
       <div className={CARD_BODY_CLASSES}>
         {/* Month Summary Banner */}
-        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/10 dark:from-emerald-950/40 dark:to-teal-950/40 border border-emerald-200/60 dark:border-emerald-900/60 mb-3 flex items-center justify-between">
+        <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/10 dark:from-emerald-950/40 dark:to-teal-950/40 border border-emerald-200/60 dark:border-emerald-900/60 mb-2 flex items-center justify-between">
           <div>
-            <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 block">
+            <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 block">
               This Month&apos;s Spending
             </span>
-            <span className="text-xl font-black text-gray-900 dark:text-white tracking-tight">
+            <span className="text-lg sm:text-xl font-black text-gray-900 dark:text-white tracking-tight">
               ₹{totalMonthSpending.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
@@ -71,7 +71,7 @@ export const AndroidSpendingCard: React.FC<AndroidSpendingCardProps> = ({
               void nativeService.triggerHaptic('selection');
               onOpenAddExpense();
             }}
-            className="px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 shadow-xs active:scale-95 transition-all cursor-pointer"
+            className="px-2.5 py-1 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 shadow-xs active:scale-95 transition-all cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Add</span>
@@ -80,17 +80,17 @@ export const AndroidSpendingCard: React.FC<AndroidSpendingCardProps> = ({
 
         {/* Recent Transactions List */}
         {recentExpenses.length === 0 ? (
-          <div className="py-4 text-center">
+          <div className="py-3 text-center">
             <p className="text-xs text-gray-500 dark:text-gray-400">
               No expenses recorded yet. Tap &apos;Add&apos; to log your first transaction.
             </p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {recentExpenses.map((exp) => (
               <div
                 key={exp.id}
-                className="flex items-center justify-between p-2.5 rounded-2xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40]"
+                className="flex items-center justify-between p-2 rounded-2xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40]"
               >
                 <div className="min-w-0 flex-1 pr-2">
                   <span className="text-xs font-semibold text-gray-900 dark:text-white block truncate">
@@ -110,10 +110,10 @@ export const AndroidSpendingCard: React.FC<AndroidSpendingCardProps> = ({
                 </div>
 
                 <div className="text-right shrink-0">
-                  <span className="text-xs font-bold text-gray-900 dark:text-white block font-mono">
-                    ₹{Number(exp.amount).toFixed(2)}
+                  <span className="text-xs font-bold text-gray-900 dark:text-white block">
+                    ₹{(exp.amount || 0).toFixed(2)}
                   </span>
-                  <span className="text-[10px] text-gray-400 block font-mono">
+                  <span className="text-[10px] text-gray-400 dark:text-gray-500 block">
                     {exp.date}
                   </span>
                 </div>
@@ -125,3 +125,5 @@ export const AndroidSpendingCard: React.FC<AndroidSpendingCardProps> = ({
     </div>
   );
 };
+
+export default AndroidSpendingCard;

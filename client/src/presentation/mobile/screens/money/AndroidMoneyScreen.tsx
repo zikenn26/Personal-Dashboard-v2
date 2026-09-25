@@ -253,24 +253,27 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         </div>
       )}
 
-      {/* Recent Transactions List */}
-      <div className="space-y-2">
-        <span className="text-xs font-bold text-gray-600 dark:text-gray-300 px-1 block">
+      {/* Header bar with count */}
+      <div className="flex items-center justify-between px-1 pt-1">
+        <span className="text-xs font-bold text-gray-600 dark:text-gray-300">
           Transactions ({filteredExpenses.length})
         </span>
+      </div>
 
-        {filteredExpenses.length === 0 ? (
-          <div className="p-8 text-center rounded-3xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40]">
-            <CreditCard className="w-10 h-10 text-emerald-400 mx-auto mb-2 opacity-60" />
-            <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
-              No transactions recorded
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              Tap &ldquo;Add&rdquo; to log your spending or import transactions.
-            </p>
-          </div>
-        ) : (
-          filteredExpenses.map((item) => (
+      {/* Transactions List */}
+      {filteredExpenses.length === 0 ? (
+        <div className="p-8 text-center rounded-3xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40]">
+          <CreditCard className="w-10 h-10 text-emerald-400 mx-auto mb-2 opacity-60" />
+          <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
+            No transactions recorded
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            Tap &ldquo;Add&rdquo; to log your spending or import transactions.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filteredExpenses.map((item) => (
             <ExpenseItemRow
               key={item.id}
               expense={item}
@@ -283,9 +286,9 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
               }}
               onLongPress={() => setActiveActionExpense(item)}
             />
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Add Expense Sheet */}
       {onAddExpense && (

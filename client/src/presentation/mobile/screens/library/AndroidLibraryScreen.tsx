@@ -5,6 +5,7 @@ import { nativeService } from '../../../../services/nativeService';
 import { useLongPress } from '../../gestures/useLongPress';
 import { AndroidActionSheet, ActionSheetItem } from '../../components/AndroidActionSheet';
 import { BottomSheet } from '../../gestures/BottomSheet';
+import { ViewModeToggle, ViewMode } from '../../components/ViewModeToggle';
 
 export interface AndroidLibraryScreenProps {
   media: MediaItem[];
@@ -22,6 +23,13 @@ export const AndroidLibraryScreen: React.FC<AndroidLibraryScreenProps> = ({
   onDeleteMedia,
 }) => {
   const [filterType, setFilterType] = useState<MediaTypeFilter>('all');
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    try {
+      return (localStorage.getItem('lifeos_media_screen_mode') as ViewMode) || 'list';
+    } catch {
+      return 'list';
+    }
+  });
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
   const [activeActionMedia, setActiveActionMedia] = useState<MediaItem | null>(null);
 
@@ -140,20 +148,91 @@ export const AndroidLibraryScreen: React.FC<AndroidLibraryScreenProps> = ({
         ))}
       </div>
 
-      {/* Media List */}
-      <div className="space-y-2.5">
-        {filteredMedia.length === 0 ? (
-          <div className="p-8 text-center rounded-3xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40]">
-            <Film className="w-10 h-10 text-violet-400 mx-auto mb-2 opacity-60" />
-            <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
-              No media items
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              Track books you read, films you watch, and games you play.
-            </p>
-          </div>
-        ) : (
-          filteredMedia.map((item) => (
+      {/* Header bar with count and View Mode Toggle */}
+      <div className="flex items-center justify-between px-1 pt-1">
+        <span className="text-xs font-bold text-gray-600 dark:text-gray-300">
+          Media ({filteredMedia.length})
+        </span>
+        <ViewModeToggle
+          mode={viewMode}
+          onChange={(m) => {
+            setViewMode(m);
+            try {
+              localStorage.setItem('lifeos_media_screen_mode', m);
+            } catch {}
+          }}
+        />
+      </div>
+
+      {/* Media List or Tiles */}
+      {filteredMedia.length === 0 ? (
+        <div className="p-8 text-center rounded-3xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40]">
+          <Film className="w-10 h-10 text-violet-400 mx-auto mb-2 opacity-60" />
+          <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
+            No media items
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            Track books you read, films you watch, and games you play.
+          </p>
+        </div>
+      ) : viewMode === 'tiles' ? (
+        <div className="grid grid-cols-2 gap-2.5">
+          {filteredMedia.map((item) => (
+            <div
+              key={item.id}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setActiveActionMedia(item);
+              }}
+              className="p-3 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] hover:border-violet-300 dark:hover:border-violet-600/50 flex flex-col justify-between min-h-[104px] active:scale-[0.98] transition-all shadow-2xs group"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-1 mb-1.5">
+                  <div className="w-6 h-6 rounded-lg bg-violet-100 dark:bg-violet-950 text-violet-600 dark:text-violet-400 flex items-center justify-center shrink-0">
+                    {getTypeIcon(item.type)}
+                  </div>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 capitalize">
+                    {item.status || 'saved'}
+                  </span>
+                </div>
+
+                <span className="text-xs font-bold text-gray-900 dark:text-white block line-clamp-2 leading-tight">
+                  {item.title}
+                </span>
+                <span className="text-[10px] text-gray-400 dark:text-gray-500 block truncate mt-0.5">
+                  {item.creator}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between mt-2 pt-1 border-t border-gray-100 dark:border-gray-800">
+                <span className="text-[10px] text-gray-400 dark:text-gray-500 capitalize">
+                  {item.type}
+                </span>
+                <div className="flex items-center gap-0.5">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => handleRate(item.id, star)}
+                      className="cursor-pointer"
+                    >
+                      <Star
+                        className={`w-3 h-3 ${
+                          star <= (item.rating || 0)
+                            ? 'fill-amber-400 text-amber-400'
+                            : 'text-gray-300 dark:text-gray-600'
+                        }`}
+                      />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          {filteredMedia.map((item) => (
             <MediaCardRow
               key={item.id}
               item={item}
@@ -161,9 +240,9 @@ export const AndroidLibraryScreen: React.FC<AndroidLibraryScreenProps> = ({
               onRate={(rating) => handleRate(item.id, rating)}
               onLongPress={() => setActiveActionMedia(item)}
             />
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Add Media Bottom Sheet */}
       <BottomSheet

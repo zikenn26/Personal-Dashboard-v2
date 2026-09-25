@@ -75,27 +75,24 @@ export const AndroidHomeScreen: React.FC<AndroidHomeScreenProps> = ({
     return { greetingText: 'Good evening', timeEmoji: '🌙' };
   })();
 
-  const fullName = profile?.name || 'Gulshan Kumar Nayak';
+  const displayName = profile?.name ? profile.name.split(' ')[0] : 'Gulshan';
 
   // Use existing quotes or fallback to INITIAL_QUOTES
   const availableQuotes = quotes && quotes.length > 0 ? quotes : INITIAL_QUOTES;
 
   return (
-    <div className="w-full max-w-lg mx-auto space-y-2.5 px-3.5 pb-24 pt-0">
-      {/* 1. COMPACT GREETING matching Screen B */}
-      <div className="pt-1 px-1">
-        <span className="text-sm font-semibold text-gray-600 dark:text-gray-300 block leading-tight">
+    <div className="w-full max-w-lg mx-auto space-y-2.5 px-3.5 pb-24 pt-2">
+      {/* 1. COMPACT GREETING matching Material You */}
+      <div className="px-1">
+        <span className="text-xs sm:text-sm font-semibold text-gray-600 dark:text-gray-300 block leading-tight">
           {greetingText},
         </span>
         <div className="flex items-center gap-1.5 mt-0.5">
           <h2 className="text-lg font-bold text-gray-900 dark:text-white tracking-tight leading-tight">
-            {fullName}!
+            {displayName}!
           </h2>
-          <span className="text-lg">{timeEmoji}</span>
+          <span className="text-base">{timeEmoji}</span>
         </div>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-          Stay consistent. You&apos;re doing great!
-        </p>
       </div>
 
       {/* 2. QUOTE CAROUSEL (Horizontal swipe with pager dots) */}
@@ -293,11 +290,11 @@ export const AndroidHomeScreen: React.FC<AndroidHomeScreenProps> = ({
         onOpenAddTask={() => setIsTaskSheetOpen(true)}
       />
 
-      {/* 7. THIS WEEK'S SCHEDULE CARD */}
-      <AndroidScheduleCard
+      {/* 7. THIS WEEK'S SCHEDULE CARD (Hidden from Android Home per spec, functionality and data preserved) */}
+      {/* <AndroidScheduleCard
         schedule={schedule}
         onNavigateToSchedule={() => onNavigate('tasks')}
-      />
+      /> */}
 
       {/* 8. SPENDING SNAPSHOT CARD */}
       <AndroidSpendingCard

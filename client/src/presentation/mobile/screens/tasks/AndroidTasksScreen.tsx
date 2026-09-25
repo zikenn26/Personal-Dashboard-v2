@@ -210,22 +210,29 @@ export const AndroidTasksScreen: React.FC<AndroidTasksScreenProps> = ({
         </div>
       )}
 
+      {/* Header bar with count */}
+      <div className="flex items-center justify-between px-1 pt-1">
+        <span className="text-xs font-bold text-gray-600 dark:text-gray-300">
+          Tasks ({filteredTodos.length})
+        </span>
+      </div>
+
       {/* Task List */}
-      <div className="space-y-2">
-        {filteredTodos.length === 0 ? (
-          <div className="p-8 text-center rounded-3xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40]">
-            <CheckSquare className="w-10 h-10 text-violet-400 mx-auto mb-2 opacity-60" />
-            <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
-              No tasks found
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              {filterTab === 'completed'
-                ? 'No completed tasks yet.'
-                : 'You have no tasks in this view. Tap below to create one!'}
-            </p>
-          </div>
-        ) : (
-          filteredTodos.map((todo) => (
+      {filteredTodos.length === 0 ? (
+        <div className="p-8 text-center rounded-3xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40]">
+          <CheckSquare className="w-10 h-10 text-violet-400 mx-auto mb-2 opacity-60" />
+          <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
+            No tasks found
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            {filterTab === 'completed'
+              ? 'No completed tasks yet.'
+              : 'You have no tasks in this view. Tap below to create one!'}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filteredTodos.map((todo) => (
             <TaskItemRow
               key={todo.id}
               todo={todo}
@@ -242,9 +249,9 @@ export const AndroidTasksScreen: React.FC<AndroidTasksScreenProps> = ({
               onLongPress={() => setActiveActionTodo(todo)}
               priorityBadge={getPriorityBadge(todo.priority)}
             />
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Floating Add Task Button */}
       {onAddTodo && (

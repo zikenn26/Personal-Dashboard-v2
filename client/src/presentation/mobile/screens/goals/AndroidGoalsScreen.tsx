@@ -5,6 +5,7 @@ import { nativeService } from '../../../../services/nativeService';
 import { useLongPress } from '../../gestures/useLongPress';
 import { AndroidActionSheet, ActionSheetItem } from '../../components/AndroidActionSheet';
 import { BottomSheet } from '../../gestures/BottomSheet';
+import { ViewModeToggle, ViewMode } from '../../components/ViewModeToggle';
 
 export interface AndroidGoalsScreenProps {
   goals: GoalItem[];
@@ -21,6 +22,13 @@ export const AndroidGoalsScreen: React.FC<AndroidGoalsScreenProps> = ({
 }) => {
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
   const [activeActionGoal, setActiveActionGoal] = useState<GoalItem | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    try {
+      return (localStorage.getItem('lifeos_goals_screen_mode') as ViewMode) || 'list';
+    } catch {
+      return 'list';
+    }
+  });
 
   // Add goal form state
   const [newTitle, setNewTitle] = useState('');
@@ -111,29 +119,93 @@ export const AndroidGoalsScreen: React.FC<AndroidGoalsScreenProps> = ({
         )}
       </div>
 
-      {/* Goal Cards */}
-      <div className="space-y-3">
-        {goals.length === 0 ? (
-          <div className="p-8 text-center rounded-3xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40]">
-            <Target className="w-10 h-10 text-violet-400 mx-auto mb-2 opacity-60" />
-            <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
-              No goals set yet
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              Set inspiring targets with milestones and progress tracking.
-            </p>
-          </div>
-        ) : (
-          goals.map((goal) => (
+      {/* Header bar with count and View Mode Toggle */}
+      <div className="flex items-center justify-between px-1 pt-1">
+        <span className="text-xs font-bold text-gray-600 dark:text-gray-300">
+          Goals ({goals.length})
+        </span>
+        <ViewModeToggle
+          mode={viewMode}
+          onChange={(m) => {
+            setViewMode(m);
+            try {
+              localStorage.setItem('lifeos_goals_screen_mode', m);
+            } catch {}
+          }}
+        />
+      </div>
+
+      {/* Goal Cards or Tiles */}
+      {goals.length === 0 ? (
+        <div className="p-8 text-center rounded-3xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40]">
+          <Target className="w-10 h-10 text-violet-400 mx-auto mb-2 opacity-60" />
+          <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
+            No goals set yet
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            Set inspiring targets with milestones and progress tracking.
+          </p>
+        </div>
+      ) : viewMode === 'tiles' ? (
+        <div className="grid grid-cols-2 gap-2.5">
+          {goals.map((goal) => (
+            <div
+              key={goal.id}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setActiveActionGoal(goal);
+              }}
+              className="p-3 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] hover:border-violet-300 dark:hover:border-violet-600/50 flex flex-col justify-between min-h-[104px] active:scale-[0.98] transition-all shadow-2xs group"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-1 mb-1">
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-50 dark:bg-violet-950/80 text-violet-700 dark:text-violet-300 truncate max-w-[85px]">
+                    {goal.category}
+                  </span>
+                  <span className="text-[10px] font-extrabold text-violet-600 dark:text-violet-400">
+                    {goal.progress}%
+                  </span>
+                </div>
+                <span className="text-xs font-bold text-gray-900 dark:text-white block line-clamp-2 leading-tight">
+                  {goal.title}
+                </span>
+              </div>
+
+              <div className="mt-2 pt-1 border-t border-gray-100 dark:border-gray-800">
+                <div className="w-full h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden mb-1.5">
+                  <div
+                    className="h-full bg-violet-600 rounded-full transition-all"
+                    style={{ width: `${goal.progress}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] text-gray-400 dark:text-gray-500 truncate max-w-[65px]">
+                    {goal.targetDate || 'Ongoing'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleIncrementProgress(goal, 10)}
+                    className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-100 dark:bg-violet-950/80 text-violet-700 dark:text-violet-300 hover:bg-violet-200 cursor-pointer"
+                  >
+                    +10%
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {goals.map((goal) => (
             <GoalItemCard
               key={goal.id}
               goal={goal}
               onIncrement={(delta) => handleIncrementProgress(goal, delta)}
               onLongPress={() => setActiveActionGoal(goal)}
             />
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Add Goal Bottom Sheet */}
       <BottomSheet

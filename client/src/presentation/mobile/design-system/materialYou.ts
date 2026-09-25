@@ -83,9 +83,9 @@ export const MaterialYouTokens = {
 export const CARD_SURFACE_CLASSES =
   'bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] rounded-3xl shadow-[0_2px_12px_rgba(124,58,237,0.05)] transition-all';
 
-export const CARD_HEADER_CLASSES = 'flex items-center justify-between px-5 pt-5 pb-3';
+export const CARD_HEADER_CLASSES = 'flex items-center justify-between px-4 pt-4 pb-2';
 
 export const CARD_TITLE_CLASSES =
   'text-base font-bold text-gray-900 dark:text-white tracking-tight flex items-center gap-2';
 
-export const CARD_BODY_CLASSES = 'px-5 pb-5';
+export const CARD_BODY_CLASSES = 'px-4 pb-4 pt-0';
