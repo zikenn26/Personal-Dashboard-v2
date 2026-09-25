@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Sparkles } from 'lucide-react';
 import {
   UserProfile,
   TodoItem,
@@ -45,6 +45,7 @@ import { AndroidBackupScreen } from '../screens/backup/AndroidBackupScreen';
 // Search and Profile overlays
 import { AndroidSearchOverlay } from '../components/AndroidSearchOverlay';
 import { AndroidProfileSheet } from '../components/AndroidProfileSheet';
+import { AndroidAssistantSheet } from '../components/AndroidAssistantSheet';
 
 export interface AndroidShellProps {
   // Navigation & View state
@@ -213,36 +214,42 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
   const [isMoreOpen, setIsMoreOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isAssistantOpen, setIsAssistantOpen] = useState(false);
 
   // Android hardware back button handler
   useEffect(() => {
     const unregister = nativeService.registerBackButtonHandler(() => {
-      // 1. If search is open, close it
+      // 1. If assistant is open, close it
+      if (isAssistantOpen) {
+        setIsAssistantOpen(false);
+        return true;
+      }
+      // 2. If search is open, close it
       if (isSearchOpen) {
         setIsSearchOpen(false);
         return true;
       }
-      // 2. If profile is open, close it
+      // 3. If profile is open, close it
       if (isProfileOpen) {
         setIsProfileOpen(false);
         return true;
       }
-      // 3. If "More" bottom sheet is open, close it
+      // 4. If "More" bottom sheet is open, close it
       if (isMoreOpen) {
         setIsMoreOpen(false);
         return true;
       }
-      // 4. If not on 'home', return to 'home'
+      // 5. If not on 'home', return to 'home'
       if (activeView !== 'home') {
         onNavigate('home');
         return true;
       }
-      // 5. At home root level: return false to let Android minimize or exit app
+      // 6. At home root level: return false to let Android minimize or exit app
       return false;
     });
 
     return unregister;
-  }, [isSearchOpen, isProfileOpen, isMoreOpen, activeView, onNavigate]);
+  }, [isAssistantOpen, isSearchOpen, isProfileOpen, isMoreOpen, activeView, onNavigate]);
 
   const pendingTodosCount = todos.filter((t) => !t.completed && t.status !== 'complete').length;
 
@@ -290,6 +297,7 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
           profile={profile}
           onOpenSearch={() => setIsSearchOpen(true)}
           onOpenProfile={() => setIsProfileOpen(true)}
+          onOpenAssistant={() => setIsAssistantOpen(true)}
           title="Personal Dashboard"
         />
       ) : (
@@ -313,6 +321,20 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
             </div>
 
             <div className="flex items-center gap-1.5">
+              {/* AI Assistant Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  void nativeService.triggerHaptic('selection');
+                  setIsAssistantOpen(true);
+                }}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-violet-600 dark:text-violet-400 bg-violet-100/70 dark:bg-violet-950/60 hover:bg-violet-200/80 dark:hover:bg-violet-900/60 active:scale-95 transition-all cursor-pointer shadow-2xs"
+                title="Zikenn AI Assistant"
+                aria-label="Open Zikenn AI Assistant"
+              >
+                <Sparkles className="w-4 h-4" />
+              </button>
+
               <button
                 type="button"
                 onClick={() => {
@@ -535,6 +557,15 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
         onOpenProfile={onOpenProfile || onOpenSettings}
         onToggleDarkMode={onToggleDarkMode}
         onToggleSound={onToggleSound}
+      />
+
+      {/* 7. ZIKENN AI ASSISTANT SHEET (Native Material You Bottom Sheet) */}
+      <AndroidAssistantSheet
+        isOpen={isAssistantOpen}
+        onClose={() => setIsAssistantOpen(false)}
+        onNavigate={onNavigate}
+        profile={profile}
+        activeView={activeView}
       />
     </div>
   );

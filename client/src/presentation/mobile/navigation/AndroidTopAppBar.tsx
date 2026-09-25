@@ -7,21 +7,28 @@ export interface AndroidTopAppBarProps {
   profile: UserProfile;
   onOpenSearch: () => void;
   onOpenProfile: () => void;
+  onOpenAssistant?: () => void;
   title?: string;
   className?: string;
 }
 
 /**
  * Material You Android Top App Bar
- * Reproducing Screen B: compact single-line bar with small brand icon, compact title, Search, and Avatar.
+ * Compact single-line bar with small brand icon, compact title, AI Assistant, Search, and Avatar.
  */
 export const AndroidTopAppBar: React.FC<AndroidTopAppBarProps> = ({
   profile,
   onOpenSearch,
   onOpenProfile,
+  onOpenAssistant,
   title = 'Personal Dashboard',
   className = '',
 }) => {
+  const handleAssistantClick = () => {
+    void nativeService.triggerHaptic('selection');
+    if (onOpenAssistant) onOpenAssistant();
+  };
+
   const handleSearchClick = () => {
     void nativeService.triggerHaptic('selection');
     onOpenSearch();
@@ -47,8 +54,21 @@ export const AndroidTopAppBar: React.FC<AndroidTopAppBarProps> = ({
           </span>
         </div>
 
-        {/* Right: Search Icon + Profile Avatar */}
+        {/* Right: AI Assistant + Search Icon + Profile Avatar */}
         <div className="flex items-center gap-1.5 shrink-0">
+          {/* AI Assistant Button */}
+          {onOpenAssistant && (
+            <button
+              type="button"
+              onClick={handleAssistantClick}
+              aria-label="Open Zikenn AI Assistant"
+              className="w-8 h-8 rounded-full flex items-center justify-center text-violet-600 dark:text-violet-400 bg-violet-100/70 dark:bg-violet-950/60 hover:bg-violet-200/80 dark:hover:bg-violet-900/60 active:scale-95 transition-all cursor-pointer shadow-2xs"
+              title="Zikenn AI Assistant"
+            >
+              <Sparkles className="w-4 h-4" />
+            </button>
+          )}
+
           {/* Search Button */}
           <button
             type="button"
