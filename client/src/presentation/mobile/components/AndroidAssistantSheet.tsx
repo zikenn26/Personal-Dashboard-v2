@@ -6,22 +6,18 @@ import {
   MicOff,
   X,
   Loader2,
-  Trash2,
   CheckCircle2,
   AlertCircle,
   HelpCircle,
   RotateCcw,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
 import { nativeService } from '../../../services/nativeService';
 import {
-  analyzeCommandIntent,
-  executeCommandDecision,
-  executeInteractiveOption,
-  InteractiveOption,
-  CommandDecision,
-} from '../../../services/commandIntentEngine';
-import { sendGeminiMessage, GeminiChatMessage } from '../../../services/geminiService';
+  aiService,
+  SessionMemory,
+  SmartChipItem,
+} from '../../../services/ai';
+import { InteractiveOption } from '../../../services/commandIntentEngine';
 import { MainNavView, UserProfile } from '../../../types';
 
 export interface AndroidAssistantSheetProps {
@@ -39,17 +35,8 @@ interface AssistantMessage {
   timestamp: number;
   chips?: string[];
   options?: InteractiveOption[];
-  decision?: CommandDecision;
   isError?: boolean;
 }
-
-const DEFAULT_SUGGESTIONS = [
-  "Today's spending",
-  'My tasks',
-  'Add expense ₹150 for coffee',
-  'What are my habits today?',
-  'Show my goals',
-];
 
 export const AndroidAssistantSheet: React.FC<AndroidAssistantSheetProps> = ({
   isOpen,
@@ -58,11 +45,17 @@ export const AndroidAssistantSheet: React.FC<AndroidAssistantSheetProps> = ({
   profile,
   activeView = 'home',
 }) => {
+  const [sessionMemory, setSessionMemory] = useState<SessionMemory>(() =>
+    aiService.createInitialSessionMemory()
+  );
+
   const [messages, setMessages] = useState<AssistantMessage[]>(() => [
     {
       id: 'welcome',
       sender: 'assistant',
-      text: `Hello ${profile?.name ? profile.name.split(' ')[0] : 'there'}! I'm Zikenn AI, your personal dashboard assistant. How can I help you today?`,
+      text: `Hello ${
+        profile?.name ? profile.name.split(' ')[0] : 'there'
+      }! I'm Zikenn AI, your personal dashboard assistant. How can I help you today?`,
       timestamp: Date.now(),
     },
   ]);
@@ -73,9 +66,20 @@ export const AndroidAssistantSheet: React.FC<AndroidAssistantSheetProps> = ({
   const [interimTranscript, setInterimTranscript] = useState('');
   const [micError, setMicError] = useState<string | null>(null);
 
+  // Dynamic context-aware smart action chips
+  const [smartChips, setSmartChips] = useState<SmartChipItem[]>([]);
+
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const recognitionRef = useRef<any>(null);
+
+  // Update dynamic action chips whenever sheet opens or activeView changes
+  useEffect(() => {
+    if (isOpen) {
+      const chips = aiService.getSmartActionChips({ activeView });
+      setSmartChips(chips);
+    }
+  }, [isOpen, activeView]);
 
   // Auto-scroll chat to latest message
   const scrollToBottom = () => {
@@ -85,7 +89,6 @@ export const AndroidAssistantSheet: React.FC<AndroidAssistantSheetProps> = ({
   useEffect(() => {
     if (isOpen) {
       scrollToBottom();
-      // Clear mic error on open
       setMicError(null);
     } else {
       // Stop listening if sheet closes
@@ -97,6 +100,8 @@ export const AndroidAssistantSheet: React.FC<AndroidAssistantSheetProps> = ({
         }
       }
       setIsListening(false);
+      // Reset session memory on close as required by OS-level assistant specs
+      setSessionMemory(aiService.createInitialSessionMemory());
     }
   }, [isOpen]);
 
@@ -134,78 +139,29 @@ export const AndroidAssistantSheet: React.FC<AndroidAssistantSheetProps> = ({
     setIsProcessing(true);
 
     try {
-      // 1. Analyze intent using existing commandIntentEngine
-      const decision = await analyzeCommandIntent(text, { activeView });
+      // Process message through unified AIService layer
+      const response = await aiService.processMessage(text, {
+        activeView,
+        sessionMemory,
+      });
 
-      // 2. If decision requires confirmation, present confirmation prompt with interactive options
-      if (decision.requiresConfirmation || decision.isDestructive) {
-        void nativeService.triggerHaptic('warning');
-        const assistantMsg: AssistantMessage = {
-          id: `asst-${Date.now()}`,
-          sender: 'assistant',
-          text:
-            decision.confirmationPrompt ||
-            decision.clarificationPrompt ||
-            'Please confirm this action before proceeding.',
-          timestamp: Date.now(),
-          options: decision.options,
-          decision,
-        };
-        setMessages((prev) => [...prev, assistantMsg]);
-        setIsProcessing(false);
-        return;
-      }
+      // Update session memory for continuity in subsequent commands
+      setSessionMemory(response.updatedSessionMemory);
 
-      // 3. If decision has executable actions or is a recognized query
-      if (decision.intent !== 'UNKNOWN_INTENT' && decision.intent !== 'AMBIGUOUS_INTENT') {
-        const result = await executeCommandDecision(decision);
-        void nativeService.triggerHaptic('success');
+      void nativeService.triggerHaptic(
+        response.pendingConfirmation ? 'warning' : 'success'
+      );
 
-        const assistantMsg: AssistantMessage = {
-          id: `asst-${Date.now()}`,
-          sender: 'assistant',
-          text: result.message || decision.explanation || 'Command completed successfully.',
-          timestamp: Date.now(),
-          chips: result.actionChips,
-          options: result.options,
-        };
-        setMessages((prev) => [...prev, assistantMsg]);
-        setIsProcessing(false);
-        return;
-      }
+      const assistantMsg: AssistantMessage = {
+        id: `asst-${Date.now()}`,
+        sender: 'assistant',
+        text: response.reply,
+        timestamp: Date.now(),
+        chips: response.actionChips,
+        options: response.options,
+      };
 
-      // 4. Conversational fallback via Gemini Service if available
-      try {
-        const geminiResponse = await sendGeminiMessage({
-          message: text,
-          history: [],
-          context: { activeView },
-        });
-
-        void nativeService.triggerHaptic('success');
-        const assistantMsg: AssistantMessage = {
-          id: `asst-${Date.now()}`,
-          sender: 'assistant',
-          text: geminiResponse.reply || "I've checked your dashboard. Let me know if you'd like me to log an expense, add a task, or check your habits!",
-          timestamp: Date.now(),
-          chips: geminiResponse.actionChips,
-          options: geminiResponse.options,
-        };
-        setMessages((prev) => [...prev, assistantMsg]);
-      } catch (geminiErr) {
-        // Safe local fallback
-        const fallbackText = decision.explanation ||
-          "I'm not sure how to handle that command yet. Try asking 'What did I spend today?' or 'Add task Complete review'.";
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `asst-${Date.now()}`,
-            sender: 'assistant',
-            text: fallbackText,
-            timestamp: Date.now(),
-          },
-        ]);
-      }
+      setMessages((prev) => [...prev, assistantMsg]);
     } catch (err: any) {
       console.error('Error in Android Assistant processing:', err);
       void nativeService.triggerHaptic('error');
@@ -230,7 +186,7 @@ export const AndroidAssistantSheet: React.FC<AndroidAssistantSheetProps> = ({
     setIsProcessing(true);
 
     try {
-      const result = await executeInteractiveOption(option);
+      const result = await aiService.executeOption(option);
       void nativeService.triggerHaptic(result.success ? 'success' : 'warning');
 
       setMessages((prev) => [
@@ -284,11 +240,14 @@ export const AndroidAssistantSheet: React.FC<AndroidAssistantSheetProps> = ({
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          // Stop tracks immediately after permission confirmed
           stream.getTracks().forEach((track) => track.stop());
-          setMicError('Speech recognition is not supported in this browser environment. You can type commands directly.');
+          setMicError(
+            'Speech recognition is not supported in this browser environment. You can type commands directly.'
+          );
         } catch (err: any) {
-          setMicError('Microphone permission was denied. Please allow microphone access in Android settings.');
+          setMicError(
+            'Microphone permission was denied. Please allow microphone access in Android settings to use voice input.'
+          );
         }
       } else {
         setMicError('Audio input is not supported on this device.');
@@ -333,7 +292,9 @@ export const AndroidAssistantSheet: React.FC<AndroidAssistantSheetProps> = ({
         setIsListening(false);
         if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
           void nativeService.triggerHaptic('error');
-          setMicError('Microphone permission was denied. Please allow microphone access in Android settings to use voice input.');
+          setMicError(
+            'Microphone permission was denied. Please allow microphone access in Android settings to use voice input.'
+          );
         } else if (event.error !== 'no-speech' && event.error !== 'aborted') {
           setMicError(`Voice recognition error: ${event.error}. Please try typing instead.`);
         }
@@ -502,21 +463,21 @@ export const AndroidAssistantSheet: React.FC<AndroidAssistantSheetProps> = ({
             </div>
           )}
 
-          {/* Suggested Actions (Always glanceable at top/bottom of convo) */}
+          {/* Context-Aware Smart Action Chips */}
           <div className="pt-2">
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5 px-1">
-              Suggested actions
+              Context Suggestions
             </span>
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-              {DEFAULT_SUGGESTIONS.map((suggestion, idx) => (
+              {smartChips.map((chip) => (
                 <button
-                  key={idx}
+                  key={chip.id}
                   type="button"
-                  onClick={() => handleSendCommand(suggestion)}
+                  onClick={() => handleSendCommand(chip.prompt)}
                   disabled={isProcessing}
                   className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] text-gray-700 dark:text-gray-300 hover:border-violet-400 dark:hover:border-violet-600 hover:text-violet-600 dark:hover:text-violet-300 whitespace-nowrap shrink-0 transition-all cursor-pointer active:scale-95 shadow-2xs"
                 >
-                  {suggestion}
+                  {chip.label}
                 </button>
               ))}
             </div>
@@ -555,7 +516,7 @@ export const AndroidAssistantSheet: React.FC<AndroidAssistantSheetProps> = ({
               type="text"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              placeholder={isListening ? 'Listening...' : 'Ask anything or command...'}
+              placeholder={isListening ? 'Listening...' : 'Ask anything...'}
               disabled={isProcessing}
               className="flex-1 px-3.5 py-2 rounded-2xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] text-xs sm:text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500/30 transition-all"
             />

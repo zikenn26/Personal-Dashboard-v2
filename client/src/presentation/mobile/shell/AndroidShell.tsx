@@ -529,6 +529,7 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
         onClose={() => setIsMoreOpen(false)}
         onNavigate={onNavigate}
         onOpenSettings={onOpenSettings || (() => {})}
+        onOpenAssistant={() => setIsAssistantOpen(true)}
         settings={settings}
         onToggleDarkMode={onToggleDarkMode || (() => {})}
         onToggleSound={onToggleSound || (() => {})}

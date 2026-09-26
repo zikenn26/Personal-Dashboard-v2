@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  Sparkles,
   Flame,
   Target,
   Compass,
@@ -19,13 +20,14 @@ export interface AndroidMoreSheetProps {
   onClose: () => void;
   onNavigate: (view: MainNavView) => void;
   onOpenSettings: () => void;
+  onOpenAssistant?: () => void;
   settings: AppSettings;
   onToggleDarkMode: () => void;
   onToggleSound: () => void;
 }
 
 interface MoreFeatureItem {
-  id: MainNavView | 'settings';
+  id: MainNavView | 'settings' | 'assistant';
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   color: string;
@@ -37,6 +39,7 @@ export const AndroidMoreSheet: React.FC<AndroidMoreSheetProps> = ({
   onClose,
   onNavigate,
   onOpenSettings,
+  onOpenAssistant,
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     try {
@@ -63,6 +66,13 @@ export const AndroidMoreSheet: React.FC<AndroidMoreSheetProps> = ({
    * - Quick Access (Add Task, Add Expense, Add Habit, Add Note, Journal, Quotes, Library, Portfolio)
    */
   const features: MoreFeatureItem[] = [
+    {
+      id: 'assistant',
+      label: 'Zikenn AI',
+      icon: Sparkles,
+      color: 'bg-violet-100 text-violet-600 dark:bg-violet-950/80 dark:text-violet-400',
+      desc: 'Smart dashboard assistant',
+    },
     {
       id: 'habits',
       label: 'Habits & Streaks',
@@ -117,7 +127,9 @@ export const AndroidMoreSheet: React.FC<AndroidMoreSheetProps> = ({
   const handleSelect = (item: MoreFeatureItem) => {
     void nativeService.triggerHaptic('selection');
     onClose();
-    if (item.id === 'settings') {
+    if (item.id === 'assistant') {
+      onOpenAssistant?.();
+    } else if (item.id === 'settings') {
       onOpenSettings();
     } else {
       onNavigate(item.id as MainNavView);
