@@ -2018,6 +2018,10 @@ export const Storage = {
     return loadFromStorage<string[]>(STORAGE_KEYS.SMS_PROCESSED_FINGERPRINTS, []);
   },
 
+  clearProcessedSmsFingerprints: (): void => {
+    saveToStorage(STORAGE_KEYS.SMS_PROCESSED_FINGERPRINTS, []);
+  },
+
   addProcessedSmsFingerprint: (fingerprint: string): void => {
     if (!fingerprint) return;
     const current = loadFromStorage<string[]>(STORAGE_KEYS.SMS_PROCESSED_FINGERPRINTS, []);

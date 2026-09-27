@@ -307,17 +307,16 @@ describe('Android SMS Expense & Transaction Auto-Logging Suite', () => {
       expect(Storage.getExpenses().length).toBe(2);
     });
 
-    it('strictly ignores any SMS not originating from a sender ending in -S (case-insensitive)', () => {
+    it('strictly ignores any SMS originating from non-bank / personal / promotional senders', () => {
       Storage.setExpenses([]);
       Storage.setSmsAutoTrackingEnabled(true);
 
-      // Senders not ending in -S
-      const nonSSenders = ['FRIEND', '9876543210', 'VM-PROMO-P', 'AD-HDFC-B', 'HDFCBANK', 'GOOGLE'];
-      for (const sender of nonSSenders) {
+      // Senders that are personal, promotional, or non-bank
+      const invalidSenders = ['FRIEND', '9876543210', 'VM-PROMO-P', 'SPAMMER', 'GOOGLE'];
+      for (const sender of invalidSenders) {
         const sms = 'Rs. 500 debited from A/c *1234 to Merchant. UPI: 11223344.';
         const res = smsExpenseService.processSms(sms, sender, Date.now(), false);
         expect(res.status).toBe('ignored_not_financial');
-        expect(res.reason).toContain("does not end with '-S'");
       }
 
       // Expenses should strictly remain 0!

@@ -33,6 +33,11 @@ interface SmsExpenseModalProps {
 
 const SAMPLE_BANK_SMS = [
   {
+    title: 'ICICI Bank (Arpita Priyadar)',
+    sender: 'AD-ICICIB',
+    text: 'ICICI Bank Acct XX070 debited for Rs 303.00 on 25-Sep-26; ARPITA PRIYADAR credited. UPI:663416590461.',
+  },
+  {
     title: 'HDFC Bank (Swiggy)',
     sender: 'AD-HDFCBK-S',
     text: 'Rs.450.00 debited from HDFC Bank A/c **4120 on 23-Sep-26 to SWIGGY. UPI: 429384928342. Avl bal: Rs.14,200.00.',
@@ -83,6 +88,12 @@ export const SmsExpenseModal: React.FC<SmsExpenseModalProps> = ({
   const [permissionStatus, setPermissionStatus] = useState<string>('prompt');
   const [isScanning, setIsScanning] = useState(false);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
+  const [scanSummary, setScanSummary] = useState<{
+    scanned: number;
+    transactionsFound: number;
+    imported: number;
+    skippedDuplicates: number;
+  } | null>(null);
   const [logs, setLogs] = useState<SmsTransactionLogItem[]>([]);
   const [activeTab, setActiveTab] = useState<'settings' | 'test' | 'logs'>('settings');
 
@@ -134,10 +145,17 @@ export const SmsExpenseModal: React.FC<SmsExpenseModalProps> = ({
     Sound.click(soundEnabled);
     setIsScanning(true);
     setScanMessage(null);
+    setScanSummary(null);
     try {
-      const summary = await smsExpenseService.scanRecentInbox(30);
+      const summary = await smsExpenseService.scanRecentInbox(50);
+      setScanSummary({
+        scanned: summary.scanned,
+        transactionsFound: summary.transactionsFound,
+        imported: summary.imported,
+        skippedDuplicates: summary.skippedDuplicates,
+      });
       setScanMessage(
-        `Scanned ${summary.scanned} SMS: ${summary.logged} new logged, ${summary.skippedDuplicates} duplicates skipped.`
+        `Scanned ${summary.scanned} SMS: ${summary.imported} imported, ${summary.skippedDuplicates} duplicates skipped.`
       );
       setLogs(Storage.getSmsTransactionLogs());
     } catch (err: any) {
@@ -359,7 +377,37 @@ export const SmsExpenseModal: React.FC<SmsExpenseModalProps> = ({
                 </button>
               </div>
 
-              {scanMessage && (
+              {scanSummary && (
+                <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200 text-xs space-y-2">
+                  <div className="font-bold text-xs flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      Scan Summary
+                    </span>
+                    <span className="text-[10px] uppercase font-semibold text-emerald-700 dark:text-emerald-300">Complete</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-center">
+                    <div className="p-2 rounded-lg bg-white/80 dark:bg-black/30 border border-emerald-100 dark:border-emerald-900/40">
+                      <div className="text-gray-500 dark:text-gray-400 text-[10px] uppercase font-semibold">SMS Scanned</div>
+                      <div className="text-base font-bold text-gray-800 dark:text-white">{scanSummary.scanned}</div>
+                    </div>
+                    <div className="p-2 rounded-lg bg-white/80 dark:bg-black/30 border border-emerald-100 dark:border-emerald-900/40">
+                      <div className="text-gray-500 dark:text-gray-400 text-[10px] uppercase font-semibold">Transactions Found</div>
+                      <div className="text-base font-bold text-blue-600 dark:text-blue-400">{scanSummary.transactionsFound}</div>
+                    </div>
+                    <div className="p-2 rounded-lg bg-white/80 dark:bg-black/30 border border-emerald-100 dark:border-emerald-900/40">
+                      <div className="text-gray-500 dark:text-gray-400 text-[10px] uppercase font-semibold">Imported</div>
+                      <div className="text-base font-bold text-emerald-600 dark:text-emerald-400">{scanSummary.imported}</div>
+                    </div>
+                    <div className="p-2 rounded-lg bg-white/80 dark:bg-black/30 border border-emerald-100 dark:border-emerald-900/40">
+                      <div className="text-gray-500 dark:text-gray-400 text-[10px] uppercase font-semibold">Duplicates Skipped</div>
+                      <div className="text-base font-bold text-amber-600 dark:text-amber-400">{scanSummary.skippedDuplicates}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {scanMessage && !scanSummary && (
                 <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-xs">
                   {scanMessage}
                 </div>
@@ -404,7 +452,7 @@ export const SmsExpenseModal: React.FC<SmsExpenseModalProps> = ({
                 <div className="flex items-center justify-between text-xs text-gray-500">
                   <div className="flex items-center gap-1.5">
                     <label htmlFor="test-sender-input" className="font-semibold text-gray-700 dark:text-gray-300">Sender ID:</label>
-                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">(TRAI Header: Must end with -S)</span>
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">(Bank or TRAI Header, e.g. AD-ICICIB, HDFCBK)</span>
                   </div>
                   <input
                     id="test-sender-input"

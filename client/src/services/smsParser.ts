@@ -1,37 +1,84 @@
 import { ExpenseCategory, ParsedSmsTransaction } from '../types';
 
 /**
- * Normalizes merchant names by cleaning trailing punctuation, stop words,
- * and normalizing uppercase bank strings.
+ * Converts any string into Title Case (e.g. "ARPITA PRIYADAR" -> "Arpita Priyadar")
+ * Preserves banking acronyms such as "ATM", "UPI", and "PNR".
  */
-function cleanMerchantName(raw: string): string {
+export function toTitleCase(raw: string): string {
+  if (!raw) return '';
+  const cleaned = raw.trim().replace(/\s+/g, ' ');
+  return cleaned
+    .split(' ')
+    .map((word) => {
+      if (!word) return '';
+      if (word.toUpperCase() === 'ATM') return 'ATM';
+      if (word.toUpperCase() === 'UPI') return 'UPI';
+      if (word.toUpperCase() === 'PNR') return 'PNR';
+      if (word.includes('-')) {
+        return word
+          .split('-')
+          .map((sub) => {
+            if (!sub) return '';
+            if (sub.toUpperCase() === 'ATM') return 'ATM';
+            if (sub.toUpperCase() === 'UPI') return 'UPI';
+            return sub.charAt(0).toUpperCase() + sub.slice(1).toLowerCase();
+          })
+          .join('-');
+      }
+      if (word.includes('.')) {
+        return word
+          .split('.')
+          .map((sub) => {
+            if (!sub) return '';
+            if (sub.toUpperCase() === 'ATM') return 'ATM';
+            return sub.charAt(0).toUpperCase() + sub.slice(1).toLowerCase();
+          })
+          .join('.');
+      }
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(' ');
+}
+
+/**
+ * Normalizes payee and merchant names by cleaning trailing punctuation, stop words,
+ * handles, and formatting in clean Title Case.
+ */
+export function cleanMerchantName(raw: string): string {
   if (!raw) return '';
 
   let cleaned = raw
     .trim()
     .replace(/^[\s,.\-_:;]+|[\s,.\-_:;]+$/g, '')
     // Strip trailing reference, date, or balance noise
-    .replace(/\s+(?:on|via|ref|upi|avl|bal|using|dated|rrn|txn|imps|neft|to|at)\b.*$/i, '')
+    .replace(/\s+(?:on|via|ref|using|dated|rrn|txn|imps|neft)\b.*$/i, '')
     .replace(/\s+(?:A\/c|card|ending|\*+|xx+).*$/i, '')
     .trim();
 
   // Strip excessive whitespace
   cleaned = cleaned.replace(/\s+/g, ' ');
 
-  // Clean VPA handles like xyz@okaxis -> xyz
+  // Clean VPA handles like xyz@okaxis -> xyz or arpita.priyadar@okaxis -> arpita priyadar
   if (cleaned.includes('@')) {
     const handleMatch = cleaned.match(/^([A-Za-z0-9._\-]+)@/);
     if (handleMatch && handleMatch[1]) {
-      cleaned = handleMatch[1];
+      cleaned = handleMatch[1].replace(/[._\-]+/g, ' ').trim();
     }
   }
 
-  // Capitalize nicely if all uppercase
-  if (cleaned === cleaned.toUpperCase() && cleaned.length > 2) {
-    cleaned = cleaned
-      .split(' ')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(' ');
+  // Strip leading 'vpa' or 'to' if accidentally caught
+  cleaned = cleaned.replace(/^(?:vpa|to)\s+/i, '').trim();
+
+  // If candidate is purely numbers or too short
+  if (/^\d+$/.test(cleaned) || cleaned.length < 2) {
+    return '';
+  }
+
+  // Always capitalize nicely in Title Case
+  cleaned = toTitleCase(cleaned);
+
+  if (/^(upi|vpa|bank|transaction|account|card|rs|inr)$/i.test(cleaned)) {
+    return '';
   }
 
   return cleaned || 'Bank Transaction';
@@ -486,30 +533,30 @@ export function parseSmsTransaction(
 
   let referenceId: string | undefined;
 
-  // 1. Standard 12-digit Indian UPI / RRN numbers (NPCI standard: 12 numeric digits)
+  // 1. Standard 12-digit Indian UPI / UTR / RRN / IMPS / NEFT numbers (NPCI standard: 12 numeric digits)
   // Handles:
   // - "UPI:131834525249", "UPI: 131834525249", "UPI: \"131834525249\"", "UPI: '131834525249'"
   // - "UPI/131834525249/Merchant", "UPI/CR/131834525249/...", "UPI/DR/131834525249/..."
   // - "Info: UPI/131834525249/...", "towards UPI:131834525249"
-  // - "RRN 131834525249", "UPI Ref 131834525249", "Ref No. 131834525249", "Txn ID 131834525249"
+  // - "RRN 131834525249", "UPI Ref 131834525249", "Ref No. 131834525249", "Txn ID 131834525249", "UTR:663416590461"
   const upi12DigitMatch =
     text.match(
-      /\b(?:upi(?:\s*(?:ref|reference|rrn|txn|id|no))?|rrn|ref(?:\s+no\.?)?|txn\s*(?:id|no\.?)?|trans\s+id|transaction\s+id|utr|imps\s+ref)\s*[:#\/=\s-]*["']?\s*(\d{12})\b/i
+      /\b(?:upi(?:\s*(?:ref|reference|rrn|txn|id|no))?|rrn|ref(?:\s*(?:no\.?|num\.?|id))?|reference(?:\s*(?:no\.?|id))?|txn\s*(?:id|no\.?|num\.?)?|trans\s+id|transaction\s+id|utr(?:\s*(?:no\.?|num\.?|id))?|imps(?:\s*(?:ref|rrn|txn|id|no\.?))?|neft(?:\s*(?:ref|id|no\.?))?|rtgs(?:\s*(?:ref|id|no\.?))?)\s*[:#\/=\s-]*["']?\s*(\d{12})\b/i
     ) ||
     text.match(
-      /\bupi[\/:\s]+(?:cr|dr|[a-z0-9_-]+)[\/:\s]+["']?(\d{12})\b/i
+      /\b(?:upi|utr|imps|rrn)[\/:\s]+(?:cr|dr|[a-z0-9_-]+)[\/:\s]+["']?(\d{12})\b/i
     ) ||
     text.match(
-      /\b(?:towards|by|via|info:?)\s+upi[:\/]\s*["']?(\d{12})\b/i
+      /\b(?:towards|by|via|info:?)\s+(?:upi|utr|imps)[:\/]\s*["']?(\d{12})\b/i
     ) ||
-    text.match(/\bupi[:#\/=\s-]+["']?\s*(\d{12})\b/i);
+    text.match(/\b(?:upi|utr)[:#\/=\s-]+["']?\s*(\d{12})\b/i);
 
-  // 2. General alphanumeric reference / transaction IDs (e.g., REF-DOMINOS-9988, 100003928194)
+  // 2. General alphanumeric reference / transaction IDs (e.g., UTR PUNB12345678, REF-DOMINOS-9988, 100003928194)
   const generalRefMatch =
     text.match(
-      /\b(?:upi\s*(?:ref|txn|reference|id|no)|ref(?:\s+no\.?)?|rrn|txn\s*(?:id|no\.?)?|trans\s+id|transaction\s+id|imps\s+ref|utr)\s*[:#\/=\s-]*["']?\s*([A-Za-z0-9_-]{5,30})\b/i
+      /\b(?:upi\s*(?:ref|txn|reference|id|no)|ref(?:\s*(?:no\.?|num\.?|id))?|reference(?:\s*(?:no\.?|id))?|rrn|txn\s*(?:id|no\.?)?|trans\s+id|transaction\s+id|imps(?:\s*ref)?|neft(?:\s*ref)?|rtgs(?:\s*ref)?|utr(?:\s*(?:no\.?|id))?)\s*[:#\/=\s-]*["']?\s*([A-Za-z0-9_-]{5,30})\b/i
     ) ||
-    text.match(/\bupi[:#\/=\s]+["']?\s*([A-Za-z0-9_-]{5,30})\b/i);
+    text.match(/\b(?:upi|utr)[:#\/=\s]+["']?\s*([A-Za-z0-9_-]{5,30})\b/i);
 
   let candidateRef = upi12DigitMatch ? upi12DigitMatch[1] : (generalRefMatch ? generalRefMatch[1] : undefined);
   if (candidateRef) {
@@ -554,42 +601,137 @@ export function parseSmsTransaction(
   } else if (transactionType === 'income') {
     // Income credit: "by Salary", "from Zomato Refund", "deposited by Client"
     const fromMatch = text.match(/\b(?:from|by)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:on|via|ref|upi|avl|bal|\.|\n|$))/i);
-    rawMerchant = fromMatch ? `${fromMatch[1]} Refund/Deposit` : 'Income Deposit';
+    rawMerchant = fromMatch ? `${cleanMerchantName(fromMatch[1])} Refund/Deposit` : 'Income Deposit';
   } else {
-    // Debit merchant patterns
-    const merchantPatterns = [
-      /\b(?:paid to|transfer to|transferred to|sent to)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:via|on|ref|using|upi|dated|rrn|avl|bal|\()|[\.\n]|\s*$)/i,
-      /\b(?:towards|for)\s+(?:vpa\s+)?([A-Za-z0-9\s._@\-]+?)(?:\s+(?:via|on|ref|using|upi|dated|rrn|avl|bal|\(|\.)|[\.\n]|\s*$)/i,
-      /\bat\s+([A-Za-z0-9\s&'.-]+?)(?:\s+(?:on|via|ref|using|upi|dated|rrn|avl|bal|\()|[\.\n]|\s*$)/i,
-      /\b(?:purchase at|purchase of [A-Za-z0-9.]+\s+at|used at)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:on|via|ref|using|upi|dated|rrn|avl|bal|\()|[\.\n]|\s*$)/i,
-      /\b(?:to|vpa)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:on|via|ref|using|upi|dated|rrn|avl|bal|\()|[\.\n]|\s*$)/i,
-      /\binfo:\s*([A-Za-z0-9\s._@\-]+?)(?:\s+(?:on|via|ref|using|upi|dated|rrn|avl|bal|\()|[\.\n]|\s*$)/i,
-    ];
+    // 1. Payee credited patterns:
+    // Pattern 1a: "credited to [NAME]" or "credited: [NAME]"
+    const creditedToMatch = text.match(
+      /\bcredited\s*(?:to|with|in)?\s*[:\-]?\s*([A-Za-z0-9][A-Za-z0-9\s._@\-]+?)(?:\s+(?:on|via|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i
+    );
+    if (creditedToMatch && creditedToMatch[1]) {
+      const candidate = cleanMerchantName(creditedToMatch[1]);
+      if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa|your|bal|balance)$/i.test(candidate)) {
+        rawMerchant = candidate;
+      }
+    }
 
-    for (const pat of merchantPatterns) {
-      const match = text.match(pat);
-      if (match && match[1]) {
-        const candidate = cleanMerchantName(match[1].trim());
+    // Pattern 1b: "[NAME] credited" (e.g. "; ARPITA PRIYADAR credited." or "ARPITA PRIYADAR credited.")
+    if (!rawMerchant) {
+      const nameCreditedMatch = text.match(
+        /(?:;\s*|,\s*|\.\s*|\n\s*|^)\s*([A-Za-z][A-Za-z0-9\s._@\-]{1,40})\s+credited\b/i
+      );
+      if (nameCreditedMatch && nameCreditedMatch[1]) {
+        const candidate = cleanMerchantName(nameCreditedMatch[1]);
+        if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa|your|bal|balance|and)$/i.test(candidate)) {
+          rawMerchant = candidate;
+        }
+      }
+    }
+
+    // 2. "paid to [Name]", "sent to [Name]", "transfer to [Name]", "transferred to [Name]"
+    if (!rawMerchant) {
+      const directPayeeMatch = text.match(
+        /\b(?:paid to|transfer to|transferred to|sent to)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:via|on|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i
+      );
+      if (directPayeeMatch && directPayeeMatch[1]) {
+        const candidate = cleanMerchantName(directPayeeMatch[1]);
+        if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa|your)$/i.test(candidate)) {
+          rawMerchant = candidate;
+        }
+      }
+    }
+
+    // 3. Slash delimited UPI format: UPI/DR/663416590461/PAYEE/ or UPI/663416590461/PAYEE/ or Info: UPI/663416590461/PAYEE
+    if (!rawMerchant) {
+      const upiSlashMatch =
+        text.match(/\bupi[\/:\s]+(?:cr|dr)[\/:\s]+(?:\d+)[\/:\s]+([A-Za-z0-9\s._@\-]+?)(?:[\/:\.\n;]|\s+(?:on|via|ref|bal)|$)/i) ||
+        text.match(/\bupi[\/:\s]+(?:\d{10,14})[\/:\s]+([A-Za-z0-9\s._@\-]+?)(?:[\/:\.\n;]|\s+(?:on|via|ref|bal)|$)/i) ||
+        text.match(/\binfo:\s*upi[\/:\s]+(?:\d+)[\/:\s]+([A-Za-z0-9\s._@\-]+?)(?:[\/:\.\n;]|\s+(?:on|via|ref|bal)|$)/i);
+      if (upiSlashMatch && upiSlashMatch[1]) {
+        const candidate = cleanMerchantName(upiSlashMatch[1]);
+        if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa)$/i.test(candidate)) {
+          rawMerchant = candidate;
+        }
+      }
+    }
+
+    // 4. "purchase at", "purchase of ... at", "spent at", "used at", "at [Merchant]"
+    if (!rawMerchant) {
+      const atMerchantMatch =
+        text.match(/\b(?:purchase at|purchase of\s+[A-Za-z0-9.]+\s+at|used at|spent on [A-Za-z0-9\s]+\s+at|spent at)\s+([A-Za-z0-9\s&'.-]+?)(?:\s+(?:on|via|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i) ||
+        text.match(/\bat\s+([A-Za-z0-9\s&'.-]+?)(?:\s+(?:on|via|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i);
+      if (atMerchantMatch && atMerchantMatch[1]) {
+        const candidate = cleanMerchantName(atMerchantMatch[1]);
+        if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa)$/i.test(candidate)) {
+          rawMerchant = candidate;
+        }
+      }
+    }
+
+    // 5. "towards [Name]" or "for [Name]" (excluding "for Rs 500" amount descriptions)
+    if (!rawMerchant) {
+      const towardsMatch = text.match(
+        /\b(?:towards|for\s+(?!(?:rs\.?|inr|₹|\$|\d|pnr)))\s+(?:vpa\s+)?([A-Za-z0-9\s._@\-]+?)(?:\s+(?:via|on|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i
+      );
+      if (towardsMatch && towardsMatch[1]) {
+        const candidate = cleanMerchantName(towardsMatch[1]);
         if (
           candidate &&
-          candidate.length >= 2 &&
-          !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi)/i.test(candidate) &&
+          !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa|your)$/i.test(candidate) &&
           !/^\d{6,}$/.test(candidate.replace(/\D/g, ''))
         ) {
           rawMerchant = candidate;
-          break;
+        }
+      }
+    }
+
+    // 6. "to [Name]" or "to vpa [handle]"
+    if (!rawMerchant) {
+      const toMatch = text.match(
+        /\b(?:to|vpa)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:via|on|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i
+      );
+      if (toMatch && toMatch[1]) {
+        const candidate = cleanMerchantName(toMatch[1]);
+        if (
+          candidate &&
+          !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa|your)$/i.test(candidate) &&
+          !/^\d{6,}$/.test(candidate.replace(/\D/g, ''))
+        ) {
+          rawMerchant = candidate;
+        }
+      }
+    }
+
+    // 7. "Info: [Merchant]"
+    if (!rawMerchant) {
+      const infoMatch = text.match(/\binfo:\s*([A-Za-z0-9\s._@\-]+?)(?:\s+(?:on|via|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i);
+      if (infoMatch && infoMatch[1]) {
+        const candidate = cleanMerchantName(infoMatch[1]);
+        if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa)$/i.test(candidate)) {
+          rawMerchant = candidate;
+        }
+      }
+    }
+
+    // 8. UPI VPA handle standalone if no name found yet: e.g. "arpita@okaxis" or "swiggy@icici"
+    if (!rawMerchant) {
+      const vpaMatch = text.match(/\b([A-Za-z0-9._\-]{3,30}@[A-Za-z]{2,15})\b/i);
+      if (vpaMatch && vpaMatch[1]) {
+        const candidate = cleanMerchantName(vpaMatch[1]);
+        if (candidate) {
+          rawMerchant = candidate;
         }
       }
     }
   }
 
-  // Clean merchant name
+  // Clean merchant / payee name in Title Case
   let merchant = cleanMerchantName(rawMerchant);
 
   // If merchant extraction yielded generic noise or nothing, try sender or fallback
   if (!merchant || /^(bank|transaction|account|card|upi|rs|inr)$/i.test(merchant)) {
-    // If sender is a TRAI Service Header like "VM-IRCTCi-S", extract entity "IRCTC"
-    const traiMatch = sender.match(/^[A-Za-z]{2}-([A-Za-z0-9]+)-[sS]$/);
+    // If sender is a TRAI Service Header like "VM-IRCTCi-S" or "AD-IRCTC", extract entity "IRCTC"
+    const traiMatch = sender.match(/^[A-Za-z]{2}-([A-Za-z0-9]+)(?:-[sStTpP])?$/);
     if (traiMatch && !/^(bank|sms|alert|txn|otp|info)/i.test(traiMatch[1])) {
       const entity = traiMatch[1];
       if (/irctc/i.test(entity)) {
@@ -632,9 +774,11 @@ export function parseSmsTransaction(
     amount,
     currency,
     merchant,
+    payee: merchant,
     category,
     paymentMethod,
     bankOrAccount,
+    bankName: matchedBank ? matchedBank.name : undefined,
     accountLast4,
     referenceId,
     date,

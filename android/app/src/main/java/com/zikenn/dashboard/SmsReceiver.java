@@ -151,16 +151,13 @@ public class SmsReceiver extends BroadcastReceiver {
                 return;
             }
 
-            // 4. TRAI Service Message Header Check:
-            // Under Telecom Regulatory Authority of India (TRAI) regulations, all legitimate
-            // transactional & service SMS have titles ending with the letter "S" (e.g. AD-ICICIT-S,
-            // AX-AXISBK-S, VM-IRCTCi-S, VA-UNIONB-S, AD-SBIUPI-S). All other SMS without 'S' in the end
-            // must NOT be detected.
+            // 4. TRAI Service Message Header & Financial Alert Check:
             boolean isTraiService = isTraiServiceSender(sender);
-            Log.i(TAG, "[SMS_RECEIVER] TRAI Service Check for title '" + sender + "': " + (isTraiService ? "PASSED (-S header detected)" : "REJECTED (No -S suffix)"));
+            boolean isFinancial = isLikelyFinancialTransaction(sender, body);
+            Log.i(TAG, "[SMS_RECEIVER] Filter check for title '" + sender + "': isTraiService=" + isTraiService + ", isFinancial=" + isFinancial);
 
-            if (!isTraiService) {
-                Log.i(TAG, "[SMS_RECEIVER] Ignored non-service SMS. Sender '" + sender + "' does not end with '-S' under TRAI specifications.");
+            if (!isTraiService && !isFinancial) {
+                Log.i(TAG, "[SMS_RECEIVER] Ignored non-service and non-financial SMS from '" + sender + "'.");
                 return;
             }
 
@@ -204,14 +201,47 @@ public class SmsReceiver extends BroadcastReceiver {
 
     /**
      * Checks if the sender/title meets Telecom Regulatory Authority of India (TRAI)
-     * Service Message specifications.
-     * Transactional/service messages end with the letter "S" (e.g., AD-ICICIT-S, AX-AXISBK-S,
-     * VM-IRCTCi-S, VA-UNIONB-S, AD-SBIUPI-S). All other titles not ending in S are ignored.
+     * Service Message specifications or standard bank sender format.
      */
     public static boolean isTraiServiceSender(String sender) {
         if (sender == null) return false;
         String clean = sender.trim().toUpperCase();
-        return clean.endsWith("-S");
+
+        // Reject personal phone numbers
+        if (clean.replaceAll("[\\s-]", "").matches("^\\+?\\d{9,}$")) {
+            return false;
+        }
+
+        // Reject promotional headers (-P, PROMO, OFFER, BAJAJ)
+        if (clean.endsWith("-P") || clean.contains("PROMO") || clean.contains("OFFER") || clean.equals("BAJAJ")) {
+            return false;
+        }
+
+        // Accept TRAI service suffixes (-S, -T)
+        if (clean.endsWith("-S") || clean.endsWith("-T")) {
+            return true;
+        }
+
+        // Known bank / financial service keywords
+        String[] bankKeywords = {
+            "ICICI", "HDFC", "SBI", "AXIS", "KOTAK", "PNB", "CANARA", "CANBNK",
+            "BOB", "BARODA", "UNION", "INDUS", "FEDERAL", "FEDBNK", "IDFC",
+            "YESB", "PAYTM", "GPAY", "PHONEPE", "BHIM", "UPI", "AIRTEL", "AMEX",
+            "CITI", "STANDARD", "SCB", "RBL", "IDBI", "BANDHAN", "AUBANK", "IOB",
+            "CENTRAL", "UCO", "INDIANB", "MAHABANK", "POSTBK", "IPPB"
+        };
+        for (String kw : bankKeywords) {
+            if (clean.contains(kw)) {
+                return true;
+            }
+        }
+
+        // Standard 2-letter prefix + hyphen + alphanumeric sender ID format (e.g. AD-ICICIB, BZ-SBIINB)
+        if (clean.matches("^[A-Z]{2}-[A-Z0-9]{5,8}$")) {
+            return true;
+        }
+
+        return false;
     }
 
     /**

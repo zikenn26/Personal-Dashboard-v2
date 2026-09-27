@@ -222,8 +222,8 @@ public class SmsTransactionPlugin extends Plugin {
                     String body = cursor.getString(cursor.getColumnIndexOrThrow("body"));
                     long date = cursor.getLong(cursor.getColumnIndexOrThrow("date"));
 
-                    // Target only TRAI Service SMS (ending with -S) and financial transactions
-                    if (SmsReceiver.isTraiServiceSender(address) && SmsReceiver.isLikelyFinancialTransaction(address, body)) {
+                    // Scan all genuine bank transaction SMS from inbox
+                    if (SmsReceiver.isLikelyFinancialTransaction(address, body) || SmsReceiver.isEligibleBankSender(address, body)) {
                         JSObject item = new JSObject();
                         item.put("sender", address);
                         item.put("body", body);
@@ -249,9 +249,8 @@ public class SmsTransactionPlugin extends Plugin {
      */
     public static void handleIncomingSms(Context context, String sender, String body, long timestamp) {
         try {
-            // Under TRAI regulations, only SMS headers ending with -S are monitored
-            if (!SmsReceiver.isTraiServiceSender(sender)) {
-                Log.i(TAG, "[PLUGIN_SMS] Dropped non-service SMS from: " + sender + " (not ending in -S)");
+            if (!SmsReceiver.isLikelyFinancialTransaction(sender, body) && !SmsReceiver.isEligibleBankSender(sender, body)) {
+                Log.i(TAG, "[PLUGIN_SMS] Dropped non-financial SMS from: " + sender);
                 return;
             }
 

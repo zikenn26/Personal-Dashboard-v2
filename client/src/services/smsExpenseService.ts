@@ -31,7 +31,12 @@ export const smsPluginWebImpl = {
   isEnabled: async () => ({ enabled: true }),
   getPendingSms: async () => ({ messages: [] as Array<{ sender: string; body: string; timestamp: number }> }),
   clearPendingSms: async () => ({ success: true }),
-  readRecentSms: async () => ({ messages: [] as Array<{ sender: string; body: string; timestamp: number }> }),
+  readRecentSms: async (opts?: { limit?: number }) => {
+    if (typeof (smsPluginWebImpl as any)._inboxMock === 'function') {
+      return (smsPluginWebImpl as any)._inboxMock(opts);
+    }
+    return { messages: [] as Array<{ sender: string; body: string; timestamp: number }> };
+  },
   logDiagnostic: async () => {},
   addListener: async () => ({ remove: () => {} }),
 };
@@ -109,13 +114,47 @@ export const SmsTransaction = registerPlugin<SmsTransactionPluginInterface>('Sms
 /**
  * Under Telecom Regulatory Authority of India (TRAI) DLT regulations,
  * legitimate transactional and banking service messages are assigned headers ending
- * with the letter "S" (e.g., AD-ICICIT-S, AX-AXISBK-S, VM-IRCTCi-S, VA-UNIONB-S, AD-SBIUPI-S).
- * All other SMS whose title does not end with 'S' / '-S' are ignored by the app.
+ * with the letter "S" or "T" (e.g., AD-ICICIT-S, AX-AXISBK-S, VM-IRCTCi-S, VA-UNIONB-S, AD-SBIUPI-S)
+ * or standard alphanumeric bank codes (e.g. AD-ICICIB, VM-HDFCBK, BZ-SBIINB, HDFCBK, ICICIB, SBIUPI).
+ * Personal numbers (+91...) and promotional headers (-P, PROMO, etc.) are ignored.
  */
 export function isTraiServiceSender(sender: string): boolean {
   if (!sender || typeof sender !== 'string') return false;
   const clean = sender.trim().toUpperCase();
-  return clean.endsWith('-S');
+
+  // Reject personal phone numbers (+91..., 9+ consecutive digits)
+  if (/^\+?\d{9,}$/.test(clean.replace(/[\s-]/g, ''))) {
+    return false;
+  }
+
+  // Reject promotional senders ending with -P or containing PROMO / OFFER / BAJAJ
+  if (clean.endsWith('-P') || clean.includes('PROMO') || clean.includes('OFFER') || clean === 'BAJAJ') {
+    return false;
+  }
+
+  // Accept TRAI service / transactional suffix (-S, -T)
+  if (clean.endsWith('-S') || clean.endsWith('-T')) {
+    return true;
+  }
+
+  // Known bank / financial service keywords
+  const bankKeywords = [
+    'ICICI', 'HDFC', 'SBI', 'AXIS', 'KOTAK', 'PNB', 'CANARA', 'CANBNK',
+    'BOB', 'BARODA', 'UNION', 'INDUS', 'FEDERAL', 'FEDBNK', 'IDFC',
+    'YESB', 'PAYTM', 'GPAY', 'PHONEPE', 'BHIM', 'UPI', 'AIRTEL', 'AMEX',
+    'CITI', 'STANDARD', 'SCB', 'RBL', 'IDBI', 'BANDHAN', 'AUBANK', 'IOB',
+    'CENTRAL', 'UCO', 'INDIANB', 'MAHABANK', 'POSTBK', 'IPPB'
+  ];
+  if (bankKeywords.some((kw) => clean.includes(kw))) {
+    return true;
+  }
+
+  // Accept standard 2-letter operator prefix + hyphen + alphanumeric sender ID format (e.g. AD-ICICIB, BZ-SBIINB)
+  if (/^[A-Z]{2}-[A-Z0-9]{5,8}$/.test(clean)) {
+    return true;
+  }
+
+  return false;
 }
 
 class SmsExpenseService {
@@ -265,12 +304,12 @@ class SmsExpenseService {
     const processedFingerprints = Storage.getProcessedSmsFingerprints();
 
     // =========================================================================
-    // 1. HIGHEST-PRIORITY IDENTITY: Transaction / Reference ID (UPI Ref, RRN, Txn ID)
+    // 1. HIGHEST-PRIORITY IDENTITY: Transaction / Reference ID (UPI Ref, UTR, RRN, Txn ID, IMPS)
     // =========================================================================
-    const hasReferenceId = Boolean(parsed.referenceId && parsed.referenceId.trim());
+    const cleanRef = parsed.referenceId ? parsed.referenceId.trim().toUpperCase() : '';
+    const hasReferenceId = cleanRef.length > 0;
 
     if (hasReferenceId) {
-      const cleanRef = parsed.referenceId!.trim().toUpperCase();
       const refKey = `ref_id_${cleanRef}`;
 
       // Check if this exact Reference ID was already processed in fingerprint history
@@ -318,14 +357,17 @@ class SmsExpenseService {
       // CRITICAL REQUIREMENT:
       // If two SMS have different transaction/reference IDs, always create separate Spending entries,
       // even if they are from the same bank, same account, same merchant, and within five minutes.
-      // The 5-minute duplicate heuristic should be used only when no transaction/reference ID can be extracted.
-      // Since this transaction has a valid, non-duplicate reference ID, IT IS A GENUINE TRANSACTION.
+      // Since this transaction has a valid, non-duplicate reference ID, IT IS A GENUINE SEPARATE TRANSACTION.
       return { isDuplicate: false };
     }
 
     // =========================================================================
-    // 2. RAW SMS IDENTITY / HASH (When no reference ID is present)
+    // 2. TRANSACTIONS WITHOUT REFERENCE ID:
+    // Priority: Composite fingerprint & strict duplicate verification
+    // "Two payments to the same person with different amounts must create two separate transactions"
+    // "Never deduplicate using only payee, merchant, sender, or amount"
     // =========================================================================
+    // A. Protection against identical raw SMS delivery repeats
     if (rawBody && rawBody.trim()) {
       const rawHash = `raw_sms_${rawBody.trim().toLowerCase().replace(/\s+/g, ' ')}`;
       if (processedFingerprints.includes(rawHash)) {
@@ -344,32 +386,43 @@ class SmsExpenseService {
       return { isDuplicate: true, reason: 'Duplicate: Duplicate SMS fingerprint already processed' };
     }
 
-    // =========================================================================
-    // 3. CONTEXTUAL & 5-MINUTE HEURISTIC (Strictly Fallback ONLY when NO Reference ID exists)
-    // =========================================================================
-    const cleanMerchant = parsed.merchant.toLowerCase().replace(/[^a-z0-9]/g, '');
+    // B. Composite fingerprint check: (bank + amount + timestamp + payee + message hash)
+    const cleanPayee = (parsed.payee || parsed.merchant || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cleanBank = (parsed.bankName || parsed.bankOrAccount || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const compositeKey = `composite_${cleanBank}_${parsed.amount.toFixed(2)}_${parsed.date}_${cleanPayee}_${parsed.time || ''}`;
+    if (processedFingerprints.includes(compositeKey)) {
+      return { isDuplicate: true, reason: 'Duplicate: Matching composite transaction fingerprint already processed' };
+    }
 
+    // C. Contextual matching: strictly fallback when NO reference ID exists.
+    // Must match: exact same amount, same date, same payee/merchant, within 3 minutes.
     const matchByDetails = existingExpenses.find((e) => {
+      // Different amounts to the same payee are NEVER duplicates:
+      if (Math.abs(Number(e.amount) - parsed.amount) > 0.01) return false;
+
       // Must match exact date
       if (e.date !== parsed.date) return false;
 
-      // Must match exact amount
-      if (Math.abs(Number(e.amount) - parsed.amount) > 0.01) return false;
+      // If existing expense has a specific reference ID and candidate does not,
+      // they cannot be assumed duplicates without identical raw text.
+      if (e.smsReferenceId && (!parsed.referenceId || e.smsReferenceId !== parsed.referenceId)) {
+        return false;
+      }
 
-      // Check merchant name similarity
-      const existingNameClean = e.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      // Check merchant / payee name similarity
+      const existingNameClean = (e.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       const merchantMatches =
-        cleanMerchant &&
-        (existingNameClean.includes(cleanMerchant) || cleanMerchant.includes(existingNameClean));
+        cleanPayee &&
+        (existingNameClean.includes(cleanPayee) || cleanPayee.includes(existingNameClean));
       if (!merchantMatches) return false;
 
-      // 5-minute duplicate heuristic:
+      // 3-minute duplicate heuristic for identical amount + payee without reference ID:
       if (e.time && parsed.time) {
         const [eH, eM] = e.time.split(':').map(Number);
         const [pH, pM] = parsed.time.split(':').map(Number);
         if (!isNaN(eH) && !isNaN(eM) && !isNaN(pH) && !isNaN(pM)) {
           const diffMinutes = Math.abs((eH * 60 + eM) - (pH * 60 + pM));
-          if (diffMinutes > 5) {
+          if (diffMinutes > 3) {
             return false;
           }
         }
@@ -381,7 +434,7 @@ class SmsExpenseService {
     if (matchByDetails) {
       return {
         isDuplicate: true,
-        reason: `Duplicate: Identical transaction of ₹${parsed.amount} at "${matchByDetails.name}" already logged for ${parsed.date}`,
+        reason: `Duplicate: Identical transaction of ₹${parsed.amount} to "${matchByDetails.name}" already logged for ${parsed.date}`,
       };
     }
 
@@ -409,11 +462,9 @@ class SmsExpenseService {
     // =========================================================================
     // 0. TRAI SERVICE SENDER FILTER (TRAI Regulation Check)
     // =========================================================================
-    // Target only SMS whose sender/header ends with '-S' (case-insensitive, e.g. AD-ICICIT-S,
-    // AX-AXISBK-S, VM-IRCTCi-S, VA-UNIONB-S, AD-SBIUPI-S). All other SMS not originating
-    // from a sender ending in '-S' are rejected immediately before parsing/storage.
+    // Target only SMS whose sender/header is a legitimate banking / transaction service sender.
     if (!isTraiServiceSender(sender)) {
-      const skipReason = `SMS ignored: Sender title "${sender || '(empty)'}" does not end with '-S'. Rejected immediately before parsing/storage.`;
+      const skipReason = `SMS ignored: Sender title "${sender || '(empty)'}" is not an authorized banking or transactional service sender. Rejected before parsing/storage.`;
       logDeviceDiagnostic('warn', 'LifeOS_SMS:SKIPPED_NOT_TRAI_SERVICE', skipReason, {
         sender: sender || '(unknown)',
         sanitizedPreview: sanitizedBody.slice(0, 100),
@@ -596,7 +647,7 @@ class SmsExpenseService {
 
       const newExpense: ExpenseItem = {
         id: `exp-sms-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-        name: parsed.merchant,
+        name: parsed.payee || parsed.merchant,
         amount: parsed.amount,
         category: parsed.category,
         date: parsed.date,
@@ -608,6 +659,8 @@ class SmsExpenseService {
         source: 'sms_auto',
         transactionType: parsed.type,
         bankOrAccount: parsed.bankOrAccount,
+        payee: parsed.payee || parsed.merchant,
+        bankName: parsed.bankName,
         active: true,
       };
 
@@ -621,6 +674,9 @@ class SmsExpenseService {
       if (parsed.referenceId) {
         Storage.addProcessedSmsFingerprint(`ref_id_${parsed.referenceId.trim().toUpperCase()}`);
       }
+      const cleanPayee = (parsed.payee || parsed.merchant || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const cleanBank = (parsed.bankName || parsed.bankOrAccount || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      Storage.addProcessedSmsFingerprint(`composite_${cleanBank}_${parsed.amount.toFixed(2)}_${parsed.date}_${cleanPayee}_${parsed.time || ''}`);
 
       // Record audit log
       const logItem: SmsTransactionLogItem = {
@@ -742,20 +798,25 @@ class SmsExpenseService {
   /**
    * Scans device SMS inbox for recent transaction messages (requires READ_SMS permission)
    */
-  public async scanRecentInbox(limit: number = 30): Promise<{
+  public async scanRecentInbox(limit: number = 50): Promise<{
     scanned: number;
+    transactionsFound: number;
+    imported: number;
     logged: number;
     skippedDuplicates: number;
     ignored: number;
   }> {
     const summary = {
       scanned: 0,
+      transactionsFound: 0,
+      imported: 0,
       logged: 0,
       skippedDuplicates: 0,
       ignored: 0,
     };
 
-    if (!(await this.isNativePluginAvailable())) {
+    const isNative = await this.isNativePluginAvailable();
+    if (!isNative && typeof (smsPluginWebImpl as any)._inboxMock !== 'function') {
       return summary;
     }
 
@@ -767,8 +828,11 @@ class SmsExpenseService {
       for (const msg of messages) {
         const result = this.processSms(msg.body, msg.sender, msg.timestamp, false);
         if (result.status === 'logged') {
+          summary.transactionsFound++;
+          summary.imported++;
           summary.logged++;
         } else if (result.status === 'duplicate_skipped') {
+          summary.transactionsFound++;
           summary.skippedDuplicates++;
         } else {
           summary.ignored++;
@@ -780,6 +844,19 @@ class SmsExpenseService {
       console.warn('Failed to scan recent inbox SMS:', err);
       throw err;
     }
+  }
+
+  /**
+   * Helper method for testing or simulating inbox scan in non-native environments
+   */
+  public setInboxReaderForTesting(
+    fn:
+      | ((opts?: { limit?: number }) => Promise<{
+          messages: Array<{ sender: string; body: string; timestamp: number }>;
+        }>)
+      | null
+  ) {
+    (smsPluginWebImpl as any)._inboxMock = fn;
   }
 
   /**

@@ -131,6 +131,8 @@ export interface ExpenseItem {
   rawSmsText?: string;
   transactionType?: 'expense' | 'income';
   bankOrAccount?: string;
+  payee?: string;
+  bankName?: string;
 }
 
 export interface ParsedSmsTransaction {
@@ -139,9 +141,11 @@ export interface ParsedSmsTransaction {
   amount: number;
   currency: string;
   merchant: string;
+  payee?: string;
   category: ExpenseCategory | string;
   paymentMethod?: PaymentMethod | string;
   bankOrAccount?: string;
+  bankName?: string;
   accountLast4?: string;
   referenceId?: string;
   date: string; // YYYY-MM-DD

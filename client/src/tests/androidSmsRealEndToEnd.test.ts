@@ -146,13 +146,11 @@ describe('Real Android Device SMS Pipeline & End-to-End Test', () => {
       expect(isTraiServiceSender('ad-sbiupi-s')).toBe(true);
     });
 
-    it('rejects non-service SMS headers not ending with S (e.g. personal numbers, promo P headers, raw bank names)', () => {
+    it('rejects non-service SMS headers (e.g. personal numbers, promo P headers)', () => {
       expect(isTraiServiceSender('+919876543210')).toBe(false);
       expect(isTraiServiceSender('BAJAJ')).toBe(false);
       expect(isTraiServiceSender('AD-BAJAJF-P')).toBe(false);
       expect(isTraiServiceSender('AX-PROMO-P')).toBe(false);
-      expect(isTraiServiceSender('HDFCBK')).toBe(false);
-      expect(isTraiServiceSender('SBIUPI')).toBe(false);
     });
 
     it('successfully accepts SBI UPI transaction (which has no currency prefix)', () => {
