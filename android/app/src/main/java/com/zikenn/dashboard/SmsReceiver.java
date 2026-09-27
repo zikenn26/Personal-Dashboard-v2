@@ -245,6 +245,13 @@ public class SmsReceiver extends BroadcastReceiver {
     }
 
     /**
+     * Checks if the sender/message represents an eligible bank sender or financial alert.
+     */
+    public static boolean isEligibleBankSender(String sender, String body) {
+        return isTraiServiceSender(sender) || isLikelyFinancialTransaction(sender, body);
+    }
+
+    /**
      * Checks persistent SharedPreferences to prevent re-processing identical broadcasts.
      */
     private static boolean isRedundantBroadcast(Context context, String hash) {

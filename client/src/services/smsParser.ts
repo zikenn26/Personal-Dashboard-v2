@@ -203,9 +203,10 @@ function formatDateToYMD(d: Date): string {
 /**
  * Attempts to parse date strings found in SMS bodies like "23-Sep-26", "23/09/2026", "23-09-26", etc.
  */
-function extractDateFromSms(text: string, fallbackTimestamp: number): { date: string; time?: string } {
+function extractDateFromSms(text: string, fallbackTimestamp: number): { date: string; rawDate?: string; time?: string } {
   const fallbackDate = new Date(fallbackTimestamp || Date.now());
   let date = formatDateToYMD(fallbackDate);
+  let rawDate: string | undefined;
   let time = `${String(fallbackDate.getHours()).padStart(2, '0')}:${String(fallbackDate.getMinutes()).padStart(2, '0')}`;
 
   // 1. Time match: "14:35:20" or "02:30 PM"
@@ -224,6 +225,7 @@ function extractDateFromSms(text: string, fallbackTimestamp: number): { date: st
     /\b(\d{1,2})[-/\s]?(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[-/\s]?(\d{2,4})\b/i
   );
   if (textMonthMatch) {
+    rawDate = textMonthMatch[0];
     const day = parseInt(textMonthMatch[1], 10);
     const monthStr = textMonthMatch[2].toLowerCase();
     let year = parseInt(textMonthMatch[3], 10);
@@ -254,6 +256,7 @@ function extractDateFromSms(text: string, fallbackTimestamp: number): { date: st
     // Numeric date match: "23/09/2026" or "23-09-26"
     const numericDateMatch = text.match(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b/);
     if (numericDateMatch) {
+      rawDate = numericDateMatch[0];
       const day = parseInt(numericDateMatch[1], 10);
       const month = parseInt(numericDateMatch[2], 10) - 1;
       let year = parseInt(numericDateMatch[3], 10);
@@ -266,7 +269,7 @@ function extractDateFromSms(text: string, fallbackTimestamp: number): { date: st
     }
   }
 
-  return { date, time };
+  return { date, rawDate, time };
 }
 
 /**
@@ -479,17 +482,20 @@ export function parseSmsTransaction(
 
   let bankOrAccount: string | undefined;
   let accountLast4: string | undefined;
+  let maskedAccount: string | undefined;
 
-  // Account last digits: "A/c **1234", "account ending with 4567", "A/C 9876"
-  const accMatch = text.match(/\b(?:a\/c|acct|account)\s*(?:no\.?)?\s*(?:ending\s*)?[xX*]*(\d{3,5})\b/i);
+  // Account last digits: "Acct XX070", "A/c **1234", "account ending with 4567", "A/C 9876"
+  const accMatch = text.match(/\b(?:a\/c|acct|account)\s*(?:no\.?)?\s*(?:ending\s*)?([xX*]*\d{3,6})\b/i);
   if (accMatch) {
-    accountLast4 = accMatch[1];
+    maskedAccount = accMatch[1];
+    accountLast4 = accMatch[1].replace(/^[xX*]+/, '');
   }
 
   // Card last digits: "Card ending 4412", "Card XX2004", "Card **9012"
-  const cardMatch = text.match(/\bcard\s*(?:ending\s*)?[xX*]*(\d{4})\b/i);
+  const cardMatch = text.match(/\bcard\s*(?:ending\s*)?([xX*]*\d{4})\b/i);
   if (cardMatch) {
-    accountLast4 = cardMatch[1];
+    maskedAccount = cardMatch[1];
+    accountLast4 = cardMatch[1].replace(/^[xX*]+/, '');
   }
 
   // Bank name extraction from sender or body
@@ -518,13 +524,14 @@ export function parseSmsTransaction(
   ];
 
   const matchedBank = knownBanks.find((b) => b.test.test(sender) || b.test.test(text));
+  const bankName = matchedBank ? matchedBank.name : undefined;
   if (matchedBank) {
     bankOrAccount = matchedBank.name;
-    if (accountLast4) {
-      bankOrAccount += cardMatch ? ` (Card *${accountLast4})` : ` (A/c *${accountLast4})`;
+    if (maskedAccount) {
+      bankOrAccount += cardMatch ? ` (Card ${maskedAccount})` : ` (Acct ${maskedAccount})`;
     }
-  } else if (accountLast4) {
-    bankOrAccount = cardMatch ? `Card *${accountLast4}` : `A/c *${accountLast4}`;
+  } else if (maskedAccount) {
+    bankOrAccount = cardMatch ? `Card ${maskedAccount}` : `Acct ${maskedAccount}`;
   }
 
   // --------------------------------------------------------------------------
@@ -628,13 +635,26 @@ export function parseSmsTransaction(
       }
     }
 
-    // 2. "paid to [Name]", "sent to [Name]", "transfer to [Name]", "transferred to [Name]"
+    // 2. "debited to [Name]", "paid to [Name]", "sent to [Name]", "transfer to [Name]", "transferred to [Name]", "credited by [Name]"
     if (!rawMerchant) {
       const directPayeeMatch = text.match(
-        /\b(?:paid to|transfer to|transferred to|sent to)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:via|on|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i
+        /\b(?:debited to|paid to|transfer to|transferred to|sent to|credited by)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:via|on|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i
       );
       if (directPayeeMatch && directPayeeMatch[1]) {
         const candidate = cleanMerchantName(directPayeeMatch[1]);
+        if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa|your)$/i.test(candidate)) {
+          rawMerchant = candidate;
+        }
+      }
+    }
+
+    // 2b. "merchant [Name]" or "merchant: [Name]"
+    if (!rawMerchant) {
+      const merchantTagMatch = text.match(
+        /\bmerchant\s*[:\-]?\s*([A-Za-z0-9\s._@\-]+?)(?:\s+(?:via|on|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i
+      );
+      if (merchantTagMatch && merchantTagMatch[1]) {
+        const candidate = cleanMerchantName(merchantTagMatch[1]);
         if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa|your)$/i.test(candidate)) {
           rawMerchant = candidate;
         }
@@ -755,7 +775,9 @@ export function parseSmsTransaction(
   // --------------------------------------------------------------------------
 
   const category = inferExpenseCategory(text, merchant);
-  const { date, time } = extractDateFromSms(text, fallbackTime);
+  const dateResult = extractDateFromSms(text, fallbackTime);
+  const date = dateResult.date;
+  const time = dateResult.time;
 
   // Compute deterministic fingerprint
   const fingerprint = computeTransactionFingerprint(
@@ -768,20 +790,30 @@ export function parseSmsTransaction(
     time
   );
 
+  const cleanBankName = matchedBank ? matchedBank.name : undefined;
+  const displayAccount = maskedAccount || (accountLast4 ? `*${accountLast4}` : undefined);
+
   return {
     isTransaction: true,
     type: transactionType,
+    transactionType: transactionType === 'income' ? 'CREDIT' : 'DEBIT',
     amount,
     currency,
     merchant,
     payee: merchant,
+    rawPayee: rawMerchant ? rawMerchant.trim() : merchant,
     category,
     paymentMethod,
     bankOrAccount,
-    bankName: matchedBank ? matchedBank.name : undefined,
+    bank: cleanBankName,
+    bankName: cleanBankName,
+    account: displayAccount,
+    maskedAccount: displayAccount,
     accountLast4,
+    reference: referenceId,
     referenceId,
     date,
+    rawDate: dateResult.rawDate || date,
     time,
     rawSms: text,
     sender,

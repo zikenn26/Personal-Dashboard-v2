@@ -167,6 +167,10 @@ class SmsExpenseService {
    * Checks whether the current platform is Android (native Capacitor or Android browser)
    */
   public isAndroidDevice(): boolean {
+    if (typeof navigator !== 'undefined') {
+      const ua = navigator.userAgent || '';
+      if (/android/i.test(ua)) return true;
+    }
     return nativeService.isAndroid() || Capacitor.getPlatform() === 'android';
   }
 
@@ -231,7 +235,7 @@ class SmsExpenseService {
         const res = await SmsTransaction.checkPermissions();
         return (res.sms || (res.receiveSms === 'granted' ? 'granted' : 'prompt')) as any;
       }
-      return 'prompt';
+      return Storage.isSmsAutoTrackingEnabled() ? 'granted' : 'prompt';
     } catch {
       return 'prompt';
     }
@@ -247,7 +251,7 @@ class SmsExpenseService {
     try {
       if (Capacitor.isNativePlatform()) {
         const res = await SmsTransaction.requestPermissions();
-        const status = (res.sms || (res.receiveSms === 'granted' ? 'granted' : 'prompt')) as any;
+        const status = (res.sms || (res.receiveSms === 'granted' ? 'granted' : 'denied')) as any;
         if (status === 'granted') {
           await this.setAutoTrackingEnabled(true);
         }
@@ -663,8 +667,10 @@ class SmsExpenseService {
         source: 'sms_auto',
         transactionType: parsed.type,
         bankOrAccount: parsed.bankOrAccount,
+        bankName: parsed.bankName || parsed.bank,
+        maskedAccount: parsed.maskedAccount || parsed.account,
+        accountLast4: parsed.accountLast4,
         payee: parsed.payee || parsed.merchant,
-        bankName: parsed.bankName,
         active: true,
       };
 
@@ -804,18 +810,22 @@ class SmsExpenseService {
    */
   public async scanRecentInbox(limit: number = 50): Promise<{
     scanned: number;
+    recognized: number;
     transactionsFound: number;
     imported: number;
     logged: number;
     skippedDuplicates: number;
+    rejectedNonFinancial: number;
     ignored: number;
   }> {
     const summary = {
       scanned: 0,
+      recognized: 0,
       transactionsFound: 0,
       imported: 0,
       logged: 0,
       skippedDuplicates: 0,
+      rejectedNonFinancial: 0,
       ignored: 0,
     };
 
@@ -832,13 +842,16 @@ class SmsExpenseService {
       for (const msg of messages) {
         const result = this.processSms(msg.body, msg.sender, msg.timestamp, false);
         if (result.status === 'logged') {
+          summary.recognized++;
           summary.transactionsFound++;
           summary.imported++;
           summary.logged++;
         } else if (result.status === 'duplicate_skipped') {
+          summary.recognized++;
           summary.transactionsFound++;
           summary.skippedDuplicates++;
         } else {
+          summary.rejectedNonFinancial++;
           summary.ignored++;
         }
       }

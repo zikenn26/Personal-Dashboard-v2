@@ -107,9 +107,10 @@ public class SmsTransactionPlugin extends Plugin {
         boolean hasReceive = ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED;
         boolean hasRead = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED;
 
-        // On Android, RECEIVE_SMS is the primary permission required for incoming transaction logging
+        // On Android, RECEIVE_SMS or READ_SMS grant permission for transaction scanning/logging
+        String status = (hasReceive || hasRead) ? "granted" : "prompt";
         JSObject ret = new JSObject();
-        ret.put("sms", hasReceive ? "granted" : "prompt");
+        ret.put("sms", status);
         ret.put("receiveSms", hasReceive ? "granted" : "prompt");
         ret.put("readSms", hasRead ? "granted" : "prompt");
         call.resolve(ret);
@@ -121,23 +122,39 @@ public class SmsTransactionPlugin extends Plugin {
     }
 
     @PermissionCallback
-    private void smsPermissionCallback(PluginCall call) {
+    public void smsPermissionCallback(PluginCall call) {
         Context context = getContext();
         boolean hasReceive = ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED;
         boolean hasRead = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED;
 
-        if (hasReceive) {
+        if (hasReceive || hasRead) {
             // Automatically ensure tracking is enabled in SharedPreferences when permission is granted
             SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
             prefs.edit().putBoolean(KEY_SMS_AUTO_ENABLED, true).apply();
             Log.d(TAG, "SMS permissions granted; enabled KEY_SMS_AUTO_ENABLED");
         }
 
+        String status = (hasReceive || hasRead) ? "granted" : "denied";
         JSObject ret = new JSObject();
-        ret.put("sms", hasReceive ? "granted" : "prompt");
-        ret.put("receiveSms", hasReceive ? "granted" : "prompt");
-        ret.put("readSms", hasRead ? "granted" : "prompt");
+        ret.put("sms", status);
+        ret.put("receiveSms", hasReceive ? "granted" : "denied");
+        ret.put("readSms", hasRead ? "granted" : "denied");
         call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void openAppSettings(PluginCall call) {
+        try {
+            Intent intent = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            Uri uri = Uri.fromParts("package", getContext().getPackageName(), null);
+            intent.setData(uri);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            call.resolve();
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to open app settings", e);
+            call.reject("Could not open settings: " + e.getMessage());
+        }
     }
 
     @PluginMethod

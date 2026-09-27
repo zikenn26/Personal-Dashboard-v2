@@ -10,6 +10,9 @@ import { SwipeActionRow } from '../../gestures/SwipeActionRow';
 import { useLongPress } from '../../gestures/useLongPress';
 import { AndroidActionSheet, ActionSheetItem } from '../../components/AndroidActionSheet';
 import { QuickExpenseSheet } from '../../components/QuickExpenseSheet';
+import { compareExpensesByDateTimeDesc, getTransactionDisplayTitle } from '../../../../utils/expenseUtils';
+import { SmsTransaction } from '../../../../services/smsExpenseService';
+import { Capacitor } from '@capacitor/core';
 
 export interface AndroidMoneyScreenProps {
   expenses: ExpenseItem[];
@@ -80,6 +83,20 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
       return;
     }
 
+    // If permission is permanently denied, direct user to Android Settings
+    if (smsPermissionStatus === 'permanently_denied') {
+      try {
+        if (Capacitor.isNativePlatform() && (SmsTransaction as any).openAppSettings) {
+          await (SmsTransaction as any).openAppSettings();
+        } else {
+          toast.info('Please open Android Settings > Apps > LifeOS > Permissions to allow SMS.');
+        }
+      } catch {
+        toast.info('Please enable SMS permission in device Settings.');
+      }
+      return;
+    }
+
     // Direct permission request flow: Spending -> Allow SMS -> Android Permission Request
     try {
       const res = await smsExpenseService.requestPermission();
@@ -100,6 +117,8 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         toast.info('SMS permission not granted', {
           description: 'You can tap Allow SMS whenever you wish to enable auto-tracking.',
         });
+      } else if (res === 'prompt') {
+        setSmsPermissionStatus('prompt');
       } else if (res === 'unsupported') {
         setSmsPermissionStatus('unsupported');
         toast.info('SMS Auto-Logging is an Android-exclusive feature.');
@@ -145,7 +164,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
     };
   }, [expenses, currentYear, currentMonth, todayDateStr]);
 
-  // Filtered transactions
+  // Filtered transactions sorted newest -> older by actual date & time
   const filteredExpenses = useMemo(() => {
     return expenses
       .filter((e) => {
@@ -161,7 +180,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         }
         return true;
       })
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      .sort(compareExpensesByDateTimeDesc);
   }, [expenses, periodFilter, selectedCategory, currentYear, currentMonth, todayDateStr]);
 
   const handleDelete = (id: string) => {
@@ -203,43 +222,41 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5">
-          {onOpenSmsSettings && (
-            <button
-              type="button"
-              onClick={handleSmsAction}
-              className={`px-2.5 py-1.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer ${
-                smsPermissionStatus === 'granted' && isSmsEnabled
-                  ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
-                  : smsPermissionStatus === 'permanently_denied'
-                  ? 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300'
-                  : 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
-              }`}
-              title={
-                smsPermissionStatus === 'granted' && isSmsEnabled
-                  ? 'SMS Auto-Logging ON — Tap to manage'
-                  : smsPermissionStatus === 'permanently_denied'
-                  ? 'SMS Permission Unavailable — Open Settings'
-                  : 'Allow SMS Auto-Logging'
-              }
-            >
-              {smsPermissionStatus === 'granted' && isSmsEnabled ? (
-                <>
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>SMS Auto-Logging ON</span>
-                </>
-              ) : smsPermissionStatus === 'permanently_denied' ? (
-                <>
-                  <Settings className="w-3.5 h-3.5 text-gray-500" />
-                  <span>Open Settings</span>
-                </>
-              ) : (
-                <>
-                  <MessageSquare className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  <span>Allow SMS</span>
-                </>
-              )}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleSmsAction}
+            className={`px-2.5 py-1.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer ${
+              smsPermissionStatus === 'granted' && isSmsEnabled
+                ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                : smsPermissionStatus === 'permanently_denied'
+                ? 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300'
+                : 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+            }`}
+            title={
+              smsPermissionStatus === 'granted' && isSmsEnabled
+                ? 'SMS Auto-Logging ON — Tap to manage'
+                : smsPermissionStatus === 'permanently_denied'
+                ? 'SMS Permission Unavailable — Open Settings'
+                : 'Allow SMS Auto-Logging'
+            }
+          >
+            {smsPermissionStatus === 'granted' && isSmsEnabled ? (
+              <>
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>SMS Auto-Logging ON</span>
+              </>
+            ) : smsPermissionStatus === 'permanently_denied' ? (
+              <>
+                <Settings className="w-3.5 h-3.5 text-gray-500" />
+                <span>Open Settings</span>
+              </>
+            ) : (
+              <>
+                <MessageSquare className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span>Allow SMS</span>
+              </>
+            )}
+          </button>
 
           {onAddExpense && (
             <button
@@ -461,6 +478,13 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
     onLongPress();
   });
 
+  const displayTitle = getTransactionDisplayTitle(expense);
+  const secondaryParts = [
+    expense.bankName || expense.bankOrAccount,
+    expense.paymentMethod,
+    expense.maskedAccount,
+  ].filter(Boolean);
+
   return (
     <SwipeActionRow
       onSwipeLeft={onSwipeDelete}
@@ -479,18 +503,18 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
 
           <div className="min-w-0 flex-1">
             <span className="text-xs font-semibold text-gray-900 dark:text-white block truncate">
-              {expense.name}
+              {displayTitle}
             </span>
-            <div className="flex items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
+            <div className="flex items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 truncate">
               <span>{expense.category}</span>
-              <span>•</span>
-              <span>{expense.date}</span>
-              {expense.paymentMethod && (
+              {secondaryParts.length > 0 && (
                 <>
                   <span>•</span>
-                  <span className="font-mono">{expense.paymentMethod}</span>
+                  <span className="truncate">{secondaryParts.join(' • ')}</span>
                 </>
               )}
+              <span>•</span>
+              <span className="shrink-0">{expense.date}{expense.time ? ` ${expense.time}` : ''}</span>
             </div>
           </div>
         </div>
@@ -500,7 +524,7 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
             ₹{Number(expense.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </span>
           {expense.bankOrAccount && (
-            <span className="text-[10px] text-gray-400 block truncate max-w-[80px]">
+            <span className="text-[10px] text-gray-400 block truncate max-w-[90px]">
               {expense.bankOrAccount}
             </span>
           )}

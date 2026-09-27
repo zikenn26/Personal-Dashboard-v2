@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { CreditCard, ArrowRight, Plus } from 'lucide-react';
 import { ExpenseItem } from '../../../../types';
 import { nativeService } from '../../../../services/nativeService';
 import { CARD_SURFACE_CLASSES, CARD_HEADER_CLASSES, CARD_TITLE_CLASSES, CARD_BODY_CLASSES } from '../../design-system/materialYou';
+import { compareExpensesByDateTimeDesc, getTransactionDisplayTitle } from '../../../../utils/expenseUtils';
 
 export interface AndroidSpendingCardProps {
   expenses: ExpenseItem[];
@@ -26,7 +27,14 @@ export const AndroidSpendingCard: React.FC<AndroidSpendingCardProps> = ({
   });
 
   const totalMonthSpending = monthExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-  const recentExpenses = [...expenses].reverse().slice(0, 4);
+
+  // ALWAYS sort by actual transaction date and time descending, strictly taking the 4 newest transactions
+  const recentExpenses = useMemo(() => {
+    return [...expenses]
+      .filter((e) => e && e.active !== false && Number(e.amount) > 0)
+      .sort(compareExpensesByDateTimeDesc)
+      .slice(0, 4);
+  }, [expenses]);
 
   return (
     <div className={CARD_SURFACE_CLASSES}>
@@ -94,7 +102,7 @@ export const AndroidSpendingCard: React.FC<AndroidSpendingCardProps> = ({
               >
                 <div className="min-w-0 flex-1 pr-2">
                   <span className="text-xs font-semibold text-gray-900 dark:text-white block truncate">
-                    {exp.name}
+                    {getTransactionDisplayTitle(exp)}
                   </span>
                   <div className="flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-400">
                     <span>{exp.category}</span>
@@ -114,7 +122,7 @@ export const AndroidSpendingCard: React.FC<AndroidSpendingCardProps> = ({
                     ₹{(exp.amount || 0).toFixed(2)}
                   </span>
                   <span className="text-[10px] text-gray-400 dark:text-gray-500 block">
-                    {exp.date}
+                    {exp.date}{exp.time ? ` ${exp.time}` : ''}
                   </span>
                 </div>
               </div>

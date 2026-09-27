@@ -129,26 +129,35 @@ export interface ExpenseItem {
   source?: 'manual' | 'excel' | 'sms_auto';
   smsReferenceId?: string;
   rawSmsText?: string;
-  transactionType?: 'expense' | 'income';
+  transactionType?: 'expense' | 'income' | 'DEBIT' | 'CREDIT';
   bankOrAccount?: string;
-  payee?: string;
   bankName?: string;
+  maskedAccount?: string;
+  accountLast4?: string;
+  payee?: string;
 }
 
 export interface ParsedSmsTransaction {
   isTransaction: boolean;
   type: 'expense' | 'income';
+  transactionType?: 'DEBIT' | 'CREDIT';
   amount: number;
   currency: string;
   merchant: string;
   payee?: string;
+  rawPayee?: string;
   category: ExpenseCategory | string;
   paymentMethod?: PaymentMethod | string;
   bankOrAccount?: string;
+  bank?: string;
   bankName?: string;
+  account?: string;
+  maskedAccount?: string;
   accountLast4?: string;
+  reference?: string;
   referenceId?: string;
   date: string; // YYYY-MM-DD
+  rawDate?: string;
   time?: string; // HH:mm
   rawSms: string;
   sender?: string;
