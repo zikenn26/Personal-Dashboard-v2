@@ -348,9 +348,9 @@ export function parseNaturalLanguageIntent(rawTranscript: string): MatchResult |
     };
   }
 
-  // Pattern 2c: "Log 250 for lunch", "Add 150 for breakfast", "add 39 rs breakfast"
+  // Pattern 2c: "Log 250 for lunch", "Add 150 for breakfast"
   const shortExpRegex =
-    /^(?:add|log|record|save|create|enter|track)\s+(?:rs\.?|inr|₹)?\s*(\d+(?:\.\d+)?)\s*(?:rs|rupees|inr|bucks)?\s*(?:for|on|towards|called)?\s*(.+)$/i;
+    /^(?:add|log|record)\s+(?:rs\.?|inr|₹)?\s*(\d+(?:\.\d+)?)\s*(?:rs|rupees|inr|bucks)?\s*(?:for|on|towards|called)\s*(.+)$/i;
   const matchShortExp = clean.match(shortExpRegex);
   if (matchShortExp && matchShortExp[1] && matchShortExp[2]) {
     const amount = parseFloat(matchShortExp[1]);

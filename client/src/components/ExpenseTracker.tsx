@@ -69,11 +69,6 @@ import { ExcelImportModal } from './ExcelImportModal';
 import { SmsExpenseModal } from './SmsExpenseModal';
 import { ExpenseDistributionSection } from './ExpenseDistributionSection';
 import { DateRangePicker, type DateRange } from './DateRangePicker';
-import {
-  isCreditTransaction,
-  getTransactionDisplayTitle,
-  formatTransactionDateTime,
-} from '../utils/expenseUtils';
 
 interface ExpenseTrackerProps {
   expenses: ExpenseItem[];
@@ -750,37 +745,35 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     const todayStr = new Date().toISOString().split('T')[0];
     const now = new Date();
 
-    // Sum for Today (Strictly Debits - credits do not inflate spent)
+    // Sum for Today
     const todayTotal = currentExpenses
-      .filter((e) => e.date === todayStr && !isCreditTransaction(e))
+      .filter((e) => e.date === todayStr)
       .reduce((sum, e) => sum + (e.amount || 0), 0);
 
-    // Sum for This Week (Starting Monday) (Strictly Debits)
+    // Sum for This Week (Starting Monday)
     const currentDayOfWeek = (now.getDay() + 6) % 7; // 0 for Monday
     const monday = new Date(now);
     monday.setDate(now.getDate() - currentDayOfWeek);
     monday.setHours(0, 0, 0, 0);
     const weekTotal = currentExpenses
       .filter((e) => {
-        if (!e.date || isCreditTransaction(e)) return false;
+        if (!e.date) return false;
         const d = new Date(e.date + 'T00:00:00');
         return d >= monday && d <= now;
       })
       .reduce((sum, e) => sum + (e.amount || 0), 0);
 
-    // Sum for Selected Month (Strictly Debits)
+    // Sum for Selected Month
     const selectedPrefix = `${selectedYear}-${String(selectedMonthIndex + 1).padStart(2, '0')}`;
-    const monthExpenses = currentExpenses.filter(
-      (e) => (e.date || '').startsWith(selectedPrefix) && !isCreditTransaction(e)
-    );
+    const monthExpenses = currentExpenses.filter((e) => (e.date || '').startsWith(selectedPrefix));
     const monthTotal = monthExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
 
-    // Previous Month Comparison (Strictly Debits)
+    // Previous Month Comparison (for accurate % trend)
     const prevMonthIndex = selectedMonthIndex === 0 ? 11 : selectedMonthIndex - 1;
     const prevYear = selectedMonthIndex === 0 ? selectedYear - 1 : selectedYear;
     const prevPrefix = `${prevYear}-${String(prevMonthIndex + 1).padStart(2, '0')}`;
     const prevMonthTotal = currentExpenses
-      .filter((e) => (e.date || '').startsWith(prevPrefix) && !isCreditTransaction(e))
+      .filter((e) => (e.date || '').startsWith(prevPrefix))
       .reduce((sum, e) => sum + (e.amount || 0), 0);
 
     let monthDiffPercent = 0;

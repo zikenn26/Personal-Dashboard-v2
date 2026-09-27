@@ -3,8 +3,6 @@ import { Storage } from '../../../utils/storage';
 import { ExpenseItem } from '../../../types';
 import { inferExpenseCategory, broadcastDataChanged } from '../../commandMappingService';
 import { InteractiveOption } from '../../commandIntentEngine';
-import { parseExpenseCommand, buildExpenseItemFromIntent } from '../expenseParser';
-import { calculateTotalSpent, isDebitTransaction } from '../../../utils/expenseUtils';
 
 export class MoneyAdapter implements ModuleAdapter {
   name = 'money';
@@ -36,10 +34,10 @@ export class MoneyAdapter implements ModuleAdapter {
       text.includes('bought') ||
       text.includes('paid') ||
       text.includes('transaction') ||
-      /^(add|log|record|save|create|enter|track|spend|spent|paid)\s+[₹$]?\s*\d+/i.test(text) ||
-      /^[₹$]?\s*\d+\s+(for|on|at|to)\s+/i.test(text) ||
-      /^(add|log|record|save|create|enter|track|spend|spent|paid)\s+(groceries|food|lunch|dinner|breakfast|coffee|snacks|tea|milk|recharge|metro|cab|uber|ola)/i.test(text) ||
-      /^(add|log|record|save|create|enter|track|spend|spent|paid)\s*[₹$]?\s*\d+$/i.test(text) ||
+      /^(add|log|record)\s+[₹$]?\s*\d+/i.test(text) ||
+      /^[₹$]?\s*\d+\s+(for|on)\s+/i.test(text) ||
+      /^(add|log|record)\s+(groceries|food|lunch|dinner|coffee|snacks|tea|milk|recharge|metro|cab|uber|ola)/i.test(text) ||
+      /^(add|log|record)\s*[₹$]?\s*\d+$/i.test(text) ||
       /^(delete|remove)\s+(my\s+)?(last\s+)?(expense|transaction)/i.test(text) ||
       /^(delete|remove)\s+the\s+[₹$]?\d+/i.test(text)
     ) {
@@ -265,7 +263,7 @@ export class MoneyAdapter implements ModuleAdapter {
       (lower.includes('spend') || lower.includes('expense') || lower.includes('how much') || lower.includes('what did'))
     ) {
       const todayExpenses = expenses.filter((e) => e.date === todayStr);
-      const total = calculateTotalSpent(todayExpenses);
+      const total = todayExpenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
       let reply = `You've spent **₹${total.toLocaleString('en-IN')}** today`;
       if (todayExpenses.length === 0) {
@@ -295,7 +293,7 @@ export class MoneyAdapter implements ModuleAdapter {
       const yesterdayStr = yesterday.toISOString().split('T')[0];
 
       const yesterdayExpenses = expenses.filter((e) => e.date === yesterdayStr);
-      const total = calculateTotalSpent(yesterdayExpenses);
+      const total = yesterdayExpenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
       return {
         reply: `You spent **₹${total.toLocaleString('en-IN')}** yesterday across ${yesterdayExpenses.length} transaction${yesterdayExpenses.length === 1 ? '' : 's'}.`,
@@ -320,7 +318,7 @@ export class MoneyAdapter implements ModuleAdapter {
         return d >= monday;
       });
 
-      const total = calculateTotalSpent(weekExpenses);
+      const total = weekExpenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
       return {
         reply: `Your total spending this week is **₹${total.toLocaleString('en-IN')}** across ${weekExpenses.length} transaction${weekExpenses.length === 1 ? '' : 's'}.`,
@@ -341,7 +339,7 @@ export class MoneyAdapter implements ModuleAdapter {
       const monthName = prevMonthDate.toLocaleString('default', { month: 'long' });
 
       const prevMonthExpenses = expenses.filter((e) => e.date.startsWith(prevYearMonth));
-      const total = calculateTotalSpent(prevMonthExpenses);
+      const total = prevMonthExpenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
       return {
         reply: `Last month (${monthName} ${prevYear}), you spent a total of **₹${total.toLocaleString('en-IN')}** across ${prevMonthExpenses.length} transaction${prevMonthExpenses.length === 1 ? '' : 's'}.`,
@@ -361,7 +359,7 @@ export class MoneyAdapter implements ModuleAdapter {
     ) {
       const monthName = now.toLocaleString('default', { month: 'long' });
       const monthExpenses = expenses.filter((e) => e.date.startsWith(currentYearMonth));
-      const total = calculateTotalSpent(monthExpenses);
+      const total = monthExpenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
       return {
         reply: `Your total spending this month (${monthName} ${currentYear}) is **₹${total.toLocaleString('en-IN')}** across ${monthExpenses.length} transaction${monthExpenses.length === 1 ? '' : 's'}.`,
@@ -375,9 +373,9 @@ export class MoneyAdapter implements ModuleAdapter {
     // 10. READ-ONLY QUERY: Category Spending (e.g., "Show food expenses", "How much spent on groceries?")
     // ------------------------------------------------------------------------
     const isExplicitAdd =
-      /^(add|log|record|save|create|enter|track|spend|spent|paid)\b/i.test(lower) ||
-      /^[₹$]?\s*\d+\s+(for|on|at|to)\s+/i.test(text) ||
-      /^(add|log|record|save|create|enter|track|spend|spent|paid)?\s*[₹$]?\s*\d+\s+[a-zA-Z]/i.test(text);
+      /^(add|log|record)\b/i.test(lower) ||
+      /^[₹$]?\s*\d+\s+(for|on)\s+/i.test(text) ||
+      /^(add|log|record)?\s*[₹$]?\s*\d+\s+[a-zA-Z]/i.test(text);
 
     if (!isExplicitAdd) {
       const categoryKeywords = [
@@ -395,11 +393,10 @@ export class MoneyAdapter implements ModuleAdapter {
         if (lower.includes(cat.key)) {
           const catExpenses = expenses.filter(
             (e) =>
-              isDebitTransaction(e) &&
-              (cat.labels.some((l) => (e.category || '').toLowerCase() === l.toLowerCase()) ||
-                e.name.toLowerCase().includes(cat.key))
+              cat.labels.some((l) => (e.category || '').toLowerCase() === l.toLowerCase()) ||
+              e.name.toLowerCase().includes(cat.key)
           );
-          const total = calculateTotalSpent(catExpenses);
+          const total = catExpenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
           return {
             reply: `You've spent **₹${total.toLocaleString('en-IN')}** on **${cat.labels[0]}** across ${catExpenses.length} transaction${catExpenses.length === 1 ? '' : 's'}.`,
@@ -443,25 +440,42 @@ export class MoneyAdapter implements ModuleAdapter {
     }
 
     // ------------------------------------------------------------------------
-    // 12. WRITE: Add Expense (Structured Intent Pipeline)
-    // "add 39 rs breakfast", "log ₹250 lunch", "record 500 for groceries",
-    // "add ₹700 at Amazon", "add 700 to Amazon", "add ₹300 for breakfast at Starbucks"
+    // 12. WRITE: Add Expense: "Add ₹500 for groceries", "Add ₹250 for lunch"
     // ------------------------------------------------------------------------
-    const parsedIntent = parseExpenseCommand(text);
+    const addMatch =
+      text.match(/(?:add|log|record|spend|spent)?\s*[₹$]?\s*(\d+(?:\.\d{1,2})?)\s+(?:for|on)\s+([a-zA-Z0-9\s&'-]+)/i) ||
+      text.match(/(?:add|log|record)?\s*(?:expense)?\s*([a-zA-Z0-9\s&'-]+?)\s+[₹$]?\s*(\d+(?:\.\d{1,2})?)/i) ||
+      text.match(/[₹$]?\s*(\d+(?:\.\d{1,2})?)\s+([a-zA-Z0-9\s&'-]+)/i);
 
-    // If clarification needed (e.g. "Add 100", "Add ₹500."):
-    if (parsedIntent.needsClarification && parsedIntent.clarificationPrompt) {
-      const amt = parsedIntent.amount || 100;
-      return {
-        reply: parsedIntent.clarificationPrompt,
-        module: 'money',
-        actionChips: [`₹${amt} Groceries`, `₹${amt} Dining Out`, `₹${amt} Shopping`],
-        updatedSessionMemory: memory,
+    if (addMatch) {
+      let amount: number;
+      let name: string;
+
+      if (!isNaN(parseFloat(addMatch[1])) && isNaN(parseFloat(addMatch[2]))) {
+        amount = parseFloat(addMatch[1]);
+        name = addMatch[2].trim();
+      } else if (isNaN(parseFloat(addMatch[1])) && !isNaN(parseFloat(addMatch[2]))) {
+        name = addMatch[1].trim();
+        amount = parseFloat(addMatch[2]);
+      } else {
+        amount = parseFloat(addMatch[1]);
+        name = (addMatch[2] || 'Expense').trim();
+      }
+
+      // Cleanup name
+      name = name.replace(/^(expense|for|on)\s+/i, '').trim();
+      if (!name) name = 'Expense';
+
+      const category = inferExpenseCategory(name);
+      const newExpense: ExpenseItem = {
+        id: `exp-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        name,
+        amount,
+        category,
+        date: todayStr,
+        billingCycle: 'one-time',
+        active: true,
       };
-    }
-
-    if (parsedIntent.isValid && parsedIntent.amount > 0) {
-      const newExpense = buildExpenseItemFromIntent(parsedIntent);
 
       const updated = [newExpense, ...expenses];
       Storage.setExpenses(updated);
@@ -476,31 +490,20 @@ export class MoneyAdapter implements ModuleAdapter {
       memory.lastAction = {
         type: 'add_expense',
         entity: 'expense',
-        description: `Added expense "${newExpense.name}" for ₹${newExpense.amount}`,
+        description: `Added expense "${name}" for ₹${amount}`,
         timestamp: Date.now(),
       };
 
-      let replyText = `Logged **₹${newExpense.amount}** for **${newExpense.name}** under **${newExpense.category}**.`;
-      if (parsedIntent.category && parsedIntent.merchant && parsedIntent.category !== parsedIntent.merchant) {
-        replyText = `Logged **₹${newExpense.amount}** for **${parsedIntent.category}** at **${parsedIntent.merchant}** under **${newExpense.category}**.`;
-      }
-
       return {
-        reply: replyText,
+        reply: `Logged **₹${amount}** for **${name}** under **${category}**.`,
         module: 'money',
-        actionChips: [`✓ Added ₹${newExpense.amount}`, String(newExpense.category), 'Tap to edit'],
+        actionChips: [`✓ Added ₹${amount}`, category, 'Tap to edit'],
         executedActions: [
           {
             type: 'add_expense',
             targetId: newExpense.id,
-            params: {
-              name: newExpense.name,
-              amount: newExpense.amount,
-              category: newExpense.category,
-              merchant: newExpense.merchant,
-              payee: newExpense.payee,
-            },
-            description: `Logged expense of ₹${newExpense.amount} for ${newExpense.name}`,
+            params: { name, amount, category },
+            description: `Logged expense of ₹${amount} for ${name}`,
           },
         ],
         updatedSessionMemory: memory,

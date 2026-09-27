@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { CreditCard, Plus, Trash2, ArrowUpRight, ArrowDownLeft, TrendingDown, TrendingUp, Calendar, Tag, DollarSign, Wallet, FileSpreadsheet, MessageSquare, Edit3, Settings } from 'lucide-react';
+import { CreditCard, Plus, Trash2, ArrowUpRight, TrendingDown, TrendingUp, Calendar, Tag, DollarSign, Wallet, FileSpreadsheet, MessageSquare, Edit3, Settings } from 'lucide-react';
 import { ExpenseItem, ExcelImportLog } from '../../../../types';
 import { nativeService } from '../../../../services/nativeService';
 import { smsExpenseService } from '../../../../services/smsExpenseService';
@@ -10,8 +10,7 @@ import { SwipeActionRow } from '../../gestures/SwipeActionRow';
 import { useLongPress } from '../../gestures/useLongPress';
 import { AndroidActionSheet, ActionSheetItem } from '../../components/AndroidActionSheet';
 import { QuickExpenseSheet } from '../../components/QuickExpenseSheet';
-import { TransactionDetailSheet } from '../../components/TransactionDetailSheet';
-import { compareExpensesByDateTimeDesc, getTransactionDisplayTitle, isCreditTransaction } from '../../../../utils/expenseUtils';
+import { compareExpensesByDateTimeDesc, getTransactionDisplayTitle } from '../../../../utils/expenseUtils';
 import { SmsTransaction } from '../../../../services/smsExpenseService';
 import { Capacitor } from '@capacitor/core';
 
@@ -37,7 +36,6 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('month');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
-  const [selectedDetailExpense, setSelectedDetailExpense] = useState<ExpenseItem | null>(null);
   const [editingExpense, setEditingExpense] = useState<ExpenseItem | null>(null);
   const [confirmDeleteExpense, setConfirmDeleteExpense] = useState<ExpenseItem | null>(null);
   const [activeActionExpense, setActiveActionExpense] = useState<ExpenseItem | null>(null);
@@ -135,37 +133,24 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   const currentMonth = now.getMonth();
   const todayDateStr = now.toISOString().split('T')[0];
 
-  // Calculations: Mathematical correctness - Total Spent does NOT include credits!
-  const { totalMonthSpending, todaySpending, monthCredits, categoryTotals } = useMemo(() => {
-    let monthDebitTotal = 0;
-    let monthCreditTotal = 0;
-    let todayDebitTotal = 0;
+  // Calculations
+  const { totalMonthSpending, todaySpending, categoryTotals } = useMemo(() => {
+    let monthTotal = 0;
+    let todayTotal = 0;
     const catMap: Record<string, number> = {};
 
     expenses.forEach((e) => {
       const amt = Number(e.amount) || 0;
       const d = new Date(e.date);
-      const isCredit = isCreditTransaction(e);
-
       if (d.getFullYear() === currentYear && d.getMonth() === currentMonth) {
-        if (isCredit) {
-          monthCreditTotal += amt;
-        } else {
-          monthDebitTotal += amt;
-        }
+        monthTotal += amt;
       }
-
       if (e.date === todayDateStr) {
-        if (!isCredit) {
-          todayDebitTotal += amt;
-        }
+        todayTotal += amt;
       }
 
-      // Category breakdown only includes DEBIT transactions
-      if (!isCredit) {
-        const cat = e.category || 'Other';
-        catMap[cat] = (catMap[cat] || 0) + amt;
-      }
+      const cat = e.category || 'Other';
+      catMap[cat] = (catMap[cat] || 0) + amt;
     });
 
     const sortedCats = Object.entries(catMap)
@@ -173,9 +158,8 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
       .sort((a, b) => b.total - a.total);
 
     return {
-      totalMonthSpending: monthDebitTotal,
-      todaySpending: todayDebitTotal,
-      monthCredits: monthCreditTotal,
+      totalMonthSpending: monthTotal,
+      todaySpending: todayTotal,
       categoryTotals: sortedCats,
     };
   }, [expenses, currentYear, currentMonth, todayDateStr]);
@@ -410,7 +394,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
               expense={item}
               onTap={() => {
                 void nativeService.triggerHaptic('selection');
-                setSelectedDetailExpense(item);
+                setEditingExpense(item);
               }}
               onSwipeDelete={() => {
                 setConfirmDeleteExpense(item);
@@ -420,18 +404,6 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
           ))}
         </div>
       )}
-
-      {/* Transaction Detail Sheet */}
-      <TransactionDetailSheet
-        isOpen={Boolean(selectedDetailExpense)}
-        onClose={() => setSelectedDetailExpense(null)}
-        expense={selectedDetailExpense}
-        onEdit={(item) => setEditingExpense(item)}
-        onDelete={(id) => {
-          handleDelete(id);
-          setSelectedDetailExpense(null);
-        }}
-      />
 
       {/* Add Expense Sheet */}
       {onAddExpense && (
@@ -506,10 +478,9 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
     onLongPress();
   });
 
-  const isCredit = isCreditTransaction(expense);
   const displayTitle = getTransactionDisplayTitle(expense);
   const secondaryParts = [
-    expense.bankName || (expense.bankOrAccount?.includes('(') ? expense.bankOrAccount.split('(')[0].trim() : expense.bankOrAccount),
+    expense.bankName || expense.bankOrAccount,
     expense.paymentMethod,
     expense.maskedAccount,
   ].filter(Boolean);
@@ -523,43 +494,18 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
       <div
         {...longPressProps}
         onClick={onTap}
-        className="flex items-center justify-between p-3.5 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] active:scale-[0.99] transition-all select-none shadow-2xs cursor-pointer hover:border-violet-300 dark:hover:border-violet-800"
+        className="flex items-center justify-between p-3.5 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] active:scale-[0.99] transition-all select-none shadow-2xs cursor-pointer hover:border-emerald-300 dark:hover:border-emerald-800"
       >
         <div className="flex items-center gap-3 min-w-0 flex-1 pr-3">
-          <div
-            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-              isCredit
-                ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400'
-                : 'bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400'
-            }`}
-          >
-            {isCredit ? <ArrowDownLeft className="w-4 h-4" /> : <CreditCard className="w-4 h-4" />}
+          <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+            <CreditCard className="w-4 h-4" />
           </div>
 
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 min-w-0">
-              {/* Direction Indicator: 🔴 RED DOT for DEBIT, 🟢 GREEN DOT for CREDIT */}
-              <span
-                className={`w-2 h-2 rounded-full shrink-0 ${
-                  isCredit ? 'bg-emerald-500' : 'bg-rose-500'
-                }`}
-                title={isCredit ? 'Credit (Money came in)' : 'Debit (Money went out)'}
-              />
-              <span className="text-xs font-semibold text-gray-900 dark:text-white truncate">
-                {displayTitle}
-              </span>
-              <span
-                className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md shrink-0 uppercase tracking-wider ${
-                  isCredit
-                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                    : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
-                }`}
-              >
-                {isCredit ? 'Credit' : 'Debit'}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400 mt-1 truncate">
+            <span className="text-xs font-semibold text-gray-900 dark:text-white block truncate">
+              {displayTitle}
+            </span>
+            <div className="flex items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 truncate">
               <span>{expense.category}</span>
               {secondaryParts.length > 0 && (
                 <>
@@ -574,14 +520,8 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
         </div>
 
         <div className="shrink-0 text-right">
-          <span
-            className={`text-sm font-bold block ${
-              isCredit
-                ? 'text-emerald-600 dark:text-emerald-400'
-                : 'text-gray-900 dark:text-white'
-            }`}
-          >
-            {isCredit ? '+ ' : ''}₹{Number(expense.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          <span className="text-sm font-bold text-gray-900 dark:text-white block">
+            ₹{Number(expense.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </span>
           {expense.bankOrAccount && (
             <span className="text-[10px] text-gray-400 block truncate max-w-[90px]">

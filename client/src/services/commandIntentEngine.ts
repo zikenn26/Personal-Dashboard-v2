@@ -11,7 +11,6 @@ import {
   broadcastDataChanged,
   inferExpenseCategory,
 } from './commandMappingService';
-import { parseExpenseCommand, buildExpenseItemFromIntent } from './ai/expenseParser';
 
 // ============================================================================
 // 1. STRICT INTENT TAXONOMY
@@ -1419,55 +1418,44 @@ function internalAnalyzeCommandIntent(
   const isExpenseCreation =
     /^(?:i\s+)?(?:spent|spend|paid)\s+/i.test(cleaned) ||
     /^(?:add|log|record|enter|track)\s+(?:an?\s+)?(?:new\s+)?(?:expense|spending|cost|bill)\b/i.test(cleaned) ||
-    /^(?:add|log|record|spend|spent|paid)\s+(?:rs\.?|inr|₹)?\s*[\d,]+/i.test(cleaned);
+    /^(?:add|log|record)\s+(?:rs\.?|inr|₹)?\s*[\d,]+/i.test(cleaned);
 
   if (isExpenseCreation && !hasDeleteVerb) {
-    const parsed = parseExpenseCommand(cleaned);
+    const amountMatch = cleaned.match(/(?:rs\.?|inr|₹)?\s*([\d,]+(?:\.\d+)?)\s*(?:rs|rupees|inr|bucks)?/i);
+    const amount = amountMatch && amountMatch[1] ? parseFloat(amountMatch[1].replace(/,/g, '')) : 100;
 
-    if (parsed.needsClarification && parsed.clarificationPrompt) {
-      return {
-        intent: 'EXPENSE_CREATE',
-        entity: 'expense',
-        confidence: 'medium',
-        scope: 'single',
-        actions: [],
-        requiresConfirmation: false,
-        explanation: parsed.clarificationPrompt,
-      };
-    }
+    let expName = cleaned
+      .replace(/^(?:i\s+)?(?:spent|spend|paid)\s+(?:rs\.?|inr|₹)?\s*[\d,]+(?:\.\d+)?\s*(?:rs|rupees|inr|bucks)?\s*(?:for|on|towards|called)?\s*/i, '')
+      .replace(/^(?:add|log|record|enter|track)\s+(?:an?\s+)?(?:new\s+)?(?:expense|spending|cost)?\s*(?:of\s+)?(?:rs\.?|inr|₹)?\s*[\d,]+(?:\.\d+)?\s*(?:rs|rupees|inr|bucks)?\s*(?:for|on|towards|called)?\s*/i, '')
+      .trim();
 
-    if (parsed.isValid && parsed.amount > 0) {
-      const expItem = buildExpenseItemFromIntent(parsed);
-      const expName = expItem.name;
-      const amount = expItem.amount;
-      const category = expItem.category;
+    if (!expName) expName = 'Expense';
+    expName = expName.charAt(0).toUpperCase() + expName.slice(1);
+    const category = inferExpenseCategory(expName);
 
-      const actions: ExecutableAction[] = [
-        {
-          type: 'add_expense',
-          targetTitle: expName,
-          params: {
-            name: expName,
-            amount,
-            category,
-            merchant: expItem.merchant,
-            payee: expItem.payee,
-            date: expItem.date || getTodayDateString(),
-          },
-          description: `Log expense of ₹${amount.toLocaleString()} for "${expName}" (${category})`,
+    const actions: ExecutableAction[] = [
+      {
+        type: 'add_expense',
+        targetTitle: expName,
+        params: {
+          name: expName,
+          amount,
+          category,
+          date: getTodayDateString(),
         },
-      ];
+        description: `Log expense of ₹${amount.toLocaleString()} for "${expName}" (${category})`,
+      },
+    ];
 
-      return {
-        intent: 'EXPENSE_CREATE',
-        entity: 'expense',
-        confidence: 'high',
-        scope: 'single',
-        actions,
-        requiresConfirmation: false,
-        explanation: `Logged expense of ₹${amount.toLocaleString()} for "${expName}".`,
-      };
-    }
+    return {
+      intent: 'EXPENSE_CREATE',
+      entity: 'expense',
+      confidence: 'high',
+      scope: 'single',
+      actions,
+      requiresConfirmation: false,
+      explanation: `Logged expense of ₹${amount.toLocaleString()} for "${expName}".`,
+    };
   }
 
   // --------------------------------------------------------------------------
