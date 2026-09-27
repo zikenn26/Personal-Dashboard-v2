@@ -253,9 +253,13 @@ class SmsExpenseService {
         }
         return status;
       }
-      // On web simulation
-      await this.setAutoTrackingEnabled(true);
-      return 'granted';
+      // On web simulation / test environment
+      const res = await (smsPluginWebImpl as any).requestPermissions();
+      const status = (res?.sms || (res?.receiveSms === 'granted' ? 'granted' : 'denied')) as any;
+      if (status === 'granted') {
+        await this.setAutoTrackingEnabled(true);
+      }
+      return status;
     } catch (err) {
       console.warn('SMS permission request failed:', err);
       return 'denied';

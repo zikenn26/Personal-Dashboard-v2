@@ -1,7 +1,10 @@
-import React, { useState, useMemo } from 'react';
-import { CreditCard, Plus, Trash2, ArrowUpRight, TrendingDown, TrendingUp, Calendar, Tag, DollarSign, Wallet, FileSpreadsheet, MessageSquare, Edit3 } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { CreditCard, Plus, Trash2, ArrowUpRight, TrendingDown, TrendingUp, Calendar, Tag, DollarSign, Wallet, FileSpreadsheet, MessageSquare, Edit3, Settings } from 'lucide-react';
 import { ExpenseItem, ExcelImportLog } from '../../../../types';
 import { nativeService } from '../../../../services/nativeService';
+import { smsExpenseService } from '../../../../services/smsExpenseService';
+import { Storage } from '../../../../utils/storage';
+import { toast } from 'sonner';
 import { CARD_SURFACE_CLASSES } from '../../design-system/materialYou';
 import { SwipeActionRow } from '../../gestures/SwipeActionRow';
 import { useLongPress } from '../../gestures/useLongPress';
@@ -33,6 +36,78 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   const [editingExpense, setEditingExpense] = useState<ExpenseItem | null>(null);
   const [confirmDeleteExpense, setConfirmDeleteExpense] = useState<ExpenseItem | null>(null);
   const [activeActionExpense, setActiveActionExpense] = useState<ExpenseItem | null>(null);
+
+  // Android SMS Auto-Logging State
+  const [isSmsEnabled, setIsSmsEnabled] = useState<boolean>(() => {
+    return Storage.isSmsAutoTrackingEnabled();
+  });
+  const [smsPermissionStatus, setSmsPermissionStatus] = useState<
+    'prompt' | 'granted' | 'denied' | 'permanently_denied' | 'unsupported'
+  >(() => {
+    return Storage.isSmsAutoTrackingEnabled() ? 'granted' : 'prompt';
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    void smsExpenseService.checkPermission().then((status) => {
+      if (isMounted) {
+        setSmsPermissionStatus(status);
+        setIsSmsEnabled(Storage.isSmsAutoTrackingEnabled() && status === 'granted');
+      }
+    });
+
+    const handleSmsAutoLogged = () => {
+      if (isMounted) {
+        setIsSmsEnabled(true);
+        setSmsPermissionStatus('granted');
+      }
+    };
+    window.addEventListener('sms_expense_auto_logged', handleSmsAutoLogged);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('sms_expense_auto_logged', handleSmsAutoLogged);
+    };
+  }, []);
+
+  const handleSmsAction = async () => {
+    void nativeService.triggerHaptic('selection');
+    
+    // If permission is already granted and enabled, open the settings / test modal
+    if (smsPermissionStatus === 'granted' && isSmsEnabled) {
+      if (onOpenSmsSettings) {
+        onOpenSmsSettings();
+      }
+      return;
+    }
+
+    // Direct permission request flow: Spending -> Allow SMS -> Android Permission Request
+    try {
+      const res = await smsExpenseService.requestPermission();
+      if (res === 'granted') {
+        setSmsPermissionStatus('granted');
+        setIsSmsEnabled(true);
+        toast.success('SMS Auto-Logging ON', {
+          description: 'LifeOS will now automatically detect bank and UPI spendings.',
+        });
+        // Scan recent inbox once upon user grant
+        void smsExpenseService.scanRecentInbox(25).then((summary) => {
+          if (summary.imported > 0) {
+            toast.info(`Imported ${summary.imported} unlogged transaction(s) from recent SMS`);
+          }
+        });
+      } else if (res === 'denied') {
+        setSmsPermissionStatus('denied');
+        toast.info('SMS permission not granted', {
+          description: 'You can tap Allow SMS whenever you wish to enable auto-tracking.',
+        });
+      } else if (res === 'unsupported') {
+        setSmsPermissionStatus('unsupported');
+        toast.info('SMS Auto-Logging is an Android-exclusive feature.');
+      }
+    } catch {
+      setSmsPermissionStatus('denied');
+    }
+  };
 
   const now = new Date();
   const currentYear = now.getFullYear();
@@ -131,15 +206,38 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
           {onOpenSmsSettings && (
             <button
               type="button"
-              onClick={() => {
-                void nativeService.triggerHaptic('selection');
-                onOpenSmsSettings();
-              }}
-              className="px-2.5 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 font-semibold text-xs flex items-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
-              title="SMS Permission & Auto-Logging"
+              onClick={handleSmsAction}
+              className={`px-2.5 py-1.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer ${
+                smsPermissionStatus === 'granted' && isSmsEnabled
+                  ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                  : smsPermissionStatus === 'permanently_denied'
+                  ? 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300'
+                  : 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+              }`}
+              title={
+                smsPermissionStatus === 'granted' && isSmsEnabled
+                  ? 'SMS Auto-Logging ON — Tap to manage'
+                  : smsPermissionStatus === 'permanently_denied'
+                  ? 'SMS Permission Unavailable — Open Settings'
+                  : 'Allow SMS Auto-Logging'
+              }
             >
-              <MessageSquare className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span>Allow SMS</span>
+              {smsPermissionStatus === 'granted' && isSmsEnabled ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>SMS Auto-Logging ON</span>
+                </>
+              ) : smsPermissionStatus === 'permanently_denied' ? (
+                <>
+                  <Settings className="w-3.5 h-3.5 text-gray-500" />
+                  <span>Open Settings</span>
+                </>
+              ) : (
+                <>
+                  <MessageSquare className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>Allow SMS</span>
+                </>
+              )}
             </button>
           )}
 
