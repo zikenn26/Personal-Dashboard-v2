@@ -52,7 +52,10 @@ export function cleanMerchantName(raw: string): string {
     .replace(/^[\s,.\-_:;]+|[\s,.\-_:;]+$/g, '')
     // Strip trailing reference, date, or balance noise
     .replace(/\s+(?:on|via|ref|using|dated|rrn|txn|imps|neft)\b.*$/i, '')
+    .replace(/\s+(?:from|by)\s+(?:your\s+)?(?:icici|hdfc|sbi|axis|kotak|bank|acct|a\/c|account).*$/i, '')
     .replace(/\s+(?:A\/c|card|ending|\*+|xx+).*$/i, '')
+    .replace(/\s+(?:rs\.?|inr|₹|\$)\s*[\d,]+.*$/i, '')
+    .replace(/\s+(?:has\s+been\s+credited|has\s+been\s+debited|credited|debited)\b.*$/i, '')
     .trim();
 
   // Strip excessive whitespace
@@ -66,8 +69,8 @@ export function cleanMerchantName(raw: string): string {
     }
   }
 
-  // Strip leading 'vpa' or 'to' if accidentally caught
-  cleaned = cleaned.replace(/^(?:vpa|to)\s+/i, '').trim();
+  // Strip leading prefixes if accidentally caught
+  cleaned = cleaned.replace(/^(?:towards\s+upi\s+to|to\s+upi\/|towards\s+upi|to\s+upi\s+to|to\s+upi|upi\s+to|upi\/|vpa|to|towards|for)\s+/i, '').trim();
 
   // If candidate is purely numbers or too short
   if (/^\d+$/.test(cleaned) || cleaned.length < 2) {
@@ -388,7 +391,7 @@ export function parseSmsTransaction(
   // --------------------------------------------------------------------------
 
   const isDebit =
-    /\b(debited|debited by|paid|spent|withdrawn|transferred to|sent to|purchase of|purchase at|charged|deducted|used at|txn of|payment of|dr to|vpa debit|pos txn|atm wdl)\b/i.test(
+    /\b(debit\s+of|debit|debited|debited by|paid|spent|withdrawn|transferred to|sent to|purchase of|purchase at|charged|deducted|used at|txn of|payment of|dr to|vpa debit|pos txn|atm wdl)\b/i.test(
       lower
     );
 
@@ -610,35 +613,87 @@ export function parseSmsTransaction(
     const fromMatch = text.match(/\b(?:from|by)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:on|via|ref|upi|avl|bal|\.|\n|$))/i);
     rawMerchant = fromMatch ? `${cleanMerchantName(fromMatch[1])} Refund/Deposit` : 'Income Deposit';
   } else {
-    // 1. Payee credited patterns:
-    // Pattern 1a: "credited to [NAME]" or "credited: [NAME]"
-    const creditedToMatch = text.match(
-      /\bcredited\s*(?:to|with|in)?\s*[:\-]?\s*([A-Za-z0-9][A-Za-z0-9\s._@\-]+?)(?:\s+(?:on|via|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i
-    );
-    if (creditedToMatch && creditedToMatch[1]) {
-      const candidate = cleanMerchantName(creditedToMatch[1]);
+    // Priority 0a: Parenthesized recipient name in VPA (e.g. "to VPA arpitapriyadar@okaxis (Arpita Priyadar)")
+    const parenthesizedMatch = text.match(/\(([^)]{2,40})\)/);
+    if (parenthesizedMatch && parenthesizedMatch[1]) {
+      const candidate = cleanMerchantName(parenthesizedMatch[1]);
       if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa|your|bal|balance)$/i.test(candidate)) {
         rawMerchant = candidate;
       }
     }
 
-    // Pattern 1b: "[NAME] credited" (e.g. "; ARPITA PRIYADAR credited." or "ARPITA PRIYADAR credited.")
+    // Priority 0b: Explicit Payee / Recipient label: "Payee: Arpita Priyadar"
     if (!rawMerchant) {
-      const nameCreditedMatch = text.match(
-        /(?:;\s*|,\s*|\.\s*|\n\s*|^)\s*([A-Za-z][A-Za-z0-9\s._@\-]{1,40})\s+credited\b/i
+      const payeeTagMatch = text.match(
+        /\b(?:payee|recipient|beneficiary)\s*[:\-]\s*([A-Za-z0-9\s._@\-]+?)(?:\s+(?:via|on|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i
       );
-      if (nameCreditedMatch && nameCreditedMatch[1]) {
-        const candidate = cleanMerchantName(nameCreditedMatch[1]);
-        if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa|your|bal|balance|and)$/i.test(candidate)) {
+      if (payeeTagMatch && payeeTagMatch[1]) {
+        const candidate = cleanMerchantName(payeeTagMatch[1]);
+        if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa|your)$/i.test(candidate)) {
           rawMerchant = candidate;
         }
       }
     }
 
-    // 2. "debited to [Name]", "paid to [Name]", "sent to [Name]", "transfer to [Name]", "transferred to [Name]", "credited by [Name]"
+    // Priority 0c: Hyphenated UPI format: "UPI:123456789012-Arpita Priyadar"
+    if (!rawMerchant) {
+      const hyphenUpi = text.match(/\bupi[:\s]*\d{10,14}-([A-Za-z0-9\s._@\-]+?)(?:\s+(?:on|via|ref|bal)|\.|\n|;|$)/i);
+      if (hyphenUpi && hyphenUpi[1]) {
+        const candidate = cleanMerchantName(hyphenUpi[1]);
+        if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa|your)$/i.test(candidate)) {
+          rawMerchant = candidate;
+        }
+      }
+    }
+
+    // 1. Payee credited patterns:
+    // Pattern 1a: "credited to [NAME]" or "credited: [NAME]"
+    if (!rawMerchant) {
+      const creditedToMatch = text.match(
+        /\bcredited\s*(?:to|with|in)?\s*[:\-]?\s*([A-Za-z0-9][A-Za-z0-9\s._@\-]+?)(?:\s+(?:on|via|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i
+      );
+      if (creditedToMatch && creditedToMatch[1]) {
+        const candidate = cleanMerchantName(creditedToMatch[1]);
+        if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa|your|bal|balance)$/i.test(candidate)) {
+          rawMerchant = candidate;
+        }
+      }
+    }
+
+    // Pattern 1b: "[NAME] credited" / "[NAME] has been credited"
+    if (!rawMerchant) {
+      const nameCreditedMatch = text.match(
+        /(?:;\s*|,\s*|\.\s*|\n\s*|^)\s*([A-Za-z][A-Za-z0-9\s._@\-]{1,40}?)\s+(?:has\s+been\s+credited|credited)\b/i
+      );
+      if (nameCreditedMatch && nameCreditedMatch[1]) {
+        const candidate = cleanMerchantName(nameCreditedMatch[1]);
+        if (
+          candidate &&
+          !/^(card|a\/c|account|acct|debit|credit|bank|atm|inr|rs|upi|vpa|your|bal|balance|and)$/i.test(candidate) &&
+          !/^(?:rs\.?|inr|₹|\$)\b/i.test(candidate)
+        ) {
+          rawMerchant = candidate;
+        }
+      }
+    }
+
+    // Pattern 1c: "To: [Name]" or "to UPI/[Name]"
+    if (!rawMerchant) {
+      const toColonMatch = text.match(
+        /\b(?:to\s*[:\-]|to\s+upi\/)\s*([A-Za-z0-9\s._@\-]+?)(?:\s+(?:rs\.?|inr|₹|\$|from|via|on|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i
+      );
+      if (toColonMatch && toColonMatch[1]) {
+        const candidate = cleanMerchantName(toColonMatch[1]);
+        if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa|your)$/i.test(candidate)) {
+          rawMerchant = candidate;
+        }
+      }
+    }
+
+    // 2. "debited to [Name]", "paid to [Name]", "sent to [Name]", "transfer to [Name]", "transferred to [Name]", "credited by [Name]", "by upi to [Name]"
     if (!rawMerchant) {
       const directPayeeMatch = text.match(
-        /\b(?:debited to|paid to|transfer to|transferred to|sent to|credited by)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:via|on|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i
+        /\b(?:debited to|paid to|transfer to|transferred to|sent to|credited by|by\s+upi\s+to|towards\s+upi\s+to)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:rs\.?|inr|₹|\$|from|via|on|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i
       );
       if (directPayeeMatch && directPayeeMatch[1]) {
         const candidate = cleanMerchantName(directPayeeMatch[1]);

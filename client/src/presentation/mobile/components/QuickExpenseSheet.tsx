@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BottomSheet } from '../gestures/BottomSheet';
 import { ExpenseItem } from '../../../types';
 import { nativeService } from '../../../services/nativeService';
+import { isCreditTransaction } from '../../../utils/expenseUtils';
 import { Plus, CreditCard, Tag, Calendar, Building2, Trash2, CheckCircle2 } from 'lucide-react';
 
 export interface QuickExpenseSheetProps {
@@ -22,6 +23,7 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
   onDeleteExpense,
 }) => {
   const isEditing = Boolean(initialExpense);
+  const [direction, setDirection] = useState<'DEBIT' | 'CREDIT'>('DEBIT');
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('Dining Out');
@@ -31,6 +33,7 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
 
   useEffect(() => {
     if (initialExpense) {
+      setDirection(isCreditTransaction(initialExpense) ? 'CREDIT' : 'DEBIT');
       setTitle(initialExpense.name || '');
       setAmount(initialExpense.amount ? String(initialExpense.amount) : '');
       setCategory(initialExpense.category || 'Dining Out');
@@ -38,6 +41,7 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
       setDate(initialExpense.date || new Date().toISOString().split('T')[0]);
       setNotes(initialExpense.notes || '');
     } else {
+      setDirection('DEBIT');
       setTitle('');
       setAmount('');
       setCategory('Dining Out');
@@ -80,6 +84,8 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
         category,
         paymentMethod,
         date,
+        direction,
+        transactionType: direction,
         notes: notes.trim(),
       });
       onClose();
@@ -91,6 +97,8 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
         category,
         paymentMethod,
         date,
+        direction,
+        transactionType: direction,
         billingCycle: 'one-time',
         active: true,
         notes: notes.trim() || 'Added from Android quick access',
@@ -117,6 +125,45 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
       subtitle={isEditing ? 'Modify or delete this expense entry' : 'Quickly track a spending transaction'}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Transaction Type: Debit vs Credit */}
+        <div>
+          <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+            Transaction Direction
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                void nativeService.triggerHaptic('selection');
+                setDirection('DEBIT');
+              }}
+              className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer border ${
+                direction === 'DEBIT'
+                  ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800 shadow-xs'
+                  : 'bg-gray-50 dark:bg-[#1A2234] text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-800'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-rose-500" />
+              <span>Debit (Spent)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void nativeService.triggerHaptic('selection');
+                setDirection('CREDIT');
+              }}
+              className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer border ${
+                direction === 'CREDIT'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 shadow-xs'
+                  : 'bg-gray-50 dark:bg-[#1A2234] text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-800'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span>Credit (Refund/Income)</span>
+            </button>
+          </div>
+        </div>
+
         {/* Amount Input */}
         <div>
           <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">

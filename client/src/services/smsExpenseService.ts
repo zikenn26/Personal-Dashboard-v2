@@ -157,6 +157,8 @@ export function isTraiServiceSender(sender: string): boolean {
   return false;
 }
 
+export const isBankOrFinancialSender = isTraiServiceSender;
+
 class SmsExpenseService {
   private isInitialized = false;
   private isListening = false;
@@ -653,6 +655,9 @@ class SmsExpenseService {
       if (parsed.referenceId) notesParts.push(`Ref: ${parsed.referenceId}`);
       notesParts.push('Auto-logged from SMS');
 
+      const isCredit = parsed.type === 'income' || parsed.transactionType === 'CREDIT';
+      const direction: 'DEBIT' | 'CREDIT' = isCredit ? 'CREDIT' : 'DEBIT';
+
       const newExpense: ExpenseItem = {
         id: `exp-sms-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
         name: parsed.payee || parsed.merchant,
@@ -660,17 +665,29 @@ class SmsExpenseService {
         category: parsed.category,
         date: parsed.date,
         time: parsed.time,
+        rawDate: parsed.rawDate || parsed.date,
         paymentMethod: parsed.paymentMethod,
         notes: notesParts.join(' • '),
         rawSmsText: parsed.rawSms,
         smsReferenceId: parsed.referenceId,
+        referenceId: parsed.referenceId,
+        upiReference:
+          parsed.paymentMethod === 'UPI' || (parsed.referenceId && /^\d{12}$/.test(parsed.referenceId))
+            ? parsed.referenceId
+            : undefined,
+        utr: parsed.rawSms && /\butr\b/i.test(parsed.rawSms) ? parsed.referenceId : undefined,
+        rrn: parsed.rawSms && /\brrn\b/i.test(parsed.rawSms) ? parsed.referenceId : undefined,
         source: 'sms_auto',
-        transactionType: parsed.type,
+        transactionType: direction,
+        direction,
         bankOrAccount: parsed.bankOrAccount,
         bankName: parsed.bankName || parsed.bank,
         maskedAccount: parsed.maskedAccount || parsed.account,
         accountLast4: parsed.accountLast4,
+        cardLast4: parsed.rawSms && /\bcard\b/i.test(parsed.rawSms) ? parsed.accountLast4 : undefined,
         payee: parsed.payee || parsed.merchant,
+        merchant: parsed.merchant,
+        counterparty: parsed.payee || parsed.merchant,
         active: true,
       };
 
