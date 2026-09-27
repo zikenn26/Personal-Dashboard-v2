@@ -23,7 +23,28 @@ export class HabitsAdapter implements ModuleAdapter {
     const habits = Storage.getHabits();
     const today = new Date().getDay(); // 0 is Sunday, 1 is Monday...
 
-    // 1. Mark habit complete
+    // 1. Weekly completion query: "How many habits did I complete this week?"
+    if (
+      (lower.includes('how many') || lower.includes('count')) &&
+      lower.includes('habit') &&
+      lower.includes('week')
+    ) {
+      let completedCount = 0;
+      habits.forEach((h) => {
+        if (Array.isArray(h.completedDays)) {
+          completedCount += h.completedDays.filter(Boolean).length;
+        }
+      });
+
+      return {
+        reply: `You've completed **${completedCount}** habit session${completedCount === 1 ? '' : 's'} across your ${habits.length} tracked habit${habits.length === 1 ? '' : 's'} this week! 🔥`,
+        module: 'habits',
+        actionChips: [`${completedCount} completions`, `${habits.length} habits`],
+        updatedSessionMemory: memory,
+      };
+    }
+
+    // 2. Mark habit complete
     if (
       lower.includes('complete') ||
       lower.includes('done') ||
@@ -61,7 +82,7 @@ export class HabitsAdapter implements ModuleAdapter {
       }
     }
 
-    // 2. View Habits & Streaks
+    // 3. View Habits & Streaks
     if (habits.length === 0) {
       return {
         reply: `You haven't added any habits yet. You can track habits from the Habits view in the bottom bar or More sheet.`,

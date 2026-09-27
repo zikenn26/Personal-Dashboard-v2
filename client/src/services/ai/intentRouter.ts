@@ -24,6 +24,13 @@ export class GeminiProvider implements AIProvider {
     context?: AIServiceContext
   ): Promise<{ reply: string; actionChips: string[]; options?: any[] }> {
     try {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        return {
+          reply: `You're currently offline. Please check your network connection and try again.`,
+          actionChips: ['Offline Mode', 'Check Connection'],
+        };
+      }
+
       const geminiHistory: GeminiChatMessage[] = history.map((h, i) => ({
         id: `hist-${i}`,
         role: h.role,
@@ -43,8 +50,21 @@ export class GeminiProvider implements AIProvider {
         options: res.options,
       };
     } catch (err: any) {
+      const errMsg = (err?.message || '').toLowerCase();
+      if (errMsg.includes('quota') || errMsg.includes('429') || errMsg.includes('rate limit')) {
+        return {
+          reply: `AI request limit reached for your current tier. Please wait a moment or check your API key in Settings.`,
+          actionChips: ['Settings', 'Quota Limit'],
+        };
+      }
+      if (errMsg.includes('network') || errMsg.includes('failed to fetch') || errMsg.includes('offline')) {
+        return {
+          reply: `Network connection error. Please verify your internet connection and try again.`,
+          actionChips: ['Check Network'],
+        };
+      }
       return {
-        reply: `I checked your dashboard. Let me know if you'd like me to log an expense, add a task, check habits, or view goals!`,
+        reply: `I couldn't process that command. You can ask me to track spending (e.g. "Add ₹250 for lunch"), check tasks ("Show my tasks"), view habits ("My habits"), or track goals!`,
         actionChips: ['Tasks', 'Expenses', 'Habits'],
       };
     }

@@ -2,6 +2,7 @@ import { ModuleAdapter, AIServiceContext, AIServiceResponse, SessionMemory } fro
 import { Storage } from '../../../utils/storage';
 import { TodoItem, Priority } from '../../../types';
 import { broadcastDataChanged } from '../../commandMappingService';
+import { InteractiveOption } from '../../commandIntentEngine';
 
 export class TasksAdapter implements ModuleAdapter {
   name = 'tasks';
@@ -12,12 +13,15 @@ export class TasksAdapter implements ModuleAdapter {
       text.includes('task') ||
       text.includes('todo') ||
       text.includes('to-do') ||
-      /^(add|create|new)\s+(task|todo)/i.test(text) ||
-      /^(complete|finish|done with)\s+task/i.test(text) ||
+      /^(add|create|new)\s+(task|todo|a\s+task)/i.test(text) ||
+      /^(complete|finish|done with)\s+(my\s+)?(first\s+)?task/i.test(text) ||
+      /^(delete|remove)\s+(the\s+)?(.+)\s+task/i.test(text) ||
+      /^(delete|remove)\s+task/i.test(text) ||
       text === 'my tasks' ||
       text === "today's tasks" ||
       text === 'show tasks' ||
-      text === 'pending tasks'
+      text === 'pending tasks' ||
+      text.includes('overdue')
     ) {
       return true;
     }
@@ -29,8 +33,102 @@ export class TasksAdapter implements ModuleAdapter {
     const lower = text.toLowerCase();
     const memory: SessionMemory = context?.sessionMemory ? { ...context.sessionMemory } : {};
     const todos = Storage.getTodos();
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
 
-    // 1. Show / View Tasks
+    // ------------------------------------------------------------------------
+    // 1. AMBIGUITY HANDLING: Missing Task Title
+    // e.g. "Add a task", "Create task", "New todo"
+    // ------------------------------------------------------------------------
+    if (/^(?:add|create|new)\s+(?:a\s+)?(?:task|todo|to-do)$/i.test(lower)) {
+      return {
+        reply: `What task would you like to add? Please specify a title (e.g., *"Add a task to study polity tomorrow"*).`,
+        module: 'tasks',
+        actionChips: ['Study polity', 'Review budget', 'Call plumber'],
+        updatedSessionMemory: memory,
+      };
+    }
+
+    // ------------------------------------------------------------------------
+    // 2. DESTRUCTIVE DELETION CONFIRMATION: "Delete the XYZ task", "Delete task [title]"
+    // ------------------------------------------------------------------------
+    if (lower.startsWith('delete') || lower.startsWith('remove')) {
+      const cancelOption: InteractiveOption = {
+        id: `cancel-del-task-${Date.now()}`,
+        label: '✕ Cancel',
+        variant: 'cancel',
+        actions: [],
+      };
+
+      const taskNameMatch = text.match(/(?:delete|remove)\s+(?:the\s+)?(.+?)(?:\s+task)?$/i);
+      const queryTitle = taskNameMatch
+        ? taskNameMatch[1].replace(/\btask\b/i, '').trim().toLowerCase()
+        : '';
+
+      const target = todos.find((t) =>
+        queryTitle ? t.title.toLowerCase().includes(queryTitle) : true
+      );
+
+      if (target) {
+        const deleteOption: InteractiveOption = {
+          id: `confirm-del-task-${target.id}`,
+          label: `🗑️ Delete "${target.title}"`,
+          variant: 'danger',
+          isDestructive: true,
+          actions: [
+            {
+              type: 'delete_task',
+              targetId: target.id,
+              params: { id: target.id },
+              description: `Delete task "${target.title}"`,
+              isDestructive: true,
+            },
+          ],
+        };
+
+        return {
+          reply: `Delete this task?\n\n• **${target.title}** (Priority: ${target.priority || 'medium'})\n• Due: ${target.dueDate || 'No date'}`,
+          module: 'tasks',
+          actionChips: ['Confirmation required'],
+          options: [cancelOption, deleteOption],
+          pendingConfirmation: true,
+          updatedSessionMemory: memory,
+        };
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // 3. READ-ONLY: Overdue Tasks Query
+    // e.g. "What tasks are overdue?", "Show overdue tasks"
+    // ------------------------------------------------------------------------
+    if (lower.includes('overdue')) {
+      const overdue = todos.filter((t) => !t.completed && t.dueDate && t.dueDate < todayStr);
+      if (overdue.length === 0) {
+        return {
+          reply: `You have **0 overdue tasks**! You're completely up to date 🚀.`,
+          module: 'tasks',
+          actionChips: ['0 overdue tasks', 'All caught up!'],
+          updatedSessionMemory: memory,
+        };
+      }
+
+      const listStr = overdue
+        .slice(0, 5)
+        .map((t) => `• [Due ${t.dueDate}] **${t.title}** (${t.priority || 'medium'})`)
+        .join('\n');
+
+      return {
+        reply: `You have **${overdue.length} overdue task${overdue.length === 1 ? '' : 's'}**:\n${listStr}`,
+        module: 'tasks',
+        actionChips: [`${overdue.length} overdue`, 'Tasks Module'],
+        updatedSessionMemory: memory,
+      };
+    }
+
+    // ------------------------------------------------------------------------
+    // 4. READ-ONLY: Show / View Tasks
+    // e.g. "Show my tasks", "Show today's tasks", "My tasks"
+    // ------------------------------------------------------------------------
     if (
       lower.includes('show') ||
       lower.includes('view') ||
@@ -39,7 +137,8 @@ export class TasksAdapter implements ModuleAdapter {
       lower === 'my tasks' ||
       lower === "today's tasks" ||
       lower === 'what are my tasks?' ||
-      lower === 'what are my tasks'
+      lower === 'what are my tasks' ||
+      lower.includes('tasks for today')
     ) {
       const pending = todos.filter((t) => !t.completed);
       if (pending.length === 0) {
@@ -66,22 +165,29 @@ export class TasksAdapter implements ModuleAdapter {
       };
     }
 
-    // 2. Complete Task
+    // ------------------------------------------------------------------------
+    // 5. WRITE: Complete Task
+    // e.g. "Complete my first task", "Complete task [title]"
+    // ------------------------------------------------------------------------
     if (
       lower.startsWith('complete') ||
       lower.startsWith('finish') ||
       lower.startsWith('done with') ||
       lower.includes('mark as done')
     ) {
+      const isFirst = lower.includes('first');
       const queryTitle = lower
-        .replace(/^(complete|finish|done with|mark)\s+(task|todo)?/i, '')
+        .replace(/^(complete|finish|done with|mark)\s+(my\s+)?(first\s+)?(task|todo)?/i, '')
         .replace(/\s+(as\s+done|completed)$/i, '')
         .trim();
 
-      const target = todos.find((t) =>
-        !t.completed &&
-        (queryTitle ? t.title.toLowerCase().includes(queryTitle) : true)
-      );
+      const openTodos = todos.filter((t) => !t.completed);
+      const target = isFirst
+        ? openTodos[0]
+        : todos.find((t) =>
+            !t.completed &&
+            (queryTitle ? t.title.toLowerCase().includes(queryTitle) : true)
+          );
 
       if (target) {
         target.completed = true;
@@ -120,19 +226,40 @@ export class TasksAdapter implements ModuleAdapter {
       }
     }
 
-    // 3. Create Task
-    const createMatch = text.match(/(?:add|create|new)?\s*(?:task|todo)\s*[:-]?\s*(.+)/i);
+    // ------------------------------------------------------------------------
+    // 6. WRITE: Create Task
+    // e.g. "Add a task to study polity tomorrow", "Add task Prepare report"
+    // ------------------------------------------------------------------------
+    const createMatch = text.match(/(?:add|create|new)?\s*(?:a\s+)?(?:task|todo)\s*(?:to\s+|[:-]\s*)?(.+)/i);
     if (createMatch) {
-      const rawTitle = createMatch[1].trim();
+      let rawTitle = createMatch[1].trim();
       let priority: Priority = 'medium';
-      let title = rawTitle;
+      let dueDate = todayStr;
+
+      // Handle "tomorrow"
+      if (/\btomorrow\b/i.test(rawTitle)) {
+        const tomorrow = new Date(now);
+        tomorrow.setDate(now.getDate() + 1);
+        dueDate = tomorrow.toISOString().split('T')[0];
+        rawTitle = rawTitle.replace(/\btomorrow\b/i, '').trim();
+      }
 
       if (/high\s+priority/i.test(rawTitle)) {
         priority = 'high';
-        title = rawTitle.replace(/high\s+priority/i, '').trim();
+        rawTitle = rawTitle.replace(/high\s+priority/i, '').trim();
       } else if (/low\s+priority/i.test(rawTitle)) {
         priority = 'low';
-        title = rawTitle.replace(/low\s+priority/i, '').trim();
+        rawTitle = rawTitle.replace(/low\s+priority/i, '').trim();
+      }
+
+      const title = rawTitle.replace(/^(to\s+|for\s+)/i, '').trim();
+      if (!title) {
+        return {
+          reply: `What task would you like to add? Please specify a title (e.g., *"Add task Study polity tomorrow"*).`,
+          module: 'tasks',
+          actionChips: ['Study polity', 'Pay electric bill'],
+          updatedSessionMemory: memory,
+        };
       }
 
       const newTodo: TodoItem = {
@@ -143,7 +270,7 @@ export class TasksAdapter implements ModuleAdapter {
         priority,
         category: 'General',
         createdAt: Date.now(),
-        dueDate: new Date().toISOString().split('T')[0],
+        dueDate,
       };
 
       const updated = [newTodo, ...todos];
@@ -162,14 +289,14 @@ export class TasksAdapter implements ModuleAdapter {
       };
 
       return {
-        reply: `Added task **"${title}"** with priority **${priority}**.`,
+        reply: `Added task **"${title}"** (Due: ${dueDate}, Priority: ${priority}).`,
         module: 'tasks',
-        actionChips: [`✓ Created task`, `Priority: ${priority}`],
+        actionChips: [`✓ Created task`, `Due: ${dueDate}`],
         executedActions: [
           {
             type: 'add_task',
             targetId: newTodo.id,
-            params: { title, priority },
+            params: { title, priority, dueDate },
             description: `Created task ${title}`,
           },
         ],

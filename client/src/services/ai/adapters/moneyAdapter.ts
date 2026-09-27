@@ -2,7 +2,7 @@ import { ModuleAdapter, AIServiceContext, AIServiceResponse, SessionMemory } fro
 import { Storage } from '../../../utils/storage';
 import { ExpenseItem } from '../../../types';
 import { inferExpenseCategory, broadcastDataChanged } from '../../commandMappingService';
-import { InteractiveOption, ExecutableAction } from '../../commandIntentEngine';
+import { InteractiveOption } from '../../commandIntentEngine';
 
 export class MoneyAdapter implements ModuleAdapter {
   name = 'money';
@@ -17,7 +17,15 @@ export class MoneyAdapter implements ModuleAdapter {
       }
     }
 
-    // Spending queries
+    // Conversational follow-up: "What about last month?"
+    if (
+      (text.includes('last month') || text.includes('previous month')) &&
+      (text.includes('what about') || text.includes('how about') || text.includes('spending') || text.includes('spend'))
+    ) {
+      return true;
+    }
+
+    // Spending queries and commands
     if (
       text.includes('spend') ||
       text.includes('spending') ||
@@ -27,7 +35,11 @@ export class MoneyAdapter implements ModuleAdapter {
       text.includes('paid') ||
       text.includes('transaction') ||
       /^(add|log|record)\s+[₹$]?\s*\d+/i.test(text) ||
-      /^[₹$]?\s*\d+\s+(for|on)\s+/i.test(text)
+      /^[₹$]?\s*\d+\s+(for|on)\s+/i.test(text) ||
+      /^(add|log|record)\s+(groceries|food|lunch|dinner|coffee|snacks|tea|milk|recharge|metro|cab|uber|ola)/i.test(text) ||
+      /^(add|log|record)\s*[₹$]?\s*\d+$/i.test(text) ||
+      /^(delete|remove)\s+(my\s+)?(last\s+)?(expense|transaction)/i.test(text) ||
+      /^(delete|remove)\s+the\s+[₹$]?\d+/i.test(text)
     ) {
       return true;
     }
@@ -40,15 +52,53 @@ export class MoneyAdapter implements ModuleAdapter {
     const lower = text.toLowerCase();
     const memory: SessionMemory = context?.sessionMemory ? { ...context.sessionMemory } : {};
     const expenses = Storage.getExpenses();
-    const todayStr = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    const currentYear = now.getFullYear();
+    const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
+    const currentYearMonth = `${currentYear}-${currentMonth}`;
 
-    // 1. Follow-up modification: "Change it to ₹250"
-    if (memory.lastExpense) {
-      const changeMatch = text.match(/(?:change\s+(?:it|that|amount|expense)\s+to|make\s+it|update\s+(?:it\s+to|to))\s*[₹$]?\s*(\d+(?:\.\d{1,2})?)/i);
-      if (changeMatch) {
-        const newAmount = parseFloat(changeMatch[1]);
-        const targetId = memory.lastExpense.id;
-        const targetExpense = expenses.find((e) => e.id === targetId);
+    // ------------------------------------------------------------------------
+    // 1. AMBIGUITY HANDLING: Missing Amount
+    // e.g., "Add groceries", "Log lunch", "Spent on coffee"
+    // ------------------------------------------------------------------------
+    const missingAmountMatch = text.match(/^(?:add|log|record|spent\s+on)\s+(?!.*[0-9])([a-zA-Z\s&'-]+)$/i);
+    if (missingAmountMatch && !lower.includes('today') && !lower.includes('month') && !lower.includes('week') && !lower.includes('task')) {
+      const item = missingAmountMatch[1].trim();
+      return {
+        reply: `How much did you spend on **${item}**? Please specify an amount (e.g., *"Add ₹250 for ${item}"*).`,
+        module: 'money',
+        actionChips: [`Add ₹100 for ${item}`, `Add ₹250 for ${item}`, `Add ₹500 for ${item}`],
+        updatedSessionMemory: memory,
+      };
+    }
+
+    // ------------------------------------------------------------------------
+    // 2. AMBIGUITY HANDLING: Missing Purpose / Category
+    // e.g., "Add 500", "Add ₹500", "Spent ₹500", "Log 500"
+    // ------------------------------------------------------------------------
+    const missingPurposeMatch = text.match(/^(?:add|log|record|spent)?\s*[₹$]?\s*(\d+(?:\.\d{1,2})?)$/i);
+    if (missingPurposeMatch) {
+      const amount = parseFloat(missingPurposeMatch[1]);
+      return {
+        reply: `What should I categorize **₹${amount}** as? (e.g., *"Add ₹${amount} for groceries"* or *"Add ₹${amount} for lunch"*).`,
+        module: 'money',
+        actionChips: [`₹${amount} Groceries`, `₹${amount} Dining Out`, `₹${amount} Shopping`],
+        updatedSessionMemory: memory,
+      };
+    }
+
+    // ------------------------------------------------------------------------
+    // 3. MODIFICATION SAFETY: "Change my last expense to ₹700", "Change it to ₹800"
+    // ------------------------------------------------------------------------
+    const changeMatch = text.match(/(?:change|update|make)\s+(?:my\s+last\s+expense|the\s+last\s+expense|it|that|expense|amount)\s+(?:to\s+)?[₹$]?\s*(\d+(?:\.\d{1,2})?)/i);
+    if (changeMatch || (memory.lastExpense && /^(?:change\s+(?:it|that|amount|expense)\s+to|make\s+it|update\s+(?:it\s+to|to))\s*[₹$]?\s*(\d+(?:\.\d{1,2})?)/i.test(text))) {
+      const amtStr = changeMatch ? changeMatch[1] : text.match(/\d+(?:\.\d{1,2})?/)?.[0];
+      if (amtStr) {
+        const newAmount = parseFloat(amtStr);
+        const targetExpense = memory.lastExpense
+          ? expenses.find((e) => e.id === memory.lastExpense?.id) || expenses[0]
+          : expenses[0];
 
         if (targetExpense) {
           const oldAmount = targetExpense.amount;
@@ -57,8 +107,10 @@ export class MoneyAdapter implements ModuleAdapter {
           broadcastDataChanged('expenses');
 
           memory.lastExpense = {
-            ...memory.lastExpense,
+            id: targetExpense.id,
+            name: targetExpense.name,
             amount: newAmount,
+            category: targetExpense.category,
           };
           memory.lastAction = {
             type: 'update_expense',
@@ -68,13 +120,13 @@ export class MoneyAdapter implements ModuleAdapter {
           };
 
           return {
-            reply: `Updated **${targetExpense.name}** amount from **₹${oldAmount}** to **₹${newAmount}**.`,
+            reply: `Updated **${targetExpense.name}** from **₹${oldAmount}** to **₹${newAmount}**.`,
             module: 'money',
             actionChips: [`✓ Updated to ₹${newAmount}`, `Expense: ${targetExpense.name}`],
             executedActions: [
               {
                 type: 'update_expense',
-                targetId,
+                targetId: targetExpense.id,
                 params: { amount: newAmount, previousAmount: oldAmount },
                 description: `Updated expense to ₹${newAmount}`,
               },
@@ -85,13 +137,10 @@ export class MoneyAdapter implements ModuleAdapter {
       }
     }
 
-    // 2. Destructive command protection: Delete expenses
-    if (
-      lower.includes('delete') ||
-      lower.includes('remove') ||
-      lower.includes('clear all expenses') ||
-      lower.includes('wipe expenses')
-    ) {
+    // ------------------------------------------------------------------------
+    // 4. DESTRUCTIVE DELETION CONFIRMATION: "Delete my last expense", "Delete the ₹500 grocery transaction"
+    // ------------------------------------------------------------------------
+    if (lower.includes('delete') || lower.includes('remove') || lower.includes('clear')) {
       const cancelOption: InteractiveOption = {
         id: `cancel-del-${Date.now()}`,
         label: '✕ Cancel',
@@ -126,10 +175,57 @@ export class MoneyAdapter implements ModuleAdapter {
         };
       }
 
-      // Single item deletion
-      const itemToDelete = memory.lastExpense
-        ? expenses.find((e) => e.id === memory.lastExpense?.id)
-        : expenses[0];
+      // Check if user specified a name or amount: e.g. "delete the ₹500 grocery transaction"
+      const specificAmtMatch = text.match(/[₹$]?\s*(\d+(?:\.\d{1,2})?)/);
+      const specificNameMatch = text.match(/(?:transaction|expense)\s+for\s+([a-zA-Z\s&'-]+)/i) ||
+                                text.match(/(?:delete|remove)\s+(?:the\s+)?([a-zA-Z]+)(?:\s+transaction|\s+expense)?/i);
+
+      let itemToDelete: ExpenseItem | undefined;
+
+      if (specificAmtMatch && specificNameMatch) {
+        const queryAmt = parseFloat(specificAmtMatch[1]);
+        const queryName = specificNameMatch[1].toLowerCase().trim();
+        const matches = expenses.filter(
+          (e) =>
+            Math.abs(Number(e.amount) - queryAmt) < 0.01 &&
+            e.name.toLowerCase().includes(queryName)
+        );
+        if (matches.length > 1) {
+          // Multiple matches: Show disambiguation options
+          return {
+            reply: `I found **${matches.length}** matching transactions for ₹${queryAmt}. Which one would you like to delete?`,
+            module: 'money',
+            actionChips: ['Select transaction'],
+            options: [
+              ...matches.slice(0, 3).map((m) => ({
+                id: `del-opt-${m.id}`,
+                label: `Delete "${m.name}" on ${m.date}`,
+                variant: 'danger' as const,
+                isDestructive: true,
+                actions: [
+                  {
+                    type: 'delete_expense',
+                    targetId: m.id,
+                    params: { id: m.id },
+                    description: `Delete expense "${m.name}"`,
+                    isDestructive: true,
+                  },
+                ],
+              })),
+              cancelOption,
+            ],
+            pendingConfirmation: true,
+            updatedSessionMemory: memory,
+          };
+        }
+        itemToDelete = matches[0];
+      }
+
+      if (!itemToDelete) {
+        itemToDelete = memory.lastExpense
+          ? expenses.find((e) => e.id === memory.lastExpense?.id) || expenses[0]
+          : expenses[0];
+      }
 
       if (itemToDelete) {
         const deleteSingleOption: InteractiveOption = {
@@ -149,7 +245,7 @@ export class MoneyAdapter implements ModuleAdapter {
         };
 
         return {
-          reply: `Are you sure you want to delete **"${itemToDelete.name}"** (₹${itemToDelete.amount})?`,
+          reply: `Delete this transaction?\n\n• **${itemToDelete.name}**\n• **₹${itemToDelete.amount}** (${itemToDelete.category || 'General'})\n• Date: ${itemToDelete.date}`,
           module: 'money',
           actionChips: ['Confirmation required'],
           options: [cancelOption, deleteSingleOption],
@@ -159,12 +255,12 @@ export class MoneyAdapter implements ModuleAdapter {
       }
     }
 
-    // 3. Today's Spending Query
+    // ------------------------------------------------------------------------
+    // 5. READ-ONLY QUERY: Today's Spending
+    // ------------------------------------------------------------------------
     if (
-      (lower.includes('today') && (lower.includes('spend') || lower.includes('expense'))) ||
-      lower === "today's spending" ||
-      lower === 'what did i spend today?' ||
-      lower === 'how much did i spend today'
+      lower.includes('today') &&
+      (lower.includes('spend') || lower.includes('expense') || lower.includes('how much') || lower.includes('what did'))
     ) {
       const todayExpenses = expenses.filter((e) => e.date === todayStr);
       const total = todayExpenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
@@ -188,9 +284,29 @@ export class MoneyAdapter implements ModuleAdapter {
       };
     }
 
-    // 4. Weekly Spending Query
+    // ------------------------------------------------------------------------
+    // 6. READ-ONLY QUERY: Yesterday's Spending
+    // ------------------------------------------------------------------------
+    if (lower.includes('yesterday')) {
+      const yesterday = new Date(now);
+      yesterday.setDate(now.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+      const yesterdayExpenses = expenses.filter((e) => e.date === yesterdayStr);
+      const total = yesterdayExpenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+
+      return {
+        reply: `You spent **₹${total.toLocaleString('en-IN')}** yesterday across ${yesterdayExpenses.length} transaction${yesterdayExpenses.length === 1 ? '' : 's'}.`,
+        module: 'money',
+        actionChips: [`Yesterday: ₹${total}`, `${yesterdayExpenses.length} transactions`],
+        updatedSessionMemory: memory,
+      };
+    }
+
+    // ------------------------------------------------------------------------
+    // 7. READ-ONLY QUERY: This Week's Spending
+    // ------------------------------------------------------------------------
     if (lower.includes('week') || lower === 'weekly spending') {
-      const now = new Date();
       const currentDay = now.getDay();
       const diffToMonday = currentDay === 0 ? 6 : currentDay - 1;
       const monday = new Date(now);
@@ -212,7 +328,89 @@ export class MoneyAdapter implements ModuleAdapter {
       };
     }
 
-    // 5. Recent Transactions Query
+    // ------------------------------------------------------------------------
+    // 8. READ-ONLY QUERY: Last Month / Previous Month Spending
+    // ------------------------------------------------------------------------
+    if (lower.includes('last month') || lower.includes('previous month')) {
+      const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const prevYear = prevMonthDate.getFullYear();
+      const prevMonthStr = String(prevMonthDate.getMonth() + 1).padStart(2, '0');
+      const prevYearMonth = `${prevYear}-${prevMonthStr}`;
+      const monthName = prevMonthDate.toLocaleString('default', { month: 'long' });
+
+      const prevMonthExpenses = expenses.filter((e) => e.date.startsWith(prevYearMonth));
+      const total = prevMonthExpenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+
+      return {
+        reply: `Last month (${monthName} ${prevYear}), you spent a total of **₹${total.toLocaleString('en-IN')}** across ${prevMonthExpenses.length} transaction${prevMonthExpenses.length === 1 ? '' : 's'}.`,
+        module: 'money',
+        actionChips: [`Last Month: ₹${total}`, `${prevMonthExpenses.length} transactions`],
+        updatedSessionMemory: memory,
+      };
+    }
+
+    // ------------------------------------------------------------------------
+    // 9. READ-ONLY QUERY: This Month's / Monthly Spending
+    // ------------------------------------------------------------------------
+    if (
+      lower.includes('month') ||
+      lower.includes('monthly spending') ||
+      lower.includes('how much have i spent this month')
+    ) {
+      const monthName = now.toLocaleString('default', { month: 'long' });
+      const monthExpenses = expenses.filter((e) => e.date.startsWith(currentYearMonth));
+      const total = monthExpenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+
+      return {
+        reply: `Your total spending this month (${monthName} ${currentYear}) is **₹${total.toLocaleString('en-IN')}** across ${monthExpenses.length} transaction${monthExpenses.length === 1 ? '' : 's'}.`,
+        module: 'money',
+        actionChips: [`This Month: ₹${total}`, `${monthExpenses.length} transactions`],
+        updatedSessionMemory: memory,
+      };
+    }
+
+    // ------------------------------------------------------------------------
+    // 10. READ-ONLY QUERY: Category Spending (e.g., "Show food expenses", "How much spent on groceries?")
+    // ------------------------------------------------------------------------
+    const isExplicitAdd =
+      /^(add|log|record)\b/i.test(lower) ||
+      /^[₹$]?\s*\d+\s+(for|on)\s+/i.test(text) ||
+      /^(add|log|record)?\s*[₹$]?\s*\d+\s+[a-zA-Z]/i.test(text);
+
+    if (!isExplicitAdd) {
+      const categoryKeywords = [
+        { key: 'food', labels: ['Groceries & Food', 'Dining Out', 'Snacks & Coffee'] },
+        { key: 'grocer', labels: ['Groceries & Food'] },
+        { key: 'dining', labels: ['Dining Out'] },
+        { key: 'coffee', labels: ['Snacks & Coffee'] },
+        { key: 'shopping', labels: ['Shopping & Retail'] },
+        { key: 'transit', labels: ['Taxi & Transit'] },
+        { key: 'travel', labels: ['Taxi & Transit'] },
+        { key: 'bills', labels: ['Utilities & Bills'] },
+      ];
+
+      for (const cat of categoryKeywords) {
+        if (lower.includes(cat.key)) {
+          const catExpenses = expenses.filter(
+            (e) =>
+              cat.labels.some((l) => (e.category || '').toLowerCase() === l.toLowerCase()) ||
+              e.name.toLowerCase().includes(cat.key)
+          );
+          const total = catExpenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+
+          return {
+            reply: `You've spent **₹${total.toLocaleString('en-IN')}** on **${cat.labels[0]}** across ${catExpenses.length} transaction${catExpenses.length === 1 ? '' : 's'}.`,
+            module: 'money',
+            actionChips: [`${cat.labels[0]}: ₹${total}`, `${catExpenses.length} records`],
+            updatedSessionMemory: memory,
+          };
+        }
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // 11. READ-ONLY QUERY: Recent Transactions
+    // ------------------------------------------------------------------------
     if (
       lower.includes('recent') ||
       lower.includes('transactions') ||
@@ -241,7 +439,9 @@ export class MoneyAdapter implements ModuleAdapter {
       };
     }
 
-    // 6. Add Expense: "Add ₹250 coffee", "Spend 300 on groceries", "50 for snacks"
+    // ------------------------------------------------------------------------
+    // 12. WRITE: Add Expense: "Add ₹500 for groceries", "Add ₹250 for lunch"
+    // ------------------------------------------------------------------------
     const addMatch =
       text.match(/(?:add|log|record|spend|spent)?\s*[₹$]?\s*(\d+(?:\.\d{1,2})?)\s+(?:for|on)\s+([a-zA-Z0-9\s&'-]+)/i) ||
       text.match(/(?:add|log|record)?\s*(?:expense)?\s*([a-zA-Z0-9\s&'-]+?)\s+[₹$]?\s*(\d+(?:\.\d{1,2})?)/i) ||
