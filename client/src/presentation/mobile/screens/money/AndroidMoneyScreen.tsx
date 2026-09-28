@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { CreditCard, Plus, Trash2, ArrowUpRight, TrendingDown, TrendingUp, Calendar, Tag, DollarSign, Wallet, FileSpreadsheet, MessageSquare, Edit3, Settings } from 'lucide-react';
+import { CreditCard, Plus, Trash2, ArrowUpRight, TrendingDown, TrendingUp, Calendar, Tag, DollarSign, Wallet, FileSpreadsheet, MessageSquare, Edit3, Settings, RotateCw } from 'lucide-react';
 import { ExpenseItem, ExcelImportLog } from '../../../../types';
 import { nativeService } from '../../../../services/nativeService';
 import { smsExpenseService } from '../../../../services/smsExpenseService';
@@ -10,6 +10,7 @@ import { SwipeActionRow } from '../../gestures/SwipeActionRow';
 import { useLongPress } from '../../gestures/useLongPress';
 import { AndroidActionSheet, ActionSheetItem } from '../../components/AndroidActionSheet';
 import { QuickExpenseSheet } from '../../components/QuickExpenseSheet';
+import { ControlledSmsRescanModal } from '../../components/ControlledSmsRescanModal';
 import { compareExpensesByDateTimeDesc, getTransactionDisplayTitle, isCreditTransaction } from '../../../../utils/expenseUtils';
 import { SmsTransaction } from '../../../../services/smsExpenseService';
 import { Capacitor } from '@capacitor/core';
@@ -39,6 +40,14 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   const [editingExpense, setEditingExpense] = useState<ExpenseItem | null>(null);
   const [confirmDeleteExpense, setConfirmDeleteExpense] = useState<ExpenseItem | null>(null);
   const [activeActionExpense, setActiveActionExpense] = useState<ExpenseItem | null>(null);
+  const [isRescanModalOpen, setIsRescanModalOpen] = useState(false);
+
+  // Local reactive expenses mirror to ensure immediate display without requiring page reload
+  const [localExpenses, setLocalExpenses] = useState<ExpenseItem[]>(expenses);
+
+  useEffect(() => {
+    setLocalExpenses(expenses);
+  }, [expenses]);
 
   // Android SMS Auto-Logging State
   const [isSmsEnabled, setIsSmsEnabled] = useState<boolean>(() => {
@@ -59,18 +68,43 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
       }
     });
 
-    const handleSmsAutoLogged = () => {
+    const handleSmsAutoLogged = (e?: Event) => {
       if (isMounted) {
         setIsSmsEnabled(true);
         setSmsPermissionStatus('granted');
+        const customEvt = e as CustomEvent<{ updatedExpenses?: ExpenseItem[] }>;
+        if (customEvt?.detail?.updatedExpenses && Array.isArray(customEvt.detail.updatedExpenses)) {
+          setLocalExpenses(customEvt.detail.updatedExpenses);
+        } else {
+          setLocalExpenses(Storage.getExpenses());
+        }
       }
     };
+
+    const handleDashboardUpdated = (e?: Event) => {
+      if (isMounted) {
+        const customEvt = e as CustomEvent<{ module?: string; updatedExpenses?: ExpenseItem[] }>;
+        if (!customEvt?.detail?.module || customEvt.detail.module === 'expenses') {
+          if (customEvt?.detail?.updatedExpenses && Array.isArray(customEvt.detail.updatedExpenses)) {
+            setLocalExpenses(customEvt.detail.updatedExpenses);
+          } else {
+            setLocalExpenses(Storage.getExpenses());
+          }
+        }
+      }
+    };
+
     window.addEventListener('sms_expense_auto_logged', handleSmsAutoLogged);
+    window.addEventListener('dashboard-data-updated', handleDashboardUpdated);
     return () => {
       isMounted = false;
       window.removeEventListener('sms_expense_auto_logged', handleSmsAutoLogged);
+      window.removeEventListener('dashboard-data-updated', handleDashboardUpdated);
     };
   }, []);
+
+  // Use localExpenses (which updates immediately upon SMS receipt) or fallback to props
+  const activeExpenses = localExpenses && localExpenses.length >= 0 ? localExpenses : expenses;
 
   const handleSmsAction = async () => {
     void nativeService.triggerHaptic('selection');
@@ -140,7 +174,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
     let todayDebits = 0;
     const catMap: Record<string, number> = {};
 
-    expenses.forEach((e) => {
+    activeExpenses.forEach((e) => {
       const amt = Number(e.amount) || 0;
       const isCredit = isCreditTransaction(e);
       const d = new Date(e.date);
@@ -173,11 +207,11 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
       todaySpending: todayDebits,
       categoryTotals: sortedCats,
     };
-  }, [expenses, currentYear, currentMonth, todayDateStr]);
+  }, [activeExpenses, currentYear, currentMonth, todayDateStr]);
 
   // Filtered transactions sorted newest -> older by actual date & time
   const filteredExpenses = useMemo(() => {
-    return expenses
+    return activeExpenses
       .filter((e) => {
         if (periodFilter === 'month') {
           const d = new Date(e.date);
@@ -192,7 +226,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         return true;
       })
       .sort(compareExpensesByDateTimeDesc);
-  }, [expenses, periodFilter, selectedCategory, currentYear, currentMonth, todayDateStr]);
+  }, [activeExpenses, periodFilter, selectedCategory, currentYear, currentMonth, todayDateStr]);
 
   const handleDelete = (id: string) => {
     void nativeService.triggerHaptic('warning');
@@ -267,6 +301,20 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
                 <span>Allow SMS</span>
               </>
             )}
+          </button>
+
+          {/* Rescan SMS Action Button */}
+          <button
+            type="button"
+            onClick={() => {
+              void nativeService.triggerHaptic('selection');
+              setIsRescanModalOpen(true);
+            }}
+            className="px-2.5 py-1.5 rounded-full border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-xs font-semibold flex items-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
+            title="Controlled SMS Rescan"
+          >
+            <RotateCw className="w-3.5 h-3.5" />
+            <span>Rescan SMS</span>
           </button>
 
           {onAddExpense && (
@@ -482,6 +530,16 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         title={activeActionExpense?.name || 'Expense Options'}
         subtitle={`Amount: ₹${Number(activeActionExpense?.amount || 0).toLocaleString()} · ${activeActionExpense?.category} · ${activeActionExpense?.date}`}
         actions={actionItems}
+      />
+
+      {/* Controlled SMS Rescan Modal */}
+      <ControlledSmsRescanModal
+        isOpen={isRescanModalOpen}
+        onClose={() => setIsRescanModalOpen(false)}
+        onSuccess={(_result) => {
+          const fresh = Storage.getExpenses();
+          setLocalExpenses(fresh);
+        }}
       />
     </div>
   );

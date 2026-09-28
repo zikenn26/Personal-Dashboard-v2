@@ -231,10 +231,13 @@ public class SmsTransactionPlugin extends Plugin {
             ContentResolver cr = context.getContentResolver();
             Uri inboxUri = Uri.parse("content://sms/inbox");
             String[] projection = new String[] { "_id", "address", "body", "date" };
-            Cursor cursor = cr.query(inboxUri, projection, null, null, "date DESC LIMIT " + limit);
+            // Query inbox with an expanded scan window so we yield the target count of financial SMS
+            // even if the user has non-financial OTPs and promotional messages in their inbox.
+            int scanWindow = Math.max(limit * 5, 200);
+            Cursor cursor = cr.query(inboxUri, projection, null, null, "date DESC LIMIT " + scanWindow);
 
             if (cursor != null) {
-                while (cursor.moveToNext()) {
+                while (cursor.moveToNext() && results.length() < limit) {
                     String address = cursor.getString(cursor.getColumnIndexOrThrow("address"));
                     String body = cursor.getString(cursor.getColumnIndexOrThrow("body"));
                     long date = cursor.getLong(cursor.getColumnIndexOrThrow("date"));
@@ -361,8 +364,8 @@ public class SmsTransactionPlugin extends Plugin {
 
             NotificationCompat.Builder builder = new NotificationCompat.Builder(context, channelId)
                 .setSmallIcon(android.R.drawable.stat_notify_more)
-                .setContentTitle("💳 Spending Auto-Logged (" + sender + ")")
-                .setContentText(summary)
+                .setContentTitle("💳 Transaction Detected (" + sender + ")")
+                .setContentText(summary + " • Tap to review in Spending")
                 .setAutoCancel(true)
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT);
 

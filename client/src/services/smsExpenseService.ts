@@ -1,11 +1,45 @@
 import { registerPlugin, Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
 import { ExpenseItem, ParsedSmsTransaction, SmsTransactionLogItem } from '../types';
 import { Storage } from '../utils/storage';
 import { broadcastDataChanged } from './commandMappingService';
 import { nativeService } from './nativeService';
 import { Sound } from '../utils/audio';
 import { parseSmsTransaction } from './smsParser';
+import { scheduleAutoSyncToSupabase, getCustomWorkspaceIdentifier } from '../utils/supabase';
 import { toast } from 'sonner';
+
+export interface SmsTransactionCandidate {
+  id: string;
+  rawSms: string;
+  sender: string;
+  timestamp: number;
+  amount: number;
+  currency: string;
+  payee: string;
+  merchant: string;
+  category: string;
+  paymentMethod: string;
+  bankName: string;
+  referenceId?: string;
+  direction: 'DEBIT' | 'CREDIT';
+  date: string;
+  time?: string;
+  preview: string;
+  isExisting: boolean;
+  existingMatchTitle?: string;
+}
+
+export interface SmsRescanResult {
+  scanned: number;
+  transactionsFound: number;
+  selected: number;
+  imported: number;
+  alreadyExisting: number;
+  failed: number;
+  failures: Array<{ candidateId: string; reason: string }>;
+  importedExpenses: ExpenseItem[];
+}
 
 export interface SmsTransactionPluginInterface {
   isAvailable(): Promise<{ available: boolean; platform: string }>;
@@ -158,6 +192,101 @@ export function isTraiServiceSender(sender: string): boolean {
 }
 
 export const isBankOrFinancialSender = isTraiServiceSender;
+
+/**
+ * Fast, comprehensive local heuristic to identify financial transaction SMS
+ * (debits, credits, UPI, cards, bank alerts) while rejecting OTPs, loans, and promotional spam.
+ * Fully aligned with native SmsReceiver.java heuristic.
+ */
+export function isLikelyFinancialSms(sender: string, body: string): boolean {
+  if (!body || !body.trim()) return false;
+  const lower = body.toLowerCase();
+
+  // 1. Strict OTP & Authentication rejection
+  if (
+    lower.includes('otp') &&
+    (lower.includes('do not share') ||
+      lower.includes('valid for') ||
+      lower.includes('is your') ||
+      lower.includes('secret') ||
+      lower.includes('use this') ||
+      lower.includes('authenticate') ||
+      lower.includes('one time password'))
+  ) {
+    return false;
+  }
+
+  if (
+    lower.includes('verification code') ||
+    lower.includes('security code') ||
+    lower.includes('is your one time password')
+  ) {
+    return false;
+  }
+
+  // 2. Reject promotional / marketing loans & schemes
+  if (
+    lower.includes('pre-approved loan') ||
+    lower.includes('apply for instant loan') ||
+    lower.includes('personal loan up to') ||
+    lower.includes('click here to claim') ||
+    lower.includes('congratulations! you won') ||
+    lower.includes('apply for credit card')
+  ) {
+    return false;
+  }
+
+  // 3. Reject declined or failed transactions
+  if (
+    lower.includes('declined') ||
+    lower.includes('payment failed') ||
+    lower.includes('transaction failed') ||
+    lower.includes('unsuccessful') ||
+    lower.includes('failed due to')
+  ) {
+    return false;
+  }
+
+  // 4. Must contain at least one digit (amount, account, or date)
+  if (!/\d/.test(lower)) {
+    return false;
+  }
+
+  // 5. Must contain a financial transaction verb or banking indicator
+  const hasTxnVerb =
+    lower.includes('debited') ||
+    lower.includes('credited') ||
+    lower.includes('paid') ||
+    lower.includes('spent') ||
+    lower.includes('withdrawn') ||
+    lower.includes('transferred') ||
+    lower.includes('transfer to') ||
+    lower.includes('sent to') ||
+    lower.includes('purchase') ||
+    lower.includes('charged') ||
+    lower.includes('deducted') ||
+    lower.includes('txn of') ||
+    lower.includes('payment of') ||
+    lower.includes('received') ||
+    lower.includes('deposited') ||
+    lower.includes('refund') ||
+    lower.includes('cashback') ||
+    lower.includes('vpa') ||
+    lower.includes('pos txn') ||
+    lower.includes('atm wdl') ||
+    lower.includes('upi ref') ||
+    lower.includes('ref no') ||
+    lower.includes('rrn') ||
+    lower.includes('card ending') ||
+    lower.includes('a/c ending') ||
+    lower.includes('acct ending') ||
+    lower.includes('avl bal') ||
+    lower.includes('avail bal') ||
+    lower.includes('dr to') ||
+    lower.includes('cr to');
+
+  return hasTxnVerb;
+}
 
 class SmsExpenseService {
   private isInitialized = false;
@@ -470,13 +599,21 @@ class SmsExpenseService {
     const sanitizedBody = sanitizeSmsForLog(body);
 
     // =========================================================================
-    // 0. TRAI SERVICE SENDER FILTER (TRAI Regulation Check)
+    // 0. SENDER & FINANCIAL CONTENT ELIGIBILITY CHECK
     // =========================================================================
-    // Target only SMS whose sender/header is a legitimate banking / transaction service sender.
-    if (!isTraiServiceSender(sender)) {
-      const skipReason = `SMS ignored: Sender title "${sender || '(empty)'}" is not an authorized banking or transactional service sender. Rejected before parsing/storage.`;
-      logDeviceDiagnostic('warn', 'LifeOS_SMS:SKIPPED_NOT_TRAI_SERVICE', skipReason, {
+    // Verify that sender is an authorized banking / TRAI sender (if sender provided),
+    // and that body meets the financial transaction heuristic (not OTP, spam, or promo).
+    const hasSender = Boolean(sender && sender.trim());
+    const isEligibleSender = hasSender ? isTraiServiceSender(sender) : true;
+    const isFinancialHeuristic = isLikelyFinancialSms(sender, body);
+
+    if (!isEligibleSender || !isFinancialHeuristic) {
+      const skipReason = !isEligibleSender
+        ? `SMS ignored: Sender "${sender || '(empty)'}" is not an authorized banking sender.`
+        : `SMS ignored: Message body has no financial transaction content or is non-transactional (OTP/verification/promo).`;
+      logDeviceDiagnostic('warn', 'LifeOS_SMS:SKIPPED_NOT_FINANCIAL', 'Message was NOT identified as a financial transaction', {
         sender: sender || '(unknown)',
+        whySkipped: skipReason,
         sanitizedPreview: sanitizedBody.slice(0, 100),
       });
 
@@ -529,9 +666,9 @@ class SmsExpenseService {
 
     try {
       // =========================================================================
-      // 2. DIAGNOSTIC LOGCAT: RAW CAPTURE BEFORE PARSER
+      // CHECKPOINT 1 — SMS RECEIVED
       // =========================================================================
-      logDeviceDiagnostic('info', 'LifeOS_SMS:RAW_PAYLOAD', 'Incoming SMS captured before parser', {
+      logDeviceDiagnostic('info', 'LifeOS_SMS:1_SMS_RECEIVED LifeOS_SMS:RAW_PAYLOAD', 'Incoming SMS captured before parser', {
         sender: sender || '(unknown)',
         timestampISO: new Date(timestamp).toISOString(),
         timestampMs: timestamp,
@@ -539,14 +676,20 @@ class SmsExpenseService {
         sanitizedContent: sanitizedBody,
         isAutoTrackingEnabled: this.isAutoTrackingEnabled(),
         platform: Capacitor.getPlatform(),
+        workspace: getCustomWorkspaceIdentifier(),
       });
 
-      // Execute semantic extraction
+      // =========================================================================
+      // CHECKPOINT 2 — PARSER RESULT
+      // =========================================================================
       const parsed = parseSmsTransaction(body, sender, timestamp);
+      logDeviceDiagnostic('info', 'LifeOS_SMS:2_PARSER_RESULT', 'Parser extraction complete', {
+        isTransaction: parsed.isTransaction,
+        confidence: parsed.confidence,
+        ignoreReason: parsed.ignoreReason || null,
+        type: parsed.type,
+      });
 
-      // =========================================================================
-      // 3. DIAGNOSTIC LOGCAT: FINANCIAL CLASSIFICATION CHECK
-      // =========================================================================
       if (!parsed.isTransaction) {
         const skipReason = parsed.ignoreReason || 'Unrelated message (OTP, promotional advertisement, service alert, or non-transactional text)';
 
@@ -575,13 +718,14 @@ class SmsExpenseService {
       }
 
       // =========================================================================
-      // 4. DIAGNOSTIC LOGCAT: FULL DATA OBJECT BEFORE DUPLICATE CHECK
+      // CHECKPOINT 3 — EXTRACTED TRANSACTION
       // =========================================================================
-      const preDuplicateDataObject = {
+      const extractedTransactionData = {
         amount: parsed.amount,
         currency: parsed.currency || 'INR',
         type: parsed.type,
         merchant: parsed.merchant,
+        payee: parsed.payee || parsed.merchant,
         category: parsed.category,
         paymentMethod: parsed.paymentMethod,
         bankOrAccount: parsed.bankOrAccount,
@@ -596,16 +740,22 @@ class SmsExpenseService {
 
       logDeviceDiagnostic(
         'info',
-        'LifeOS_SMS:FINANCIAL_IDENTIFIED',
-        'SMS identified as financial transaction (Pre-Duplicate Check Data Object)',
-        preDuplicateDataObject
+        'LifeOS_SMS:3_EXTRACTED_TRANSACTION LifeOS_SMS:FINANCIAL_IDENTIFIED',
+        'Pre-Duplicate Check Data Object',
+        extractedTransactionData
       );
 
       // =========================================================================
-      // 5. DUPLICATE CHECK EVALUATION (Redundancy Prevention)
+      // CHECKPOINT 4 — DEDUPE DECISION
       // =========================================================================
       const existingExpenses = Storage.getExpenses();
       const dupCheck = this.checkIsDuplicate(parsed, existingExpenses, body);
+
+      logDeviceDiagnostic('info', 'LifeOS_SMS:4_DEDUPE_DECISION', 'Deduplication check completed', {
+        isDuplicate: dupCheck.isDuplicate,
+        reason: dupCheck.reason || 'None (transaction is unique)',
+        existingExpensesCount: existingExpenses.length,
+      });
 
       if (dupCheck.isDuplicate) {
         logDeviceDiagnostic('warn', 'LifeOS_SMS:SKIPPED_DUPLICATE', 'Duplicate transaction detected; skipping auto-logging to Spending', {
@@ -649,7 +799,9 @@ class SmsExpenseService {
         };
       }
 
-      // 6. Construct and auto-log new Expense entry
+      // =========================================================================
+      // CHECKPOINT 5 — STORAGE MUTATION RESULT
+      // =========================================================================
       const notesParts: string[] = [];
       if (parsed.bankOrAccount) notesParts.push(parsed.bankOrAccount);
       if (parsed.referenceId) notesParts.push(`Ref: ${parsed.referenceId}`);
@@ -680,9 +832,42 @@ class SmsExpenseService {
         active: true,
       };
 
-      // Prepend to expenses list
-      const updatedExpenses = [newExpense, ...existingExpenses];
-      Storage.setExpenses(updatedExpenses);
+      // Mutate storage using canonical Storage.addExpense
+      const updatedExpenses = Storage.addExpense(newExpense);
+
+      logDeviceDiagnostic('info', 'LifeOS_SMS:5_STORAGE_MUTATION_RESULT LifeOS_SMS:LOGGED_TO_SPENDING', `ExpenseItem committed to Storage: ${newExpense.name} (₹${newExpense.amount})`, {
+        expenseId: newExpense.id,
+        direction: newExpense.direction,
+        referenceId: newExpense.referenceId,
+        totalExpensesNow: updatedExpenses.length,
+      });
+
+      // =========================================================================
+      // CHECKPOINT 6 — LOCAL PERSISTENCE VERIFICATION
+      // =========================================================================
+      const verifiedExpenses = Storage.getExpenses();
+      const isPersisted = verifiedExpenses.some((e) => e.id === newExpense.id);
+
+      if (!isPersisted) {
+        const errorReason = `Storage verification failed: Expense ${newExpense.id} was not present in Storage.getExpenses() immediately after write!`;
+        logDeviceDiagnostic('error', 'LifeOS_SMS:6_LOCAL_PERSISTENCE_RESULT', errorReason, {
+          expenseId: newExpense.id,
+          expectedCount: updatedExpenses.length,
+          actualCount: verifiedExpenses.length,
+        });
+        return {
+          success: false,
+          status: 'ignored_not_financial',
+          reason: errorReason,
+          expense: newExpense,
+          parsed,
+        };
+      }
+
+      logDeviceDiagnostic('info', 'LifeOS_SMS:6_LOCAL_PERSISTENCE_RESULT', 'Verified persistent storage insertion successfully', {
+        expenseId: newExpense.id,
+        verifiedCount: verifiedExpenses.length,
+      });
 
       // Save multi-vector fingerprints to prevent any future duplicate
       Storage.addProcessedSmsFingerprint(parsed.fingerprint);
@@ -714,30 +899,37 @@ class SmsExpenseService {
       Storage.addSmsTransactionLog(logItem);
 
       // =========================================================================
-      // 7. DIAGNOSTIC LOGCAT: LOGGED TO SPENDING
+      // CHECKPOINT 7 — CLOUD SYNC RESULT
       // =========================================================================
-      logDeviceDiagnostic('info', 'LifeOS_SMS:LOGGED_TO_SPENDING', `Transaction auto-logged to Spending: ${newExpense.name} (₹${newExpense.amount})`, {
-        expenseId: newExpense.id,
-        merchant: newExpense.name,
-        amount: newExpense.amount,
-        category: newExpense.category,
-        paymentMethod: newExpense.paymentMethod,
-        referenceId: newExpense.smsReferenceId,
-        date: newExpense.date,
-        time: newExpense.time,
-        bankOrAccount: newExpense.bankOrAccount,
-      });
+      try {
+        scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 150);
+        logDeviceDiagnostic('info', 'LifeOS_SMS:7_SYNC_RESULT', 'Scheduled cloud workspace sync with new transaction', {
+          workspace: getCustomWorkspaceIdentifier(),
+          expenseId: newExpense.id,
+        });
+      } catch (syncErr: any) {
+        logDeviceDiagnostic('warn', 'LifeOS_SMS:7_SYNC_RESULT', 'Sync schedule notice (offline or local workspace): ' + (syncErr?.message || syncErr));
+      }
 
-      // Dispatch system events so dashboard views update immediately
-      broadcastDataChanged('expenses', { newExpense });
+      // =========================================================================
+      // CHECKPOINT 8 — SPENDING REFRESH / STATE UPDATE
+      // =========================================================================
+      // Dispatch system events with explicit updatedExpenses array so all dashboard views update in real time
+      broadcastDataChanged('expenses', { newExpense, updatedExpenses: verifiedExpenses });
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(
           new CustomEvent('sms_expense_auto_logged', {
-            detail: { expense: newExpense, parsed },
+            detail: { expense: newExpense, parsed, updatedExpenses: verifiedExpenses },
           })
         );
       }
+
+      logDeviceDiagnostic('info', 'LifeOS_SMS:8_SPENDING_REFRESH_STATE_UPDATE', 'Dispatched real-time Spending UI update events', {
+        expenseId: newExpense.id,
+        title: newExpense.name,
+        amount: newExpense.amount,
+      });
 
       // Subtle feedback: Audio, Haptics, and In-App Toast
       try {
@@ -883,6 +1075,316 @@ class SmsExpenseService {
   }
 
   /**
+   * Reads up to `count` recent transaction-related SMS messages from the inbox.
+   * Filters candidate SMS through financial parser logic and returns sorted newest -> oldest.
+   */
+  public async getRecentTransactionCandidates(
+    count: 10 | 20 | 30 | 50 = 20
+  ): Promise<SmsTransactionCandidate[]> {
+    let rawMessages: Array<{ sender: string; body: string; timestamp: number }> = [];
+
+    const isNative = await this.isNativePluginAvailable();
+    if (isNative) {
+      try {
+        const res = await SmsTransaction.readRecentSms({ limit: count });
+        rawMessages = res?.messages || [];
+      } catch (err) {
+        console.warn('Native readRecentSms failed:', err);
+      }
+    } else if (typeof (smsPluginWebImpl as any)._inboxMock === 'function') {
+      const res = await (smsPluginWebImpl as any)._inboxMock({ limit: count });
+      rawMessages = res?.messages || [];
+    } else {
+      // Fallback sample bank messages for web preview / simulation
+      rawMessages = [
+        {
+          sender: 'AD-ICICIB',
+          body: 'ICICI Bank Acct XX070 debited for Rs 303.00 on 25-Sep-26; ARPITA PRIYADAR credited. UPI:663416590461.',
+          timestamp: Date.now() - 1000 * 60 * 45,
+        },
+        {
+          sender: 'VK-HDFCBK',
+          body: 'Rs.450.00 debited from HDFC Bank A/c **4120 on 24-Sep-26 to SWIGGY. UPI: 429384928342. Avl bal: Rs.14,200.00.',
+          timestamp: Date.now() - 1000 * 60 * 180,
+        },
+        {
+          sender: 'BZ-KOTAKB',
+          body: 'Kotak Bank: Rs 250.00 debited from A/c **** on 24-Sep-26. UPI:556677889900-CHAAYOS. Bal: Rs 12,090.00.',
+          timestamp: Date.now() - 1000 * 60 * 300,
+        },
+        {
+          sender: 'AD-SBIUPI',
+          body: 'Dear UPI user A/C 9876 debited by 1200.00 on 24Sep26 transfer to MOHIT SHARMA Ref No 429482938492.',
+          timestamp: Date.now() - 1000 * 60 * 480,
+        },
+        {
+          sender: 'AD-ICICIT-S',
+          body: 'Your ICICI Bank Credit Card XX2004 has been used for purchase of INR 2,499.00 at AMAZON INDIA on 23-Sep-2026. Avl Lmt: INR 85,000.',
+          timestamp: Date.now() - 1000 * 60 * 1440,
+        },
+        {
+          sender: 'AX-AXISBK',
+          body: 'Axis Bank: INR 350.00 spent on Card ending 4412 at STARBUCKS on 23-09-2026 14:15:30. Avail Bal: INR 12,500.00.',
+          timestamp: Date.now() - 1000 * 60 * 2000,
+        },
+      ];
+    }
+
+    const currentExpenses = Storage.getExpenses();
+    const candidates: SmsTransactionCandidate[] = [];
+
+    // Filter and extract financial transactions
+    for (const msg of rawMessages) {
+      if (!msg.body || !msg.body.trim()) continue;
+      const parsed = parseSmsTransaction(msg.body, msg.sender, msg.timestamp);
+      if (!parsed.isTransaction || parsed.amount <= 0) {
+        continue;
+      }
+
+      // Check if this candidate already matches an existing expense in canonical Storage
+      const cleanRef = parsed.referenceId ? parsed.referenceId.trim().toUpperCase() : '';
+      let isExisting = false;
+      let existingMatchTitle: string | undefined;
+
+      if (cleanRef) {
+        const found = currentExpenses.find(
+          (e) =>
+            (e.smsReferenceId && e.smsReferenceId.trim().toUpperCase() === cleanRef) ||
+            (e.referenceId && e.referenceId.trim().toUpperCase() === cleanRef) ||
+            (e.notes && e.notes.toUpperCase().includes(cleanRef))
+        );
+        if (found) {
+          isExisting = true;
+          existingMatchTitle = found.name;
+        }
+      }
+
+      if (!isExisting) {
+        const matchByRaw = currentExpenses.find(
+          (e) => e.rawSmsText && e.rawSmsText.trim().toLowerCase() === msg.body.trim().toLowerCase()
+        );
+        if (matchByRaw) {
+          isExisting = true;
+          existingMatchTitle = matchByRaw.name;
+        }
+      }
+
+      const candidateId = `cand-${msg.timestamp}-${Math.random().toString(36).substr(2, 6)}`;
+      const snippet = msg.body.length > 75 ? msg.body.substring(0, 72) + '...' : msg.body;
+
+      candidates.push({
+        id: candidateId,
+        rawSms: msg.body,
+        sender: msg.sender,
+        timestamp: msg.timestamp,
+        amount: parsed.amount,
+        currency: parsed.currency || '₹',
+        payee: parsed.payee || parsed.merchant,
+        merchant: parsed.merchant,
+        category: parsed.category,
+        paymentMethod: parsed.paymentMethod,
+        bankName: parsed.bankName || parsed.bank || 'Bank',
+        referenceId: parsed.referenceId,
+        direction: parsed.type === 'income' ? 'CREDIT' : 'DEBIT',
+        date: parsed.date,
+        time: parsed.time,
+        preview: snippet,
+        isExisting,
+        existingMatchTitle,
+      });
+
+      if (candidates.length >= count) {
+        break;
+      }
+    }
+
+    // Sort newest -> oldest by timestamp
+    return candidates.sort((a, b) => b.timestamp - a.timestamp);
+  }
+
+  /**
+   * Logs explicitly user-selected SMS candidates from manual Rescan.
+   *
+   * ABSOLUTE RULE: USER SELECTION HAS PRIORITY.
+   * Never silently discard, remove, or hide user selections.
+   * If a candidate already corresponds to an existing transaction, deterministically report
+   * it as "already existing" without corrupting existing records.
+   * If candidate is new, create canonical ExpenseItem, persist to Storage, verify,
+   * push to Supabase, and dispatch UI updates.
+   */
+  public async logSelectedCandidates(
+    selectedCandidates: SmsTransactionCandidate[]
+  ): Promise<SmsRescanResult> {
+    const result: SmsRescanResult = {
+      scanned: selectedCandidates.length,
+      transactionsFound: selectedCandidates.length,
+      selected: selectedCandidates.length,
+      imported: 0,
+      alreadyExisting: 0,
+      failed: 0,
+      failures: [],
+      importedExpenses: [],
+    };
+
+    if (!selectedCandidates || selectedCandidates.length === 0) {
+      return result;
+    }
+
+    for (const cand of selectedCandidates) {
+      try {
+        const currentExpenses = Storage.getExpenses();
+        const cleanRef = cand.referenceId ? cand.referenceId.trim().toUpperCase() : '';
+
+        // Deterministic check against existing transactions
+        let isAlreadyExisting = false;
+        let existingItem: ExpenseItem | undefined;
+
+        if (cleanRef) {
+          existingItem = currentExpenses.find(
+            (e) =>
+              (e.smsReferenceId && e.smsReferenceId.trim().toUpperCase() === cleanRef) ||
+              (e.referenceId && e.referenceId.trim().toUpperCase() === cleanRef) ||
+              (e.notes && e.notes.toUpperCase().includes(cleanRef))
+          );
+          if (existingItem) {
+            isAlreadyExisting = true;
+          }
+        }
+
+        if (!isAlreadyExisting) {
+          existingItem = currentExpenses.find(
+            (e) => e.rawSmsText && e.rawSmsText.trim().toLowerCase() === cand.rawSms.trim().toLowerCase()
+          );
+          if (existingItem) {
+            isAlreadyExisting = true;
+          }
+        }
+
+        if (isAlreadyExisting && existingItem) {
+          result.alreadyExisting++;
+          logDeviceDiagnostic('info', 'LifeOS_SMS:RESCAN_ALREADY_EXISTS', `Manual rescan item already existing in Spending: ${existingItem.name}`, {
+            candidateId: cand.id,
+            matchedExpenseId: existingItem.id,
+            payee: cand.payee,
+            amount: cand.amount,
+            referenceId: cand.referenceId,
+          });
+          continue;
+        }
+
+        // New transaction: construct canonical ExpenseItem
+        const notesParts: string[] = [];
+        if (cand.bankName) notesParts.push(cand.bankName);
+        if (cand.referenceId) notesParts.push(`Ref: ${cand.referenceId}`);
+        notesParts.push('Imported via SMS Rescan');
+
+        const newExpense: ExpenseItem = {
+          id: `exp-sms-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          name: cand.payee || cand.merchant,
+          amount: cand.amount,
+          category: (cand.category as any) || 'Other',
+          date: cand.date,
+          time: cand.time,
+          paymentMethod: cand.paymentMethod as any,
+          notes: notesParts.join(' • '),
+          rawSmsText: cand.rawSms,
+          smsReferenceId: cand.referenceId,
+          referenceId: cand.referenceId,
+          upiReference: cand.paymentMethod === 'UPI' ? cand.referenceId : undefined,
+          source: 'sms_auto',
+          direction: cand.direction,
+          transactionType: cand.direction,
+          bankName: cand.bankName,
+          merchant: cand.merchant,
+          payee: cand.payee,
+          active: true,
+        };
+
+        // Mutate storage using canonical Storage.addExpense
+        Storage.addExpense(newExpense);
+
+        // Verification of persistence
+        const reloaded = Storage.getExpenses();
+        const isVerified = reloaded.some((e) => e.id === newExpense.id);
+
+        if (!isVerified) {
+          result.failed++;
+          result.failures.push({
+            candidateId: cand.id,
+            reason: `Storage verification failed: could not confirm persistence of ${cand.payee} (₹${cand.amount})`,
+          });
+          continue;
+        }
+
+        // Register fingerprints
+        if (cand.referenceId) {
+          Storage.addProcessedSmsFingerprint(`ref_id_${cand.referenceId.trim().toUpperCase()}`);
+        }
+        Storage.addProcessedSmsFingerprint(`raw_sms_${cand.rawSms.trim().toLowerCase().replace(/\s+/g, ' ')}`);
+
+        result.imported++;
+        result.importedExpenses.push(newExpense);
+
+        // Audit log
+        const logItem: SmsTransactionLogItem = {
+          id: `sms-log-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          timestamp: cand.timestamp,
+          sender: cand.sender,
+          rawSms: cand.rawSms,
+          status: 'logged',
+          expenseId: newExpense.id,
+          parsed: {
+            amount: cand.amount,
+            merchant: cand.merchant,
+            category: cand.category,
+            type: cand.direction === 'CREDIT' ? 'income' : 'expense',
+            date: cand.date,
+            referenceId: cand.referenceId,
+          },
+        };
+        Storage.addSmsTransactionLog(logItem);
+
+        logDeviceDiagnostic('info', 'LifeOS_SMS:RESCAN_IMPORTED', `Manual Rescan logged: ${newExpense.name} (₹${newExpense.amount})`, {
+          expenseId: newExpense.id,
+          referenceId: newExpense.referenceId,
+        });
+      } catch (err: any) {
+        result.failed++;
+        result.failures.push({
+          candidateId: cand.id,
+          reason: err?.message || 'Unexpected error while logging transaction',
+        });
+      }
+    }
+
+    if (result.imported > 0) {
+      // Re-sync to cloud workspace
+      try {
+        scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 150);
+      } catch {}
+
+      // Dispatch UI update events
+      const freshExpenses = Storage.getExpenses();
+      broadcastDataChanged('expenses', { updatedExpenses: freshExpenses });
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('sms_expense_auto_logged', {
+            detail: { updatedExpenses: freshExpenses, count: result.imported },
+          })
+        );
+      }
+
+      try {
+        const settings = Storage.getSettings();
+        Sound.complete(settings.soundEnabled);
+        nativeService.triggerHaptic('success');
+      } catch {}
+    }
+
+    return result;
+  }
+
+  /**
    * Initialize native SMS listener and background queue listener
    */
   public async initialize(): Promise<void> {
@@ -929,7 +1431,23 @@ class SmsExpenseService {
       }
     }
 
-    // 5. Also listen for app resume / visibility change / window focus to flush background SMS
+    // 5. Capacitor Native App Resume & Foreground Listeners
+    if (Capacitor.isNativePlatform()) {
+      try {
+        CapApp.addListener('appStateChange', (state) => {
+          if (state.isActive && this.isAutoTrackingEnabled()) {
+            void this.syncPendingBackgroundMessages();
+          }
+        });
+        CapApp.addListener('resume', () => {
+          if (this.isAutoTrackingEnabled()) {
+            void this.syncPendingBackgroundMessages();
+          }
+        });
+      } catch {}
+    }
+
+    // 6. Also listen for app resume / visibility change / window focus to flush background SMS
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible' && this.isAutoTrackingEnabled()) {

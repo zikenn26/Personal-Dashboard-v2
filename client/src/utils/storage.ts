@@ -1301,6 +1301,26 @@ export const Storage = {
 
   getExpenses: (): ExpenseItem[] => loadFromStorage(STORAGE_KEYS.EXPENSES, INITIAL_EXPENSES),
   setExpenses: (items: ExpenseItem[]) => saveToStorage(STORAGE_KEYS.EXPENSES, items),
+  addExpense: (expense: ExpenseItem): ExpenseItem[] => {
+    const current = Storage.getExpenses();
+    const existingIndex = current.findIndex((e) => e.id === expense.id);
+    let updated: ExpenseItem[];
+    if (existingIndex >= 0) {
+      updated = [...current];
+      updated[existingIndex] = { ...updated[existingIndex], ...expense };
+    } else {
+      updated = [expense, ...current];
+    }
+    Storage.setExpenses(updated);
+
+    // Immediate persistence verification
+    const verified = Storage.getExpenses();
+    const isSaved = verified.some((e) => e.id === expense.id);
+    if (!isSaved) {
+      console.error('[STORAGE_ERROR] Storage.addExpense: Expense failed to verify in storage after write!', expense);
+    }
+    return updated;
+  },
 
   getExcelImportLogs: (): ExcelImportLog[] => {
     const logs = loadFromStorage<ExcelImportLog[]>(STORAGE_KEYS.EXCEL_IMPORT_LOGS, []);
@@ -1770,9 +1790,39 @@ export const Storage = {
       if (data.vaultEncrypted) Storage.restoreEncryptedVault(data.vaultEncrypted);
       else if (data.vault) Storage.restoreEncryptedVault(null);
 
-      // Hydrate expenses and spreadsheet logs directly from authoritative cloud snapshot
+      // Hydrate expenses safely: NEVER overwrite existing local expenses with an empty array.
+      // Merge cloud expenses with local expenses so locally auto-logged SMS transactions are never lost.
       if (Array.isArray(data.expenses)) {
-        Storage.setExpenses(data.expenses);
+        const localExpenses = Storage.getExpenses();
+        if (data.expenses.length === 0 && localExpenses.length > 0) {
+          // Cloud snapshot has 0 expenses while local device has expenses.
+          // Keep local expenses intact to prevent accidental wipe.
+        } else {
+          const mergedMap = new Map<string, ExpenseItem>();
+          // 1. Add cloud items
+          for (const item of data.expenses) {
+            if (item && item.id) {
+              mergedMap.set(String(item.id), item);
+            }
+          }
+          // 2. Preserve any local items (e.g. recent SMS auto-logged transactions not yet in cloud)
+          for (const localItem of localExpenses) {
+            if (!localItem || !localItem.id) continue;
+            const idKey = String(localItem.id);
+            if (!mergedMap.has(idKey)) {
+              // Also check matching by smsReferenceId to prevent duplicate entries
+              const matchByRef = localItem.smsReferenceId
+                ? Array.from(mergedMap.values()).find(
+                    (c) => c.smsReferenceId && c.smsReferenceId === localItem.smsReferenceId
+                  )
+                : null;
+              if (!matchByRef) {
+                mergedMap.set(idKey, localItem);
+              }
+            }
+          }
+          Storage.setExpenses(Array.from(mergedMap.values()));
+        }
       }
       if (Array.isArray(data.excelImportLogs)) {
         Storage.setExcelImportLogs(data.excelImportLogs);
