@@ -125,16 +125,21 @@ export interface ExpenseItem {
   sourceFile?: string;
   importBatchId?: string;
   time?: string;
-  // Optional SMS Auto-Logging Traceability Metadata
-  source?: 'manual' | 'excel' | 'sms_auto';
-  smsReferenceId?: string;
-  rawSmsText?: string;
+  // Direction & Transaction Type
+  direction?: 'DEBIT' | 'CREDIT';
   transactionType?: 'expense' | 'income' | 'DEBIT' | 'CREDIT';
+  // Optional SMS Auto-Logging Traceability Metadata
+  source?: 'manual' | 'excel' | 'sms_auto' | string;
+  smsReferenceId?: string;
+  referenceId?: string;
+  upiReference?: string;
+  rawSmsText?: string;
   bankOrAccount?: string;
   bankName?: string;
   maskedAccount?: string;
   accountLast4?: string;
   payee?: string;
+  merchant?: string;
 }
 
 export interface ParsedSmsTransaction {

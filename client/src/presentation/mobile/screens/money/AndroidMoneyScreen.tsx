@@ -10,7 +10,7 @@ import { SwipeActionRow } from '../../gestures/SwipeActionRow';
 import { useLongPress } from '../../gestures/useLongPress';
 import { AndroidActionSheet, ActionSheetItem } from '../../components/AndroidActionSheet';
 import { QuickExpenseSheet } from '../../components/QuickExpenseSheet';
-import { compareExpensesByDateTimeDesc, getTransactionDisplayTitle } from '../../../../utils/expenseUtils';
+import { compareExpensesByDateTimeDesc, getTransactionDisplayTitle, isCreditTransaction } from '../../../../utils/expenseUtils';
 import { SmsTransaction } from '../../../../services/smsExpenseService';
 import { Capacitor } from '@capacitor/core';
 
@@ -133,24 +133,34 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   const currentMonth = now.getMonth();
   const todayDateStr = now.toISOString().split('T')[0];
 
-  // Calculations
-  const { totalMonthSpending, todaySpending, categoryTotals } = useMemo(() => {
-    let monthTotal = 0;
-    let todayTotal = 0;
+  // Calculations: Credits/refunds do not inflate total money spent
+  const { totalMonthSpending, todaySpending, monthCredits, categoryTotals } = useMemo(() => {
+    let monthDebits = 0;
+    let monthCredits = 0;
+    let todayDebits = 0;
     const catMap: Record<string, number> = {};
 
     expenses.forEach((e) => {
       const amt = Number(e.amount) || 0;
+      const isCredit = isCreditTransaction(e);
       const d = new Date(e.date);
-      if (d.getFullYear() === currentYear && d.getMonth() === currentMonth) {
-        monthTotal += amt;
-      }
-      if (e.date === todayDateStr) {
-        todayTotal += amt;
-      }
+      const isThisMonth = d.getFullYear() === currentYear && d.getMonth() === currentMonth;
+      const isToday = e.date === todayDateStr;
 
-      const cat = e.category || 'Other';
-      catMap[cat] = (catMap[cat] || 0) + amt;
+      if (isCredit) {
+        if (isThisMonth) {
+          monthCredits += amt;
+        }
+      } else {
+        if (isThisMonth) {
+          monthDebits += amt;
+          const cat = e.category || 'Other';
+          catMap[cat] = (catMap[cat] || 0) + amt;
+        }
+        if (isToday) {
+          todayDebits += amt;
+        }
+      }
     });
 
     const sortedCats = Object.entries(catMap)
@@ -158,8 +168,9 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
       .sort((a, b) => b.total - a.total);
 
     return {
-      totalMonthSpending: monthTotal,
-      todaySpending: todayTotal,
+      totalMonthSpending: monthDebits,
+      monthCredits,
+      todaySpending: todayDebits,
       categoryTotals: sortedCats,
     };
   }, [expenses, currentYear, currentMonth, todayDateStr]);
@@ -377,14 +388,29 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
 
       {/* Transactions List */}
       {filteredExpenses.length === 0 ? (
-        <div className="p-8 text-center rounded-3xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40]">
-          <CreditCard className="w-10 h-10 text-emerald-400 mx-auto mb-2 opacity-60" />
-          <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
-            No transactions recorded
-          </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-            Tap &ldquo;Add&rdquo; to log your spending or import transactions.
-          </p>
+        <div className="p-8 text-center rounded-3xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] space-y-3">
+          <CreditCard className="w-10 h-10 text-emerald-400 mx-auto opacity-60" />
+          <div>
+            <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
+              No transactions yet
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              Your recent spending will appear here.
+            </p>
+          </div>
+          {onAddExpense && (
+            <button
+              type="button"
+              onClick={() => {
+                void nativeService.triggerHaptic('selection');
+                setIsAddSheetOpen(true);
+              }}
+              className="px-4 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs inline-flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition-all"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Expense</span>
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-2">
@@ -479,6 +505,7 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
   });
 
   const displayTitle = getTransactionDisplayTitle(expense);
+  const isCredit = isCreditTransaction(expense);
   const secondaryParts = [
     expense.bankName || expense.bankOrAccount,
     expense.paymentMethod,
@@ -497,15 +524,33 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
         className="flex items-center justify-between p-3.5 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] active:scale-[0.99] transition-all select-none shadow-2xs cursor-pointer hover:border-emerald-300 dark:hover:border-emerald-800"
       >
         <div className="flex items-center gap-3 min-w-0 flex-1 pr-3">
-          <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+          <div
+            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+              isCredit
+                ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400'
+                : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400'
+            }`}
+          >
             <CreditCard className="w-4 h-4" />
           </div>
 
           <div className="min-w-0 flex-1">
-            <span className="text-xs font-semibold text-gray-900 dark:text-white block truncate">
-              {displayTitle}
-            </span>
+            <div className="flex items-center gap-1.5 min-w-0">
+              {/* Direction Indicator: 🔴 Debit / 🟢 Credit */}
+              {isCredit ? (
+                <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" title="Credit" />
+              ) : (
+                <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" title="Debit" />
+              )}
+              <span className="text-xs font-semibold text-gray-900 dark:text-white truncate">
+                {displayTitle}
+              </span>
+            </div>
             <div className="flex items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 truncate">
+              <span className={isCredit ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-rose-600 dark:text-rose-400 font-medium'}>
+                {isCredit ? 'Credit' : 'Debit'}
+              </span>
+              <span>•</span>
               <span>{expense.category}</span>
               {secondaryParts.length > 0 && (
                 <>
@@ -520,8 +565,10 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
         </div>
 
         <div className="shrink-0 text-right">
-          <span className="text-sm font-bold text-gray-900 dark:text-white block">
-            ₹{Number(expense.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          <span className={`text-sm font-bold block ${
+            isCredit ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-900 dark:text-white'
+          }`}>
+            {isCredit ? '+' : ''}₹{Number(expense.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </span>
           {expense.bankOrAccount && (
             <span className="text-[10px] text-gray-400 block truncate max-w-[90px]">

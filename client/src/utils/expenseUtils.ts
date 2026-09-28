@@ -39,26 +39,39 @@ export function compareExpensesByDateTimeDesc(a: ExpenseItem, b: ExpenseItem): n
   return (b.id || '').localeCompare(a.id || '');
 }
 
+export function isCreditTransaction(expense?: Partial<ExpenseItem> | null): boolean {
+  if (!expense) return false;
+  return (
+    expense.direction === 'CREDIT' ||
+    expense.transactionType === 'CREDIT' ||
+    expense.transactionType === 'income'
+  );
+}
+
+export function getTransactionDirection(expense?: Partial<ExpenseItem> | null): 'DEBIT' | 'CREDIT' {
+  return isCreditTransaction(expense) ? 'CREDIT' : 'DEBIT';
+}
+
 /**
  * Returns the highest-priority human-readable title for a transaction.
  *
  * Title Priority:
- * 1. Merchant / payee / counterparty name (e.g. "ARPITA PRIYADARSINI")
- * 2. Parsed merchant name from transaction SMS
+ * 1. Merchant / payee / counterparty name (e.g. "ARPITA PRIYADARSINI", "Amazon")
+ * 2. Parsed merchant name from transaction SMS / metadata
  * 3. Existing manually assigned merchant/payee
  * 4. Existing transaction description (expense.name)
  * 5. Transaction type + fallback (e.g. "Bank Debit", "UPI Payment")
  *
- * Never renders generic "UPI" when a counterparty or merchant is available.
+ * Never renders generic "UPI" or imperative verbs like "add" when a counterparty or merchant is available.
  */
 export function getTransactionDisplayTitle(expense?: Partial<ExpenseItem> | null): string {
   if (!expense) return 'Bank Transaction';
 
-  const cleanPayee = (expense.payee || '').trim();
+  const cleanPayee = (expense.payee || expense.merchant || '').trim();
   const cleanName = (expense.name || '').trim();
 
   const isGeneric = (str: string) =>
-    /^(upi|vpa|bank debit|bank credit|bank transfer|bank transaction|expense|payment)$/i.test(str);
+    /^(add|log|record|save|create|enter|track|spend|spent|paid|upi|vpa|bank debit|bank credit|bank transfer|bank transaction|expense|payment)$/i.test(str);
 
   // 1. Merchant / payee / counterparty name if non-generic
   if (cleanPayee && !isGeneric(cleanPayee)) {
@@ -71,18 +84,22 @@ export function getTransactionDisplayTitle(expense?: Partial<ExpenseItem> | null
   }
 
   // 3. Fallback to payee if provided
-  if (cleanPayee) {
+  if (cleanPayee && !/^(add|log|record|save|create|enter|track)$/i.test(cleanPayee)) {
     return cleanPayee;
   }
 
-  // 4. Fallback to name if provided
-  if (cleanName) {
+  // 4. Fallback to name if provided and not an action verb
+  if (cleanName && !/^(add|log|record|save|create|enter|track)$/i.test(cleanName)) {
     return cleanName;
   }
 
   // 5. Transaction type + payment method fallback
-  if (expense.transactionType === 'income' || expense.transactionType === 'CREDIT') {
+  if (isCreditTransaction(expense)) {
     return 'Income Credit';
+  }
+
+  if (expense.category && !isGeneric(expense.category)) {
+    return expense.category;
   }
 
   if (expense.paymentMethod) {
@@ -90,6 +107,74 @@ export function getTransactionDisplayTitle(expense?: Partial<ExpenseItem> | null
   }
 
   return 'Bank Debit';
+}
+
+export interface AvailableTransactionMetadataItem {
+  key: string;
+  label: string;
+  value: string;
+  isSensitive?: boolean;
+}
+
+/**
+ * Extracts only populated, non-empty metadata items for dynamic rendering in Transaction Detail view.
+ * Omits empty fields completely so no "-" or empty labels are shown.
+ */
+export function getAvailableTransactionMetadata(expense: ExpenseItem): AvailableTransactionMetadataItem[] {
+  const items: AvailableTransactionMetadataItem[] = [];
+
+  const direction = getTransactionDirection(expense);
+  items.push({
+    key: 'direction',
+    label: 'Direction',
+    value: direction === 'CREDIT' ? 'Credit (Money in)' : 'Debit (Money out)',
+  });
+
+  if (expense.category) {
+    items.push({ key: 'category', label: 'Category', value: expense.category });
+  }
+
+  if (expense.paymentMethod) {
+    items.push({ key: 'paymentMethod', label: 'Payment Method', value: expense.paymentMethod });
+  }
+
+  const bank = expense.bankName || expense.bankOrAccount;
+  if (bank) {
+    items.push({ key: 'bank', label: 'Bank', value: bank });
+  }
+
+  const maskedAccount = expense.maskedAccount || (expense.accountLast4 ? `XX${expense.accountLast4}` : undefined);
+  if (maskedAccount) {
+    items.push({ key: 'account', label: 'Account', value: maskedAccount });
+  }
+
+  const upiRef = expense.upiReference || (expense.paymentMethod === 'UPI' ? expense.referenceId || expense.smsReferenceId : undefined);
+  if (upiRef) {
+    items.push({ key: 'upiReference', label: 'UPI Reference', value: upiRef });
+  }
+
+  const txnId = expense.referenceId && expense.referenceId !== upiRef ? expense.referenceId : undefined;
+  if (txnId) {
+    items.push({ key: 'referenceId', label: 'Transaction ID', value: txnId });
+  }
+
+  if (expense.source) {
+    const sourceLabel =
+      expense.source === 'sms_auto'
+        ? 'SMS Auto-logged'
+        : expense.source === 'excel'
+        ? 'Excel Import'
+        : expense.source === 'manual'
+        ? 'Manual Entry'
+        : expense.source;
+    items.push({ key: 'source', label: 'Source', value: sourceLabel });
+  }
+
+  if (expense.notes) {
+    items.push({ key: 'notes', label: 'Notes', value: expense.notes });
+  }
+
+  return items;
 }
 
 /**

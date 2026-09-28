@@ -3,7 +3,7 @@ import { CreditCard, ArrowRight, Plus } from 'lucide-react';
 import { ExpenseItem } from '../../../../types';
 import { nativeService } from '../../../../services/nativeService';
 import { CARD_SURFACE_CLASSES, CARD_HEADER_CLASSES, CARD_TITLE_CLASSES, CARD_BODY_CLASSES } from '../../design-system/materialYou';
-import { compareExpensesByDateTimeDesc, getTransactionDisplayTitle } from '../../../../utils/expenseUtils';
+import { compareExpensesByDateTimeDesc, getTransactionDisplayTitle, isCreditTransaction } from '../../../../utils/expenseUtils';
 
 export interface AndroidSpendingCardProps {
   expenses: ExpenseItem[];
@@ -16,19 +16,19 @@ export const AndroidSpendingCard: React.FC<AndroidSpendingCardProps> = ({
   onNavigateToMoney,
   onOpenAddExpense,
 }) => {
-  // Compute current month total
+  // Compute current month debits total (credits do not inflate spending)
   const currentMonth = new Date().getMonth();
   const currentYear = new Date().getFullYear();
 
-  const monthExpenses = expenses.filter((e) => {
+  const monthDebits = expenses.filter((e) => {
     if (!e.date) return false;
     const d = new Date(e.date);
-    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+    return d.getMonth() === currentMonth && d.getFullYear() === currentYear && !isCreditTransaction(e);
   });
 
-  const totalMonthSpending = monthExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+  const totalMonthSpending = monthDebits.reduce((sum, e) => sum + (e.amount || 0), 0);
 
-  // ALWAYS sort by actual transaction date and time descending, strictly taking the 4 newest transactions
+  // ALWAYS sort by actual transaction date and time descending, strictly taking the 4 newest real transactions
   const recentExpenses = useMemo(() => {
     return [...expenses]
       .filter((e) => e && e.active !== false && Number(e.amount) > 0)
@@ -86,7 +86,7 @@ export const AndroidSpendingCard: React.FC<AndroidSpendingCardProps> = ({
           </button>
         </div>
 
-        {/* Recent Transactions List */}
+        {/* Recent Transactions List (Exactly 4 newest real records, no mock data) */}
         {recentExpenses.length === 0 ? (
           <div className="py-3 text-center">
             <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -95,38 +95,56 @@ export const AndroidSpendingCard: React.FC<AndroidSpendingCardProps> = ({
           </div>
         ) : (
           <div className="space-y-1.5">
-            {recentExpenses.map((exp) => (
-              <div
-                key={exp.id}
-                className="flex items-center justify-between p-2 rounded-2xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40]"
-              >
-                <div className="min-w-0 flex-1 pr-2">
-                  <span className="text-xs font-semibold text-gray-900 dark:text-white block truncate">
-                    {getTransactionDisplayTitle(exp)}
-                  </span>
-                  <div className="flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-400">
-                    <span>{exp.category}</span>
-                    {exp.paymentMethod && (
-                      <>
-                        <span>•</span>
-                        <span className="text-violet-600 dark:text-violet-400 font-medium">
-                          {exp.paymentMethod}
-                        </span>
-                      </>
-                    )}
+            {recentExpenses.map((exp) => {
+              const isCredit = isCreditTransaction(exp);
+              return (
+                <div
+                  key={exp.id}
+                  className="flex items-center justify-between p-2 rounded-2xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40]"
+                >
+                  <div className="min-w-0 flex-1 pr-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      {/* Direction indicator dot: 🔴 Debit / 🟢 Credit */}
+                      {isCredit ? (
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" title="Credit" />
+                      ) : (
+                        <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" title="Debit" />
+                      )}
+                      <span className="text-xs font-semibold text-gray-900 dark:text-white truncate">
+                        {getTransactionDisplayTitle(exp)}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
+                      <span className={isCredit ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-rose-600 dark:text-rose-400 font-medium'}>
+                        {isCredit ? 'Credit' : 'Debit'}
+                      </span>
+                      <span>•</span>
+                      <span>{exp.category}</span>
+                      {exp.paymentMethod && (
+                        <>
+                          <span>•</span>
+                          <span className="text-violet-600 dark:text-violet-400 font-medium truncate max-w-[80px]">
+                            {exp.paymentMethod}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <span className={`text-xs font-bold block ${
+                      isCredit ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-900 dark:text-white'
+                    }`}>
+                      {isCredit ? '+' : ''}₹{(exp.amount || 0).toFixed(2)}
+                    </span>
+                    <span className="text-[10px] text-gray-400 dark:text-gray-500 block">
+                      {exp.date}{exp.time ? ` ${exp.time}` : ''}
+                    </span>
                   </div>
                 </div>
-
-                <div className="text-right shrink-0">
-                  <span className="text-xs font-bold text-gray-900 dark:text-white block">
-                    ₹{(exp.amount || 0).toFixed(2)}
-                  </span>
-                  <span className="text-[10px] text-gray-400 dark:text-gray-500 block">
-                    {exp.date}{exp.time ? ` ${exp.time}` : ''}
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

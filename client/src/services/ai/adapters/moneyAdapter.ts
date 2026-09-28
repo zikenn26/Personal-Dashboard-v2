@@ -3,12 +3,167 @@ import { Storage } from '../../../utils/storage';
 import { ExpenseItem } from '../../../types';
 import { inferExpenseCategory, broadcastDataChanged } from '../../commandMappingService';
 import { InteractiveOption } from '../../commandIntentEngine';
+import { isCreditTransaction, compareExpensesByDateTimeDesc } from '../../../utils/expenseUtils';
+
+export interface StructuredExpenseIntent {
+  intent: 'CREATE_EXPENSE' | 'AMBIGUOUS' | 'NOT_EXPENSE';
+  amount?: number;
+  currency: string;
+  category?: string;
+  merchant?: string | null;
+  payee?: string | null;
+  title: string;
+  date: string;
+  rawInput: string;
+  missingField?: 'amount' | 'category' | 'none';
+}
+
+/**
+ * Natural language structured intent parser for expense commands.
+ * Distinguishes ACTION from MERCHANT from CATEGORY from AMOUNT from DATE from ACCOUNT.
+ * Action verbs (add, log, record, etc.) NEVER become the transaction title or merchant.
+ */
+export function parseStructuredExpenseIntent(input: string, todayStr: string): StructuredExpenseIntent | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  // 1. Strip common conversational prefixes
+  let clean = trimmed
+    .replace(/^[\s"“”'‘’`«»„.?!,;:\-_(){}\[\]]+/, '')
+    .replace(/[\s"“”'‘’`«»„.?!,;:\-_(){}\[\]]+$/, '')
+    .trim();
+
+  const leadingFillers = [
+    /^(?:hey|hi|hello|ok|okay)\s+(?:zikenn|gemini|assistant|there)?\s*/i,
+    /^(?:please|can you|could you|could you please|would you|kindly|i want to|i need to|i would like to|let's|just)\s+/i,
+  ];
+  for (const filler of leadingFillers) {
+    clean = clean.replace(filler, '').trim();
+  }
+
+  // 2. Extract action verb (add, log, record, save, create, enter, track, spend, spent, paid)
+  const actionRegex = /^(add|log|record|save|create|enter|track|spend|spent|paid)\b\s*(?:a\s+)?(?:new\s+)?(?:expense|transaction|item)?\s*(?:of\s+)?/i;
+  const actionMatch = clean.match(actionRegex);
+  let remainder = actionMatch ? clean.slice(actionMatch[0].length).trim() : clean;
+
+  // 3. Extract amount
+  // Can be e.g. "39 rs", "₹39", "rs 39", "39 inr", "39", etc.
+  const amountRegex = /(?:(?:rs\.?|rupees|inr|bucks|[₹$])\s*(\d+(?:\.\d{1,2})?)|(\d+(?:\.\d{1,2})?)\s*(?:rs\.?|rupees|inr|bucks|[₹$])?)/i;
+  const amtMatch = remainder.match(amountRegex);
+
+  if (!amtMatch) {
+    // If there is an action verb like "add groceries", check if amount is missing
+    if (actionMatch && remainder.length > 0 && !/\d/.test(remainder)) {
+      return {
+        intent: 'AMBIGUOUS',
+        currency: 'INR',
+        title: remainder,
+        date: todayStr,
+        rawInput: trimmed,
+        missingField: 'amount',
+      };
+    }
+    return null;
+  }
+
+  const rawNum = amtMatch[1] || amtMatch[2];
+  if (!rawNum) return null;
+  const amount = parseFloat(rawNum);
+  if (isNaN(amount) || amount <= 0) return null;
+
+  // Remove the amount and currency from remainder
+  remainder = remainder.replace(amtMatch[0], ' ').trim();
+  remainder = remainder.replace(/\b(?:rs\.?|rupees|inr|bucks)\b/gi, '').replace(/[₹$]/g, '').trim();
+  remainder = remainder.replace(/\s+/g, ' ').trim();
+
+  // 4. If remainder is empty after extracting amount (e.g. "add 100", "log ₹500")
+  if (!remainder) {
+    return {
+      intent: 'AMBIGUOUS',
+      amount,
+      currency: 'INR',
+      title: 'Expense',
+      date: todayStr,
+      rawInput: trimmed,
+      missingField: 'category',
+    };
+  }
+
+  // 5. Semantic extraction: Distinguish MERCHANT from CATEGORY/PURPOSE
+  // Check for explicit merchant/payee prepositions:
+  // e.g. "at Starbucks", "to Amazon", "to Rahul", "at Hotel XYZ", "in D-Mart"
+  let merchant: string | null = null;
+  let payee: string | null = null;
+
+  const atMerchantMatch = remainder.match(/\b(?:at|in|from)\s+([a-zA-Z0-9\s&'.-]+)$/i);
+  if (atMerchantMatch) {
+    merchant = atMerchantMatch[1].trim();
+    remainder = remainder.replace(atMerchantMatch[0], ' ').trim();
+  }
+
+  const toPayeeMatch = remainder.match(/\bto\s+([a-zA-Z0-9\s&'.-]+)$/i);
+  if (toPayeeMatch) {
+    merchant = toPayeeMatch[1].trim();
+    payee = toPayeeMatch[1].trim();
+    remainder = remainder.replace(toPayeeMatch[0], ' ').trim();
+  }
+
+  // Clean remainder for category/purpose
+  let purpose = remainder
+    .replace(/^(?:for|on|towards|called|expense|item)\s+/i, '')
+    .replace(/[\s"“”'‘’`«»„.?!,;:\-_(){}\[\]]+$/, '')
+    .trim();
+
+  // Determine Title, Category, and ensure ACTION VERB NEVER becomes the title
+  const ACTION_WORDS_REGEX = /^(add|log|record|save|create|enter|track|spend|spent|paid)$/i;
+
+  let title = 'Expense';
+  let category = 'Other';
+
+  if (merchant && !ACTION_WORDS_REGEX.test(merchant)) {
+    // Merchant has highest priority for transaction title
+    title = merchant.charAt(0).toUpperCase() + merchant.slice(1);
+    if (purpose) {
+      category = inferExpenseCategory(purpose);
+    } else {
+      category = inferExpenseCategory(merchant);
+    }
+  } else if (purpose && !ACTION_WORDS_REGEX.test(purpose)) {
+    title = purpose.charAt(0).toUpperCase() + purpose.slice(1);
+    category = inferExpenseCategory(purpose);
+  } else {
+    // Fallback if purpose was an action word
+    category = 'Other';
+    title = 'Expense';
+  }
+
+  return {
+    intent: 'CREATE_EXPENSE',
+    amount,
+    currency: 'INR',
+    category,
+    merchant,
+    payee,
+    title,
+    date: todayStr,
+    rawInput: trimmed,
+    missingField: 'none',
+  };
+}
 
 export class MoneyAdapter implements ModuleAdapter {
   name = 'money';
 
   canHandle(input: string, context?: AIServiceContext): boolean {
     const text = input.trim().toLowerCase();
+
+    // Do not intercept task, habit, goal, journal, exam commands
+    if (
+      /\b(?:task|todo|to-do|habit|goal|journal|exam|syllabus)\b/i.test(text) &&
+      !/\b(?:expense|spending|spend|bought|transaction|paid)\b/i.test(text)
+    ) {
+      return false;
+    }
 
     // Check for follow-up change command if lastExpense exists in session memory
     if (context?.sessionMemory?.lastExpense) {
@@ -27,6 +182,7 @@ export class MoneyAdapter implements ModuleAdapter {
 
     // Spending queries and commands
     if (
+      /^(add|log|record|save|create|enter|track|spend|spent|paid)\b/i.test(text) ||
       text.includes('spend') ||
       text.includes('spending') ||
       text.includes('expense') ||
@@ -34,10 +190,7 @@ export class MoneyAdapter implements ModuleAdapter {
       text.includes('bought') ||
       text.includes('paid') ||
       text.includes('transaction') ||
-      /^(add|log|record)\s+[₹$]?\s*\d+/i.test(text) ||
-      /^[₹$]?\s*\d+\s+(for|on)\s+/i.test(text) ||
-      /^(add|log|record)\s+(groceries|food|lunch|dinner|coffee|snacks|tea|milk|recharge|metro|cab|uber|ola)/i.test(text) ||
-      /^(add|log|record)\s*[₹$]?\s*\d+$/i.test(text) ||
+      /^[₹$]?\s*\d+\s+(for|on|at|to)\s+/i.test(text) ||
       /^(delete|remove)\s+(my\s+)?(last\s+)?(expense|transaction)/i.test(text) ||
       /^(delete|remove)\s+the\s+[₹$]?\d+/i.test(text)
     ) {
@@ -59,46 +212,103 @@ export class MoneyAdapter implements ModuleAdapter {
     const currentYearMonth = `${currentYear}-${currentMonth}`;
 
     // ------------------------------------------------------------------------
-    // 1. AMBIGUITY HANDLING: Missing Amount
-    // e.g., "Add groceries", "Log lunch", "Spent on coffee"
+    // 1. STRUCTURED INTENT EXTRACTION & AMBIGUITY VALIDATION
     // ------------------------------------------------------------------------
-    const missingAmountMatch = text.match(/^(?:add|log|record|spent\s+on)\s+(?!.*[0-9])([a-zA-Z\s&'-]+)$/i);
-    if (missingAmountMatch && !lower.includes('today') && !lower.includes('month') && !lower.includes('week') && !lower.includes('task')) {
-      const item = missingAmountMatch[1].trim();
-      return {
-        reply: `How much did you spend on **${item}**? Please specify an amount (e.g., *"Add ₹250 for ${item}"*).`,
-        module: 'money',
-        actionChips: [`Add ₹100 for ${item}`, `Add ₹250 for ${item}`, `Add ₹500 for ${item}`],
-        updatedSessionMemory: memory,
-      };
+    // Check if input is a structured expense creation command or ambiguous command
+    const isPotentialAdd =
+      /^(add|log|record|save|create|enter|track|spend|spent|paid)\b/i.test(text) ||
+      /^[₹$]?\s*\d+\s*(?:rs|rupees|inr|bucks)?\s+(?:for|on|at|to)\s+/i.test(text) ||
+      /^[₹$]?\s*\d+(?:\.\d{1,2})?\s+[a-zA-Z]/i.test(text);
+
+    if (isPotentialAdd) {
+      const intent = parseStructuredExpenseIntent(text, todayStr);
+      if (intent) {
+        // Missing amount ambiguity (e.g., "Add groceries", "Log lunch")
+        if (intent.intent === 'AMBIGUOUS' && intent.missingField === 'amount') {
+          const item = intent.title;
+          return {
+            reply: `How much did you spend on **${item}**? Please specify an amount (e.g., *"Add ₹250 for ${item}"*).`,
+            module: 'money',
+            actionChips: [`Add ₹100 for ${item}`, `Add ₹250 for ${item}`, `Add ₹500 for ${item}`],
+            updatedSessionMemory: memory,
+          };
+        }
+
+        // Missing category / purpose ambiguity (e.g., "Add 100", "Add ₹500", "Log 500")
+        if (intent.intent === 'AMBIGUOUS' && intent.missingField === 'category') {
+          const amount = intent.amount || 0;
+          return {
+            reply: `What should I categorize **₹${amount}** as? (e.g., *"Add ₹${amount} for groceries"* or *"Add ₹${amount} for lunch"*).`,
+            module: 'money',
+            actionChips: [`₹${amount} Groceries`, `₹${amount} Dining Out`, `₹${amount} Shopping`],
+            updatedSessionMemory: memory,
+          };
+        }
+
+        // Valid expense creation: Use existing business logic & canonical ExpenseItem mutation
+        if (intent.intent === 'CREATE_EXPENSE' && intent.amount && intent.amount > 0) {
+          const newExpense: ExpenseItem = {
+            id: `exp-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            name: intent.title,
+            amount: intent.amount,
+            category: intent.category || 'Other',
+            date: todayStr,
+            billingCycle: 'one-time',
+            active: true,
+            direction: 'DEBIT',
+            transactionType: 'DEBIT',
+            merchant: intent.merchant || undefined,
+            payee: intent.payee || undefined,
+            source: 'manual',
+          };
+
+          const updated = [newExpense, ...expenses];
+          Storage.setExpenses(updated);
+          broadcastDataChanged('expenses');
+
+          memory.lastExpense = {
+            id: newExpense.id,
+            name: newExpense.name,
+            amount: newExpense.amount,
+            category: newExpense.category,
+          };
+          memory.lastAction = {
+            type: 'add_expense',
+            entity: 'expense',
+            description: `Added expense "${newExpense.name}" for ₹${newExpense.amount}`,
+            timestamp: Date.now(),
+          };
+
+          return {
+            reply: `Logged **₹${newExpense.amount}** for **${newExpense.name}** under **${newExpense.category}**.`,
+            module: 'money',
+            actionChips: [`✓ Added ₹${newExpense.amount}`, newExpense.category as string, 'Tap to edit'],
+            executedActions: [
+              {
+                type: 'add_expense',
+                targetId: newExpense.id,
+                params: { name: newExpense.name, amount: newExpense.amount, category: newExpense.category },
+                description: `Logged expense of ₹${newExpense.amount} for ${newExpense.name}`,
+              },
+            ],
+            updatedSessionMemory: memory,
+          };
+        }
+      }
     }
 
     // ------------------------------------------------------------------------
-    // 2. AMBIGUITY HANDLING: Missing Purpose / Category
-    // e.g., "Add 500", "Add ₹500", "Spent ₹500", "Log 500"
-    // ------------------------------------------------------------------------
-    const missingPurposeMatch = text.match(/^(?:add|log|record|spent)?\s*[₹$]?\s*(\d+(?:\.\d{1,2})?)$/i);
-    if (missingPurposeMatch) {
-      const amount = parseFloat(missingPurposeMatch[1]);
-      return {
-        reply: `What should I categorize **₹${amount}** as? (e.g., *"Add ₹${amount} for groceries"* or *"Add ₹${amount} for lunch"*).`,
-        module: 'money',
-        actionChips: [`₹${amount} Groceries`, `₹${amount} Dining Out`, `₹${amount} Shopping`],
-        updatedSessionMemory: memory,
-      };
-    }
-
-    // ------------------------------------------------------------------------
-    // 3. MODIFICATION SAFETY: "Change my last expense to ₹700", "Change it to ₹800"
+    // 2. MODIFICATION SAFETY: "Change my last expense to ₹700", "Change it to ₹800"
     // ------------------------------------------------------------------------
     const changeMatch = text.match(/(?:change|update|make)\s+(?:my\s+last\s+expense|the\s+last\s+expense|it|that|expense|amount)\s+(?:to\s+)?[₹$]?\s*(\d+(?:\.\d{1,2})?)/i);
     if (changeMatch || (memory.lastExpense && /^(?:change\s+(?:it|that|amount|expense)\s+to|make\s+it|update\s+(?:it\s+to|to))\s*[₹$]?\s*(\d+(?:\.\d{1,2})?)/i.test(text))) {
       const amtStr = changeMatch ? changeMatch[1] : text.match(/\d+(?:\.\d{1,2})?/)?.[0];
       if (amtStr) {
         const newAmount = parseFloat(amtStr);
+        const sortedDesc = [...expenses].sort(compareExpensesByDateTimeDesc);
         const targetExpense = memory.lastExpense
-          ? expenses.find((e) => e.id === memory.lastExpense?.id) || expenses[0]
-          : expenses[0];
+          ? expenses.find((e) => e.id === memory.lastExpense?.id) || sortedDesc[0]
+          : sortedDesc[0];
 
         if (targetExpense) {
           const oldAmount = targetExpense.amount;
@@ -138,7 +348,7 @@ export class MoneyAdapter implements ModuleAdapter {
     }
 
     // ------------------------------------------------------------------------
-    // 4. DESTRUCTIVE DELETION CONFIRMATION: "Delete my last expense", "Delete the ₹500 grocery transaction"
+    // 3. DESTRUCTIVE DELETION CONFIRMATION: "Delete my last expense", "Delete the ₹500 grocery transaction"
     // ------------------------------------------------------------------------
     if (lower.includes('delete') || lower.includes('remove') || lower.includes('clear')) {
       const cancelOption: InteractiveOption = {
@@ -222,9 +432,11 @@ export class MoneyAdapter implements ModuleAdapter {
       }
 
       if (!itemToDelete) {
+        // Sort strictly by actual transaction date/time descending so last expense matches Spending Hub ordering
+        const sortedDesc = [...expenses].sort(compareExpensesByDateTimeDesc);
         itemToDelete = memory.lastExpense
-          ? expenses.find((e) => e.id === memory.lastExpense?.id) || expenses[0]
-          : expenses[0];
+          ? sortedDesc.find((e) => e.id === memory.lastExpense?.id) || sortedDesc[0]
+          : sortedDesc[0];
       }
 
       if (itemToDelete) {
@@ -256,55 +468,55 @@ export class MoneyAdapter implements ModuleAdapter {
     }
 
     // ------------------------------------------------------------------------
-    // 5. READ-ONLY QUERY: Today's Spending
+    // 4. READ-ONLY QUERY: Today's Spending (Excludes credits so credits don't inflate spending)
     // ------------------------------------------------------------------------
     if (
       lower.includes('today') &&
       (lower.includes('spend') || lower.includes('expense') || lower.includes('how much') || lower.includes('what did'))
     ) {
-      const todayExpenses = expenses.filter((e) => e.date === todayStr);
-      const total = todayExpenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+      const todayDebits = expenses.filter((e) => e.date === todayStr && !isCreditTransaction(e));
+      const total = todayDebits.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
       let reply = `You've spent **₹${total.toLocaleString('en-IN')}** today`;
-      if (todayExpenses.length === 0) {
+      if (todayDebits.length === 0) {
         reply += ` across 0 expenses. Great job keeping spending down!`;
       } else {
-        reply += ` across ${todayExpenses.length} transaction${todayExpenses.length === 1 ? '' : 's'}:\n` +
-          todayExpenses.slice(0, 4).map((e) => `• **${e.name}**: ₹${e.amount} (${e.category || 'General'})`).join('\n');
-        if (todayExpenses.length > 4) {
-          reply += `\n• ...and ${todayExpenses.length - 4} more.`;
+        reply += ` across ${todayDebits.length} transaction${todayDebits.length === 1 ? '' : 's'}:\n` +
+          todayDebits.slice(0, 4).map((e) => `• **${e.name}**: ₹${e.amount} (${e.category || 'General'})`).join('\n');
+        if (todayDebits.length > 4) {
+          reply += `\n• ...and ${todayDebits.length - 4} more.`;
         }
       }
 
       return {
         reply,
         module: 'money',
-        actionChips: [`Today: ₹${total}`, `${todayExpenses.length} transactions`],
+        actionChips: [`Today: ₹${total}`, `${todayDebits.length} transactions`],
         updatedSessionMemory: memory,
       };
     }
 
     // ------------------------------------------------------------------------
-    // 6. READ-ONLY QUERY: Yesterday's Spending
+    // 5. READ-ONLY QUERY: Yesterday's Spending
     // ------------------------------------------------------------------------
     if (lower.includes('yesterday')) {
       const yesterday = new Date(now);
       yesterday.setDate(now.getDate() - 1);
       const yesterdayStr = yesterday.toISOString().split('T')[0];
 
-      const yesterdayExpenses = expenses.filter((e) => e.date === yesterdayStr);
-      const total = yesterdayExpenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+      const yesterdayDebits = expenses.filter((e) => e.date === yesterdayStr && !isCreditTransaction(e));
+      const total = yesterdayDebits.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
       return {
-        reply: `You spent **₹${total.toLocaleString('en-IN')}** yesterday across ${yesterdayExpenses.length} transaction${yesterdayExpenses.length === 1 ? '' : 's'}.`,
+        reply: `You spent **₹${total.toLocaleString('en-IN')}** yesterday across ${yesterdayDebits.length} transaction${yesterdayDebits.length === 1 ? '' : 's'}.`,
         module: 'money',
-        actionChips: [`Yesterday: ₹${total}`, `${yesterdayExpenses.length} transactions`],
+        actionChips: [`Yesterday: ₹${total}`, `${yesterdayDebits.length} transactions`],
         updatedSessionMemory: memory,
       };
     }
 
     // ------------------------------------------------------------------------
-    // 7. READ-ONLY QUERY: This Week's Spending
+    // 6. READ-ONLY QUERY: This Week's Spending
     // ------------------------------------------------------------------------
     if (lower.includes('week') || lower === 'weekly spending') {
       const currentDay = now.getDay();
@@ -313,23 +525,23 @@ export class MoneyAdapter implements ModuleAdapter {
       monday.setDate(now.getDate() - diffToMonday);
       monday.setHours(0, 0, 0, 0);
 
-      const weekExpenses = expenses.filter((e) => {
+      const weekDebits = expenses.filter((e) => {
         const d = new Date(e.date);
-        return d >= monday;
+        return d >= monday && !isCreditTransaction(e);
       });
 
-      const total = weekExpenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+      const total = weekDebits.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
       return {
-        reply: `Your total spending this week is **₹${total.toLocaleString('en-IN')}** across ${weekExpenses.length} transaction${weekExpenses.length === 1 ? '' : 's'}.`,
+        reply: `Your total spending this week is **₹${total.toLocaleString('en-IN')}** across ${weekDebits.length} transaction${weekDebits.length === 1 ? '' : 's'}.`,
         module: 'money',
-        actionChips: [`Week: ₹${total}`, `${weekExpenses.length} transactions`],
+        actionChips: [`Week: ₹${total}`, `${weekDebits.length} transactions`],
         updatedSessionMemory: memory,
       };
     }
 
     // ------------------------------------------------------------------------
-    // 8. READ-ONLY QUERY: Last Month / Previous Month Spending
+    // 7. READ-ONLY QUERY: Last Month / Previous Month Spending
     // ------------------------------------------------------------------------
     if (lower.includes('last month') || lower.includes('previous month')) {
       const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -338,19 +550,19 @@ export class MoneyAdapter implements ModuleAdapter {
       const prevYearMonth = `${prevYear}-${prevMonthStr}`;
       const monthName = prevMonthDate.toLocaleString('default', { month: 'long' });
 
-      const prevMonthExpenses = expenses.filter((e) => e.date.startsWith(prevYearMonth));
-      const total = prevMonthExpenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+      const prevMonthDebits = expenses.filter((e) => e.date.startsWith(prevYearMonth) && !isCreditTransaction(e));
+      const total = prevMonthDebits.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
       return {
-        reply: `Last month (${monthName} ${prevYear}), you spent a total of **₹${total.toLocaleString('en-IN')}** across ${prevMonthExpenses.length} transaction${prevMonthExpenses.length === 1 ? '' : 's'}.`,
+        reply: `Last month (${monthName} ${prevYear}), you spent a total of **₹${total.toLocaleString('en-IN')}** across ${prevMonthDebits.length} transaction${prevMonthDebits.length === 1 ? '' : 's'}.`,
         module: 'money',
-        actionChips: [`Last Month: ₹${total}`, `${prevMonthExpenses.length} transactions`],
+        actionChips: [`Last Month: ₹${total}`, `${prevMonthDebits.length} transactions`],
         updatedSessionMemory: memory,
       };
     }
 
     // ------------------------------------------------------------------------
-    // 9. READ-ONLY QUERY: This Month's / Monthly Spending
+    // 8. READ-ONLY QUERY: This Month's / Monthly Spending
     // ------------------------------------------------------------------------
     if (
       lower.includes('month') ||
@@ -358,22 +570,22 @@ export class MoneyAdapter implements ModuleAdapter {
       lower.includes('how much have i spent this month')
     ) {
       const monthName = now.toLocaleString('default', { month: 'long' });
-      const monthExpenses = expenses.filter((e) => e.date.startsWith(currentYearMonth));
-      const total = monthExpenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+      const monthDebits = expenses.filter((e) => e.date.startsWith(currentYearMonth) && !isCreditTransaction(e));
+      const total = monthDebits.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
       return {
-        reply: `Your total spending this month (${monthName} ${currentYear}) is **₹${total.toLocaleString('en-IN')}** across ${monthExpenses.length} transaction${monthExpenses.length === 1 ? '' : 's'}.`,
+        reply: `Your total spending this month (${monthName} ${currentYear}) is **₹${total.toLocaleString('en-IN')}** across ${monthDebits.length} transaction${monthDebits.length === 1 ? '' : 's'}.`,
         module: 'money',
-        actionChips: [`This Month: ₹${total}`, `${monthExpenses.length} transactions`],
+        actionChips: [`This Month: ₹${total}`, `${monthDebits.length} transactions`],
         updatedSessionMemory: memory,
       };
     }
 
     // ------------------------------------------------------------------------
-    // 10. READ-ONLY QUERY: Category Spending (e.g., "Show food expenses", "How much spent on groceries?")
+    // 9. READ-ONLY QUERY: Category Spending (e.g., "Show food expenses", "How much spent on groceries?")
     // ------------------------------------------------------------------------
     const isExplicitAdd =
-      /^(add|log|record)\b/i.test(lower) ||
+      /^(add|log|record|save|create|enter|track|spend|spent|paid)\b/i.test(lower) ||
       /^[₹$]?\s*\d+\s+(for|on)\s+/i.test(text) ||
       /^(add|log|record)?\s*[₹$]?\s*\d+\s+[a-zA-Z]/i.test(text);
 
@@ -391,17 +603,18 @@ export class MoneyAdapter implements ModuleAdapter {
 
       for (const cat of categoryKeywords) {
         if (lower.includes(cat.key)) {
-          const catExpenses = expenses.filter(
+          const catDebits = expenses.filter(
             (e) =>
-              cat.labels.some((l) => (e.category || '').toLowerCase() === l.toLowerCase()) ||
-              e.name.toLowerCase().includes(cat.key)
+              !isCreditTransaction(e) &&
+              (cat.labels.some((l) => (e.category || '').toLowerCase() === l.toLowerCase()) ||
+                e.name.toLowerCase().includes(cat.key))
           );
-          const total = catExpenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+          const total = catDebits.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
           return {
-            reply: `You've spent **₹${total.toLocaleString('en-IN')}** on **${cat.labels[0]}** across ${catExpenses.length} transaction${catExpenses.length === 1 ? '' : 's'}.`,
+            reply: `You've spent **₹${total.toLocaleString('en-IN')}** on **${cat.labels[0]}** across ${catDebits.length} transaction${catDebits.length === 1 ? '' : 's'}.`,
             module: 'money',
-            actionChips: [`${cat.labels[0]}: ₹${total}`, `${catExpenses.length} records`],
+            actionChips: [`${cat.labels[0]}: ₹${total}`, `${catDebits.length} records`],
             updatedSessionMemory: memory,
           };
         }
@@ -409,7 +622,7 @@ export class MoneyAdapter implements ModuleAdapter {
     }
 
     // ------------------------------------------------------------------------
-    // 11. READ-ONLY QUERY: Recent Transactions
+    // 10. READ-ONLY QUERY: Recent Transactions
     // ------------------------------------------------------------------------
     if (
       lower.includes('recent') ||
@@ -417,7 +630,8 @@ export class MoneyAdapter implements ModuleAdapter {
       lower.includes('show expenses') ||
       lower.includes('list expenses')
     ) {
-      const recent = [...expenses].reverse().slice(0, 5);
+      // Sort strictly by actual transaction date/time descending
+      const recent = [...expenses].sort(compareExpensesByDateTimeDesc).slice(0, 5);
       if (recent.length === 0) {
         return {
           reply: `No expenses logged yet. You can say **"Add ₹250 for coffee"** to start logging!`,
@@ -428,84 +642,16 @@ export class MoneyAdapter implements ModuleAdapter {
       }
 
       const listStr = recent
-        .map((e) => `• **${e.name}**: ₹${e.amount} on ${e.date} (${e.category || 'General'})`)
+        .map((e) => {
+          const dirIndicator = isCreditTransaction(e) ? '🟢 Credit' : '🔴 Debit';
+          return `• **${e.name}**: ₹${e.amount} (${dirIndicator}, ${e.category || 'General'}) on ${e.date}`;
+        })
         .join('\n');
 
       return {
         reply: `Here are your recent transactions:\n${listStr}`,
         module: 'money',
         actionChips: [`${recent.length} recent shown`, 'Money Module'],
-        updatedSessionMemory: memory,
-      };
-    }
-
-    // ------------------------------------------------------------------------
-    // 12. WRITE: Add Expense: "Add ₹500 for groceries", "Add ₹250 for lunch"
-    // ------------------------------------------------------------------------
-    const addMatch =
-      text.match(/(?:add|log|record|spend|spent)?\s*[₹$]?\s*(\d+(?:\.\d{1,2})?)\s+(?:for|on)\s+([a-zA-Z0-9\s&'-]+)/i) ||
-      text.match(/(?:add|log|record)?\s*(?:expense)?\s*([a-zA-Z0-9\s&'-]+?)\s+[₹$]?\s*(\d+(?:\.\d{1,2})?)/i) ||
-      text.match(/[₹$]?\s*(\d+(?:\.\d{1,2})?)\s+([a-zA-Z0-9\s&'-]+)/i);
-
-    if (addMatch) {
-      let amount: number;
-      let name: string;
-
-      if (!isNaN(parseFloat(addMatch[1])) && isNaN(parseFloat(addMatch[2]))) {
-        amount = parseFloat(addMatch[1]);
-        name = addMatch[2].trim();
-      } else if (isNaN(parseFloat(addMatch[1])) && !isNaN(parseFloat(addMatch[2]))) {
-        name = addMatch[1].trim();
-        amount = parseFloat(addMatch[2]);
-      } else {
-        amount = parseFloat(addMatch[1]);
-        name = (addMatch[2] || 'Expense').trim();
-      }
-
-      // Cleanup name
-      name = name.replace(/^(expense|for|on)\s+/i, '').trim();
-      if (!name) name = 'Expense';
-
-      const category = inferExpenseCategory(name);
-      const newExpense: ExpenseItem = {
-        id: `exp-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        name,
-        amount,
-        category,
-        date: todayStr,
-        billingCycle: 'one-time',
-        active: true,
-      };
-
-      const updated = [newExpense, ...expenses];
-      Storage.setExpenses(updated);
-      broadcastDataChanged('expenses');
-
-      memory.lastExpense = {
-        id: newExpense.id,
-        name: newExpense.name,
-        amount: newExpense.amount,
-        category: newExpense.category,
-      };
-      memory.lastAction = {
-        type: 'add_expense',
-        entity: 'expense',
-        description: `Added expense "${name}" for ₹${amount}`,
-        timestamp: Date.now(),
-      };
-
-      return {
-        reply: `Logged **₹${amount}** for **${name}** under **${category}**.`,
-        module: 'money',
-        actionChips: [`✓ Added ₹${amount}`, category, 'Tap to edit'],
-        executedActions: [
-          {
-            type: 'add_expense',
-            targetId: newExpense.id,
-            params: { name, amount, category },
-            description: `Logged expense of ₹${amount} for ${name}`,
-          },
-        ],
         updatedSessionMemory: memory,
       };
     }

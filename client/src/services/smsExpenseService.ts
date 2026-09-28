@@ -157,6 +157,8 @@ export function isTraiServiceSender(sender: string): boolean {
   return false;
 }
 
+export const isBankOrFinancialSender = isTraiServiceSender;
+
 class SmsExpenseService {
   private isInitialized = false;
   private isListening = false;
@@ -664,12 +666,16 @@ class SmsExpenseService {
         notes: notesParts.join(' • '),
         rawSmsText: parsed.rawSms,
         smsReferenceId: parsed.referenceId,
+        referenceId: parsed.referenceId,
+        upiReference: parsed.paymentMethod === 'UPI' ? parsed.referenceId : undefined,
         source: 'sms_auto',
-        transactionType: parsed.type,
+        direction: parsed.type === 'income' ? 'CREDIT' : 'DEBIT',
+        transactionType: parsed.type === 'income' ? 'CREDIT' : 'DEBIT',
         bankOrAccount: parsed.bankOrAccount,
         bankName: parsed.bankName || parsed.bank,
         maskedAccount: parsed.maskedAccount || parsed.account,
         accountLast4: parsed.accountLast4,
+        merchant: parsed.merchant,
         payee: parsed.payee || parsed.merchant,
         active: true,
       };

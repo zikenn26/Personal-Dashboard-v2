@@ -66,8 +66,8 @@ export function cleanMerchantName(raw: string): string {
     }
   }
 
-  // Strip leading 'vpa' or 'to' if accidentally caught
-  cleaned = cleaned.replace(/^(?:vpa|to)\s+/i, '').trim();
+  // Strip leading 'vpa', 'to', 'upi to', 'upi' if accidentally caught
+  cleaned = cleaned.replace(/^(?:vpa|to|upi\s+to|upi)\s+/i, '').trim();
 
   // If candidate is purely numbers or too short
   if (/^\d+$/.test(cleaned) || cleaned.length < 2) {
@@ -388,7 +388,7 @@ export function parseSmsTransaction(
   // --------------------------------------------------------------------------
 
   const isDebit =
-    /\b(debited|debited by|paid|spent|withdrawn|transferred to|sent to|purchase of|purchase at|charged|deducted|used at|txn of|payment of|dr to|vpa debit|pos txn|atm wdl)\b/i.test(
+    /\b(debited|debited by|debit of|debit|paid|spent|withdrawn|transferred to|sent to|purchase of|purchase at|charged|deducted|used at|txn of|payment of|dr to|vpa debit|pos txn|atm wdl)\b/i.test(
       lower
     );
 
@@ -610,6 +610,24 @@ export function parseSmsTransaction(
     const fromMatch = text.match(/\b(?:from|by)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:on|via|ref|upi|avl|bal|\.|\n|$))/i);
     rawMerchant = fromMatch ? `${cleanMerchantName(fromMatch[1])} Refund/Deposit` : 'Income Deposit';
   } else {
+    // 0. Explicit Payee / VPA / Hyphenated UPI Patterns
+    const explicitPayeeMatch =
+      text.match(/(?:^|\n)\s*(?:to|payee)\s*[:\-]\s*([A-Za-z0-9\s._@\-]+?)(?:\r?\n|$)/i) ||
+      text.match(/\bpayee\s*[:\-]\s*([A-Za-z0-9\s._@\-]+?)(?:[\/:\.\n;]|\s+(?:on|via|ref|bal)|$)/i) ||
+      text.match(/\b(?:to|towards)\s+upi\s*(?:\/|to)\s*([A-Za-z0-9\s._@\-]+?)(?:[\/:\.\n;]|\s+(?:on|via|ref|bal)|$)/i) ||
+      text.match(/\b(?:to\s+vpa|vpa)\s+[A-Za-z0-9._\-]+@[A-Za-z0-9._\-]+\s*\(([A-Za-z0-9\s._@\-]+?)\)/i) ||
+      text.match(/\bupi\s*[:#\/=\s-]*\d{10,14}-([A-Za-z0-9\s._@\-]+?)(?:[\/:\.\n;]|\s+(?:on|via|ref|bal)|$)/i) ||
+      text.match(/([A-Za-z][A-Za-z0-9\s._@\-]{1,40})\s+has\s+been\s+credited\b/i) ||
+      text.match(/\bpaid to\s+([A-Za-z0-9\s._@\-]+?)\s+(?:rs\.?|inr|₹)/i) ||
+      text.match(/\bsent to\s+([A-Za-z0-9\s._@\-]+?)\s+(?:from|via|on|ref)/i);
+
+    if (explicitPayeeMatch && explicitPayeeMatch[1]) {
+      const candidate = cleanMerchantName(explicitPayeeMatch[1]);
+      if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa|your|bal|balance)$/i.test(candidate)) {
+        rawMerchant = candidate;
+      }
+    }
+
     // 1. Payee credited patterns:
     // Pattern 1a: "credited to [NAME]" or "credited: [NAME]"
     const creditedToMatch = text.match(

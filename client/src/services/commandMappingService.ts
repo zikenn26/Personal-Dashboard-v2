@@ -348,31 +348,38 @@ export function parseNaturalLanguageIntent(rawTranscript: string): MatchResult |
     };
   }
 
-  // Pattern 2c: "Log 250 for lunch", "Add 150 for breakfast"
+  // Pattern 2c: "Log 250 for lunch", "Add 150 for breakfast", "Add 39 rs breakfast", "Add 500 to Rahul"
   const shortExpRegex =
-    /^(?:add|log|record)\s+(?:rs\.?|inr|₹)?\s*(\d+(?:\.\d+)?)\s*(?:rs|rupees|inr|bucks)?\s*(?:for|on|towards|called)\s*(.+)$/i;
+    /^(?:add|log|record|save|create|enter|track)\s+(?:rs\.?|inr|₹)?\s*(\d+(?:\.\d+)?)\s*(?:rs|rupees|inr|bucks)?\s*(?:for|on|towards|called|at|to|in)?\s*(.+)$/i;
   const matchShortExp = clean.match(shortExpRegex);
   if (matchShortExp && matchShortExp[1] && matchShortExp[2]) {
-    const amount = parseFloat(matchShortExp[1]);
-    const expName = matchShortExp[2].trim();
-    const category = inferExpenseCategory(expName);
-    return {
-      mapping: {
-        id: `nl-short-exp-${Date.now()}`,
-        triggerPhrase: rawClean,
-        actionType: 'add_expense',
-        parameters: {
-          expenseName: expName.charAt(0).toUpperCase() + expName.slice(1),
-          expenseAmount: amount,
-          expenseCategory: category,
+    const rawTarget = matchShortExp[2].trim();
+    const actionWords = /^(add|log|record|save|create|enter|track|spend|spent|paid)$/i;
+    if (!actionWords.test(rawTarget)) {
+      const amount = parseFloat(matchShortExp[1]);
+      let expName = rawTarget.replace(/^(?:for|on|towards|called|at|to|in)\s+/i, '').trim();
+      if (!expName || actionWords.test(expName)) {
+        expName = 'Expense';
+      }
+      const category = inferExpenseCategory(expName);
+      return {
+        mapping: {
+          id: `nl-short-exp-${Date.now()}`,
+          triggerPhrase: rawClean,
+          actionType: 'add_expense',
+          parameters: {
+            expenseName: expName.charAt(0).toUpperCase() + expName.slice(1),
+            expenseAmount: amount,
+            expenseCategory: category,
+          },
+          matchType: 'contains',
+          enabled: true,
+          createdAt: Date.now(),
         },
-        matchType: 'contains',
-        enabled: true,
-        createdAt: Date.now(),
-      },
-      matchedText: rawClean,
-      extractedParams: { amount, dynamicText: expName },
-    };
+        matchedText: rawClean,
+        extractedParams: { amount, dynamicText: expName },
+      };
+    }
   }
 
   // 2d. Delete Expense: "Delete latest expense", "Delete expense coffee"
