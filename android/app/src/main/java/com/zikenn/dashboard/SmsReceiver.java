@@ -226,9 +226,12 @@ public class SmsReceiver extends BroadcastReceiver {
         String[] bankKeywords = {
             "ICICI", "HDFC", "SBI", "AXIS", "KOTAK", "PNB", "CANARA", "CANBNK",
             "BOB", "BARODA", "UNION", "INDUS", "FEDERAL", "FEDBNK", "IDFC",
-            "YESB", "PAYTM", "GPAY", "PHONEPE", "BHIM", "UPI", "AIRTEL", "AMEX",
+            "YESB", "YESBANK", "PAYTM", "GPAY", "PHONEPE", "BHIM", "UPI", "AIRTEL", "AMEX",
             "CITI", "STANDARD", "SCB", "RBL", "IDBI", "BANDHAN", "AUBANK", "IOB",
-            "CENTRAL", "UCO", "INDIANB", "MAHABANK", "POSTBK", "IPPB"
+            "CENTRAL", "UCO", "INDIANB", "MAHABANK", "MAHABK", "POSTBK", "IPPB",
+            "BOI", "BANKOFINDIA", "DBS", "HSBC", "J&K", "JKBANK", "KVB", "KARUR",
+            "SIB", "SOUTHINDBK", "CSB", "UJJIVAN", "EQUITAS", "FINCARE", "ESAF",
+            "SURYODAY", "CRED", "SLICE", "JUPITER", "FI"
         };
         for (String kw : bankKeywords) {
             if (clean.contains(kw)) {
@@ -237,7 +240,12 @@ public class SmsReceiver extends BroadcastReceiver {
         }
 
         // Standard 2-letter prefix + hyphen + alphanumeric sender ID format (e.g. AD-ICICIB, BZ-SBIINB)
-        if (clean.matches("^[A-Z]{2}-[A-Z0-9]{5,8}$")) {
+        if (clean.matches("^[A-Z]{2}-[A-Z0-9]{3,9}$")) {
+            return true;
+        }
+
+        // 3-9 character alphanumeric bank sender header (e.g. HDFCBK, ICICIB, SBIUPI, KOTAKB, BOIIND, AXISBK)
+        if (clean.matches("^[A-Z0-9]{3,9}$") && clean.matches(".*[A-Z].*") && !clean.matches("^\\d+$")) {
             return true;
         }
 

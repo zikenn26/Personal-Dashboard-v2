@@ -71,6 +71,34 @@ describe('P0 — SMS Rescan Selection & Detected Transactions Visibility', () =>
     Storage.setSmsAutoTrackingEnabled(true);
     Storage.clearProcessedSmsFingerprints();
     setCustomWorkspaceIdentifier('user_gulnayak1206@gmail.com');
+
+    // Setup realistic SMS inbox reader for manual rescan tests
+    smsExpenseService.setInboxReaderForTesting(async (opts) => {
+      const all = [
+        {
+          sender: 'AD-ICICIB',
+          body: 'ICICI Bank Acct XX070 debited for Rs 303.00 on 25-Sep-26; ARPITA PRIYADAR credited. UPI:663416590461.',
+          timestamp: 1727260920000,
+        },
+        {
+          sender: 'VK-HDFCBK',
+          body: 'Rs.450.00 debited from HDFC Bank A/c **4120 on 24-Sep-26 to SWIGGY. UPI: 429384928342. Avl bal: Rs.14,200.00.',
+          timestamp: 1727174520000,
+        },
+        {
+          sender: 'BZ-KOTAKB',
+          body: 'Kotak Bank: Rs 250.00 debited from A/c **** on 24-Sep-26. UPI:556677889900-CHAAYOS. Bal: Rs 12,090.00.',
+          timestamp: 1727088120000,
+        },
+        {
+          sender: 'AD-SBIUPI',
+          body: 'Dear UPI user A/C 9876 debited by 1200.00 on 24Sep26 transfer to MOHIT SHARMA Ref No 429482938492.',
+          timestamp: 1727001720000,
+        },
+      ];
+      const limit = opts?.limit || 20;
+      return { messages: all.slice(0, limit) };
+    });
   });
 
   describe('A. Automatic Transaction Visibility Pipeline', () => {

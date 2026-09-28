@@ -171,29 +171,25 @@ export function isTraiServiceSender(sender: string): boolean {
     return true;
   }
 
-  // Known bank / financial service keywords
+  // Known Indian bank / financial service keywords
   const bankKeywords = [
     'ICICI', 'HDFC', 'SBI', 'AXIS', 'KOTAK', 'PNB', 'CANARA', 'CANBNK',
     'BOB', 'BARODA', 'UNION', 'INDUS', 'FEDERAL', 'FEDBNK', 'IDFC',
-    'YESB', 'PAYTM', 'GPAY', 'PHONEPE', 'BHIM', 'UPI', 'AIRTEL', 'AMEX',
+    'YES', 'YESB', 'YESBANK', 'PAYTM', 'GPAY', 'PHONEPE', 'BHIM', 'UPI', 'AIRTEL', 'AMEX',
     'CITI', 'STANDARD', 'SCB', 'RBL', 'IDBI', 'BANDHAN', 'AUBANK', 'IOB',
-    'CENTRAL', 'UCO', 'INDIANB', 'MAHABANK', 'POSTBK', 'IPPB'
+    'CENTRAL', 'UCO', 'INDIANB', 'MAHABANK', 'MAHABK', 'POSTBK', 'IPPB',
+    'BOI', 'BANKOFINDIA', 'DBS', 'HSBC', 'J&K', 'JKBANK', 'KVB', 'KARUR',
+    'SIB', 'SOUTHINDBK', 'CSB', 'UJJIVAN', 'EQUITAS', 'FINCARE', 'ESAF',
+    'SURYODAY', 'CRED', 'SLICE', 'JUPITER', 'FI'
   ];
   if (bankKeywords.some((kw) => clean.includes(kw))) {
-    return true;
-  }
-
-  // Accept standard 2-letter operator prefix + hyphen + alphanumeric sender ID format (e.g. AD-ICICIB, BZ-SBIINB)
-  if (/^[A-Z]{2}-[A-Z0-9]{5,8}$/.test(clean)) {
     return true;
   }
 
   return false;
 }
 
-export const isBankOrFinancialSender = isTraiServiceSender;
-
-/**
+export const isBankOrFinancialSender = isTraiServiceSender;/**
  * Fast, comprehensive local heuristic to identify financial transaction SMS
  * (debits, credits, UPI, cards, bank alerts) while rejecting OTPs, loans, and promotional spam.
  * Fully aligned with native SmsReceiver.java heuristic.
@@ -309,7 +305,7 @@ class SmsExpenseService {
    * Checks if native Capacitor Android SMS plugin is available
    */
   public async isNativePluginAvailable(): Promise<boolean> {
-    if (!Capacitor.isNativePlatform() || !this.isAndroidDevice()) {
+    if (!Capacitor.isNativePlatform()) {
       return false;
     }
     try {
@@ -963,7 +959,10 @@ class SmsExpenseService {
    * Syncs messages that were queued by SmsReceiver while the app was backgrounded or terminated
    */
   public async syncPendingBackgroundMessages(): Promise<number> {
-    if (!this.isAutoTrackingEnabled()) return 0;
+    const isExplicitlyDisabled =
+      typeof window !== 'undefined' &&
+      localStorage.getItem('lifeos_sms_explicitly_disabled') === 'true';
+    if (isExplicitlyDisabled) return 0;
     if (!(await this.isNativePluginAvailable())) return 0;
 
     try {
@@ -993,6 +992,15 @@ class SmsExpenseService {
       }
 
       if (loggedCount > 0) {
+        const fresh = Storage.getExpenses();
+        broadcastDataChanged('expenses', { updatedExpenses: fresh });
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('sms_expense_auto_logged', {
+              detail: { updatedExpenses: fresh, count: loggedCount },
+            })
+          );
+        }
         toast.info(`📱 Auto-logged ${loggedCount} spending transaction(s) received via SMS`);
       }
 
@@ -1094,40 +1102,6 @@ class SmsExpenseService {
     } else if (typeof (smsPluginWebImpl as any)._inboxMock === 'function') {
       const res = await (smsPluginWebImpl as any)._inboxMock({ limit: count });
       rawMessages = res?.messages || [];
-    } else {
-      // Fallback sample bank messages for web preview / simulation
-      rawMessages = [
-        {
-          sender: 'AD-ICICIB',
-          body: 'ICICI Bank Acct XX070 debited for Rs 303.00 on 25-Sep-26; ARPITA PRIYADAR credited. UPI:663416590461.',
-          timestamp: Date.now() - 1000 * 60 * 45,
-        },
-        {
-          sender: 'VK-HDFCBK',
-          body: 'Rs.450.00 debited from HDFC Bank A/c **4120 on 24-Sep-26 to SWIGGY. UPI: 429384928342. Avl bal: Rs.14,200.00.',
-          timestamp: Date.now() - 1000 * 60 * 180,
-        },
-        {
-          sender: 'BZ-KOTAKB',
-          body: 'Kotak Bank: Rs 250.00 debited from A/c **** on 24-Sep-26. UPI:556677889900-CHAAYOS. Bal: Rs 12,090.00.',
-          timestamp: Date.now() - 1000 * 60 * 300,
-        },
-        {
-          sender: 'AD-SBIUPI',
-          body: 'Dear UPI user A/C 9876 debited by 1200.00 on 24Sep26 transfer to MOHIT SHARMA Ref No 429482938492.',
-          timestamp: Date.now() - 1000 * 60 * 480,
-        },
-        {
-          sender: 'AD-ICICIT-S',
-          body: 'Your ICICI Bank Credit Card XX2004 has been used for purchase of INR 2,499.00 at AMAZON INDIA on 23-Sep-2026. Avl Lmt: INR 85,000.',
-          timestamp: Date.now() - 1000 * 60 * 1440,
-        },
-        {
-          sender: 'AX-AXISBK',
-          body: 'Axis Bank: INR 350.00 spent on Card ending 4412 at STARBUCKS on 23-09-2026 14:15:30. Avail Bal: INR 12,500.00.',
-          timestamp: Date.now() - 1000 * 60 * 2000,
-        },
-      ];
     }
 
     const currentExpenses = Storage.getExpenses();
