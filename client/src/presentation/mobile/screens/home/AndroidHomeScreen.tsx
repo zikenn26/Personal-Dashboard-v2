@@ -76,9 +76,6 @@ export const AndroidHomeScreen: React.FC<AndroidHomeScreenProps> = ({
 
   const displayName = profile?.name ? profile.name.split(' ')[0] : 'Gulshan';
 
-  // Use existing quotes or fallback to INITIAL_QUOTES
-  const availableQuotes = quotes && quotes.length > 0 ? quotes : INITIAL_QUOTES;
-
   return (
     <div className="w-full max-w-lg mx-auto space-y-2.5 px-3.5 pb-24 pt-2">
       {/* 1. COMPACT GREETING matching Material You */}
@@ -94,38 +91,7 @@ export const AndroidHomeScreen: React.FC<AndroidHomeScreenProps> = ({
         </div>
       </div>
 
-      {/* 2. QUOTE CAROUSEL (Horizontal swipe with pager dots) */}
-      <div className="w-full">
-        <HorizontalPager showDots={true} className="w-full">
-          {availableQuotes.map((q) => (
-            <div
-              key={q.id}
-              className="w-full p-4 rounded-3xl bg-gradient-to-br from-violet-600 via-indigo-600 to-purple-700 text-white shadow-md shadow-violet-500/20 relative overflow-hidden"
-            >
-              {/* Subtle decorative watermark */}
-              <QuoteIcon className="w-20 h-20 text-white/10 absolute -right-3 -bottom-3 pointer-events-none" />
-
-              <div className="relative z-10 flex items-start gap-3">
-                <div className="w-8 h-8 rounded-full bg-white/15 flex items-center justify-center shrink-0">
-                  <QuoteIcon className="w-4 h-4 text-white" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs sm:text-sm font-medium leading-relaxed italic text-violet-50">
-                    &ldquo;{q.text}&rdquo;
-                  </p>
-                  {q.author && (
-                    <p className="text-[11px] font-bold text-violet-200 mt-2 tracking-wide uppercase">
-                      — {q.author}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-        </HorizontalPager>
-      </div>
-
-      {/* 3. WEATHER / CURRENT INFORMATION (Screen B) */}
+      {/* 2. WEATHER / CURRENT INFORMATION (Screen B) */}
       <AndroidWeatherWidget />
 
       {/* 4. CALENDAR GRID / DATE STRIP (Temporarily hidden, underlying component preserved) */}

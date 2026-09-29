@@ -309,39 +309,21 @@ export const AndroidWeatherWidget: React.FC = () => {
           </div>
         </div>
 
-        {/* Action Controls: Compact, touch-friendly, never overflowing */}
-        <div className="flex items-center gap-1 shrink-0">
-          <button
-            type="button"
-            onClick={handleRequestLocation}
-            disabled={loading}
-            aria-label="Update Location"
-            title="Update Location"
-            className="h-7 px-2.5 rounded-full bg-white dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] text-[10px] font-bold text-violet-700 dark:text-violet-300 flex items-center gap-1 hover:bg-violet-50 active:scale-95 transition-all cursor-pointer shadow-2xs shrink-0"
-          >
-            {loading ? (
-              <RefreshCw className="w-3 h-3 animate-spin text-violet-600" />
-            ) : (
-              <Navigation className="w-3 h-3 text-violet-600 dark:text-violet-400" />
-            )}
-            <span>Location</span>
-          </button>
-
+        {/* Action Controls: Single clean refresh button */}
+        <div className="flex items-center shrink-0">
           <button
             type="button"
             onClick={() => {
               void nativeService.triggerHaptic('click');
-              if (weather?.lat && weather?.lon) {
-                void fetchWeatherForPosition(weather.lat, weather.lon, weather.cityName);
-              } else {
-                void handleRequestLocation();
-              }
+              void fetchWeatherWithActualLocation();
             }}
             disabled={loading}
-            aria-label="Refresh weather"
-            className="w-7 h-7 rounded-full bg-white dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] flex items-center justify-center text-gray-500 hover:text-violet-600 dark:text-gray-300 active:scale-90 transition-all cursor-pointer shadow-2xs shrink-0"
+            aria-label="Refresh location and weather"
+            title="Refresh location and weather"
+            className="h-7 px-2.5 rounded-full bg-white dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] text-[10px] font-bold text-violet-700 dark:text-violet-300 flex items-center gap-1.5 hover:bg-violet-50 active:scale-95 transition-all cursor-pointer shadow-2xs shrink-0"
           >
-            <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin text-violet-600' : ''}`} />
+            <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin text-violet-600' : 'text-violet-600 dark:text-violet-400'}`} />
+            <span>{loading ? 'Updating...' : 'Refresh'}</span>
           </button>
         </div>
       </div>
