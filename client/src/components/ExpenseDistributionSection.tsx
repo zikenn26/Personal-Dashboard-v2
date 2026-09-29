@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { ExpenseItem } from '../types';
 import { Sound } from '../utils/audio';
+import { isCreditTransaction } from '../utils/expenseUtils';
 
 export interface ExpenseDistributionSectionProps {
   expenses: ExpenseItem[];
@@ -138,6 +139,7 @@ export const ExpenseDistributionSection: React.FC<ExpenseDistributionSectionProp
     let grandTotal = 0;
 
     filteredExpenses.forEach((exp) => {
+      if (isCreditTransaction(exp)) return; // Credits / income do not inflate expense distribution
       const rawAmt = Number(exp?.amount);
       if (isNaN(rawAmt) || rawAmt <= 0) return;
       const cat = exp.category?.trim() || 'Others';

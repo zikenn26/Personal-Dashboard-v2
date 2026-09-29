@@ -187,7 +187,7 @@ public class SmsReceiver extends BroadcastReceiver {
             Log.i(TAG, "[SMS_RECEIVER] Body Length: " + body.length());
             Log.i(TAG, "[SMS_RECEIVER] Sanitized Content: " + sanitizeForLog(body));
 
-            boolean isFinancial = isLikelyFinancialTransaction(sender, body);
+            isFinancial = isLikelyFinancialTransaction(sender, body);
             Log.i(TAG, "[SMS_RECEIVER] Heuristic Financial Classification: " + (isFinancial ? "YES (Transaction alert)" : "NO (Non-transactional / OTP / Info)"));
 
             // 7. Forward payload to SmsTransactionPlugin for real-time delivery and pending queue
@@ -224,9 +224,10 @@ public class SmsReceiver extends BroadcastReceiver {
 
         // Known bank / financial service keywords
         String[] bankKeywords = {
-            "ICICI", "HDFC", "SBI", "AXIS", "KOTAK", "PNB", "CANARA", "CANBNK",
-            "BOB", "BARODA", "UNION", "INDUS", "FEDERAL", "FEDBNK", "IDFC",
-            "YESB", "YESBANK", "PAYTM", "GPAY", "PHONEPE", "BHIM", "UPI", "AIRTEL", "AMEX",
+            "ICICI", "ICICIB", "HDFC", "HDFCBK", "SBI", "SBIUPI", "SBIINB", "AXIS", "AXISBK",
+            "KOTAK", "KOTAKB", "PNB", "CANARA", "CANBNK", "BOB", "BARODA", "UNION", "UNIONB",
+            "INDUS", "FEDERAL", "FEDBNK", "IDFC", "YES", "YESB", "YESBK", "YESBNK", "YESBANK",
+            "PAYTM", "GPAY", "PHONEPE", "BHIM", "UPI", "AIRTEL", "AMEX",
             "CITI", "STANDARD", "SCB", "RBL", "IDBI", "BANDHAN", "AUBANK", "IOB",
             "CENTRAL", "UCO", "INDIANB", "MAHABANK", "MAHABK", "POSTBK", "IPPB",
             "BOI", "BANKOFINDIA", "DBS", "HSBC", "J&K", "JKBANK", "KVB", "KARUR",
@@ -363,13 +364,17 @@ public class SmsReceiver extends BroadcastReceiver {
             return false;
         }
 
-        // 2. Reject promotional / marketing loans & schemes
+        // 2. Reject promotional / marketing loans, schemes & recharge offers
         if (lower.contains("pre-approved loan") || 
             lower.contains("apply for instant loan") || 
             lower.contains("personal loan up to") || 
             lower.contains("click here to claim") || 
             lower.contains("congratulations! you won") ||
-            lower.contains("apply for credit card")) {
+            lower.contains("apply for credit card") ||
+            lower.contains("recharge offer") ||
+            lower.contains("recharge now") ||
+            lower.contains("special recharge") ||
+            lower.contains("cashback on recharge")) {
             return false;
         }
 
@@ -406,18 +411,27 @@ public class SmsReceiver extends BroadcastReceiver {
             lower.contains("deposited") || 
             lower.contains("refund") || 
             lower.contains("cashback") || 
+            lower.contains("upi") || 
+            lower.contains("utr") || 
+            lower.contains("rrn") || 
+            lower.contains("imps") || 
+            lower.contains("neft") || 
+            lower.contains("rtgs") || 
+            lower.contains("transaction id") || 
+            lower.contains("trans id") || 
+            lower.contains("txn id") || 
+            lower.contains("ref no") || 
             lower.contains("vpa") || 
             lower.contains("pos txn") || 
             lower.contains("atm wdl") || 
-            lower.contains("upi ref") || 
-            lower.contains("ref no") ||
-            lower.contains("rrn") ||
-            lower.contains("card ending") ||
-            lower.contains("a/c ending") ||
-            lower.contains("acct ending") ||
-            lower.contains("avl bal") ||
-            lower.contains("avail bal") ||
-            lower.contains("dr to") ||
+            lower.contains("card ending") || 
+            lower.contains("a/c ending") || 
+            lower.contains("acct ending") || 
+            lower.contains("a/c") || 
+            lower.contains("acct") || 
+            lower.contains("avl bal") || 
+            lower.contains("avail bal") || 
+            lower.contains("dr to") || 
             lower.contains("cr to");
 
         return hasTxnVerb;

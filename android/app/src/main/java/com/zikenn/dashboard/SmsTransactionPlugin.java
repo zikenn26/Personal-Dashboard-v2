@@ -220,6 +220,7 @@ public class SmsTransactionPlugin extends Plugin {
     public void readRecentSms(PluginCall call) {
         Context context = getContext();
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+            Log.w(TAG, "readRecentSms: READ_SMS permission is not granted");
             call.reject("READ_SMS permission is not granted");
             return;
         }
@@ -231,21 +232,102 @@ public class SmsTransactionPlugin extends Plugin {
             ContentResolver cr = context.getContentResolver();
             Uri inboxUri = Uri.parse("content://sms/inbox");
             String[] projection = new String[] { "_id", "address", "body", "date" };
-            // Query inbox with an expanded scan window so we yield the target count of financial SMS
-            // even if the user has non-financial OTPs and promotional messages in their inbox.
-            int scanWindow = Math.max(limit * 5, 200);
-            Cursor cursor = cr.query(inboxUri, projection, null, null, "date DESC LIMIT " + scanWindow);
+            
+            Cursor cursor = null;
+            try {
+                // 1. Primary Query: content://sms/inbox newest to oldest
+                cursor = cr.query(inboxUri, projection, null, null, "date DESC");
+            } catch (Exception e1) {
+                Log.w(TAG, "cr.query content://sms/inbox with projection failed: " + e1.getMessage());
+            }
+
+            // Fallback 1: content://sms/inbox without projection
+            if (cursor == null) {
+                try {
+                    cursor = cr.query(inboxUri, null, null, null, "date DESC");
+                } catch (Exception e2) {
+                    Log.w(TAG, "cr.query content://sms/inbox fallback failed: " + e2.getMessage());
+                }
+            }
+
+            // Fallback 2: Universal content://sms with type = 1 (Inbox)
+            if (cursor == null || cursor.getCount() == 0) {
+                if (cursor != null) cursor.close();
+                try {
+                    Uri genericUri = Uri.parse("content://sms");
+                    cursor = cr.query(genericUri, projection, "type = 1", null, "date DESC");
+                } catch (Exception e3) {
+                    Log.w(TAG, "cr.query content://sms fallback with projection failed: " + e3.getMessage());
+                    try {
+                        Uri genericUri = Uri.parse("content://sms");
+                        cursor = cr.query(genericUri, null, "type = 1", null, "date DESC");
+                    } catch (Exception e4) {
+                        Log.e(TAG, "cr.query content://sms fallback failed: " + e4.getMessage());
+                    }
+                }
+            }
 
             if (cursor != null) {
-                while (cursor.moveToNext() && results.length() < limit) {
-                    String address = cursor.getString(cursor.getColumnIndexOrThrow("address"));
-                    String body = cursor.getString(cursor.getColumnIndexOrThrow("body"));
-                    long date = cursor.getLong(cursor.getColumnIndexOrThrow("date"));
+                int scanned = 0;
+                int maxScan = Math.max(limit * 20, 1000);
+                while (cursor.moveToNext() && scanned < maxScan && results.length() < (limit * 2)) {
+                    scanned++;
+                    int addressIdx = cursor.getColumnIndex("address");
+                    int bodyIdx = cursor.getColumnIndex("body");
+                    int dateIdx = cursor.getColumnIndex("date");
 
-                    // Scan all genuine bank transaction SMS from inbox
-                    if (SmsReceiver.isLikelyFinancialTransaction(address, body) || SmsReceiver.isEligibleBankSender(address, body)) {
+                    String address = addressIdx >= 0 ? cursor.getString(addressIdx) : "";
+                    String body = bodyIdx >= 0 ? cursor.getString(bodyIdx) : "";
+                    long date = dateIdx >= 0 ? cursor.getLong(dateIdx) : System.currentTimeMillis();
+
+                    if (body == null || body.trim().isEmpty()) {
+                        continue;
+                    }
+
+                    String lower = body.toLowerCase();
+
+                    // Reject pure authentication OTPs and marketing promos
+                    if (lower.contains("otp") && (
+                        lower.contains("do not share") || 
+                        lower.contains("valid for") || 
+                        lower.contains("secret code") || 
+                        lower.contains("one time password") ||
+                        lower.contains("verification code"))) {
+                        continue;
+                    }
+                    if (lower.contains("pre-approved loan") || 
+                        lower.contains("apply for instant loan") || 
+                        lower.contains("recharge offer") || 
+                        lower.contains("recharge now")) {
+                        continue;
+                    }
+
+                    // Inclusive candidate detection: bank sender OR transaction keywords
+                    boolean isBankSender = SmsReceiver.isTraiServiceSender(address);
+                    boolean isFinancial = SmsReceiver.isLikelyFinancialTransaction(address, body);
+                    boolean hasFinancialKeywords = 
+                        lower.contains("debited") || 
+                        lower.contains("credited") || 
+                        lower.contains("paid") || 
+                        lower.contains("spent") || 
+                        lower.contains("transferred") || 
+                        lower.contains("withdrawn") || 
+                        lower.contains("upi") || 
+                        lower.contains("utr") || 
+                        lower.contains("rrn") || 
+                        lower.contains("imps") || 
+                        lower.contains("neft") || 
+                        lower.contains("rtgs") || 
+                        lower.contains("ref no") || 
+                        lower.contains("transaction id") || 
+                        lower.contains("a/c") || 
+                        lower.contains("acct") || 
+                        lower.contains("rs.") || 
+                        lower.contains("inr");
+
+                    if (isBankSender || isFinancial || hasFinancialKeywords) {
                         JSObject item = new JSObject();
-                        item.put("sender", address);
+                        item.put("sender", address != null ? address : "");
                         item.put("body", body);
                         item.put("timestamp", date);
                         results.put(item);
@@ -253,6 +335,7 @@ public class SmsTransactionPlugin extends Plugin {
                 }
                 cursor.close();
             }
+            Log.i(TAG, "readRecentSms: Retrieved " + results.length() + " candidate SMS records for limit=" + limit);
         } catch (Exception e) {
             Log.e(TAG, "Error querying SMS inbox", e);
             call.reject("Failed to query SMS inbox: " + e.getMessage());

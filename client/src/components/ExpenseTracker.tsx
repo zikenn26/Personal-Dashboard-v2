@@ -69,6 +69,7 @@ import { ExcelImportModal } from './ExcelImportModal';
 import { SmsExpenseModal } from './SmsExpenseModal';
 import { ExpenseDistributionSection } from './ExpenseDistributionSection';
 import { DateRangePicker, type DateRange } from './DateRangePicker';
+import { isCreditTransaction } from '../utils/expenseUtils';
 
 interface ExpenseTrackerProps {
   expenses: ExpenseItem[];
@@ -640,6 +641,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   const [formBillingCycle, setFormBillingCycle] = useState<ExpenseBillingCycle>('one-time');
   const [formNotes, setFormNotes] = useState('');
   const [formIcon, setFormIcon] = useState('💳');
+  const [formDirection, setFormDirection] = useState<'DEBIT' | 'CREDIT'>('DEBIT');
 
   const formatCurrency = (val: number) => {
     return `₹${Math.round(val).toLocaleString('en-IN')}`;
@@ -655,6 +657,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       setFormIcon(preset.icon);
       setFormNotes(preset.note || '');
       setFormBillingCycle('one-time');
+      setFormDirection('DEBIT');
     } else {
       setFormName('');
       setFormAmount('');
@@ -662,6 +665,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       setFormIcon('🍽️');
       setFormNotes('');
       setFormBillingCycle('one-time');
+      setFormDirection('DEBIT');
     }
     setFormDate(new Date().toISOString().split('T')[0]);
     setFormPaymentMethod('Credit Card');
@@ -680,6 +684,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     setFormBillingCycle(item.billingCycle || 'one-time');
     setFormNotes(item.notes || '');
     setFormIcon(item.icon || '💳');
+    setFormDirection(isCreditTransaction(item) ? 'CREDIT' : 'DEBIT');
     setShowAddModal(true);
   };
 
@@ -697,6 +702,8 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       notes: preset.note || '',
       icon: preset.icon,
       active: true,
+      direction: 'DEBIT',
+      transactionType: 'DEBIT',
     });
   };
 
@@ -720,6 +727,8 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
           billingCycle: formBillingCycle,
           notes: formNotes.trim(),
           icon: formIcon,
+          direction: formDirection,
+          transactionType: formDirection,
         });
       }
     } else {
@@ -733,6 +742,8 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
         notes: formNotes.trim(),
         icon: formIcon,
         active: true,
+        direction: formDirection,
+        transactionType: formDirection,
       });
     }
 
@@ -745,12 +756,12 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     const todayStr = new Date().toISOString().split('T')[0];
     const now = new Date();
 
-    // Sum for Today
+    // Sum for Today (Debits only - credits do not inflate spending)
     const todayTotal = currentExpenses
-      .filter((e) => e.date === todayStr)
+      .filter((e) => e.date === todayStr && !isCreditTransaction(e))
       .reduce((sum, e) => sum + (e.amount || 0), 0);
 
-    // Sum for This Week (Starting Monday)
+    // Sum for This Week (Starting Monday) (Debits only)
     const currentDayOfWeek = (now.getDay() + 6) % 7; // 0 for Monday
     const monday = new Date(now);
     monday.setDate(now.getDate() - currentDayOfWeek);
@@ -759,21 +770,24 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       .filter((e) => {
         if (!e.date) return false;
         const d = new Date(e.date + 'T00:00:00');
-        return d >= monday && d <= now;
+        return d >= monday && d <= now && !isCreditTransaction(e);
       })
       .reduce((sum, e) => sum + (e.amount || 0), 0);
 
-    // Sum for Selected Month
+    // Sum for Selected Month (Debits only)
     const selectedPrefix = `${selectedYear}-${String(selectedMonthIndex + 1).padStart(2, '0')}`;
     const monthExpenses = currentExpenses.filter((e) => (e.date || '').startsWith(selectedPrefix));
-    const monthTotal = monthExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+    const monthDebits = monthExpenses.filter((e) => !isCreditTransaction(e));
+    const monthCredits = monthExpenses.filter((e) => isCreditTransaction(e));
+    const monthTotal = monthDebits.reduce((sum, e) => sum + (e.amount || 0), 0);
+    const monthCreditsTotal = monthCredits.reduce((sum, e) => sum + (e.amount || 0), 0);
 
-    // Previous Month Comparison (for accurate % trend)
+    // Previous Month Comparison (Debits only)
     const prevMonthIndex = selectedMonthIndex === 0 ? 11 : selectedMonthIndex - 1;
     const prevYear = selectedMonthIndex === 0 ? selectedYear - 1 : selectedYear;
     const prevPrefix = `${prevYear}-${String(prevMonthIndex + 1).padStart(2, '0')}`;
     const prevMonthTotal = currentExpenses
-      .filter((e) => (e.date || '').startsWith(prevPrefix))
+      .filter((e) => (e.date || '').startsWith(prevPrefix) && !isCreditTransaction(e))
       .reduce((sum, e) => sum + (e.amount || 0), 0);
 
     let monthDiffPercent = 0;
@@ -783,7 +797,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
 
     // Total of Active Subscriptions / month
     const recurringTotal = currentExpenses
-      .filter((e) => e.billingCycle && e.billingCycle !== 'one-time' && e.active !== false)
+      .filter((e) => e.billingCycle && e.billingCycle !== 'one-time' && e.active !== false && !isCreditTransaction(e))
       .reduce((sum, e) => {
         if (e.billingCycle === 'yearly') return sum + e.amount / 12;
         if (e.billingCycle === 'weekly') return sum + e.amount * 4.33;
@@ -792,6 +806,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
 
     return {
       monthDisplay: monthTotal,
+      monthCreditsTotal,
       monthCount: monthExpenses.length,
       prevMonthTotal,
       monthDiffPercent,
@@ -802,7 +817,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     };
   }, [currentExpenses, selectedYear, selectedMonthIndex, expenseRenderTick]);
 
-  // Category Breakdown Data (supports filtering by selected month or all time)
+  // Category Breakdown Data (supports filtering by selected month or all time, debits only)
   const categoryBreakdown = useMemo(() => {
     if (currentExpenses.length === 0) {
       return [];
@@ -821,6 +836,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     const catMap: Record<string, number> = {};
     let total = 0;
     sourceExpenses.forEach((e) => {
+      if (isCreditTransaction(e)) return; // Credits do not count towards expense categories
       const cat = e.category || 'Others';
       catMap[cat] = (catMap[cat] || 0) + e.amount;
       total += e.amount;
@@ -843,17 +859,17 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       .sort((a, b) => b.amount - a.amount);
   }, [currentExpenses, selectedYear, selectedMonthIndex, categoryScope, expenseRenderTick]);
 
-  // Monthly Spending Trend Data
+  // Monthly Spending Trend Data (debits only)
   const trendData = useMemo(() => {
     if (currentExpenses.length === 0) {
       return [];
     }
 
     const selectedPrefix = `${selectedYear}-${String(selectedMonthIndex + 1).padStart(2, '0')}`;
-    const monthExpenses = currentExpenses.filter((e) => (e.date || '').startsWith(selectedPrefix));
-    const source = monthExpenses.length > 0 ? monthExpenses : currentExpenses.slice(0, 20);
+    const monthExpenses = currentExpenses.filter((e) => (e.date || '').startsWith(selectedPrefix) && !isCreditTransaction(e));
+    const source = monthExpenses.length > 0 ? monthExpenses : currentExpenses.filter((e) => !isCreditTransaction(e)).slice(0, 20);
 
-    // Group actual expenses by date
+    // Group actual debits by date
     const days: Record<string, number> = {};
     source.forEach((e) => {
       const d = e.date ? (e.date.length > 5 ? e.date.substring(5) : e.date) : 'Recent';
@@ -1739,7 +1755,9 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                       </div>
                       <div className="divide-y divide-gray-100 dark:divide-gray-800">
                         <AnimatePresence mode="popLayout" initial={false}>
-                          {groupedTransactions.Today.map((tx: any) => (
+                          {groupedTransactions.Today.map((tx: any) => {
+                            const isCredit = isCreditTransaction(tx);
+                            return (
                             <motion.div
                               layout
                               initial={{ opacity: 0, y: 8, scale: 0.98 }}
@@ -1753,14 +1771,29 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                               className="py-2.5 flex items-center justify-between group hover:bg-gray-50/70 dark:hover:bg-gray-800/40 px-2 rounded-xl transition-colors"
                             >
                               <div className="flex items-center gap-3 min-w-0">
-                                <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 flex items-center justify-center text-base shrink-0">
+                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0 ${
+                                  isCredit
+                                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-300'
+                                    : 'bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300'
+                                }`}>
                                   {getCategoryIcon(tx.category, tx.icon)}
                                 </div>
                                 <div className="min-w-0">
-                                  <div className="text-xs sm:text-sm font-bold text-[#37352F] dark:text-white truncate">
-                                    {tx.name}
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <span
+                                      className={`w-2 h-2 rounded-full shrink-0 ${
+                                        isCredit ? 'bg-emerald-500' : 'bg-rose-500'
+                                      }`}
+                                      title={isCredit ? 'Credit' : 'Debit'}
+                                    />
+                                    <span className="text-xs sm:text-sm font-bold text-[#37352F] dark:text-white truncate">
+                                      {tx.name}
+                                    </span>
                                   </div>
                                   <div className="text-[11px] text-[#787774] dark:text-[#9CA3AF] truncate">
+                                    <span className={isCredit ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-rose-600 dark:text-rose-400 font-medium'}>
+                                      {isCredit ? 'Credit • ' : 'Debit • '}
+                                    </span>
                                     {tx.notes || tx.category}
                                   </div>
                                 </div>
@@ -1768,8 +1801,8 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
 
                               <div className="flex items-center gap-3 shrink-0">
                                 <div className="text-right">
-                                  <div className="text-xs sm:text-sm font-extrabold text-[#37352F] dark:text-white">
-                                    {formatCurrency(tx.amount)}
+                                  <div className={`text-xs sm:text-sm font-extrabold ${isCredit ? 'text-emerald-600 dark:text-emerald-400' : 'text-[#37352F] dark:text-white'}`}>
+                                    {isCredit ? '+' : ''}{formatCurrency(tx.amount)}
                                   </div>
                                   <div className="text-[10px] text-[#787774] dark:text-[#9CA3AF]">
                                     {tx.time || '10:20 AM'}
@@ -1804,7 +1837,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                                 </div>
                               </div>
                             </motion.div>
-                          ))}
+                          );})}
                         </AnimatePresence>
                       </div>
                     </div>
@@ -1818,7 +1851,9 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                       </div>
                       <div className="divide-y divide-gray-100 dark:divide-gray-800">
                         <AnimatePresence mode="popLayout" initial={false}>
-                          {groupedTransactions.Yesterday.map((tx: any) => (
+                          {groupedTransactions.Yesterday.map((tx: any) => {
+                            const isCredit = isCreditTransaction(tx);
+                            return (
                             <motion.div
                               layout
                               initial={{ opacity: 0, y: 8, scale: 0.98 }}
@@ -1832,14 +1867,29 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                               className="py-2.5 flex items-center justify-between group hover:bg-gray-50/70 dark:hover:bg-gray-800/40 px-2 rounded-xl transition-colors"
                             >
                               <div className="flex items-center gap-3 min-w-0">
-                                <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-300 flex items-center justify-center text-base shrink-0">
+                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0 ${
+                                  isCredit
+                                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-300'
+                                    : 'bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-300'
+                                }`}>
                                   {getCategoryIcon(tx.category, tx.icon)}
                                 </div>
                                 <div className="min-w-0">
-                                  <div className="text-xs sm:text-sm font-bold text-[#37352F] dark:text-white truncate">
-                                    {tx.name}
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <span
+                                      className={`w-2 h-2 rounded-full shrink-0 ${
+                                        isCredit ? 'bg-emerald-500' : 'bg-rose-500'
+                                      }`}
+                                      title={isCredit ? 'Credit' : 'Debit'}
+                                    />
+                                    <span className="text-xs sm:text-sm font-bold text-[#37352F] dark:text-white truncate">
+                                      {tx.name}
+                                    </span>
                                   </div>
                                   <div className="text-[11px] text-[#787774] dark:text-[#9CA3AF] truncate">
+                                    <span className={isCredit ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-rose-600 dark:text-rose-400 font-medium'}>
+                                      {isCredit ? 'Credit • ' : 'Debit • '}
+                                    </span>
                                     {tx.notes || tx.category}
                                   </div>
                                 </div>
@@ -1847,8 +1897,8 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
 
                               <div className="flex items-center gap-3 shrink-0">
                                 <div className="text-right">
-                                  <div className="text-xs sm:text-sm font-extrabold text-[#37352F] dark:text-white">
-                                    {formatCurrency(tx.amount)}
+                                  <div className={`text-xs sm:text-sm font-extrabold ${isCredit ? 'text-emerald-600 dark:text-emerald-400' : 'text-[#37352F] dark:text-white'}`}>
+                                    {isCredit ? '+' : ''}{formatCurrency(tx.amount)}
                                   </div>
                                   <div className="text-[10px] text-[#787774] dark:text-[#9CA3AF]">
                                     {tx.time || 'Yesterday'}
@@ -1883,7 +1933,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                                 </div>
                               </div>
                             </motion.div>
-                          ))}
+                          );})}
                         </AnimatePresence>
                       </div>
                     </div>
@@ -1897,7 +1947,9 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                       </div>
                       <div className="divide-y divide-gray-100 dark:divide-gray-800">
                         <AnimatePresence mode="popLayout" initial={false}>
-                          {groupedTransactions.Earlier.map((tx: any) => (
+                          {groupedTransactions.Earlier.map((tx: any) => {
+                            const isCredit = isCreditTransaction(tx);
+                            return (
                             <motion.div
                               layout
                               initial={{ opacity: 0, y: 8, scale: 0.98 }}
@@ -1911,14 +1963,29 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                               className="py-2.5 flex items-center justify-between group hover:bg-gray-50/70 dark:hover:bg-gray-800/40 px-2 rounded-xl transition-colors"
                             >
                               <div className="flex items-center gap-3 min-w-0">
-                                <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 flex items-center justify-center text-base shrink-0">
+                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0 ${
+                                  isCredit
+                                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-300'
+                                    : 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300'
+                                }`}>
                                   {getCategoryIcon(tx.category, tx.icon)}
                                 </div>
                                 <div className="min-w-0">
-                                  <div className="text-xs sm:text-sm font-bold text-[#37352F] dark:text-white truncate">
-                                    {tx.name}
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <span
+                                      className={`w-2 h-2 rounded-full shrink-0 ${
+                                        isCredit ? 'bg-emerald-500' : 'bg-rose-500'
+                                      }`}
+                                      title={isCredit ? 'Credit' : 'Debit'}
+                                    />
+                                    <span className="text-xs sm:text-sm font-bold text-[#37352F] dark:text-white truncate">
+                                      {tx.name}
+                                    </span>
                                   </div>
                                   <div className="text-[11px] text-[#787774] dark:text-[#9CA3AF] truncate">
+                                    <span className={isCredit ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-rose-600 dark:text-rose-400 font-medium'}>
+                                      {isCredit ? 'Credit • ' : 'Debit • '}
+                                    </span>
                                     {tx.notes || tx.category}
                                   </div>
                                 </div>
@@ -1926,8 +1993,8 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
 
                               <div className="flex items-center gap-3 shrink-0">
                                 <div className="text-right">
-                                  <div className="text-xs sm:text-sm font-extrabold text-[#37352F] dark:text-white">
-                                    {formatCurrency(tx.amount)}
+                                  <div className={`text-xs sm:text-sm font-extrabold ${isCredit ? 'text-emerald-600 dark:text-emerald-400' : 'text-[#37352F] dark:text-white'}`}>
+                                    {isCredit ? '+' : ''}{formatCurrency(tx.amount)}
                                   </div>
                                   <div className="text-[10px] text-[#787774] dark:text-[#9CA3AF]">
                                     {tx.date}
@@ -1962,7 +2029,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                                 </div>
                               </div>
                             </motion.div>
-                          ))}
+                          );})}
                         </AnimatePresence>
                       </div>
                     </div>
@@ -2480,6 +2547,39 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
 
             {/* Modal Form Body */}
             <form onSubmit={handleSaveForm} className="p-4 sm:p-5 space-y-4 overflow-y-auto">
+              {/* Transaction Type Segmented Control */}
+              <div>
+                <label className="block text-xs font-bold text-[#37352F] dark:text-white uppercase tracking-wider mb-1.5">
+                  Transaction Type
+                </label>
+                <div className="grid grid-cols-2 p-1 rounded-xl bg-gray-100 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setFormDirection('DEBIT')}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                      formDirection === 'DEBIT'
+                        ? 'bg-rose-500 text-white shadow-xs'
+                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${formDirection === 'DEBIT' ? 'bg-white' : 'bg-rose-500'}`} />
+                    <span>Debit (Expense)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormDirection('CREDIT')}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                      formDirection === 'CREDIT'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${formDirection === 'CREDIT' ? 'bg-white' : 'bg-emerald-500'}`} />
+                    <span>Credit (Income / Refund)</span>
+                  </button>
+                </div>
+              </div>
+
               {/* Amount Input */}
               <div>
                 <label className="block text-xs font-bold text-[#37352F] dark:text-white uppercase tracking-wider mb-1">

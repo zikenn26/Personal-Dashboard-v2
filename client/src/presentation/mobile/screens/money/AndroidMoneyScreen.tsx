@@ -11,6 +11,7 @@ import { useLongPress } from '../../gestures/useLongPress';
 import { AndroidActionSheet, ActionSheetItem } from '../../components/AndroidActionSheet';
 import { QuickExpenseSheet } from '../../components/QuickExpenseSheet';
 import { ControlledSmsRescanModal } from '../../components/ControlledSmsRescanModal';
+import { SmsExpenseModal } from '../../../../components/SmsExpenseModal';
 import { compareExpensesByDateTimeDesc, getTransactionDisplayTitle, isCreditTransaction } from '../../../../utils/expenseUtils';
 import { SmsTransaction } from '../../../../services/smsExpenseService';
 import { Capacitor } from '@capacitor/core';
@@ -41,6 +42,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   const [confirmDeleteExpense, setConfirmDeleteExpense] = useState<ExpenseItem | null>(null);
   const [activeActionExpense, setActiveActionExpense] = useState<ExpenseItem | null>(null);
   const [isRescanModalOpen, setIsRescanModalOpen] = useState(false);
+  const [isSmsModalOpen, setIsSmsModalOpen] = useState(false);
 
   // Local reactive expenses mirror to ensure immediate display without requiring page reload
   const [localExpenses, setLocalExpenses] = useState<ExpenseItem[]>(expenses);
@@ -67,6 +69,9 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         setIsSmsEnabled(Storage.isSmsAutoTrackingEnabled() && status === 'granted');
       }
     });
+
+    // Sync any pending background SMS messages when screen mounts
+    void smsExpenseService.syncPendingBackgroundMessages();
 
     const handleSmsAutoLogged = (e?: Event) => {
       if (isMounted) {
@@ -103,8 +108,18 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
     };
   }, []);
 
+  // Synchronize localExpenses with incoming props
+  useEffect(() => {
+    if (expenses) {
+      setLocalExpenses(expenses);
+    }
+  }, [expenses]);
+
   // Use localExpenses (which updates immediately upon SMS receipt) or fallback to props
-  const activeExpenses = localExpenses && localExpenses.length >= 0 ? localExpenses : expenses;
+  const activeExpenses = useMemo(() => {
+    const source = localExpenses && localExpenses.length >= 0 ? localExpenses : expenses;
+    return source.filter((e) => e.active !== false);
+  }, [localExpenses, expenses]);
 
   const handleSmsAction = async () => {
     void nativeService.triggerHaptic('selection');
@@ -113,6 +128,8 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
     if (smsPermissionStatus === 'granted' && isSmsEnabled) {
       if (onOpenSmsSettings) {
         onOpenSmsSettings();
+      } else {
+        setIsSmsModalOpen(true);
       }
       return;
     }
@@ -140,16 +157,12 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         toast.success('SMS Auto-Logging ON', {
           description: 'LifeOS will now automatically detect bank and UPI spendings.',
         });
-        // Scan recent inbox once upon user grant
-        void smsExpenseService.scanRecentInbox(25).then((summary) => {
-          if (summary.imported > 0) {
-            toast.info(`Imported ${summary.imported} unlogged transaction(s) from recent SMS`);
-          }
-        });
+        // Immediately sync any background pending messages without legacy full scan
+        void smsExpenseService.syncPendingBackgroundMessages();
       } else if (res === 'denied') {
         setSmsPermissionStatus('denied');
         toast.info('SMS permission not granted', {
-          description: 'You can tap Allow SMS whenever you wish to enable auto-tracking.',
+          description: 'You can tap the SMS status chip whenever you wish to enable auto-tracking.',
         });
       } else if (res === 'prompt') {
         setSmsPermissionStatus('prompt');
@@ -267,43 +280,38 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5">
+          {/* Compact SMS Status Chip (Not a primary action, opens SMS settings) */}
           <button
             type="button"
             onClick={handleSmsAction}
-            className={`px-2.5 py-1.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer ${
-              smsPermissionStatus === 'granted' && isSmsEnabled
-                ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
-                : smsPermissionStatus === 'permanently_denied'
-                ? 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300'
-                : 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
-            }`}
+            className="px-2 py-1 rounded-full border text-[11px] font-medium flex items-center gap-1.5 transition-all cursor-pointer bg-gray-50 dark:bg-gray-800/60 border-gray-200 dark:border-gray-700/80 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/60 shadow-2xs"
             title={
               smsPermissionStatus === 'granted' && isSmsEnabled
-                ? 'SMS Auto-Logging ON — Tap to manage'
+                ? 'SMS Auto-Logging ON — Tap for settings'
                 : smsPermissionStatus === 'permanently_denied'
                 ? 'SMS Permission Unavailable — Open Settings'
-                : 'Allow SMS Auto-Logging'
+                : 'Enable SMS Auto-Logging'
             }
           >
             {smsPermissionStatus === 'granted' && isSmsEnabled ? (
               <>
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>SMS Auto-Logging ON</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span>🟢 SMS Auto-Logging ON</span>
               </>
             ) : smsPermissionStatus === 'permanently_denied' ? (
               <>
-                <Settings className="w-3.5 h-3.5 text-gray-500" />
-                <span>Open Settings</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+                <span>SMS Off</span>
               </>
             ) : (
               <>
-                <MessageSquare className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                <span>Allow SMS</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                <span>Enable SMS</span>
               </>
             )}
           </button>
 
-          {/* Rescan SMS Action Button */}
+          {/* Primary Manual Rescan SMS Action Button */}
           <button
             type="button"
             onClick={() => {
@@ -539,6 +547,17 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         onSuccess={(_result) => {
           const fresh = Storage.getExpenses();
           setLocalExpenses(fresh);
+        }}
+      />
+
+      {/* SMS Expense Auto-Logger Settings Modal */}
+      <SmsExpenseModal
+        isOpen={isSmsModalOpen}
+        onClose={() => setIsSmsModalOpen(false)}
+        soundEnabled={true}
+        onOpenRescan={() => {
+          setIsSmsModalOpen(false);
+          setIsRescanModalOpen(true);
         }}
       />
     </div>

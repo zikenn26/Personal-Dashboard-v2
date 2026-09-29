@@ -48,6 +48,7 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
   const isEditing = Boolean(initialExpense);
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
+  const [directionState, setDirectionState] = useState<'DEBIT' | 'CREDIT'>('DEBIT');
   const [category, setCategory] = useState('Dining Out');
   const [paymentMethod, setPaymentMethod] = useState<'UPI' | 'Credit Card' | 'Debit Card' | 'Cash' | 'Net Banking'>('UPI');
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -58,6 +59,11 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
     if (initialExpense) {
       setTitle(initialExpense.name || '');
       setAmount(initialExpense.amount ? String(initialExpense.amount) : '');
+      setDirectionState(
+        initialExpense.direction === 'CREDIT' || initialExpense.transactionType === 'CREDIT'
+          ? 'CREDIT'
+          : 'DEBIT'
+      );
       setCategory(initialExpense.category || 'Dining Out');
       setPaymentMethod((initialExpense.paymentMethod as any) || 'UPI');
       setDate(initialExpense.date || new Date().toISOString().split('T')[0]);
@@ -66,6 +72,7 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
     } else {
       setTitle('');
       setAmount('');
+      setDirectionState('DEBIT');
       setCategory('Dining Out');
       setPaymentMethod('UPI');
       setDate(new Date().toISOString().split('T')[0]);
@@ -106,7 +113,7 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
 
     if (isEditing && initialExpense && onUpdateExpense) {
       void nativeService.triggerHaptic('success');
-      // Preserve all underlying SMS, reference, bank, account, and direction metadata
+      // Preserve all underlying SMS, reference, bank, and account metadata while applying selected direction
       onUpdateExpense(initialExpense.id, {
         name: cleanTitle,
         amount: parsedAmount,
@@ -114,8 +121,8 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
         paymentMethod,
         date,
         notes: notes.trim(),
-        // Keep existing metadata intact
-        direction: initialExpense.direction,
+        direction: directionState,
+        transactionType: directionState,
         referenceId: initialExpense.referenceId,
         smsReferenceId: initialExpense.smsReferenceId,
         upiReference: initialExpense.upiReference,
@@ -138,13 +145,14 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
         date,
         billingCycle: 'one-time',
         active: true,
-        direction: 'DEBIT',
-        transactionType: 'DEBIT',
+        direction: directionState,
+        transactionType: directionState,
         source: 'manual',
         notes: notes.trim() || 'Added from Android quick access',
       });
       setTitle('');
       setAmount('');
+      setDirectionState('DEBIT');
       setNotes('');
       onClose();
     }
@@ -258,6 +266,45 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
         {/* ========================================================================= */}
         {(!isEditing || isEditFormExpanded) && (
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Transaction Type Segmented Control */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                Transaction Type
+              </label>
+              <div className="grid grid-cols-2 p-1 rounded-2xl bg-gray-100 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void nativeService.triggerHaptic('selection');
+                    setDirectionState('DEBIT');
+                  }}
+                  className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                    directionState === 'DEBIT'
+                      ? 'bg-rose-500 text-white shadow-xs ring-1 ring-rose-600'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${directionState === 'DEBIT' ? 'bg-white' : 'bg-rose-500'}`} />
+                  <span>Debit (Expense)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void nativeService.triggerHaptic('selection');
+                    setDirectionState('CREDIT');
+                  }}
+                  className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                    directionState === 'CREDIT'
+                      ? 'bg-emerald-600 text-white shadow-xs ring-1 ring-emerald-700'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${directionState === 'CREDIT' ? 'bg-white' : 'bg-emerald-500'}`} />
+                  <span>Credit (Income / Refund)</span>
+                </button>
+              </div>
+            </div>
+
             {/* Amount Input */}
             <div>
               <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">

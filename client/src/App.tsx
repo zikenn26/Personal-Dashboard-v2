@@ -1469,23 +1469,46 @@ export default function App() {
 
   // Expense Handlers
   const handleAddExpense = (item: Omit<ExpenseItem, 'id'>) => {
+    const isCredit = item.direction === 'CREDIT' || item.transactionType === 'CREDIT' || item.transactionType === 'income';
+    const direction: 'DEBIT' | 'CREDIT' = isCredit ? 'CREDIT' : 'DEBIT';
     const newExpense: ExpenseItem = {
-      id: `exp-${Date.now()}`,
       ...item,
+      id: `exp-${Date.now()}`,
+      direction,
+      transactionType: direction,
     };
     const updated = [newExpense, ...expenses];
     setExpenses(updated);
     Storage.setExpenses(updated);
+
+    // Broadcast change so both mobile screens and desktop components update reactively
+    window.dispatchEvent(
+      new CustomEvent('dashboard-data-updated', {
+        detail: { module: 'expenses', updatedExpenses: updated, newExpense },
+      })
+    );
+
+    // Sync immediately to Supabase
+    flushAutoSyncImmediately({
+      ...Storage.getAllDataPayload(),
+      expenses: updated,
+    });
   };
 
   const handleBatchAddExpenses = (
     newItems: Array<Omit<ExpenseItem, 'id'>>,
     newLog?: ExcelImportLog
   ) => {
-    const created: ExpenseItem[] = newItems.map((item, idx) => ({
-      id: `exp-${Date.now()}-${idx}`,
-      ...item,
-    }));
+    const created: ExpenseItem[] = newItems.map((item, idx) => {
+      const isCredit = item.direction === 'CREDIT' || item.transactionType === 'CREDIT' || item.transactionType === 'income';
+      const direction: 'DEBIT' | 'CREDIT' = isCredit ? 'CREDIT' : 'DEBIT';
+      return {
+        ...item,
+        id: `exp-${Date.now()}-${idx}`,
+        direction,
+        transactionType: direction,
+      };
+    });
     const updated = [...created, ...expenses];
     setExpenses(updated);
     Storage.setExpenses(updated);
@@ -1520,12 +1543,34 @@ export default function App() {
     const next = expenses.map((e) => (e.id === id ? { ...e, ...updated } : e));
     setExpenses(next);
     Storage.setExpenses(next);
+
+    window.dispatchEvent(
+      new CustomEvent('dashboard-data-updated', {
+        detail: { module: 'expenses', updatedExpenses: next },
+      })
+    );
+
+    flushAutoSyncImmediately({
+      ...Storage.getAllDataPayload(),
+      expenses: next,
+    });
   };
 
   const handleToggleExpense = (id: string) => {
     const updated = expenses.map((e) => (e.id === id ? { ...e, active: !e.active } : e));
     setExpenses(updated);
     Storage.setExpenses(updated);
+
+    window.dispatchEvent(
+      new CustomEvent('dashboard-data-updated', {
+        detail: { module: 'expenses', updatedExpenses: updated },
+      })
+    );
+
+    flushAutoSyncImmediately({
+      ...Storage.getAllDataPayload(),
+      expenses: updated,
+    });
   };
 
   const executeAtomicExpenseDeletion = (itemsToDelete: ExpenseItem[]) => {

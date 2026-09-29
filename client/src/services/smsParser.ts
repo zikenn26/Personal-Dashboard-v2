@@ -354,6 +354,17 @@ export function parseSmsTransaction(
     return baseResult;
   }
 
+  // Reject recharge offers & marketing promotions
+  if (
+    /\b(recharge offer|recharge now|special recharge|exclusive recharge|recharge with rs\.?|cashback on recharge|flat \d+% off on recharge)\b/i.test(
+      lower
+    ) &&
+    !/\b(debited|payment of rs|spent|withdrawn)\b/i.test(lower)
+  ) {
+    baseResult.ignoreReason = 'Recharge Promotion / Marketing Offer';
+    return baseResult;
+  }
+
   // Reject upcoming bill payment reminders (NOT yet paid)
   if (
     /\b(bill of rs\.?|bill amount of|due date|pay before|pay your bill|bill generated)\b/i.test(lower) &&
@@ -511,8 +522,9 @@ export function parseSmsTransaction(
     { name: 'Bank of Baroda', test: /(bob|baroda)/i },
     { name: 'IDFC FIRST Bank', test: /(idfc)/i },
     { name: 'IndusInd Bank', test: /(indusind)/i },
-    { name: 'Yes Bank', test: /(yes\s*bank)/i },
-    { name: 'Canara Bank', test: /(canara)/i },
+    { name: 'Yes Bank', test: /(yes\s*bank|yesb|yesbk|yesbnk)/i },
+    { name: 'Canara Bank', test: /(canara|canbnk)/i },
+    { name: 'Bank of India', test: /(boi|bankofindia|bank\s*of\s*india)/i },
     { name: 'Standard Chartered', test: /(scb|standard\s*chartered)/i },
     { name: 'Citi Bank', test: /(citi|citibank)/i },
     { name: 'Chase Bank', test: /(chase)/i },

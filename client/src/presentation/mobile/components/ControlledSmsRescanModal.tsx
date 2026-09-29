@@ -71,6 +71,15 @@ export const ControlledSmsRescanModal: React.FC<ControlledSmsRescanModalProps> =
     setIsProcessing(true);
 
     try {
+      const permStatus = await smsExpenseService.checkPermission();
+      if (permStatus !== 'granted') {
+        const req = await smsExpenseService.requestPermission();
+        if (req !== 'granted') {
+          toast.error('SMS permission is required to scan your inbox');
+          setStep('select_count');
+          return;
+        }
+      }
       const items = await smsExpenseService.getRecentTransactionCandidates(count);
       setCandidates(items);
       // Pre-select new transactions by default (user can toggle any)
@@ -349,7 +358,7 @@ export const ControlledSmsRescanModal: React.FC<ControlledSmsRescanModalProps> =
                               </span>
                               {cand.isExisting && (
                                 <span className="px-1.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 text-amber-700 dark:text-amber-300 font-semibold">
-                                  Already in Spending
+                                  Already Existing
                                 </span>
                               )}
                             </div>

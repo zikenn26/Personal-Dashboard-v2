@@ -173,9 +173,10 @@ export function isTraiServiceSender(sender: string): boolean {
 
   // Known Indian bank / financial service keywords
   const bankKeywords = [
-    'ICICI', 'HDFC', 'SBI', 'AXIS', 'KOTAK', 'PNB', 'CANARA', 'CANBNK',
-    'BOB', 'BARODA', 'UNION', 'INDUS', 'FEDERAL', 'FEDBNK', 'IDFC',
-    'YES', 'YESB', 'YESBANK', 'PAYTM', 'GPAY', 'PHONEPE', 'BHIM', 'UPI', 'AIRTEL', 'AMEX',
+    'ICICI', 'ICICIB', 'HDFC', 'HDFCBK', 'SBI', 'SBIUPI', 'SBIINB', 'AXIS', 'AXISBK',
+    'KOTAK', 'KOTAKB', 'PNB', 'CANARA', 'CANBNK', 'BOB', 'BARODA', 'UNION', 'UNIONB',
+    'INDUS', 'FEDERAL', 'FEDBNK', 'IDFC', 'YES', 'YESB', 'YESBK', 'YESBNK', 'YESBANK',
+    'PAYTM', 'GPAY', 'PHONEPE', 'BHIM', 'UPI', 'AIRTEL', 'AMEX',
     'CITI', 'STANDARD', 'SCB', 'RBL', 'IDBI', 'BANDHAN', 'AUBANK', 'IOB',
     'CENTRAL', 'UCO', 'INDIANB', 'MAHABANK', 'MAHABK', 'POSTBK', 'IPPB',
     'BOI', 'BANKOFINDIA', 'DBS', 'HSBC', 'J&K', 'JKBANK', 'KVB', 'KARUR',
@@ -186,10 +187,17 @@ export function isTraiServiceSender(sender: string): boolean {
     return true;
   }
 
+  // Standard 2-letter prefix + hyphen + alphanumeric sender ID format (e.g. AD-ICICIB, BZ-SBIINB)
+  if (/^[A-Z]{2}-[A-Z0-9]{3,9}$/.test(clean)) {
+    return true;
+  }
+
   return false;
 }
 
-export const isBankOrFinancialSender = isTraiServiceSender;/**
+export const isBankOrFinancialSender = isTraiServiceSender;
+
+/**
  * Fast, comprehensive local heuristic to identify financial transaction SMS
  * (debits, credits, UPI, cards, bank alerts) while rejecting OTPs, loans, and promotional spam.
  * Fully aligned with native SmsReceiver.java heuristic.
@@ -220,14 +228,18 @@ export function isLikelyFinancialSms(sender: string, body: string): boolean {
     return false;
   }
 
-  // 2. Reject promotional / marketing loans & schemes
+  // 2. Reject promotional / marketing loans, schemes & recharge offers
   if (
     lower.includes('pre-approved loan') ||
     lower.includes('apply for instant loan') ||
     lower.includes('personal loan up to') ||
     lower.includes('click here to claim') ||
     lower.includes('congratulations! you won') ||
-    lower.includes('apply for credit card')
+    lower.includes('apply for credit card') ||
+    lower.includes('recharge offer') ||
+    lower.includes('recharge now') ||
+    lower.includes('special recharge') ||
+    lower.includes('cashback on recharge')
   ) {
     return false;
   }
@@ -267,15 +279,24 @@ export function isLikelyFinancialSms(sender: string, body: string): boolean {
     lower.includes('deposited') ||
     lower.includes('refund') ||
     lower.includes('cashback') ||
+    lower.includes('upi') ||
+    lower.includes('utr') ||
+    lower.includes('rrn') ||
+    lower.includes('imps') ||
+    lower.includes('neft') ||
+    lower.includes('rtgs') ||
+    lower.includes('transaction id') ||
+    lower.includes('trans id') ||
+    lower.includes('txn id') ||
+    lower.includes('ref no') ||
     lower.includes('vpa') ||
     lower.includes('pos txn') ||
     lower.includes('atm wdl') ||
-    lower.includes('upi ref') ||
-    lower.includes('ref no') ||
-    lower.includes('rrn') ||
     lower.includes('card ending') ||
     lower.includes('a/c ending') ||
     lower.includes('acct ending') ||
+    lower.includes('a/c') ||
+    lower.includes('acct') ||
     lower.includes('avl bal') ||
     lower.includes('avail bal') ||
     lower.includes('dr to') ||
@@ -1094,10 +1115,21 @@ class SmsExpenseService {
     const isNative = await this.isNativePluginAvailable();
     if (isNative) {
       try {
+        const permStatus = await this.checkPermission();
+        if (permStatus !== 'granted') {
+          await this.requestPermission();
+        }
         const res = await SmsTransaction.readRecentSms({ limit: count });
         rawMessages = res?.messages || [];
       } catch (err) {
-        console.warn('Native readRecentSms failed:', err);
+        console.warn('Native readRecentSms failed, attempting retry with permission request:', err);
+        try {
+          await this.requestPermission();
+          const retryRes = await SmsTransaction.readRecentSms({ limit: count });
+          rawMessages = retryRes?.messages || [];
+        } catch (retryErr) {
+          console.error('Retry readRecentSms failed:', retryErr);
+        }
       }
     } else if (typeof (smsPluginWebImpl as any)._inboxMock === 'function') {
       const res = await (smsPluginWebImpl as any)._inboxMock({ limit: count });
