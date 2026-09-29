@@ -265,53 +265,14 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
         {/* 2. TRANSACTION FORM (Add / Edit) */}
         {/* ========================================================================= */}
         {(!isEditing || isEditFormExpanded) && (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Transaction Type Segmented Control */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-                Transaction Type
-              </label>
-              <div className="grid grid-cols-2 p-1 rounded-2xl bg-gray-100 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] gap-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    void nativeService.triggerHaptic('selection');
-                    setDirectionState('DEBIT');
-                  }}
-                  className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                    directionState === 'DEBIT'
-                      ? 'bg-rose-500 text-white shadow-xs ring-1 ring-rose-600'
-                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-                  }`}
-                >
-                  <span className={`w-2 h-2 rounded-full ${directionState === 'DEBIT' ? 'bg-white' : 'bg-rose-500'}`} />
-                  <span>Debit (Expense)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void nativeService.triggerHaptic('selection');
-                    setDirectionState('CREDIT');
-                  }}
-                  className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                    directionState === 'CREDIT'
-                      ? 'bg-emerald-600 text-white shadow-xs ring-1 ring-emerald-700'
-                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-                  }`}
-                >
-                  <span className={`w-2 h-2 rounded-full ${directionState === 'CREDIT' ? 'bg-white' : 'bg-emerald-500'}`} />
-                  <span>Credit (Income / Refund)</span>
-                </button>
-              </div>
-            </div>
-
+          <form onSubmit={handleSubmit} className="space-y-3">
             {/* Amount Input */}
             <div>
-              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
                 Amount (₹)
               </label>
               <div className="relative">
-                <span className="text-xl font-bold text-violet-600 dark:text-violet-400 absolute left-4 top-2.5">
+                <span className="text-lg font-bold text-violet-600 dark:text-violet-400 absolute left-3.5 top-2">
                   ₹
                 </span>
                 <input
@@ -322,32 +283,32 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="0.00"
-                  className="w-full pl-9 pr-4 py-3 rounded-2xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] text-xl font-bold text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                  className="w-full pl-8 pr-4 py-2 rounded-xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] text-lg font-bold text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500"
                 />
               </div>
             </div>
 
             {/* Merchant / Description */}
             <div>
-              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
                 Merchant / Description
               </label>
               <div className="relative">
-                <Building2 className="w-4 h-4 text-violet-500 absolute left-3.5 top-3.5" />
+                <Building2 className="w-4 h-4 text-violet-500 absolute left-3 top-2.5" />
                 <input
                   type="text"
                   required
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="e.g., Swiggy, Starbucks, Amazon"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                  className="w-full pl-9 pr-4 py-2 rounded-xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] text-xs text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500"
                 />
               </div>
             </div>
 
             {/* Payment Method Pills */}
             <div>
-              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
                 Payment Method
               </label>
               <div className="grid grid-cols-4 gap-1.5">
@@ -361,7 +322,7 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
                         void nativeService.triggerHaptic('selection');
                         setPaymentMethod(method);
                       }}
-                      className={`py-2 px-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer text-center ${
+                      className={`py-1.5 px-1 rounded-xl text-xs font-semibold transition-all cursor-pointer text-center ${
                         isSelected
                           ? 'bg-violet-600 text-white shadow-xs'
                           : 'bg-gray-50 dark:bg-[#1A2234] text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700'
@@ -375,17 +336,17 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
             </div>
 
             {/* Category & Date */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2.5">
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
                   Category
                 </label>
                 <div className="relative">
-                  <Tag className="w-4 h-4 text-gray-400 absolute left-3 top-3 pointer-events-none" />
+                  <Tag className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2.5 pointer-events-none" />
                   <select
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 rounded-xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] text-xs text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    className="w-full pl-8 pr-2 py-1.5 rounded-xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] text-xs text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500"
                   >
                     {categories.map((c) => (
                       <option key={c} value={c}>
@@ -397,16 +358,16 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
                   Date
                 </label>
                 <div className="relative">
-                  <Calendar className="w-4 h-4 text-gray-400 absolute left-3 top-3 pointer-events-none" />
+                  <Calendar className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2.5 pointer-events-none" />
                   <input
                     type="date"
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 rounded-xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] text-xs text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    className="w-full pl-8 pr-2 py-1.5 rounded-xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] text-xs text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500"
                   />
                 </div>
               </div>
@@ -414,7 +375,7 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
 
             {/* Notes */}
             <div>
-              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
                 Notes
               </label>
               <input
@@ -422,16 +383,60 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Optional notes or remarks"
-                className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] text-xs text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                className="w-full px-3 py-1.5 rounded-xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] text-xs text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500"
               />
             </div>
 
+            {/* Compact Transaction Type Segmented Control (Placed just above Log Expense) */}
+            <div className="pt-1">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Transaction Type
+                </span>
+                <span className={`text-[10px] font-bold ${directionState === 'DEBIT' ? 'text-rose-500' : 'text-emerald-500'}`}>
+                  {directionState === 'DEBIT' ? 'Money Out (Expense)' : 'Money In (Income / Refund)'}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 p-0.5 rounded-xl bg-gray-100 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void nativeService.triggerHaptic('selection');
+                    setDirectionState('DEBIT');
+                  }}
+                  className={`py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    directionState === 'DEBIT'
+                      ? 'bg-rose-500 text-white shadow-2xs'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${directionState === 'DEBIT' ? 'bg-white' : 'bg-rose-500'}`} />
+                  <span>Debit</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void nativeService.triggerHaptic('selection');
+                    setDirectionState('CREDIT');
+                  }}
+                  className={`py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    directionState === 'CREDIT'
+                      ? 'bg-emerald-600 text-white shadow-2xs'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${directionState === 'CREDIT' ? 'bg-white' : 'bg-emerald-500'}`} />
+                  <span>Credit</span>
+                </button>
+              </div>
+            </div>
+
             {/* Submit Actions */}
-            <div className="pt-2 space-y-2">
+            <div className="pt-1 space-y-2">
               <button
                 type="submit"
                 disabled={!title.trim() || !amount}
-                className="w-full py-3 px-4 rounded-full bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-bold text-sm shadow-md shadow-violet-500/25 flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer"
+                className="w-full py-2.5 px-4 rounded-full bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-bold text-xs shadow-md shadow-violet-500/25 flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer"
               >
                 {isEditing ? (
                   <>
@@ -450,7 +455,7 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
                 <button
                   type="button"
                   onClick={handleDelete}
-                  className="w-full py-2.5 px-4 rounded-full bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 font-semibold text-xs flex items-center justify-center gap-1.5 active:scale-98 transition-all cursor-pointer hover:bg-rose-100 dark:hover:bg-rose-900/50"
+                  className="w-full py-2 px-4 rounded-full bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 font-semibold text-xs flex items-center justify-center gap-1.5 active:scale-98 transition-all cursor-pointer hover:bg-rose-100 dark:hover:bg-rose-900/50"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>Delete Transaction</span>

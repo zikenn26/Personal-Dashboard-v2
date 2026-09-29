@@ -334,10 +334,12 @@ export function parseSmsTransaction(
 
   // Reject OTP and authentication codes
   if (
-    (/\b(otp|one time password|verification code|security code)\b/i.test(lower) &&
-      /\b(do not share|valid for|is your|use this|secret code|to authenticate)\b/i.test(lower)) ||
+    (/\b(otp|one time password|verification code)\b/i.test(lower) &&
+      (/\b(is your|secret otp|valid for|to authenticate|use this otp)\b/i.test(lower) ||
+        /\botp\s*(?:is|:)?\s*\d+/i.test(lower))) ||
     lower.includes('is your one time password') ||
-    lower.includes('is your verification code')
+    lower.includes('is your verification code') ||
+    lower.includes('security code')
   ) {
     baseResult.ignoreReason = 'Authentication OTP / Security Code';
     return baseResult;

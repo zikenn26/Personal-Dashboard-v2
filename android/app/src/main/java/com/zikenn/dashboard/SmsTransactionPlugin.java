@@ -220,11 +220,28 @@ public class SmsTransactionPlugin extends Plugin {
     public void readRecentSms(PluginCall call) {
         Context context = getContext();
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
-            Log.w(TAG, "readRecentSms: READ_SMS permission is not granted");
-            call.reject("READ_SMS permission is not granted");
+            Log.i(TAG, "readRecentSms: Requesting READ_SMS permission from user");
+            requestPermissionForAlias("sms", call, "readSmsPermissionCallback");
             return;
         }
 
+        doReadRecentSms(call);
+    }
+
+    @PermissionCallback
+    private void readSmsPermissionCallback(PluginCall call) {
+        Context context = getContext();
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED) {
+            Log.i(TAG, "readRecentSms: READ_SMS permission granted via callback");
+            doReadRecentSms(call);
+        } else {
+            Log.w(TAG, "readRecentSms: READ_SMS permission denied by user");
+            call.reject("READ_SMS permission is not granted");
+        }
+    }
+
+    private void doReadRecentSms(PluginCall call) {
+        Context context = getContext();
         int limit = call.getInt("limit", 50);
         JSArray results = new JSArray();
 
@@ -267,14 +284,33 @@ public class SmsTransactionPlugin extends Plugin {
                 }
             }
 
+            // Fallback 3: Universal content://sms without filter
+            if (cursor == null || cursor.getCount() == 0) {
+                if (cursor != null) cursor.close();
+                try {
+                    Uri genericUri = Uri.parse("content://sms");
+                    cursor = cr.query(genericUri, null, null, null, "date DESC");
+                } catch (Exception e5) {
+                    Log.e(TAG, "cr.query content://sms final fallback failed: " + e5.getMessage());
+                }
+            }
+
             if (cursor != null) {
                 int scanned = 0;
-                int maxScan = Math.max(limit * 20, 1000);
-                while (cursor.moveToNext() && scanned < maxScan && results.length() < (limit * 2)) {
+                int maxScan = Math.max(limit * 30, 2000);
+                int targetMax = Math.max(limit * 4, 150);
+
+                int addressIdx = cursor.getColumnIndex("address");
+                if (addressIdx < 0) addressIdx = cursor.getColumnIndex("sender");
+
+                int bodyIdx = cursor.getColumnIndex("body");
+                if (bodyIdx < 0) bodyIdx = cursor.getColumnIndex("text");
+
+                int dateIdx = cursor.getColumnIndex("date");
+                if (dateIdx < 0) dateIdx = cursor.getColumnIndex("date_sent");
+
+                while (cursor.moveToNext() && scanned < maxScan && results.length() < targetMax) {
                     scanned++;
-                    int addressIdx = cursor.getColumnIndex("address");
-                    int bodyIdx = cursor.getColumnIndex("body");
-                    int dateIdx = cursor.getColumnIndex("date");
 
                     String address = addressIdx >= 0 ? cursor.getString(addressIdx) : "";
                     String body = bodyIdx >= 0 ? cursor.getString(bodyIdx) : "";
@@ -286,13 +322,34 @@ public class SmsTransactionPlugin extends Plugin {
 
                     String lower = body.toLowerCase();
 
-                    // Reject pure authentication OTPs and marketing promos
-                    if (lower.contains("otp") && (
-                        lower.contains("do not share") || 
-                        lower.contains("valid for") || 
-                        lower.contains("secret code") || 
-                        lower.contains("one time password") ||
-                        lower.contains("verification code"))) {
+                    // Check if this message is a confirmed transaction
+                    boolean hasConfirmedTxnVerb = 
+                        lower.contains("debited") || 
+                        lower.contains("credited") || 
+                        lower.contains("spent") || 
+                        lower.contains("withdrawn") || 
+                        lower.contains("transferred") || 
+                        lower.contains("transfer to") || 
+                        lower.contains("sent to") || 
+                        lower.contains("paid rs") || 
+                        lower.contains("payment of rs") ||
+                        lower.contains("purchase of inr") ||
+                        lower.contains("purchase of rs");
+
+                    // Only reject pure authentication OTPs
+                    if (
+                        (lower.contains("otp") && (
+                            lower.contains("is your") || 
+                            lower.contains("secret otp") || 
+                            lower.contains("valid for") || 
+                            lower.contains("to authenticate") || 
+                            lower.contains("use this otp") || 
+                            lower.matches(".*otp\\s*(?:is|:)?\\s*\\d+.*")
+                        )) ||
+                        lower.contains("is your one time password") || 
+                        lower.contains("is your verification code") ||
+                        lower.contains("security code")
+                    ) {
                         continue;
                     }
                     if (lower.contains("pre-approved loan") || 
@@ -306,12 +363,8 @@ public class SmsTransactionPlugin extends Plugin {
                     boolean isBankSender = SmsReceiver.isTraiServiceSender(address);
                     boolean isFinancial = SmsReceiver.isLikelyFinancialTransaction(address, body);
                     boolean hasFinancialKeywords = 
-                        lower.contains("debited") || 
-                        lower.contains("credited") || 
+                        hasConfirmedTxnVerb ||
                         lower.contains("paid") || 
-                        lower.contains("spent") || 
-                        lower.contains("transferred") || 
-                        lower.contains("withdrawn") || 
                         lower.contains("upi") || 
                         lower.contains("utr") || 
                         lower.contains("rrn") || 
@@ -322,8 +375,9 @@ public class SmsTransactionPlugin extends Plugin {
                         lower.contains("transaction id") || 
                         lower.contains("a/c") || 
                         lower.contains("acct") || 
-                        lower.contains("rs.") || 
-                        lower.contains("inr");
+                        lower.contains("rs") || 
+                        lower.contains("inr") ||
+                        lower.contains("₹");
 
                     if (isBankSender || isFinancial || hasFinancialKeywords) {
                         JSObject item = new JSObject();

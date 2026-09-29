@@ -346,21 +346,19 @@ public class SmsReceiver extends BroadcastReceiver {
         String lower = body.toLowerCase();
 
         // 1. Strict OTP & Authentication rejection
-        if (lower.contains("otp") && (
-            lower.contains("do not share") || 
-            lower.contains("valid for") || 
-            lower.contains("is your") || 
-            lower.contains("secret") || 
-            lower.contains("use this") ||
-            lower.contains("authenticate") ||
-            lower.contains("one time password")
-        )) {
-            return false;
-        }
-
-        if (lower.contains("verification code") || 
-            lower.contains("security code") ||
-            lower.contains("is your one time password")) {
+        if (
+            (lower.contains("otp") && (
+                lower.contains("is your") || 
+                lower.contains("secret otp") || 
+                lower.contains("valid for") || 
+                lower.contains("to authenticate") || 
+                lower.contains("use this otp") || 
+                lower.matches(".*otp\\s*(?:is|:)?\\s*\\d+.*")
+            )) ||
+            lower.contains("is your one time password") || 
+            lower.contains("is your verification code") ||
+            lower.contains("security code")
+        ) {
             return false;
         }
 

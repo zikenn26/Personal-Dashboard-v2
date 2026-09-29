@@ -208,22 +208,16 @@ export function isLikelyFinancialSms(sender: string, body: string): boolean {
 
   // 1. Strict OTP & Authentication rejection
   if (
-    lower.includes('otp') &&
-    (lower.includes('do not share') ||
-      lower.includes('valid for') ||
-      lower.includes('is your') ||
-      lower.includes('secret') ||
-      lower.includes('use this') ||
-      lower.includes('authenticate') ||
-      lower.includes('one time password'))
-  ) {
-    return false;
-  }
-
-  if (
-    lower.includes('verification code') ||
-    lower.includes('security code') ||
-    lower.includes('is your one time password')
+    (lower.includes('otp') &&
+      (lower.includes('is your') ||
+        lower.includes('secret otp') ||
+        lower.includes('valid for') ||
+        lower.includes('to authenticate') ||
+        lower.includes('use this otp') ||
+        /otp\s*(?:is|:)?\s*\d+/.test(lower))) ||
+    lower.includes('is your one time password') ||
+    lower.includes('is your verification code') ||
+    lower.includes('security code')
   ) {
     return false;
   }
@@ -1138,6 +1132,7 @@ class SmsExpenseService {
 
     const currentExpenses = Storage.getExpenses();
     const candidates: SmsTransactionCandidate[] = [];
+    const seenCandidateKeys = new Set<string>();
 
     // Filter and extract financial transactions
     for (const msg of rawMessages) {
@@ -1147,8 +1142,18 @@ class SmsExpenseService {
         continue;
       }
 
-      // Check if this candidate already matches an existing expense in canonical Storage
+      // Deduplicate candidates among themselves (same referenceId or identical amount+payee+date)
       const cleanRef = parsed.referenceId ? parsed.referenceId.trim().toUpperCase() : '';
+      const candidateKey = cleanRef
+        ? `ref_${cleanRef}`
+        : `cand_${parsed.amount}_${parsed.date}_${(parsed.payee || parsed.merchant || '').toLowerCase()}`;
+
+      if (seenCandidateKeys.has(candidateKey)) {
+        continue;
+      }
+      seenCandidateKeys.add(candidateKey);
+
+      // Check if this candidate already matches an existing expense in canonical Storage
       let isExisting = false;
       let existingMatchTitle: string | undefined;
 
