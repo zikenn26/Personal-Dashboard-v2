@@ -2,6 +2,7 @@ import { GoogleGenAI, Modality, Type, FunctionDeclaration } from "@google/genai"
 import { WebSocketServer, WebSocket } from "ws";
 import type { Server as HttpServer, IncomingMessage } from "http";
 import type { Request, Response } from "express";
+import { requireAuthForServerKeyUsage } from "./security.js";
 
 // Initialize Gemini Client (lazily with User-Agent header for telemetry)
 let aiClient: GoogleGenAI | null = null;
@@ -542,7 +543,8 @@ export async function handleGeminiTranscribe(req: Request, res: Response) {
 
     res.json({ transcript });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message || "Audio transcription failed." });
+    console.error("[gemini transcribe]", err);
+    res.status(500).json({ error: "Audio transcription failed." });
   }
 }
 
@@ -776,14 +778,16 @@ export function setupGeminiLiveWebSocket(server: HttpServer) {
 
 // Helper to register routes on Express
 export function registerGeminiRoutes(app: any) {
+  const requireAuthForOwnKeyOnly = requireAuthForServerKeyUsage((req) => Boolean(extractGeminiApiKey(req)));
+
   app.all("/api/gemini/health", handleGeminiHealth);
   app.all("/api/gemini/ping", handleGeminiHealth);
   app.get("/api/gemini/chat", (_req: any, res: any) =>
     res.json({ status: "ok", endpoint: "/api/gemini/chat", message: "Use POST to send messages" })
   );
-  app.post("/api/gemini/chat", handleGeminiChat);
-  app.post("/api/gemini/tts", handleGeminiTts);
-  app.post("/api/gemini/transcribe", handleGeminiTranscribe);
+  app.post("/api/gemini/chat", requireAuthForOwnKeyOnly, handleGeminiChat);
+  app.post("/api/gemini/tts", requireAuthForOwnKeyOnly, handleGeminiTts);
+  app.post("/api/gemini/transcribe", requireAuthForOwnKeyOnly, handleGeminiTranscribe);
   app.post("/api/gemini/test-key", handleGeminiTestKey);
 }
 
