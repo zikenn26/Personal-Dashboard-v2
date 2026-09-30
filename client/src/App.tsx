@@ -84,6 +84,7 @@ import { registerCurrentDevice } from './utils/devices';
 import { AuthUser } from './types';
 import {
   isSupabaseConfigured,
+  getSupabaseClient,
   syncWorkspaceToSupabase,
   fetchWorkspaceFromSupabase,
   scheduleAutoSyncToSupabase,
@@ -266,7 +267,7 @@ export default function App() {
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [showQuickCapture, setShowQuickCapture] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(() => authRequest === 'signup' || authRequest === 'signin');
-  const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup'>(() => authRequest === 'signup' ? 'signup' : 'signin');
+  const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup' | 'reset'>(() => authRequest === 'signup' ? 'signup' : 'signin');
 
   // API Usage Threshold Warning Notification Banner
   const [apiThresholdWarning, setApiThresholdWarning] = useState<{
@@ -394,6 +395,20 @@ export default function App() {
       setSyncStatus(status);
     });
     return unsub;
+  }, []);
+
+  // Detect a Supabase password-recovery link and prompt the user to set a new password
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    const client = getSupabaseClient();
+    if (!client) return;
+    const { data: subscription } = client.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setAuthInitialMode('reset');
+        setIsAuthModalOpen(true);
+      }
+    });
+    return () => subscription?.subscription?.unsubscribe();
   }, []);
 
   // Vault hydration is asynchronous because secrets are decrypted with Web Crypto only after the PIN is available.
@@ -1009,7 +1024,7 @@ export default function App() {
     Storage.setTodos(updated);
   };
 
-    const handleDeleteTodo = (id: string) => {
+  const handleDeleteTodo = (id: string) => {
     const target = todos.find((t) => t.id === id);
     const updated = todos.filter((t) => t.id !== id);
     setTodos(updated);
@@ -1204,7 +1219,7 @@ export default function App() {
     Storage.setHabits(updated);
   };
 
-    const handleDeleteHabit = (id: string) => {
+  const handleDeleteHabit = (id: string) => {
     const target = habits.find((h) => h.id === id);
     const updated = habits.filter((h) => h.id !== id);
     setHabits(updated);
@@ -1463,7 +1478,7 @@ export default function App() {
     Storage.setGoals(next);
   };
 
-    const handleDeleteGoal = (id: string) => {
+  const handleDeleteGoal = (id: string) => {
     Sound.click(settings.soundEnabled);
     const target = goals.find((g) => g.id === id);
     const next = goals.filter((g) => g.id !== id);
@@ -1608,7 +1623,6 @@ export default function App() {
 
     // 3. Immediately update React state with fresh array reference
     setExpenses([...nextExpenses]);
-
 
     // 4. Dispatch 'dashboard-data-updated' event to notify all listening components
     window.dispatchEvent(
@@ -1826,7 +1840,7 @@ export default function App() {
     Storage.setMedia(updated);
   };
 
-    const handleDeleteMedia = (id: string) => {
+  const handleDeleteMedia = (id: string) => {
     const target = media.find((m) => m.id === id);
     const updated = media.filter((m) => m.id !== id);
     setMedia(updated);
@@ -1870,7 +1884,7 @@ export default function App() {
     Storage.setJournal(updated);
   };
 
-    const handleDeleteJournalEntry = (id: string) => {
+  const handleDeleteJournalEntry = (id: string) => {
     const target = journal.find((j) => j.id === id);
     const updated = journal.filter((j) => j.id !== id);
     setJournal(updated);
@@ -1892,7 +1906,7 @@ export default function App() {
     Storage.setProjects(updated);
   };
 
-    const handleDeleteProject = (id: string) => {
+  const handleDeleteProject = (id: string) => {
     const target = projects.find((p) => p.id === id);
     const updated = projects.filter((p) => p.id !== id);
     setProjects(updated);
@@ -1931,7 +1945,7 @@ export default function App() {
     Storage.setTimeline(next);
   };
 
-    const handleDeleteMilestone = (id: string) => {
+  const handleDeleteMilestone = (id: string) => {
     const target = milestones.find((m) => m.id === id);
     const updated = milestones.filter((m) => m.id !== id);
     setMilestones(updated);
@@ -1953,7 +1967,7 @@ export default function App() {
     Storage.setAchievements(updated);
   };
 
-    const handleDeleteAchievement = (id: string) => {
+  const handleDeleteAchievement = (id: string) => {
     const target = achievements.find((a) => a.id === id);
     const updated = achievements.filter((a) => a.id !== id);
     setAchievements(updated);
@@ -1977,7 +1991,7 @@ export default function App() {
     Storage.setDoodles(updated);
   };
 
-    const handleDeleteDoodle = (id: string) => {
+  const handleDeleteDoodle = (id: string) => {
     const target = doodles.find((d) => d.id === id);
     const updated = doodles.filter((d) => d.id !== id);
     setDoodles(updated);
@@ -2256,7 +2270,6 @@ export default function App() {
     { id: 'expenses', label: 'Spending', icon: CreditCard, count: expenses.length, group: 'money' },
 
     // PRIVATE
-        // PRIVATE
     { id: 'vault', label: 'Vault', icon: Shield, count: vault.length, group: 'private' },
     { id: 'backup', label: 'Backup & Restore', icon: Database, count: undefined, group: 'private' },
     { id: 'trash', label: 'Trash', icon: Trash2, count: trash.length || undefined, group: 'private' },
