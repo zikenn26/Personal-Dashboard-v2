@@ -1752,17 +1752,16 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                     Click &ldquo;+ Add Expense&rdquo; above to log your first transaction.
                   </p>
                 </div>
-              ) : (
+                            ) : (
                 <>
-                  {/* Group: Today */}
-                  {groupedTransactions.Today.length > 0 && (
-                    <div className="space-y-2">
+                  {groupedTransactions.dateGroups.map((group) => (
+                    <div key={group.key} className="space-y-2 pt-1 first:pt-0">
                       <div className="text-[11px] font-bold uppercase tracking-wider text-[#787774] dark:text-[#9CA3AF]">
-                        Today
+                        {group.label}
                       </div>
                       <div className="divide-y divide-gray-100 dark:divide-gray-800">
                         <AnimatePresence mode="popLayout" initial={false}>
-                          {groupedTransactions.Today.map((tx: any) => {
+                          {group.items.map((tx: any) => {
                             const isCredit = isCreditTransaction(tx);
                             return (
                             <motion.div
@@ -1812,7 +1811,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                                     {isCredit ? '+' : ''}{formatCurrency(tx.amount)}
                                   </div>
                                   <div className="text-[10px] text-[#787774] dark:text-[#9CA3AF]">
-                                    {tx.time || '10:20 AM'}
+                                    {tx.time || '—'}
                                   </div>
                                 </div>
 
@@ -1848,199 +1847,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                         </AnimatePresence>
                       </div>
                     </div>
-                  )}
-
-                  {/* Group: Yesterday */}
-                  {groupedTransactions.Yesterday.length > 0 && (
-                    <div className="space-y-2 pt-1">
-                      <div className="text-[11px] font-bold uppercase tracking-wider text-[#787774] dark:text-[#9CA3AF]">
-                        Yesterday
-                      </div>
-                      <div className="divide-y divide-gray-100 dark:divide-gray-800">
-                        <AnimatePresence mode="popLayout" initial={false}>
-                          {groupedTransactions.Yesterday.map((tx: any) => {
-                            const isCredit = isCreditTransaction(tx);
-                            return (
-                            <motion.div
-                              layout
-                              initial={{ opacity: 0, y: 8, scale: 0.98 }}
-                              animate={{ opacity: 1, y: 0, scale: 1 }}
-                              exit={{ opacity: 0, scale: 0.95, y: -4, transition: { duration: 0.15 } }}
-                              transition={{
-                                layout: { type: "spring", stiffness: 350, damping: 30 },
-                                opacity: { duration: 0.2 },
-                              }}
-                              key={tx.id}
-                              className="py-2.5 flex items-center justify-between group hover:bg-gray-50/70 dark:hover:bg-gray-800/40 px-2 rounded-xl transition-colors"
-                            >
-                              <div className="flex items-center gap-3 min-w-0">
-                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0 ${
-                                  isCredit
-                                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-300'
-                                    : 'bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-300'
-                                }`}>
-                                  {getCategoryIcon(tx.category, tx.icon)}
-                                </div>
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5 min-w-0">
-                                    <span
-                                      className={`w-2 h-2 rounded-full shrink-0 ${
-                                        isCredit ? 'bg-emerald-500' : 'bg-rose-500'
-                                      }`}
-                                      title={isCredit ? 'Credit' : 'Debit'}
-                                    />
-                                    <span className="text-xs sm:text-sm font-bold text-[#37352F] dark:text-white truncate">
-                                      {tx.name}
-                                    </span>
-                                  </div>
-                                  <div className="text-[11px] text-[#787774] dark:text-[#9CA3AF] truncate">
-                                    <span className={isCredit ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-rose-600 dark:text-rose-400 font-medium'}>
-                                      {isCredit ? 'Credit • ' : 'Debit • '}
-                                    </span>
-                                    {tx.notes || tx.category}
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center gap-3 shrink-0">
-                                <div className="text-right">
-                                  <div className={`text-xs sm:text-sm font-extrabold ${isCredit ? 'text-emerald-600 dark:text-emerald-400' : 'text-[#37352F] dark:text-white'}`}>
-                                    {isCredit ? '+' : ''}{formatCurrency(tx.amount)}
-                                  </div>
-                                  <div className="text-[10px] text-[#787774] dark:text-[#9CA3AF]">
-                                    {tx.time || 'Yesterday'}
-                                  </div>
-                                </div>
-
-                                <span
-                                  className={`hidden sm:inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getCategoryBadge(
-                                    tx.category
-                                  )}`}
-                                >
-                                  {tx.category}
-                                </span>
-
-                                <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => openEditModal(tx)}
-                                    className="p-1 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
-                                    title="Edit"
-                                  >
-                                    <Edit2 className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenDeleteExpenseModal(tx)}
-                                    className="p-1 text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer"
-                                    title="Delete"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </div>
-                            </motion.div>
-                          );})}
-                        </AnimatePresence>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Group: Earlier */}
-                  {groupedTransactions.Earlier.length > 0 && (
-                    <div className="space-y-2 pt-1">
-                      <div className="text-[11px] font-bold uppercase tracking-wider text-[#787774] dark:text-[#9CA3AF]">
-                        Earlier
-                      </div>
-                      <div className="divide-y divide-gray-100 dark:divide-gray-800">
-                        <AnimatePresence mode="popLayout" initial={false}>
-                          {groupedTransactions.Earlier.map((tx: any) => {
-                            const isCredit = isCreditTransaction(tx);
-                            return (
-                            <motion.div
-                              layout
-                              initial={{ opacity: 0, y: 8, scale: 0.98 }}
-                              animate={{ opacity: 1, y: 0, scale: 1 }}
-                              exit={{ opacity: 0, scale: 0.95, y: -4, transition: { duration: 0.15 } }}
-                              transition={{
-                                layout: { type: "spring", stiffness: 350, damping: 30 },
-                                opacity: { duration: 0.2 },
-                              }}
-                              key={tx.id}
-                              className="py-2.5 flex items-center justify-between group hover:bg-gray-50/70 dark:hover:bg-gray-800/40 px-2 rounded-xl transition-colors"
-                            >
-                              <div className="flex items-center gap-3 min-w-0">
-                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0 ${
-                                  isCredit
-                                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-300'
-                                    : 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300'
-                                }`}>
-                                  {getCategoryIcon(tx.category, tx.icon)}
-                                </div>
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5 min-w-0">
-                                    <span
-                                      className={`w-2 h-2 rounded-full shrink-0 ${
-                                        isCredit ? 'bg-emerald-500' : 'bg-rose-500'
-                                      }`}
-                                      title={isCredit ? 'Credit' : 'Debit'}
-                                    />
-                                    <span className="text-xs sm:text-sm font-bold text-[#37352F] dark:text-white truncate">
-                                      {tx.name}
-                                    </span>
-                                  </div>
-                                  <div className="text-[11px] text-[#787774] dark:text-[#9CA3AF] truncate">
-                                    <span className={isCredit ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-rose-600 dark:text-rose-400 font-medium'}>
-                                      {isCredit ? 'Credit • ' : 'Debit • '}
-                                    </span>
-                                    {tx.notes || tx.category}
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center gap-3 shrink-0">
-                                <div className="text-right">
-                                  <div className={`text-xs sm:text-sm font-extrabold ${isCredit ? 'text-emerald-600 dark:text-emerald-400' : 'text-[#37352F] dark:text-white'}`}>
-                                    {isCredit ? '+' : ''}{formatCurrency(tx.amount)}
-                                  </div>
-                                  <div className="text-[10px] text-[#787774] dark:text-[#9CA3AF]">
-                                    {tx.date}
-                                  </div>
-                                </div>
-
-                                <span
-                                  className={`hidden sm:inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getCategoryBadge(
-                                    tx.category
-                                  )}`}
-                                >
-                                  {tx.category}
-                                </span>
-
-                                <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => openEditModal(tx)}
-                                    className="p-1 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
-                                    title="Edit"
-                                  >
-                                    <Edit2 className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenDeleteExpenseModal(tx)}
-                                    className="p-1 text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer"
-                                    title="Delete"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </div>
-                            </motion.div>
-                          );})}
-                        </AnimatePresence>
-                      </div>
-                    </div>
-                  )}
+                  ))}
                 </>
               )}
             </div>
