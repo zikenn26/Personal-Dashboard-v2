@@ -1037,30 +1037,32 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     const safePage = Math.min(Math.max(1, txCurrentPage), totalPages);
     const startIndex = (safePage - 1) * TX_PAGE_SIZE;
     const endIndex = Math.min(startIndex + TX_PAGE_SIZE, totalFilteredCount);
-    // visibleSlice replaces the current screen on pagination rather than extending the list
+        // visibleSlice replaces the current screen on pagination rather than extending the list
     const visibleSlice = list.slice(startIndex, endIndex);
 
-    // Group the visible transactions for the current page
-    const groups: Record<string, ExpenseItem[]> = {
-      Today: [],
-      Yesterday: [],
-      Earlier: [],
+    // Group the visible transactions by exact calendar date, one header per date
+    const formatGroupDateLabel = (dateStr: string): string => {
+      if (!dateStr) return 'Unknown Date';
+      if (dateStr === todayStr) return 'Today';
+      if (dateStr === yesterdayStr) return 'Yesterday';
+      const d = new Date(`${dateStr}T00:00:00`);
+      if (Number.isNaN(d.getTime())) return dateStr;
+      return `${d.getDate()} ${MONTH_ABBR[d.getMonth()]} ${d.getFullYear()}`;
     };
 
+    const dateGroups: { key: string; label: string; items: ExpenseItem[] }[] = [];
     visibleSlice.forEach((item) => {
-      if (item.date === todayStr) {
-        groups.Today.push(item);
-      } else if (item.date === yesterdayStr) {
-        groups.Yesterday.push(item);
+      const dateKey = item.date || 'unknown';
+      const lastGroup = dateGroups[dateGroups.length - 1];
+      if (lastGroup && lastGroup.key === dateKey) {
+        lastGroup.items.push(item);
       } else {
-        groups.Earlier.push(item);
+        dateGroups.push({ key: dateKey, label: formatGroupDateLabel(dateKey), items: [item] });
       }
     });
 
     return {
-      Today: groups.Today,
-      Yesterday: groups.Yesterday,
-      Earlier: groups.Earlier,
+      dateGroups,
       isEmpty: visibleSlice.length === 0,
       totalFilteredCount,
       filteredTotalAmount,
