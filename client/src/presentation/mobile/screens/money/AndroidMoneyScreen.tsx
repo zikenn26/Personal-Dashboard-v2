@@ -34,6 +34,11 @@ export interface AndroidMoneyScreenProps {
 
 type PeriodFilter = 'month' | 'today' | 'all';
 
+const MONTH_ABBR = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
 export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   expenses,
   importLogs = [],
@@ -266,6 +271,34 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
       })
       .sort(compareExpensesByDateTimeDesc);
   }, [activeExpenses, periodFilter, selectedCategory, currentYear, currentMonth, todayDateStr]);
+
+  // Group the filtered transactions by exact calendar date, one header per date
+  const dateGroups = useMemo(() => {
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const yesterdayDateStr = yesterday.toISOString().split('T')[0];
+
+    const formatGroupDateLabel = (dateStr: string): string => {
+      if (!dateStr) return 'Unknown Date';
+      if (dateStr === todayDateStr) return 'Today';
+      if (dateStr === yesterdayDateStr) return 'Yesterday';
+      const d = new Date(`${dateStr}T00:00:00`);
+      if (Number.isNaN(d.getTime())) return dateStr;
+      return `${d.getDate()} ${MONTH_ABBR[d.getMonth()]} ${d.getFullYear()}`;
+    };
+
+    const groups: { key: string; label: string; items: ExpenseItem[] }[] = [];
+    filteredExpenses.forEach((item) => {
+      const dateKey = item.date || 'unknown';
+      const lastGroup = groups[groups.length - 1];
+      if (lastGroup && lastGroup.key === dateKey) {
+        lastGroup.items.push(item);
+      } else {
+        groups.push({ key: dateKey, label: formatGroupDateLabel(dateKey), items: [item] });
+      }
+    });
+    return groups;
+  }, [filteredExpenses, todayDateStr]);
 
   const handleDelete = (id: string) => {
     void nativeService.triggerHaptic('warning');
@@ -633,20 +666,29 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
           )}
         </div>
       ) : (
-        <div className="space-y-2">
-          {filteredExpenses.map((item) => (
-            <ExpenseItemRow
-              key={item.id}
-              expense={item}
-              onTap={() => {
-                void nativeService.triggerHaptic('selection');
-                setEditingExpense(item);
-              }}
-              onSwipeDelete={() => {
-                setConfirmDeleteExpense(item);
-              }}
-              onLongPress={() => setActiveActionExpense(item)}
-            />
+        <div className="space-y-4">
+          {dateGroups.map((group) => (
+            <div key={group.key} className="space-y-2">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 px-1">
+                {group.label}
+              </div>
+              <div className="space-y-2">
+                {group.items.map((item) => (
+                  <ExpenseItemRow
+                    key={item.id}
+                    expense={item}
+                    onTap={() => {
+                      void nativeService.triggerHaptic('selection');
+                      setEditingExpense(item);
+                    }}
+                    onSwipeDelete={() => {
+                      setConfirmDeleteExpense(item);
+                    }}
+                    onLongPress={() => setActiveActionExpense(item)}
+                  />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       )}
