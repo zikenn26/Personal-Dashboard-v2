@@ -9,6 +9,7 @@ import {
   Database,
   Settings,
   ChevronRight,
+  Trash2,
 } from 'lucide-react';
 import { BottomSheet } from '../gestures/BottomSheet';
 import { MainNavView, AppSettings } from '../../../types';
@@ -116,6 +117,13 @@ export const AndroidMoreSheet: React.FC<AndroidMoreSheetProps> = ({
       desc: 'Export & recover JSON snapshots',
     },
     {
+      id: 'trash',
+      label: 'Trash',
+      icon: Trash2,
+      color: 'bg-rose-100 text-rose-600 dark:bg-rose-950/80 dark:text-rose-400',
+      desc: 'Recently deleted items, restore within 30 days',
+    },
+    {
       id: 'settings',
       label: 'Settings',
       icon: Settings,
@@ -123,6 +131,7 @@ export const AndroidMoreSheet: React.FC<AndroidMoreSheetProps> = ({
       desc: 'System preferences & theme',
     },
   ];
+
 
   const handleSelect = (item: MoreFeatureItem) => {
     void nativeService.triggerHaptic('selection');
