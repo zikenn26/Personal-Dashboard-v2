@@ -21,6 +21,7 @@ import {
   PortfolioProject,
   LifeMilestone,
   SkillCategory,
+  TrashItem,
 } from '../../../types';
 import { nativeService } from '../../../services/nativeService';
 import { AndroidTopAppBar } from '../navigation/AndroidTopAppBar';
@@ -41,6 +42,7 @@ import { AndroidLibraryScreen } from '../screens/library/AndroidLibraryScreen';
 import { AndroidPortfolioScreen } from '../screens/portfolio/AndroidPortfolioScreen';
 import { AndroidVaultScreen } from '../screens/vault/AndroidVaultScreen';
 import { AndroidBackupScreen } from '../screens/backup/AndroidBackupScreen';
+import { TrashView } from '../../../components/TrashView';
 
 // Search and Profile overlays
 import { AndroidSearchOverlay } from '../components/AndroidSearchOverlay';
@@ -125,6 +127,11 @@ export interface AndroidShellProps {
   onAddVaultSecret?: (secret: Omit<VaultCredential, 'id' | 'updatedAt'>) => void;
   onDeleteVaultSecret?: (id: string) => void;
 
+  trash?: TrashItem[];
+  onRestoreTrashItem?: (trashId: string) => void;
+  onPermanentlyDeleteTrashItem?: (trashId: string) => void;
+  onEmptyTrash?: () => void;
+
   onExportData?: () => void;
   onImportData?: (file: any) => void;
   onResetData?: () => void;
@@ -201,6 +208,10 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
   onDeleteMedia,
   onAddVaultSecret,
   onDeleteVaultSecret,
+  trash,
+  onRestoreTrashItem,
+  onPermanentlyDeleteTrashItem,
+  onEmptyTrash,
   onExportData,
   onImportData,
   onResetData,
@@ -286,6 +297,8 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
         return 'Password Vault';
       case 'backup':
         return 'Backup & Restore';
+      case 'trash':
+        return 'Trash';
       default:
         return 'Personal Dashboard';
     }
@@ -519,7 +532,21 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
               onResetData={onResetData}
             />
           )}
+
+          {/* TRASH VIEW */}
+          {activeView === 'trash' && (
+            <div className="p-4">
+              <TrashView
+                trash={trash || []}
+                onRestore={onRestoreTrashItem || (() => {})}
+                onDeleteForever={onPermanentlyDeleteTrashItem || (() => {})}
+                onEmptyTrash={onEmptyTrash || (() => {})}
+                soundEnabled={settings.soundEnabled}
+              />
+            </div>
+          )}
       </main>
+
 
       {/* 3. ANDROID BOTTOM NAVIGATION (Persistent) */}
       <AndroidBottomNav
