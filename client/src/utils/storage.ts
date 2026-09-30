@@ -1192,10 +1192,17 @@ export function loadFromStorage<T>(baseKey: string, fallback: T): T {
     if (raw !== null) {
       return JSON.parse(raw) as T;
     }
-    // Also check unscoped legacy key
+    // Also check unscoped legacy key for one-time migration, then remove it immediately
     const legacyRaw = localStorage.getItem(baseKey);
     if (legacyRaw !== null) {
-      return JSON.parse(legacyRaw) as T;
+      try {
+        const parsed = JSON.parse(legacyRaw) as T;
+        localStorage.setItem(scopedKey, legacyRaw);
+        localStorage.removeItem(baseKey);
+        return parsed;
+      } catch {
+        localStorage.removeItem(baseKey);
+      }
     }
     return fallback;
   } catch (err) {
@@ -1556,12 +1563,8 @@ export const Storage = {
   setResume: (resume: ResumeDocument) => saveToStorage(STORAGE_KEYS.RESUME, resume),
 
   getQuotes: (): QuoteItem[] => {
-    const loaded = loadFromStorage<QuoteItem[]>(STORAGE_KEYS.QUOTES, INITIAL_QUOTES);
-    if (!loaded || !Array.isArray(loaded) || loaded.length === 0) {
-      saveToStorage(STORAGE_KEYS.QUOTES, INITIAL_QUOTES);
-      return INITIAL_QUOTES;
-    }
-    return loaded;
+    const loaded = loadFromStorage<QuoteItem[]>(STORAGE_KEYS.QUOTES, []);
+    return Array.isArray(loaded) ? loaded : [];
   },
   setQuotes: (quotes: QuoteItem[]) => saveToStorage(STORAGE_KEYS.QUOTES, quotes),
 
@@ -1790,39 +1793,8 @@ export const Storage = {
       if (data.vaultEncrypted) Storage.restoreEncryptedVault(data.vaultEncrypted);
       else if (data.vault) Storage.restoreEncryptedVault(null);
 
-      // Hydrate expenses safely: NEVER overwrite existing local expenses with an empty array.
-      // Merge cloud expenses with local expenses so locally auto-logged SMS transactions are never lost.
       if (Array.isArray(data.expenses)) {
-        const localExpenses = Storage.getExpenses();
-        if (data.expenses.length === 0 && localExpenses.length > 0) {
-          // Cloud snapshot has 0 expenses while local device has expenses.
-          // Keep local expenses intact to prevent accidental wipe.
-        } else {
-          const mergedMap = new Map<string, ExpenseItem>();
-          // 1. Add cloud items
-          for (const item of data.expenses) {
-            if (item && item.id) {
-              mergedMap.set(String(item.id), item);
-            }
-          }
-          // 2. Preserve any local items (e.g. recent SMS auto-logged transactions not yet in cloud)
-          for (const localItem of localExpenses) {
-            if (!localItem || !localItem.id) continue;
-            const idKey = String(localItem.id);
-            if (!mergedMap.has(idKey)) {
-              // Also check matching by smsReferenceId to prevent duplicate entries
-              const matchByRef = localItem.smsReferenceId
-                ? Array.from(mergedMap.values()).find(
-                    (c) => c.smsReferenceId && c.smsReferenceId === localItem.smsReferenceId
-                  )
-                : null;
-              if (!matchByRef) {
-                mergedMap.set(idKey, localItem);
-              }
-            }
-          }
-          Storage.setExpenses(Array.from(mergedMap.values()));
-        }
+        Storage.setExpenses(data.expenses);
       }
       if (Array.isArray(data.excelImportLogs)) {
         Storage.setExcelImportLogs(data.excelImportLogs);

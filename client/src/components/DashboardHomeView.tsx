@@ -201,11 +201,11 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
 
   // Inspirational Quotes with 10-Second Auto-Slideshow & Prev/Next Controls
   const allQuotesList = useMemo(() => {
-    return quotes && quotes.length > 0 ? quotes : DEFAULT_QUOTES;
+    return quotes || [];
   }, [quotes]);
   const [currentQuoteIdx, setCurrentQuoteIdx] = useState(0);
   const [isQuoteAutoPlay, setIsQuoteAutoPlay] = useState(true);
-  const activeQuote = allQuotesList[currentQuoteIdx % allQuotesList.length];
+  const activeQuote = allQuotesList.length > 0 ? allQuotesList[currentQuoteIdx % allQuotesList.length] : null;
 
   // 10-Second Auto-Slideshow Interval
   useEffect(() => {
@@ -516,25 +516,43 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
             onMouseLeave={() => setIsQuoteAutoPlay(true)}
             className="grid-tile lg:col-span-8 xl:col-span-9 relative px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-2xl bg-[#F8FAFC] dark:bg-[#23324C] border border-[#EDECE9] dark:border-[#334155] shadow-xs flex flex-col justify-between gap-2 transition-all group"
           >
-            <div className="flex items-start gap-3 min-w-0 flex-1">
-              <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200/70 dark:border-amber-900/50 flex items-center justify-center shrink-0 text-amber-600 dark:text-amber-400 shadow-2xs mt-0.5">
-                <Quote className="w-4 h-4" />
+            {activeQuote ? (
+              <div className="flex items-start gap-3 min-w-0 flex-1">
+                <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200/70 dark:border-amber-900/50 flex items-center justify-center shrink-0 text-amber-600 dark:text-amber-400 shadow-2xs mt-0.5">
+                  <Quote className="w-4 h-4" />
+                </div>
+                <div className="min-w-0 space-y-1 flex-1">
+                  {/* Readable & Soothing Book-Quality Quote Typography */}
+                  <p className="font-quote text-base sm:text-lg md:text-xl lg:text-[22px] font-normal sm:font-medium text-[#2D3748] dark:text-[#E2E8F0] leading-relaxed tracking-wide line-clamp-2 sm:line-clamp-3">
+                    &ldquo;{activeQuote.text}&rdquo;
+                  </p>
+                </div>
               </div>
-              <div className="min-w-0 space-y-1 flex-1">
-                {/* Readable & Soothing Book-Quality Quote Typography */}
-                <p className="font-quote text-base sm:text-lg md:text-xl lg:text-[22px] font-normal sm:font-medium text-[#2D3748] dark:text-[#E2E8F0] leading-relaxed tracking-wide line-clamp-2 sm:line-clamp-3">
-                  &ldquo;{activeQuote.text}&rdquo;
-                </p>
+            ) : (
+              <div className="flex items-center gap-3 min-w-0 flex-1 py-1">
+                <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200/70 dark:border-amber-900/50 flex items-center justify-center shrink-0 text-amber-600 dark:text-amber-400 shadow-2xs">
+                  <Quote className="w-4 h-4" />
+                </div>
+                <div className="min-w-0 space-y-0.5 flex-1">
+                  <p className="text-sm font-semibold text-[#2D3748] dark:text-[#E2E8F0]">
+                    No Quotes in Collection
+                  </p>
+                  <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
+                    Click &ldquo;+ Add Quote&rdquo; on the right to add daily inspiration.
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Quote Controls Bar (<> button in right bottom corner previous to Add quote button) */}
             <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-[#EDECE9]/70 dark:border-[#334155]/60 flex-wrap">
               {/* Author & counter badge */}
               <div className="flex items-center gap-2 text-xs text-[#64748B] dark:text-[#94A3B8] truncate">
-                <span className="font-semibold text-[#475569] dark:text-[#CBD5E1] truncate">
-                  — {activeQuote.author}
-                </span>
+                {activeQuote && (
+                  <span className="font-semibold text-[#475569] dark:text-[#CBD5E1] truncate">
+                    — {activeQuote.author}
+                  </span>
+                )}
                 {allQuotesList.length > 1 && (
                   <span className="font-mono text-[10px] px-1.5 py-0.5 rounded-md bg-[#EDECE9]/80 dark:bg-[#0F172A] text-[#64748B] dark:text-[#94A3B8] border border-[#E2E8F0] dark:border-[#334155]">
                     {currentQuoteIdx + 1} of {allQuotesList.length}

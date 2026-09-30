@@ -44,7 +44,7 @@ export const QuotesManagerView: React.FC<QuotesManagerViewProps> = ({
   onNavigate,
   soundEnabled,
 }) => {
-  const quotes = rawQuotes && rawQuotes.length > 0 ? rawQuotes : INITIAL_QUOTES;
+  const quotes = rawQuotes || [];
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');

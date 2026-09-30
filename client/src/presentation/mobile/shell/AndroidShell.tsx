@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Sparkles } from 'lucide-react';
+import { ArrowLeft, Sparkles, Search } from 'lucide-react';
 import {
   UserProfile,
   TodoItem,
@@ -346,7 +346,7 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
                 className="w-8 h-8 rounded-full flex items-center justify-center text-gray-600 dark:text-gray-300 hover:text-violet-600 active:scale-95 transition-all cursor-pointer"
                 aria-label="Search"
               >
-                <span className="text-xs">🔍</span>
+                <Search className="w-4 h-4" />
               </button>
               <button
                 type="button"
@@ -547,6 +547,7 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
         onNavigate={onNavigate}
+        activeView={activeView}
         todos={todos}
         expenses={expenses}
         habits={habits}

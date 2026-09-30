@@ -35,6 +35,7 @@ export interface AndroidSearchOverlayProps {
   isOpen: boolean;
   onClose: () => void;
   onNavigate: (view: MainNavView) => void;
+  activeView?: MainNavView;
   todos: TodoItem[];
   expenses: ExpenseItem[];
   habits: HabitItem[];
@@ -190,6 +191,7 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
   isOpen,
   onClose,
   onNavigate,
+  activeView = 'home',
   todos,
   expenses,
   habits,
@@ -199,8 +201,87 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
   goals,
 }) => {
   const [query, setQuery] = useState('');
-  const [filterType, setFilterType] = useState<'all' | 'pages' | 'records'>('all');
+
+  // Determine current section scope from activeView
+  const defaultScope = useMemo<'section' | 'pages' | 'all'>(() => {
+    if (activeView === 'home') return 'pages';
+    return 'section';
+  }, [activeView]);
+
+  const [filterType, setFilterType] = useState<'section' | 'pages' | 'all'>(defaultScope);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Section details
+  const sectionInfo = useMemo(() => {
+    switch (activeView) {
+      case 'tasks':
+        return {
+          id: 'tasks',
+          label: 'Tasks',
+          placeholder: 'Search tasks, to-dos & priority...',
+          count: todos.length,
+          unit: 'tasks',
+        };
+      case 'expenses':
+      case 'subscriptions':
+        return {
+          id: 'expenses',
+          label: 'Spending',
+          placeholder: 'Search transactions, merchants, amount...',
+          count: expenses.length,
+          unit: 'transactions',
+        };
+      case 'habits':
+        return {
+          id: 'habits',
+          label: 'Habits',
+          placeholder: 'Search habits & routines...',
+          count: habits.length,
+          unit: 'habits',
+        };
+      case 'journal':
+      case 'docs':
+        return {
+          id: 'journal',
+          label: 'Journal',
+          placeholder: 'Search journal entries & notes...',
+          count: journal.length,
+          unit: 'entries',
+        };
+      case 'media':
+        return {
+          id: 'media',
+          label: 'Media',
+          placeholder: 'Search books, movies & games...',
+          count: media.length,
+          unit: 'items',
+        };
+      case 'goals':
+        return {
+          id: 'goals',
+          label: 'Goals',
+          placeholder: 'Search goals & milestones...',
+          count: goals.length,
+          unit: 'goals',
+        };
+      case 'quotes':
+        return {
+          id: 'quotes',
+          label: 'Quotes',
+          placeholder: 'Search quotes & mantras...',
+          count: quotes.length,
+          unit: 'quotes',
+        };
+      default:
+        return {
+          id: 'pages',
+          label: 'Pages',
+          placeholder: 'Search pages, tools & navigation...',
+          count: DASHBOARD_PAGES.length,
+          unit: 'destinations',
+        };
+    }
+  }, [activeView, todos.length, expenses.length, habits.length, journal.length, media.length, goals.length, quotes.length]);
 
   // Register with Android hardware back button
   useEffect(() => {
@@ -212,27 +293,185 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
     return unregister;
   }, [isOpen, onClose]);
 
-  // Autofocus input when opened
+  // Autofocus input and reset scope based on current page when opened
   useEffect(() => {
     if (isOpen) {
       setQuery('');
-      setFilterType('all');
+      setFilterType(activeView === 'home' ? 'pages' : 'section');
       const timer = setTimeout(() => {
         inputRef.current?.focus();
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [isOpen]);
+  }, [isOpen, activeView]);
 
   const results: SearchResultItem[] = useMemo(() => {
     const q = query.toLowerCase().trim();
     const list: SearchResultItem[] = [];
 
-    // 1. MATCH PAGES & COMPONENTS
-    if (filterType === 'all' || filterType === 'pages') {
+    // Helper: Map task to item
+    const mapTask = (t: TodoItem): SearchResultItem => ({
+      id: `task-${t.id}`,
+      title: t.title,
+      subtitle: `Task · Priority: ${t.priority?.toUpperCase() || 'NORMAL'} · ${t.category || 'General'}${t.completed ? ' (Completed)' : ''}`,
+      type: 'task',
+      view: 'tasks',
+      icon: <CheckSquare className={`w-4 h-4 ${t.completed ? 'text-emerald-500' : 'text-violet-500'}`} />,
+    });
+
+    // Helper: Map expense to item
+    const mapExpense = (e: ExpenseItem): SearchResultItem => {
+      const isCredit = e.direction === 'CREDIT' || e.transactionType === 'CREDIT' || e.transactionType === 'income';
+      return {
+        id: `expense-${e.id}`,
+        title: e.name || 'Expense',
+        subtitle: `${isCredit ? '+ ₹' : '- ₹'}${Number(e.amount || 0).toLocaleString()} · ${e.category || 'General'}${e.date ? ` · ${e.date}` : ''}`,
+        type: 'expense',
+        view: 'expenses',
+        icon: <CreditCard className={`w-4 h-4 ${isCredit ? 'text-emerald-500' : 'text-rose-500'}`} />,
+      };
+    };
+
+    // Helper: Map habit to item
+    const mapHabit = (h: HabitItem): SearchResultItem => ({
+      id: `habit-${h.id}`,
+      title: h.title,
+      subtitle: `Habit · Streak: ${h.streak || 0}d · ${h.category || 'Routine'}`,
+      type: 'habit',
+      view: 'habits',
+      icon: <Flame className="w-4 h-4 text-amber-500" />,
+    });
+
+    // Helper: Map journal to item
+    const mapJournal = (j: JournalEntry): SearchResultItem => ({
+      id: `journal-${j.id}`,
+      title: j.title || 'Journal Note',
+      subtitle: `Journal · ${j.date || 'Recent'}${j.mood ? ` · Mood: ${j.mood}` : ''}`,
+      type: 'journal',
+      view: 'journal',
+      icon: <BookOpen className="w-4 h-4 text-pink-500" />,
+    });
+
+    // Helper: Map media to item
+    const mapMedia = (m: MediaItem): SearchResultItem => ({
+      id: `media-${m.id}`,
+      title: m.title,
+      subtitle: `Media · ${m.creator || 'Item'} (${m.type || 'Library'})`,
+      type: 'media',
+      view: 'media',
+      icon: <Film className="w-4 h-4 text-sky-500" />,
+    });
+
+    // Helper: Map goal to item
+    const mapGoal = (g: GoalItem): SearchResultItem => ({
+      id: `goal-${g.id}`,
+      title: g.title,
+      subtitle: `Goal · ${g.progress || 0}% complete · ${g.category || 'Vision'}`,
+      type: 'goal',
+      view: 'goals',
+      icon: <Target className="w-4 h-4 text-indigo-500" />,
+    });
+
+    // Helper: Map quote to item
+    const mapQuote = (qu: QuoteItem): SearchResultItem => ({
+      id: `quote-${qu.id}`,
+      title: `"${qu.text?.slice(0, 45)}..."`,
+      subtitle: `Quote · ${qu.author || 'Unknown'}`,
+      type: 'quote',
+      view: 'home',
+      icon: <QuoteIcon className="w-4 h-4 text-purple-500" />,
+    });
+
+    // SECTION SPECIFIC SEARCH (when filterType === 'section')
+    if (filterType === 'section' && activeView !== 'home') {
+      if (activeView === 'tasks') {
+        const filtered = todos.filter((t) => {
+          if (!q) return true;
+          return (
+            t.title.toLowerCase().includes(q) ||
+            t.category?.toLowerCase().includes(q) ||
+            t.notes?.toLowerCase().includes(q) ||
+            t.priority?.toLowerCase().includes(q)
+          );
+        });
+        filtered.forEach((t) => list.push(mapTask(t)));
+        return list.slice(0, 40);
+      }
+
+      if (activeView === 'expenses' || activeView === 'subscriptions') {
+        const filtered = expenses.filter((e) => {
+          if (!q) return true;
+          const isCredit = e.direction === 'CREDIT' || e.transactionType === 'CREDIT' || e.transactionType === 'income';
+          const typeMatch = (q.includes('credit') || q.includes('income')) ? isCredit : (q.includes('debit') || q.includes('spend')) ? !isCredit : false;
+          return (
+            e.name?.toLowerCase().includes(q) ||
+            e.category?.toLowerCase().includes(q) ||
+            e.bankName?.toLowerCase().includes(q) ||
+            e.notes?.toLowerCase().includes(q) ||
+            e.paymentMethod?.toLowerCase().includes(q) ||
+            e.referenceId?.toLowerCase().includes(q) ||
+            e.merchant?.toLowerCase().includes(q) ||
+            e.payee?.toLowerCase().includes(q) ||
+            e.rawSmsText?.toLowerCase().includes(q) ||
+            e.date?.includes(q) ||
+            String(e.amount).includes(q) ||
+            typeMatch
+          );
+        });
+        filtered.forEach((e) => list.push(mapExpense(e)));
+        return list.slice(0, 40);
+      }
+
+      if (activeView === 'habits') {
+        const filtered = habits.filter((h) => {
+          if (!q) return true;
+          return h.title.toLowerCase().includes(q) || h.category?.toLowerCase().includes(q);
+        });
+        filtered.forEach((h) => list.push(mapHabit(h)));
+        return list.slice(0, 40);
+      }
+
+      if (activeView === 'journal' || activeView === 'docs') {
+        const filtered = journal.filter((j) => {
+          if (!q) return true;
+          return j.title?.toLowerCase().includes(q) || j.content?.toLowerCase().includes(q);
+        });
+        filtered.forEach((j) => list.push(mapJournal(j)));
+        return list.slice(0, 40);
+      }
+
+      if (activeView === 'media') {
+        const filtered = media.filter((m) => {
+          if (!q) return true;
+          return m.title?.toLowerCase().includes(q) || m.creator?.toLowerCase().includes(q) || m.type?.toLowerCase().includes(q);
+        });
+        filtered.forEach((m) => list.push(mapMedia(m)));
+        return list.slice(0, 40);
+      }
+
+      if (activeView === 'goals') {
+        const filtered = goals.filter((g) => {
+          if (!q) return true;
+          return g.title?.toLowerCase().includes(q) || g.category?.toLowerCase().includes(q);
+        });
+        filtered.forEach((g) => list.push(mapGoal(g)));
+        return list.slice(0, 40);
+      }
+
+      if (activeView === 'quotes') {
+        const filtered = quotes.filter((qu) => {
+          if (!q) return true;
+          return qu.text?.toLowerCase().includes(q) || qu.author?.toLowerCase().includes(q);
+        });
+        filtered.forEach((qu) => list.push(mapQuote(qu)));
+        return list.slice(0, 40);
+      }
+    }
+
+    // 1. MATCH PAGES & HUBS (if filterType is 'pages' or 'all', or when on 'home')
+    if (filterType === 'pages' || filterType === 'all' || activeView === 'home') {
       DASHBOARD_PAGES.forEach((page) => {
         if (!q) {
-          // If query is empty, add all pages as suggestions
           list.push({
             id: page.id,
             title: page.title,
@@ -260,113 +499,52 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
       });
     }
 
-    // 2. MATCH USER DATA RECORDS (Only if user has typed a query, or if viewing records)
-    if (q && (filterType === 'all' || filterType === 'records')) {
-      // Search tasks
+    // 2. MATCH USER DATA RECORDS ACROSS ALL MODULES (when filterType is 'all' or user types query in all)
+    if (filterType === 'all' && q) {
       todos.forEach((t) => {
         if (t.title.toLowerCase().includes(q) || t.category?.toLowerCase().includes(q)) {
-          list.push({
-            id: `task-${t.id}`,
-            title: t.title,
-            subtitle: `Task · Priority: ${t.priority?.toUpperCase() || 'NORMAL'}`,
-            type: 'task',
-            view: 'tasks',
-            icon: <CheckSquare className="w-4 h-4 text-violet-500" />,
-          });
+          list.push(mapTask(t));
         }
       });
 
-      // Search expenses
       expenses.forEach((e) => {
         if (
           e.name?.toLowerCase().includes(q) ||
           e.category?.toLowerCase().includes(q) ||
-          e.bankName?.toLowerCase().includes(q)
+          e.bankName?.toLowerCase().includes(q) ||
+          String(e.amount).includes(q)
         ) {
-          list.push({
-            id: `expense-${e.id}`,
-            title: e.name,
-            subtitle: `Expense · ₹${e.amount} (${e.category || 'General'})`,
-            type: 'expense',
-            view: 'expenses',
-            icon: <CreditCard className="w-4 h-4 text-emerald-500" />,
-          });
+          list.push(mapExpense(e));
         }
       });
 
-      // Search habits
       habits.forEach((h) => {
         if (h.title.toLowerCase().includes(q) || h.category?.toLowerCase().includes(q)) {
-          list.push({
-            id: `habit-${h.id}`,
-            title: h.title,
-            subtitle: `Habit · Streak: ${h.streak || 0}d`,
-            type: 'habit',
-            view: 'habits',
-            icon: <Flame className="w-4 h-4 text-amber-500" />,
-          });
+          list.push(mapHabit(h));
         }
       });
 
-      // Search journal
       journal.forEach((j) => {
         if (j.title?.toLowerCase().includes(q) || j.content?.toLowerCase().includes(q)) {
-          list.push({
-            id: `journal-${j.id}`,
-            title: j.title || 'Journal Note',
-            subtitle: `Journal · ${j.date || 'Recent'}`,
-            type: 'journal',
-            view: 'journal',
-            icon: <BookOpen className="w-4 h-4 text-pink-500" />,
-          });
+          list.push(mapJournal(j));
         }
       });
 
-      // Search quotes
-      quotes.forEach((qu) => {
-        if (qu.text?.toLowerCase().includes(q) || qu.author?.toLowerCase().includes(q)) {
-          list.push({
-            id: `quote-${qu.id}`,
-            title: `"${qu.text.slice(0, 45)}..."`,
-            subtitle: `Quote · ${qu.author}`,
-            type: 'quote',
-            view: 'quotes',
-            icon: <QuoteIcon className="w-4 h-4 text-purple-500" />,
-          });
-        }
-      });
-
-      // Search media
       media.forEach((m) => {
         if (m.title?.toLowerCase().includes(q) || m.creator?.toLowerCase().includes(q)) {
-          list.push({
-            id: `media-${m.id}`,
-            title: m.title,
-            subtitle: `Media · ${m.creator || 'Item'} (${m.type || 'Library'})`,
-            type: 'media',
-            view: 'media',
-            icon: <Film className="w-4 h-4 text-sky-500" />,
-          });
+          list.push(mapMedia(m));
         }
       });
 
-      // Search goals
       goals.forEach((g) => {
         if (g.title?.toLowerCase().includes(q) || g.category?.toLowerCase().includes(q)) {
-          list.push({
-            id: `goal-${g.id}`,
-            title: g.title,
-            subtitle: `Goal · ${g.progress || 0}% complete`,
-            type: 'goal',
-            view: 'goals',
-            icon: <Target className="w-4 h-4 text-indigo-500" />,
-          });
+          list.push(mapGoal(g));
         }
       });
     }
 
-    return list.slice(0, 30);
-  }, [query, filterType, todos, expenses, habits, journal, quotes, media, goals]);
+    return list.slice(0, 40);
+  }, [query, filterType, activeView, todos, expenses, habits, journal, quotes, media, goals]);
 
   const handleSelectResult = (res: SearchResultItem) => {
     void nativeService.triggerHaptic('selection');
@@ -375,6 +553,13 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
   };
 
   if (!isOpen) return null;
+
+  const currentPlaceholder =
+    filterType === 'pages'
+      ? 'Search pages, tools & navigation...'
+      : filterType === 'all'
+      ? 'Search entire workspace...'
+      : sectionInfo.placeholder;
 
   return (
     <AnimatePresence>
@@ -387,14 +572,14 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
         {/* Top Search Bar */}
         <div className="h-14 flex items-center gap-2 border-b border-[#E8E5F3] dark:border-[#242D40] pb-2 shrink-0">
           <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs">
-            <Search className="w-4 h-4 text-gray-400 shrink-0" />
+            <Search className="w-4 h-4 text-violet-500 shrink-0" />
             <input
               ref={inputRef}
               type="text"
               inputMode="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search pages, money, tasks, habits..."
+              placeholder={currentPlaceholder}
               className="w-full bg-transparent text-xs sm:text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-hidden"
             />
             {query && (
@@ -419,29 +604,55 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
 
         {/* Quick Filter Tabs */}
         <div className="flex items-center gap-1.5 py-2 border-b border-[#E8E5F3]/60 dark:border-[#242D40]/60 shrink-0 overflow-x-auto no-scrollbar">
-          {(
-            [
-              { id: 'all', label: 'All Results' },
-              { id: 'pages', label: 'Pages & Hubs' },
-              { id: 'records', label: 'Records & Items' },
-            ] as const
-          ).map((tab) => (
+          {activeView !== 'home' && (
             <button
-              key={tab.id}
               type="button"
               onClick={() => {
                 void nativeService.triggerHaptic('selection');
-                setFilterType(tab.id);
+                setFilterType('section');
               }}
-              className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap ${
-                filterType === tab.id
+              className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 ${
+                filterType === 'section'
                   ? 'bg-violet-600 text-white shadow-2xs'
                   : 'bg-white dark:bg-[#121826] text-gray-600 dark:text-gray-400 border border-[#E8E5F3] dark:border-[#242D40]'
               }`}
             >
-              {tab.label}
+              <span>{sectionInfo.label}</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${filterType === 'section' ? 'bg-violet-700 text-violet-100' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'}`}>
+                {sectionInfo.count}
+              </span>
             </button>
-          ))}
+          )}
+
+          <button
+            type="button"
+            onClick={() => {
+              void nativeService.triggerHaptic('selection');
+              setFilterType('pages');
+            }}
+            className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap ${
+              filterType === 'pages'
+                ? 'bg-violet-600 text-white shadow-2xs'
+                : 'bg-white dark:bg-[#121826] text-gray-600 dark:text-gray-400 border border-[#E8E5F3] dark:border-[#242D40]'
+            }`}
+          >
+            Pages & Hubs
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              void nativeService.triggerHaptic('selection');
+              setFilterType('all');
+            }}
+            className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap ${
+              filterType === 'all'
+                ? 'bg-violet-600 text-white shadow-2xs'
+                : 'bg-white dark:bg-[#121826] text-gray-600 dark:text-gray-400 border border-[#E8E5F3] dark:border-[#242D40]'
+            }`}
+          >
+            All Workspace
+          </button>
         </div>
 
         {/* Results Body */}
@@ -449,10 +660,14 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
           {!query.trim() && (
             <div className="px-1 pb-1 flex items-center justify-between">
               <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                Suggested Pages & Components
+                {filterType === 'section'
+                  ? `${sectionInfo.label} (${results.length} ${sectionInfo.unit})`
+                  : filterType === 'pages'
+                  ? `Suggested Pages (${results.length} destinations)`
+                  : 'Workspace Items'}
               </span>
               <span className="text-[10px] text-gray-400">
-                {results.length} destinations
+                {results.length} {results.length === 1 ? 'item' : 'items'}
               </span>
             </div>
           )}
@@ -463,7 +678,9 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
                 No matching results found for &ldquo;{query}&rdquo;
               </p>
               <p className="text-[11px] text-gray-400 mt-1">
-                Try searching for money, tasks, habits, vault, or books.
+                {filterType === 'section'
+                  ? `No matching ${sectionInfo.unit} found. Try switching to "All Workspace" or "Pages".`
+                  : 'Try searching with different keywords.'}
               </p>
             </div>
           ) : (
@@ -492,6 +709,16 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
                   {item.type === 'page' && (
                     <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-violet-50 dark:bg-violet-950/60 text-violet-600 dark:text-violet-400 border border-violet-200/60 dark:border-violet-800/40">
                       Page
+                    </span>
+                  )}
+                  {item.type === 'expense' && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/40">
+                      Money
+                    </span>
+                  )}
+                  {item.type === 'task' && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/40">
+                      Task
                     </span>
                   )}
                   <ArrowRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-violet-600 transition-colors" />

@@ -43,6 +43,12 @@ import java.util.List;
                 Manifest.permission.RECEIVE_SMS,
                 Manifest.permission.READ_SMS
             }
+        ),
+        @Permission(
+            alias = "notifications",
+            strings = {
+                "android.permission.POST_NOTIFICATIONS"
+            }
         )
     }
 )
@@ -118,7 +124,11 @@ public class SmsTransactionPlugin extends Plugin {
 
     @PluginMethod
     public void requestPermissions(PluginCall call) {
-        requestPermissionForAlias("sms", call, "smsPermissionCallback");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            requestAllPermissions(call, "smsPermissionCallback");
+        } else {
+            requestPermissionForAlias("sms", call, "smsPermissionCallback");
+        }
     }
 
     @PermissionCallback
@@ -126,6 +136,10 @@ public class SmsTransactionPlugin extends Plugin {
         Context context = getContext();
         boolean hasReceive = ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED;
         boolean hasRead = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED;
+        boolean hasNotification = true;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            hasNotification = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+        }
 
         if (hasReceive || hasRead) {
             // Automatically ensure tracking is enabled in SharedPreferences when permission is granted
@@ -139,6 +153,7 @@ public class SmsTransactionPlugin extends Plugin {
         ret.put("sms", status);
         ret.put("receiveSms", hasReceive ? "granted" : "denied");
         ret.put("readSms", hasRead ? "granted" : "denied");
+        ret.put("notifications", hasNotification ? "granted" : "denied");
         call.resolve(ret);
     }
 
@@ -459,8 +474,8 @@ public class SmsTransactionPlugin extends Plugin {
             prefs.edit().putString(KEY_PENDING_SMS, arr.toString()).apply();
             Log.i(TAG, "[PLUGIN_SMS] Successfully queued incoming SMS from: " + sender + " (live_listener=" + (instance != null) + ")");
 
-            // 3. Show subtle notification to user if app is in background/closed AND message is likely financial
-            if (instance == null && SmsReceiver.isLikelyFinancialTransaction(sender, body)) {
+            // 3. Show clean Android system notification to user when a financial transaction SMS is intercepted
+            if (SmsReceiver.isLikelyFinancialTransaction(sender, body)) {
                 showBackgroundNotification(context, sender, body);
             }
         } catch (Exception e) {
@@ -473,6 +488,13 @@ public class SmsTransactionPlugin extends Plugin {
      */
     private static void showBackgroundNotification(Context context, String sender, String body) {
         try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                    Log.i(TAG, "POST_NOTIFICATIONS permission not granted; skipping system notification");
+                    return;
+                }
+            }
+
             NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm == null) return;
 

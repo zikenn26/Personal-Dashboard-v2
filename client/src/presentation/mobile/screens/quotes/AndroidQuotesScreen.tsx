@@ -27,7 +27,7 @@ export const AndroidQuotesScreen: React.FC<AndroidQuotesScreenProps> = ({
   const [newAuthor, setNewAuthor] = useState('');
   const [newCat, setNewCat] = useState('Wisdom');
 
-  const availableQuotes = quotes && quotes.length > 0 ? quotes : INITIAL_QUOTES;
+  const availableQuotes = quotes || [];
 
   const categories = useMemo(() => {
     const set = new Set<string>();
@@ -135,7 +135,18 @@ export const AndroidQuotesScreen: React.FC<AndroidQuotesScreenProps> = ({
 
       {/* Quote Cards */}
       <div className="space-y-3">
-        {filteredQuotes.map((q) => (
+        {filteredQuotes.length === 0 ? (
+          <div className="p-8 text-center rounded-3xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs space-y-2">
+            <div className="w-12 h-12 rounded-full bg-violet-100 dark:bg-violet-950 text-violet-600 dark:text-violet-400 flex items-center justify-center mx-auto">
+              <QuoteIcon className="w-6 h-6" />
+            </div>
+            <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200">No Quotes Yet</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 max-w-xs mx-auto">
+              Tap &quot;Add Quote&quot; above to create and save daily inspirations.
+            </p>
+          </div>
+        ) : (
+          filteredQuotes.map((q) => (
           <div
             key={q.id}
             className="p-4 rounded-3xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs space-y-3 relative overflow-hidden group"
@@ -174,7 +185,8 @@ export const AndroidQuotesScreen: React.FC<AndroidQuotesScreenProps> = ({
               </div>
             </div>
           </div>
-        ))}
+        ))
+        )}
       </div>
 
       {/* Add Quote Bottom Sheet */}

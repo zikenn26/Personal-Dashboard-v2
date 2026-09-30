@@ -414,19 +414,8 @@ export default function App() {
     setGoals(Storage.getGoals());
     void Storage.hydrateVault(Storage.getSettings().masterPin).then(setVault);
 
-    // Force fresh direct read from localStorage for expenses to avoid any stale cached data
-    let freshExpenses: ExpenseItem[] = Storage.getExpenses();
-    try {
-      const raw =
-        localStorage.getItem(getScopedKey(STORAGE_KEYS.EXPENSES)) ??
-        localStorage.getItem(STORAGE_KEYS.EXPENSES);
-      if (raw !== null) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          freshExpenses = parsed;
-        }
-      }
-    } catch {}
+    // Force fresh direct read from scoped localStorage for expenses
+    const freshExpenses: ExpenseItem[] = Storage.getExpenses();
     setExpenses([...freshExpenses]);
 
     setExcelImportLogs(Storage.getExcelImportLogs());
@@ -1758,6 +1747,12 @@ export default function App() {
     Storage.setExpenses([]);
     setExcelImportLogs([]);
     Storage.setExcelImportLogs([]);
+    try {
+      localStorage.removeItem(STORAGE_KEYS.EXPENSES);
+      localStorage.removeItem(STORAGE_KEYS.EXCEL_IMPORT_LOGS);
+      localStorage.setItem(getScopedKey(STORAGE_KEYS.EXPENSES), '[]');
+      localStorage.setItem(getScopedKey(STORAGE_KEYS.EXCEL_IMPORT_LOGS), '[]');
+    } catch {}
     window.dispatchEvent(
       new CustomEvent('dashboard-data-updated', {
         detail: { module: 'expenses', updatedExpenses: [] },
@@ -2383,7 +2378,19 @@ export default function App() {
             >
               <div className="flex items-center gap-1.5 truncate">
                 <Search className="w-3.5 h-3.5 text-[#9CA3AF]" />
-                <span className="hidden sm:inline truncate">Search...</span>
+                <span className="hidden sm:inline truncate">
+                  {activeView === 'tasks'
+                    ? 'Search tasks...'
+                    : activeView === 'expenses' || activeView === 'subscriptions'
+                    ? 'Search spending...'
+                    : activeView === 'habits'
+                    ? 'Search habits...'
+                    : activeView === 'journal' || activeView === 'docs'
+                    ? 'Search journal...'
+                    : activeView === 'vault'
+                    ? 'Search vault...'
+                    : 'Search pages...'}
+                </span>
               </div>
               <kbd className="hidden sm:inline px-1.5 py-0.2 rounded bg-white dark:bg-[#111827] border border-[#EDECE9] dark:border-[#374151] text-[9px] font-mono">
                 ⌘K
@@ -3427,6 +3434,7 @@ export default function App() {
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}
         onNavigate={handleNavigate}
+        activeView={activeView}
         onQuickAdd={(type) => {
           setShowQuickCapture(true);
         }}
