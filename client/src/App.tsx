@@ -29,6 +29,10 @@ import {
   MainNavView,
   ExamItem,
   WeeklyScheduleData,
+  TrashItem,
+  TrashModule,
+} from './types';
+
 } from './types';
 
 // Component Imports
