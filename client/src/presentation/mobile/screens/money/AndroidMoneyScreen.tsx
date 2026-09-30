@@ -32,12 +32,44 @@ export interface AndroidMoneyScreenProps {
   soundEnabled?: boolean;
 }
 
-type PeriodFilter = 'month' | 'today' | 'all';
+type PeriodFilter = 'today' | 'week' | 'month' | 'all';
 
 const MONTH_ABBR = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
+
+/**
+ * Date-only values in the expense model represent a local calendar date.
+ * Never use toISOString() for these values because it converts the date to UTC
+ * and can move a local transaction to the previous/next calendar day.
+ */
+const pad2 = (value: number): string => String(value).padStart(2, '0');
+
+const getLocalDateKey = (date: Date = new Date()): string =>
+  `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+
+const normalizeExpenseDateKey = (value?: string | null): string => {
+  if (!value) return '';
+
+  const raw = String(value).trim();
+  if (!raw) return '';
+
+  // Preserve an existing YYYY-MM-DD date exactly, including ISO timestamps.
+  const dateOnlyMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (dateOnlyMatch) return dateOnlyMatch[1];
+
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? '' : getLocalDateKey(parsed);
+};
+
+const getMondayDateKey = (date: Date): string => {
+  const monday = new Date(date);
+  const day = monday.getDay(); // Sunday = 0, Monday = 1, ... Saturday = 6
+  const daysFromMonday = (day + 6) % 7;
+  monday.setDate(monday.getDate() - daysFromMonday);
+  return getLocalDateKey(monday);
+};
 
 export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   expenses,
@@ -207,37 +239,70 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   };
 
   const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth();
-  const todayDateStr = now.toISOString().split('T')[0];
+  const todayDateStr = getLocalDateKey(now);
+  const weekStartDateStr = getMondayDateKey(now);
+  const currentMonthPrefix = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
 
-  // Calculations: Credits/refunds do not inflate total money spent
-  const { totalMonthSpending, todaySpending, monthCredits, categoryTotals } = useMemo(() => {
-    let monthDebits = 0;
-    let monthCredits = 0;
+  // Spending totals are debit-only. Credits/refunds remain visible in the
+  // transaction list but never inflate spending totals.
+  const {
+    todaySpending,
+    weekSpending,
+    monthSpending,
+    allTimeSpending,
+    monthCredits,
+    categoryTotals,
+  } = useMemo(() => {
     let todayDebits = 0;
+    let weekDebits = 0;
+    let monthDebits = 0;
+    let allTimeDebits = 0;
+    let monthCredits = 0;
     const catMap: Record<string, number> = {};
+
+    const isInSelectedPeriod = (dateKey: string): boolean => {
+      if (!dateKey) return false;
+
+      switch (periodFilter) {
+        case 'today':
+          return dateKey === todayDateStr;
+        case 'week':
+          return dateKey >= weekStartDateStr && dateKey <= todayDateStr;
+        case 'month':
+          return dateKey.startsWith(currentMonthPrefix);
+        case 'all':
+          return true;
+        default:
+          return false;
+      }
+    };
 
     activeExpenses.forEach((e) => {
       const amt = Number(e.amount) || 0;
+      const dateKey = normalizeExpenseDateKey(e.date);
       const isCredit = isCreditTransaction(e);
-      const d = new Date(e.date);
-      const isThisMonth = d.getFullYear() === currentYear && d.getMonth() === currentMonth;
-      const isToday = e.date === todayDateStr;
+
+      if (!dateKey) return;
+
+      const isToday = dateKey === todayDateStr;
+      const isThisWeek = dateKey >= weekStartDateStr && dateKey <= todayDateStr;
+      const isThisMonth = dateKey.startsWith(currentMonthPrefix);
 
       if (isCredit) {
-        if (isThisMonth) {
-          monthCredits += amt;
-        }
-      } else {
-        if (isThisMonth) {
-          monthDebits += amt;
-          const cat = e.category || 'Other';
-          catMap[cat] = (catMap[cat] || 0) + amt;
-        }
-        if (isToday) {
-          todayDebits += amt;
-        }
+        if (isThisMonth) monthCredits += amt;
+        return;
+      }
+
+      allTimeDebits += amt;
+      if (isToday) todayDebits += amt;
+      if (isThisWeek) weekDebits += amt;
+      if (isThisMonth) monthDebits += amt;
+
+      // Category breakdown follows the selected period so the category
+      // pills and transaction list always describe the same time window.
+      if (isInSelectedPeriod(dateKey)) {
+        const cat = e.category || 'Other';
+        catMap[cat] = (catMap[cat] || 0) + amt;
       }
     });
 
@@ -246,60 +311,95 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
       .sort((a, b) => b.total - a.total);
 
     return {
-      totalMonthSpending: monthDebits,
-      monthCredits,
       todaySpending: todayDebits,
+      weekSpending: weekDebits,
+      monthSpending: monthDebits,
+      allTimeSpending: allTimeDebits,
+      monthCredits,
       categoryTotals: sortedCats,
     };
-  }, [activeExpenses, currentYear, currentMonth, todayDateStr]);
+  }, [
+    activeExpenses,
+    periodFilter,
+    todayDateStr,
+    weekStartDateStr,
+    currentMonthPrefix,
+  ]);
 
-  // Filtered transactions sorted newest -> older by actual date & time
+  // The transaction list follows the selected period filter.
+  // Credits are intentionally kept in the list; only spending totals exclude them.
   const filteredExpenses = useMemo(() => {
     return activeExpenses
       .filter((e) => {
-        if (periodFilter === 'month') {
-          const d = new Date(e.date);
-          if (d.getFullYear() !== currentYear || d.getMonth() !== currentMonth) return false;
-        } else if (periodFilter === 'today') {
-          if (e.date !== todayDateStr) return false;
+        const dateKey = normalizeExpenseDateKey(e.date);
+        if (!dateKey) return false;
+
+        switch (periodFilter) {
+          case 'today':
+            if (dateKey !== todayDateStr) return false;
+            break;
+          case 'week':
+            if (dateKey < weekStartDateStr || dateKey > todayDateStr) return false;
+            break;
+          case 'month':
+            if (!dateKey.startsWith(currentMonthPrefix)) return false;
+            break;
+          case 'all':
+            break;
         }
 
         if (selectedCategory !== 'all' && e.category !== selectedCategory) {
           return false;
         }
+
         return true;
       })
       .sort(compareExpensesByDateTimeDesc);
-  }, [activeExpenses, periodFilter, selectedCategory, currentYear, currentMonth, todayDateStr]);
+  }, [
+    activeExpenses,
+    periodFilter,
+    selectedCategory,
+    todayDateStr,
+    weekStartDateStr,
+    currentMonthPrefix,
+  ]);
 
-  // Group the filtered transactions by exact calendar date, one header per date
+  // Group the filtered transactions by normalized local calendar date.
   const dateGroups = useMemo(() => {
-    const yesterday = new Date(now);
-    yesterday.setDate(now.getDate() - 1);
-    const yesterdayDateStr = yesterday.toISOString().split('T')[0];
+    const yesterday = new Date(`${todayDateStr}T00:00:00`);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayDateStr = getLocalDateKey(yesterday);
 
     const formatGroupDateLabel = (dateStr: string): string => {
       if (!dateStr) return 'Unknown Date';
       if (dateStr === todayDateStr) return 'Today';
       if (dateStr === yesterdayDateStr) return 'Yesterday';
+
       const d = new Date(`${dateStr}T00:00:00`);
       if (Number.isNaN(d.getTime())) return dateStr;
+
       return `${d.getDate()} ${MONTH_ABBR[d.getMonth()]} ${d.getFullYear()}`;
     };
 
     const groups: { key: string; label: string; items: ExpenseItem[] }[] = [];
+
     filteredExpenses.forEach((item) => {
-      const dateKey = item.date || 'unknown';
+      const dateKey = normalizeExpenseDateKey(item.date) || 'unknown';
       const lastGroup = groups[groups.length - 1];
+
       if (lastGroup && lastGroup.key === dateKey) {
         lastGroup.items.push(item);
       } else {
-        groups.push({ key: dateKey, label: formatGroupDateLabel(dateKey), items: [item] });
+        groups.push({
+          key: dateKey,
+          label: formatGroupDateLabel(dateKey),
+          items: [item],
+        });
       }
     });
+
     return groups;
   }, [filteredExpenses, todayDateStr]);
-
   const handleDelete = (id: string) => {
     void nativeService.triggerHaptic('warning');
     if (onDeleteExpense) onDeleteExpense(id);
@@ -522,55 +622,94 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         </div>
       )}
 
-      {/* Compact Spending Summary Card */}
+      {/* Spending Summary Card
+          All four periods are calculated independently so selecting a filter
+          never changes the meaning of the headline totals. */}
       <div className="p-3 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-xs relative overflow-hidden">
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-[11px] font-semibold text-emerald-100 uppercase tracking-wider">
-            Total Spending (This Month)
-          </span>
-          <div className="p-1 rounded-lg bg-white/15">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <span className="text-[11px] font-semibold text-emerald-100 uppercase tracking-wider">
+              Spending Overview
+            </span>
+            <p className="text-[10px] text-emerald-100/80 mt-0.5">
+              Debit spending only · credits/refunds excluded
+            </p>
+          </div>
+          <div className="p-1.5 rounded-lg bg-white/15">
             <Wallet className="w-3.5 h-3.5 text-white" />
           </div>
         </div>
 
-        <div className="text-xl sm:text-2xl font-black tracking-tight leading-none mb-2">
-          ₹{totalMonthSpending.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        <div className="grid grid-cols-2 gap-x-3 gap-y-2 pt-2 border-t border-white/15">
+          <div>
+            <span className="text-[10px] text-emerald-200 block font-medium">Today&apos;s Spending</span>
+            <span className="text-sm font-black block mt-0.5">
+              ₹{todaySpending.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
+
+          <div>
+            <span className="text-[10px] text-emerald-200 block font-medium">This Week&apos;s Spending</span>
+            <span className="text-sm font-black block mt-0.5">
+              ₹{weekSpending.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
+
+          <div>
+            <span className="text-[10px] text-emerald-200 block font-medium">This Month&apos;s Spending</span>
+            <span className="text-sm font-black block mt-0.5">
+              ₹{monthSpending.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
+
+          <div>
+            <span className="text-[10px] text-emerald-200 block font-medium">All-Time Spending</span>
+            <span className="text-sm font-black block mt-0.5">
+              ₹{allTimeSpending.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
         </div>
 
-        {/* Compact Grid: Today's Spend + Top Categories repositioned cleanly */}
-        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/15">
-          <div>
-            <span className="text-[10px] text-emerald-200 block font-medium">Today&apos;s Spend</span>
-            <span className="text-xs sm:text-sm font-bold block">
-              ₹{todaySpending.toLocaleString('en-IN')}
+        {categoryTotals.length > 0 && (
+          <div className="mt-2 pt-2 border-t border-white/15 flex items-center justify-between gap-2">
+            <span className="text-[10px] text-emerald-200 font-medium">
+              Top category ({periodFilter === 'today' ? 'Today' : periodFilter === 'week' ? 'This Week' : periodFilter === 'month' ? 'This Month' : 'All Time'})
+            </span>
+            <span className="text-[10px] font-bold truncate text-right" title={categoryTotals[0]?.cat}>
+              {categoryTotals[0]
+                ? `${categoryTotals[0].cat} · ₹${Math.round(categoryTotals[0].total).toLocaleString('en-IN')}`
+                : 'None'}
             </span>
           </div>
-          <div className="min-w-0">
-            <span className="text-[10px] text-emerald-200 block font-medium truncate">Top Categories</span>
-            <span className="text-xs sm:text-sm font-bold block truncate" title={categoryTotals[0]?.cat}>
-              {categoryTotals[0] ? `${categoryTotals[0].cat} (₹${Math.round(categoryTotals[0].total)})` : 'None'}
-            </span>
-          </div>
-        </div>
+        )}
       </div>
 
-      {/* Period Filter Tabs */}
-      <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] select-none">
-        {(['month', 'today', 'all'] as PeriodFilter[]).map((tab) => (
+      {/* Period Filter Tabs — controls the transaction list and category breakdown */}
+      <div className="flex items-center gap-1 p-1 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] select-none">
+        {(['today', 'week', 'month', 'all'] as PeriodFilter[]).map((tab) => (
           <button
             key={tab}
             type="button"
             onClick={() => {
               void nativeService.triggerHaptic('selection');
               setPeriodFilter(tab);
+              // Avoid an apparently empty list if the old category is absent
+              // from the newly selected time period.
+              setSelectedCategory('all');
             }}
-            className={`flex-1 py-1.5 rounded-xl text-xs font-bold capitalize transition-all cursor-pointer ${
+            className={`flex-1 py-1.5 rounded-xl text-[10px] sm:text-xs font-bold transition-all cursor-pointer ${
               periodFilter === tab
                 ? 'bg-emerald-600 text-white shadow-xs'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
             }`}
           >
-            {tab === 'month' ? 'This Month' : tab === 'today' ? 'Today' : 'All Time'}
+            {tab === 'today'
+              ? 'Today'
+              : tab === 'week'
+                ? 'This Week'
+                : tab === 'month'
+                  ? 'This Month'
+                  : 'All Time'}
           </button>
         ))}
       </div>
@@ -645,10 +784,16 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
           <CreditCard className="w-10 h-10 text-emerald-400 mx-auto opacity-60" />
           <div>
             <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
-              No transactions yet
+              No transactions in this period
             </p>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              Your recent spending will appear here.
+              {periodFilter === 'today'
+                ? 'No transactions were recorded today.'
+                : periodFilter === 'week'
+                  ? 'No transactions were recorded this week.'
+                  : periodFilter === 'month'
+                    ? 'No transactions were recorded this month.'
+                    : 'No transactions have been recorded yet.'}
             </p>
           </div>
           {onAddExpense && (
