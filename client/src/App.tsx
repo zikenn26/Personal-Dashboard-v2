@@ -202,6 +202,7 @@ export default function App() {
   const [skills, setSkills] = useState<SkillCategory[]>(Storage.getSkills);
   const [achievements, setAchievements] = useState<AchievementItem[]>(Storage.getAchievements);
   const [doodles, setDoodles] = useState<DoodleItem[]>(Storage.getDoodles);
+  const [trash, setTrash] = useState<TrashItem[]>(Storage.getTrash);
   const [settings, setSettings] = useState<AppSettings>(Storage.getSettings);
   const [sections, setSections] = useState<DashboardSection[]>(Storage.getSections);
   const [photos, setPhotos] = useState(Storage.getPhotos);
