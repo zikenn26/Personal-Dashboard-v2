@@ -1037,7 +1037,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     const safePage = Math.min(Math.max(1, txCurrentPage), totalPages);
     const startIndex = (safePage - 1) * TX_PAGE_SIZE;
     const endIndex = Math.min(startIndex + TX_PAGE_SIZE, totalFilteredCount);
-        // visibleSlice replaces the current screen on pagination rather than extending the list
+    // visibleSlice replaces the current screen on pagination rather than extending the list
     const visibleSlice = list.slice(startIndex, endIndex);
 
     // Group the visible transactions by exact calendar date, one header per date
@@ -1752,7 +1752,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                     Click &ldquo;+ Add Expense&rdquo; above to log your first transaction.
                   </p>
                 </div>
-                            ) : (
+              ) : (
                 <>
                   {groupedTransactions.dateGroups.map((group) => (
                     <div key={group.key} className="space-y-2 pt-1 first:pt-0">
