@@ -547,7 +547,6 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
           )}
       </main>
 
-
       {/* 3. ANDROID BOTTOM NAVIGATION (Persistent) */}
       <AndroidBottomNav
         activeView={activeView}
