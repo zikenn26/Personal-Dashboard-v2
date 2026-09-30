@@ -77,6 +77,7 @@ export const STORAGE_KEYS = {
   SMS_AUTO_TRACKING_ENABLED: 'notion_os_v4_sms_auto_tracking_enabled',
   SMS_PROCESSED_FINGERPRINTS: 'notion_os_v4_sms_processed_fingerprints',
   SMS_TRANSACTION_LOGS: 'notion_os_v4_sms_transaction_logs',
+  TRASH: 'notion_os_v4_trash',
 };
 
 export const DEFAULT_COMMAND_MAPPINGS: CommandMapping[] = [
