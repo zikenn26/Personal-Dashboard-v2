@@ -514,7 +514,30 @@ export type MainNavView =
   | 'expenses'
   | 'subscriptions'
   | 'vault'
-  | 'backup';
+  | 'backup'
+  | 'trash';
+
+// Every module that supports soft-delete into the Trash bin
+export type TrashModule =
+  | 'tasks'
+  | 'habits'
+  | 'goals'
+  | 'expenses'
+  | 'media'
+  | 'journal'
+  | 'projects'
+  | 'timeline'
+  | 'achievements'
+  | 'doodles';
+
+export interface TrashItem {
+  id: string;
+  module: TrashModule;
+  label: string;
+  data: any;
+  deletedAt: number;
+}
+
 
 export type DashboardBlockType =
   | 'heading'
