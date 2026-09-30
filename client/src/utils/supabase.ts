@@ -1,9 +1,13 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { Capacitor } from '@capacitor/core';
+import {
+  SUPABASE_URL as BUILTIN_SUPABASE_URL,
+  SUPABASE_ANON_KEY as BUILTIN_SUPABASE_ANON_KEY,
+} from './supabaseConfig';
 
 // Environment variables for Supabase (Vite client)
-const rawUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const rawUrl = import.meta.env.VITE_SUPABASE_URL || BUILTIN_SUPABASE_URL || '';
+const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY || BUILTIN_SUPABASE_ANON_KEY || '';
 
 // Clean Supabase URL (strip /rest/v1 or trailing slashes if passed)
 const cleanSupabaseUrl = (url: string): string => {
