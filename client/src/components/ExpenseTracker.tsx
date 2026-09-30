@@ -3042,7 +3042,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
           </div>
         </div>
       )}
-
+      
       {/* Floating Action Toast */}
       {actionToast && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-2xl text-xs font-bold border border-gray-800 dark:border-gray-200 animate-in slide-in-from-bottom-5 duration-200">
