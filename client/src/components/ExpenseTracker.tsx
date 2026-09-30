@@ -187,6 +187,48 @@ const MONTH_ABBR = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
 
+/**
+ * Calendar-date helpers.
+ * IMPORTANT: expense.date is a calendar date, not a UTC timestamp.
+ * Never use toISOString().split('T')[0] for UI/business-day calculations
+ * because UTC conversion can move an expense across midnight.
+ */
+const pad2 = (value: number): string => String(value).padStart(2, '0');
+
+const getLocalDateKey = (date = new Date()): string =>
+  `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+
+const normalizeExpenseDateKey = (value?: string | null): string => {
+  if (!value) return '';
+  const raw = String(value).trim();
+  if (!raw) return '';
+
+  // Stored Excel/manual dates are normally YYYY-MM-DD. Preserve the
+  // calendar day exactly; do not parse it through UTC.
+  const dateOnly = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (dateOnly) return dateOnly[1];
+
+  // Only fall back to Date parsing for genuinely timestamp-like values.
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? '' : getLocalDateKey(parsed);
+};
+
+const getYesterdayDateKey = (from = new Date()): string => {
+  const date = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  date.setDate(date.getDate() - 1);
+  return getLocalDateKey(date);
+};
+
+const getStartOfLocalWeek = (from = new Date()): Date => {
+  const date = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const mondayOffset = (date.getDay() + 6) % 7;
+  date.setDate(date.getDate() - mondayOffset);
+  return date;
+};
+
+const isDebit = (expense: ExpenseItem): boolean => !isCreditTransaction(expense);
+
+
 // Helper to reliably find all expenses originating from an Excel sheet upload
 export const getMatchingExpensesForSheet = (
   log: ExcelImportLog,
@@ -641,7 +683,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   const [formName, setFormName] = useState('');
   const [formAmount, setFormAmount] = useState('');
   const [formCategory, setFormCategory] = useState('Food & Dining');
-  const [formDate, setFormDate] = useState(new Date().toISOString().split('T')[0]);
+  const [formDate, setFormDate] = useState(getLocalDateKey());
   const [formPaymentMethod, setFormPaymentMethod] = useState<PaymentMethod | string>('Credit Card');
   const [formBillingCycle, setFormBillingCycle] = useState<ExpenseBillingCycle>('one-time');
   const [formNotes, setFormNotes] = useState('');
@@ -672,7 +714,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       setFormBillingCycle('one-time');
       setFormDirection('DEBIT');
     }
-    setFormDate(new Date().toISOString().split('T')[0]);
+    setFormDate(getLocalDateKey());
     setFormPaymentMethod('Credit Card');
     setEditingExpense(null);
     setShowAddModal(true);
@@ -684,7 +726,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     setFormName(item.name);
     setFormAmount(item.amount.toString());
     setFormCategory(item.category);
-    setFormDate(item.date || new Date().toISOString().split('T')[0]);
+    setFormDate(item.date || getLocalDateKey());
     setFormPaymentMethod(item.paymentMethod || 'Credit Card');
     setFormBillingCycle(item.billingCycle || 'one-time');
     setFormNotes(item.notes || '');
@@ -701,7 +743,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       name: preset.name,
       amount: preset.amount,
       category: preset.category,
-      date: new Date().toISOString().split('T')[0],
+      date: getLocalDateKey(),
       paymentMethod: 'UPI / Debit',
       billingCycle: 'one-time',
       notes: preset.note || '',
@@ -758,57 +800,68 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
 
   // Calculated Stats
   const stats = useMemo(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
     const now = new Date();
+    const todayKey = getLocalDateKey(now);
+    const monday = getStartOfLocalWeek(now);
 
-    // Sum for Today (Debits only - credits do not inflate spending)
+    // TODAY = exact local calendar day on the user's device/browser.
+    // Expense dates are treated as calendar dates, never UTC timestamps.
     const todayTotal = currentExpenses
-      .filter((e) => e.date === todayStr && !isCreditTransaction(e))
-      .reduce((sum, e) => sum + (e.amount || 0), 0);
+      .filter((e) => normalizeExpenseDateKey(e.date) === todayKey && isDebit(e))
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
 
-    // Sum for This Week (Starting Monday) (Debits only)
-    const currentDayOfWeek = (now.getDay() + 6) % 7; // 0 for Monday
-    const monday = new Date(now);
-    monday.setDate(now.getDate() - currentDayOfWeek);
-    monday.setHours(0, 0, 0, 0);
+    // THIS WEEK = Monday through the current local calendar day, inclusive.
+    // Compare YYYY-MM-DD keys so timezone/DST cannot move a transaction into
+    // the previous or next day.
+    const mondayKey = getLocalDateKey(monday);
     const weekTotal = currentExpenses
       .filter((e) => {
-        if (!e.date) return false;
-        const d = new Date(e.date + 'T00:00:00');
-        return d >= monday && d <= now && !isCreditTransaction(e);
+        const key = normalizeExpenseDateKey(e.date);
+        return Boolean(key) && key >= mondayKey && key <= todayKey && isDebit(e);
       })
-      .reduce((sum, e) => sum + (e.amount || 0), 0);
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
 
-    // Sum for Selected Month (Debits only)
-    const selectedPrefix = `${selectedYear}-${String(selectedMonthIndex + 1).padStart(2, '0')}`;
-    const monthExpenses = currentExpenses.filter((e) => (e.date || '').startsWith(selectedPrefix));
-    const monthDebits = monthExpenses.filter((e) => !isCreditTransaction(e));
-    const monthCredits = monthExpenses.filter((e) => isCreditTransaction(e));
-    const monthTotal = monthDebits.reduce((sum, e) => sum + (e.amount || 0), 0);
-    const monthCreditsTotal = monthCredits.reduce((sum, e) => sum + (e.amount || 0), 0);
+    // SELECTED MONTH = selected calendar month, debits only.
+    const selectedPrefix = `${selectedYear}-${pad2(selectedMonthIndex + 1)}`;
+    const monthExpenses = currentExpenses.filter(
+      (e) => normalizeExpenseDateKey(e.date).startsWith(selectedPrefix)
+    );
+    const monthDebits = monthExpenses.filter(isDebit);
+    const monthCredits = monthExpenses.filter((e) => !isDebit(e));
+    const monthTotal = monthDebits.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const monthCreditsTotal = monthCredits.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
 
-    // Previous Month Comparison (Debits only)
+    // PREVIOUS MONTH = selected month - 1, debits only.
     const prevMonthIndex = selectedMonthIndex === 0 ? 11 : selectedMonthIndex - 1;
     const prevYear = selectedMonthIndex === 0 ? selectedYear - 1 : selectedYear;
-    const prevPrefix = `${prevYear}-${String(prevMonthIndex + 1).padStart(2, '0')}`;
+    const prevPrefix = `${prevYear}-${pad2(prevMonthIndex + 1)}`;
     const prevMonthTotal = currentExpenses
-      .filter((e) => (e.date || '').startsWith(prevPrefix) && !isCreditTransaction(e))
-      .reduce((sum, e) => sum + (e.amount || 0), 0);
+      .filter((e) => normalizeExpenseDateKey(e.date).startsWith(prevPrefix) && isDebit(e))
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
 
-    let monthDiffPercent = 0;
-    if (prevMonthTotal > 0) {
-      monthDiffPercent = Math.round(((monthTotal - prevMonthTotal) / prevMonthTotal) * 100);
-    }
+    const monthDiffPercent =
+      prevMonthTotal > 0
+        ? Math.round(((monthTotal - prevMonthTotal) / prevMonthTotal) * 100)
+        : 0;
 
-    // Total of Active Subscriptions / month
+    // Active recurring debits only.
     const recurringTotal = currentExpenses
-      .filter((e) => e.billingCycle && e.billingCycle !== 'one-time' && e.active !== false && !isCreditTransaction(e))
+      .filter(
+        (e) =>
+          e.billingCycle &&
+          e.billingCycle !== 'one-time' &&
+          e.active !== false &&
+          isDebit(e)
+      )
       .reduce((sum, e) => {
         if (e.billingCycle === 'yearly') return sum + e.amount / 12;
         if (e.billingCycle === 'weekly') return sum + e.amount * 4.33;
         return sum + e.amount;
       }, 0);
 
+    // Invariant: todayDisplay can ONLY contain debit records whose normalized
+    // calendar date equals today's local YYYY-MM-DD key. Yesterday's records
+    // therefore cannot leak into the Today card.
     return {
       monthDisplay: monthTotal,
       monthCreditsTotal,
@@ -832,7 +885,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     let sourceExpenses = currentExpenses;
 
     if (categoryScope === 'month') {
-      const filtered = currentExpenses.filter((e) => (e.date || '').startsWith(selectedPrefix));
+      const filtered = currentExpenses.filter((e) => normalizeExpenseDateKey(e.date).startsWith(selectedPrefix));
       if (filtered.length > 0) {
         sourceExpenses = filtered;
       }
@@ -871,8 +924,8 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     }
 
     const selectedPrefix = `${selectedYear}-${String(selectedMonthIndex + 1).padStart(2, '0')}`;
-    const monthExpenses = currentExpenses.filter((e) => (e.date || '').startsWith(selectedPrefix) && !isCreditTransaction(e));
-    const source = monthExpenses.length > 0 ? monthExpenses : currentExpenses.filter((e) => !isCreditTransaction(e)).slice(0, 20);
+    const monthExpenses = currentExpenses.filter((e) => normalizeExpenseDateKey(e.date).startsWith(selectedPrefix) && !isCreditTransaction(e));
+    const source = monthExpenses;
 
     // Group actual debits by date
     const days: Record<string, number> = {};
@@ -975,28 +1028,22 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       );
     }
 
-    const todayStr = new Date().toISOString().split('T')[0];
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    const todayStr = getLocalDateKey();
+    const yesterdayStr = getYesterdayDateKey();
 
     const selectedPrefix = `${selectedYear}-${String(selectedMonthIndex + 1).padStart(2, '0')}`;
 
     if (activeFilter === 'today') {
       list = list.filter((e) => e.date === todayStr);
     } else if (activeFilter === 'week') {
-      const now = new Date();
-      const currentDayOfWeek = (now.getDay() + 6) % 7; // 0 for Monday
-      const monday = new Date(now);
-      monday.setDate(now.getDate() - currentDayOfWeek);
-      monday.setHours(0, 0, 0, 0);
+      const todayKey = getLocalDateKey();
+      const mondayKey = getLocalDateKey(getStartOfLocalWeek());
       list = list.filter((e) => {
-        if (!e.date) return false;
-        const d = new Date(e.date + 'T00:00:00');
-        return d >= monday;
+        const key = normalizeExpenseDateKey(e.date);
+        return Boolean(key) && key >= mondayKey && key <= todayKey;
       });
     } else if (activeFilter === 'month') {
-      list = list.filter((e) => (e.date || '').startsWith(selectedPrefix));
+      list = list.filter((e) => normalizeExpenseDateKey(e.date).startsWith(selectedPrefix));
     } else if (activeFilter === 'custom') {
       if (customDateRange.startDate && customDateRange.endDate) {
         list = list.filter((e) => {
@@ -1052,7 +1099,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
 
     const dateGroups: { key: string; label: string; items: ExpenseItem[] }[] = [];
     visibleSlice.forEach((item) => {
-      const dateKey = item.date || 'unknown';
+      const dateKey = normalizeExpenseDateKey(item.date) || 'unknown';
       const lastGroup = dateGroups[dateGroups.length - 1];
       if (lastGroup && lastGroup.key === dateKey) {
         lastGroup.items.push(item);
