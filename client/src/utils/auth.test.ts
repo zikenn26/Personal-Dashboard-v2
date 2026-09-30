@@ -19,10 +19,10 @@ beforeAll(() => {
 });
 
 describe('Authentication Engine & Persistence', () => {
-  it('rejects unregistered accounts and prompts creation', async () => {
+  it('rejects unregistered accounts with a generic message (no user enumeration)', async () => {
     const res = await Auth.signIn('nonexistent@example.com', '12345678');
     expect(res.success).toBe(false);
-    expect(res.message).toContain('Account not found');
+    expect(res.message).toContain('Invalid email or password');
   });
 
   it('creates and signs in new accounts via signUp with persistence', async () => {
@@ -43,32 +43,31 @@ describe('Authentication Engine & Persistence', () => {
     // Verify sign in with wrong password
     const wrongPassRes = await Auth.signIn('newuser@example.com', 'wrongpassword');
     expect(wrongPassRes.success).toBe(false);
-    expect(wrongPassRes.message).toContain('Incorrect password');
+    expect(wrongPassRes.message).toContain('Invalid email or password');
 
     // Verify sign out clears session
     await Auth.signOut();
     expect(Auth.getCurrentUser()).toBeNull();
   });
 
-  it('allows multi-device login without signing out other sessions', async () => {
-    // 1. Device 1 signs up
+  it('persists local credentials across a cleared session (re-login on the same device)', async () => {
+    // 1. Sign up on this device (Supabase not configured in this test env, so this exercises
+    // the offline local-credential fallback path)
     const res1 = await Auth.signUp('multidevice@example.com', 'PassDevice123', 'Multi Device User');
     expect(res1.success).toBe(true);
 
     const user1 = Auth.getCurrentUser();
     expect(user1?.email).toBe('multidevice@example.com');
 
-    // 2. Simulate Device 2 with fresh session (not yet logged in locally)
-    // Clear the active session key (simulating second device browser)
+    // 2. Simulate a cleared session (e.g. browser restart) without wiping stored credentials
     localStorage.removeItem('notion_os_auth_user_v1');
     expect(Auth.getCurrentUser()).toBeNull();
 
-    // 3. Device 2 logs in with the registered credentials
+    // 3. Signing back in should succeed against the locally stored password hash
     const loginRes2 = await Auth.signIn('multidevice@example.com', 'PassDevice123');
     expect(loginRes2.success).toBe(true);
     expect(loginRes2.user?.email).toBe('multidevice@example.com');
 
-    // Verify session is active on Device 2
     const user2 = Auth.getCurrentUser();
     expect(user2?.email).toBe('multidevice@example.com');
   });
