@@ -46,6 +46,7 @@ import { ExpenseTracker } from './components/ExpenseTracker';
 import { MediaGallery } from './components/MediaGallery';
 import { AchievementsWall } from './components/AchievementsWall';
 import { LifeTimeline } from './components/LifeTimeline';
+import { TrashView } from './components/TrashView';
 import { CommandPalette } from './components/CommandPalette';
 import { SettingsModal } from './components/SettingsModal';
 import { SmsExpenseModal } from './components/SmsExpenseModal';
