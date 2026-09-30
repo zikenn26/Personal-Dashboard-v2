@@ -1011,10 +1011,15 @@ export default function App() {
     Storage.setTodos(updated);
   };
 
-  const handleDeleteTodo = (id: string) => {
+    const handleDeleteTodo = (id: string) => {
+    const target = todos.find((t) => t.id === id);
     const updated = todos.filter((t) => t.id !== id);
     setTodos(updated);
     Storage.setTodos(updated);
+    if (target) {
+      Storage.moveToTrash('tasks', target, target.title);
+      setTrash(Storage.getTrash());
+    }
   };
 
   const handleClearCompletedTodos = () => {
@@ -1201,10 +1206,15 @@ export default function App() {
     Storage.setHabits(updated);
   };
 
-  const handleDeleteHabit = (id: string) => {
+    const handleDeleteHabit = (id: string) => {
+    const target = habits.find((h) => h.id === id);
     const updated = habits.filter((h) => h.id !== id);
     setHabits(updated);
     Storage.setHabits(updated);
+    if (target) {
+      Storage.moveToTrash('habits', target, target.title);
+      setTrash(Storage.getTrash());
+    }
   };
 
   const handleResetHabitWeek = () => {
@@ -1455,11 +1465,16 @@ export default function App() {
     Storage.setGoals(next);
   };
 
-  const handleDeleteGoal = (id: string) => {
+    const handleDeleteGoal = (id: string) => {
     Sound.click(settings.soundEnabled);
+    const target = goals.find((g) => g.id === id);
     const next = goals.filter((g) => g.id !== id);
     setGoals(next);
     Storage.setGoals(next);
+    if (target) {
+      Storage.moveToTrash('goals', target, target.title);
+      setTrash(Storage.getTrash());
+    }
   };
 
   // Expense Handlers
@@ -1587,8 +1602,15 @@ export default function App() {
       Storage.setExcelImportLogs([]);
     }
 
+    // 2b. Move each deleted expense into Trash (recoverable for 30 days)
+    itemsToDelete.forEach((item) => {
+      Storage.moveToTrash('expenses', item, `${item.name} (₹${Number(item.amount).toLocaleString()})`);
+    });
+    setTrash(Storage.getTrash());
+
     // 3. Immediately update React state with fresh array reference
     setExpenses([...nextExpenses]);
+
 
     // 4. Dispatch 'dashboard-data-updated' event to notify all listening components
     window.dispatchEvent(
@@ -1806,10 +1828,15 @@ export default function App() {
     Storage.setMedia(updated);
   };
 
-  const handleDeleteMedia = (id: string) => {
+    const handleDeleteMedia = (id: string) => {
+    const target = media.find((m) => m.id === id);
     const updated = media.filter((m) => m.id !== id);
     setMedia(updated);
     Storage.setMedia(updated);
+    if (target) {
+      Storage.moveToTrash('media', target, target.title);
+      setTrash(Storage.getTrash());
+    }
   };
 
   // Journal Handlers
@@ -1845,10 +1872,15 @@ export default function App() {
     Storage.setJournal(updated);
   };
 
-  const handleDeleteJournalEntry = (id: string) => {
+    const handleDeleteJournalEntry = (id: string) => {
+    const target = journal.find((j) => j.id === id);
     const updated = journal.filter((j) => j.id !== id);
     setJournal(updated);
     Storage.setJournal(updated);
+    if (target) {
+      Storage.moveToTrash('journal', target, target.title || 'Journal entry');
+      setTrash(Storage.getTrash());
+    }
   };
 
   // Project Handlers
@@ -1862,10 +1894,15 @@ export default function App() {
     Storage.setProjects(updated);
   };
 
-  const handleDeleteProject = (id: string) => {
+    const handleDeleteProject = (id: string) => {
+    const target = projects.find((p) => p.id === id);
     const updated = projects.filter((p) => p.id !== id);
     setProjects(updated);
     Storage.setProjects(updated);
+    if (target) {
+      Storage.moveToTrash('projects', target, target.title);
+      setTrash(Storage.getTrash());
+    }
   };
 
   const handleUpdateProjects = (updatedProjects: PortfolioProject[]) => {
@@ -1896,10 +1933,15 @@ export default function App() {
     Storage.setTimeline(next);
   };
 
-  const handleDeleteMilestone = (id: string) => {
+    const handleDeleteMilestone = (id: string) => {
+    const target = milestones.find((m) => m.id === id);
     const updated = milestones.filter((m) => m.id !== id);
     setMilestones(updated);
     Storage.setTimeline(updated);
+    if (target) {
+      Storage.moveToTrash('timeline', target, target.title);
+      setTrash(Storage.getTrash());
+    }
   };
 
   // Achievements Handlers
@@ -1913,10 +1955,15 @@ export default function App() {
     Storage.setAchievements(updated);
   };
 
-  const handleDeleteAchievement = (id: string) => {
+    const handleDeleteAchievement = (id: string) => {
+    const target = achievements.find((a) => a.id === id);
     const updated = achievements.filter((a) => a.id !== id);
     setAchievements(updated);
     Storage.setAchievements(updated);
+    if (target) {
+      Storage.moveToTrash('achievements', target, target.title);
+      setTrash(Storage.getTrash());
+    }
   };
 
   // Doodle Handlers
@@ -1932,10 +1979,108 @@ export default function App() {
     Storage.setDoodles(updated);
   };
 
-  const handleDeleteDoodle = (id: string) => {
+    const handleDeleteDoodle = (id: string) => {
+    const target = doodles.find((d) => d.id === id);
     const updated = doodles.filter((d) => d.id !== id);
     setDoodles(updated);
     Storage.setDoodles(updated);
+    if (target) {
+      Storage.moveToTrash('doodles', target, target.title || 'Doodle');
+      setTrash(Storage.getTrash());
+    }
+  };
+
+  // Trash Handlers: restore an item back into its original module, or remove it forever
+  const handleRestoreTrashItem = (trashId: string) => {
+    const item = trash.find((t) => t.id === trashId);
+    if (!item) return;
+    Sound.success(settings.soundEnabled);
+
+    switch (item.module) {
+      case 'tasks': {
+        const updated = [item.data, ...todos.filter((t) => t.id !== item.data.id)];
+        setTodos(updated);
+        Storage.setTodos(updated);
+        break;
+      }
+      case 'habits': {
+        const updated = [item.data, ...habits.filter((h) => h.id !== item.data.id)];
+        setHabits(updated);
+        Storage.setHabits(updated);
+        break;
+      }
+      case 'goals': {
+        const updated = [item.data, ...goals.filter((g) => g.id !== item.data.id)];
+        setGoals(updated);
+        Storage.setGoals(updated);
+        break;
+      }
+      case 'expenses': {
+        const updated = [item.data, ...expenses.filter((e) => e.id !== item.data.id)];
+        setExpenses(updated);
+        Storage.setExpenses(updated);
+        window.dispatchEvent(
+          new CustomEvent('dashboard-data-updated', {
+            detail: { module: 'expenses', updatedExpenses: updated },
+          })
+        );
+        flushAutoSyncImmediately({ ...Storage.getAllDataPayload(), expenses: updated });
+        break;
+      }
+      case 'media': {
+        const updated = [item.data, ...media.filter((m) => m.id !== item.data.id)];
+        setMedia(updated);
+        Storage.setMedia(updated);
+        break;
+      }
+      case 'journal': {
+        const updated = [item.data, ...journal.filter((j) => j.id !== item.data.id)];
+        setJournal(updated);
+        Storage.setJournal(updated);
+        break;
+      }
+      case 'projects': {
+        const updated = [item.data, ...projects.filter((p) => p.id !== item.data.id)];
+        setProjects(updated);
+        Storage.setProjects(updated);
+        break;
+      }
+      case 'timeline': {
+        const updated = [item.data, ...milestones.filter((m) => m.id !== item.data.id)].sort(
+          (a, b) => b.year - a.year
+        );
+        setMilestones(updated);
+        Storage.setTimeline(updated);
+        break;
+      }
+      case 'achievements': {
+        const updated = [item.data, ...achievements.filter((a) => a.id !== item.data.id)];
+        setAchievements(updated);
+        Storage.setAchievements(updated);
+        break;
+      }
+      case 'doodles': {
+        const updated = [item.data, ...doodles.filter((d) => d.id !== item.data.id)];
+        setDoodles(updated);
+        Storage.setDoodles(updated);
+        break;
+      }
+    }
+
+    Storage.removeFromTrash(trashId);
+    setTrash(Storage.getTrash());
+  };
+
+  const handlePermanentlyDeleteTrashItem = (trashId: string) => {
+    Sound.click(settings.soundEnabled);
+    Storage.removeFromTrash(trashId);
+    setTrash(Storage.getTrash());
+  };
+
+  const handleEmptyTrash = () => {
+    Sound.click(settings.soundEnabled);
+    Storage.emptyTrash();
+    setTrash([]);
   };
 
   // Global Export / Import / Reset
@@ -2113,8 +2258,10 @@ export default function App() {
     { id: 'expenses', label: 'Spending', icon: CreditCard, count: expenses.length, group: 'money' },
 
     // PRIVATE
+        // PRIVATE
     { id: 'vault', label: 'Vault', icon: Shield, count: vault.length, group: 'private' },
     { id: 'backup', label: 'Backup & Restore', icon: Database, count: undefined, group: 'private' },
+    { id: 'trash', label: 'Trash', icon: Trash2, count: trash.length || undefined, group: 'private' },
   ];
 
   const currentNav = navItems.find((n) => n.id === activeView) || navItems[0];
@@ -2214,6 +2361,10 @@ export default function App() {
           onDeleteMedia={handleDeleteMedia}
           onAddVaultSecret={handleAddVaultSecret}
           onDeleteVaultSecret={handleDeleteVaultSecret}
+          trash={trash}
+          onRestoreTrashItem={handleRestoreTrashItem}
+          onPermanentlyDeleteTrashItem={handlePermanentlyDeleteTrashItem}
+          onEmptyTrash={handleEmptyTrash}
           onExportData={handleExportData}
           onImportData={handleImportData}
           onResetData={handleResetData}
@@ -3424,6 +3575,17 @@ export default function App() {
                   onAddMilestone={handleAddMilestone}
                   onUpdateMilestone={handleUpdateMilestone}
                   onDeleteMilestone={handleDeleteMilestone}
+                  soundEnabled={settings.soundEnabled}
+                />
+              )}
+
+              {/* VIEW: Trash */}
+              {activeView === 'trash' && (
+                <TrashView
+                  trash={trash}
+                  onRestore={handleRestoreTrashItem}
+                  onDeleteForever={handlePermanentlyDeleteTrashItem}
+                  onEmptyTrash={handleEmptyTrash}
                   soundEnabled={settings.soundEnabled}
                 />
               )}
