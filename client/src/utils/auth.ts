@@ -10,6 +10,63 @@ import { hashPassword, verifyPasswordHash } from './crypto';
 const AUTH_STORAGE_KEY = 'notion_os_auth_user_v1';
 const SAVED_USERS_KEY = 'notion_os_saved_accounts_v1';
 const USER_CREDENTIALS_KEY = 'notion_os_user_credentials_v1';
+const LOGIN_ATTEMPTS_KEY = 'notion_os_login_attempts_v1';
+
+// Client-side login throttling to slow down brute-force attempts against the
+// local/cloud credential fallback path (Supabase Auth already rate-limits server-side).
+const MAX_FAILED_ATTEMPTS = 5;
+const BASE_LOCKOUT_MS = 30_000;
+const MAX_LOCKOUT_MS = 15 * 60_000;
+
+interface LoginAttemptRecord {
+  count: number;
+  lockUntil: number;
+}
+
+const getAttemptsMap = (): Record<string, LoginAttemptRecord> => {
+  try {
+    const raw = localStorage.getItem(LOGIN_ATTEMPTS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {
+    // ignore
+  }
+  return {};
+};
+
+const saveAttemptsMap = (map: Record<string, LoginAttemptRecord>) => {
+  try {
+    localStorage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify(map));
+  } catch {
+    // ignore
+  }
+};
+
+const checkLoginThrottle = (email: string): { allowed: boolean; retryAfterSec: number } => {
+  const map = getAttemptsMap();
+  const record = map[email];
+  if (record && record.lockUntil > Date.now()) {
+    return { allowed: false, retryAfterSec: Math.ceil((record.lockUntil - Date.now()) / 1000) };
+  }
+  return { allowed: true, retryAfterSec: 0 };
+};
+
+const recordLoginFailure = (email: string) => {
+  const map = getAttemptsMap();
+  const record = map[email] || { count: 0, lockUntil: 0 };
+  record.count += 1;
+  if (record.count >= MAX_FAILED_ATTEMPTS) {
+    const backoff = BASE_LOCKOUT_MS * Math.pow(2, record.count - MAX_FAILED_ATTEMPTS);
+    record.lockUntil = Date.now() + Math.min(backoff, MAX_LOCKOUT_MS);
+  }
+  map[email] = record;
+  saveAttemptsMap(map);
+};
+
+const recordLoginSuccess = (email: string) => {
+  const map = getAttemptsMap();
+  delete map[email];
+  saveAttemptsMap(map);
+};
 
 // Generate safe user identifier for per-user cloud database workspace partition
 export const getUserWorkspaceKey = (user: AuthUser | null): string => {
@@ -19,7 +76,9 @@ export const getUserWorkspaceKey = (user: AuthUser | null): string => {
   return `user_${cleanEmail}`;
 };
 
-// Helper to store & retrieve credentials map securely in local browser storage only
+// Helper to store & retrieve credentials map securely in local browser storage only.
+// This is ONLY used as an offline fallback when Supabase is not configured; when Supabase
+// is configured, Supabase Auth is the sole source of truth for credentials (see signIn/signUp).
 const getLocalCredentialsMap = (): Record<string, { user: AuthUser; pass: string }> => {
   try {
     const raw = localStorage.getItem(USER_CREDENTIALS_KEY);
@@ -38,66 +97,6 @@ const saveLocalCredential = async (email: string, pass: string, user: AuthUser) 
   } catch (e) {
     console.warn('Failed to save local credential:', e);
   }
-};
-
-/**
- * Persist encrypted account credentials to Supabase for secure multi-device sign in.
- */
-export const saveCloudCredential = async (cleanEmail: string, passHash: string, user: AuthUser) => {
-  const client = getSupabaseClient();
-  if (!client || !isSupabaseConfigured()) return;
-  try {
-    const authIdentifier = `account_auth_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
-    await client.from('user_workspaces').upsert(
-      {
-        user_identifier: authIdentifier,
-        user_email: cleanEmail,
-        workspace_data: {
-          account: {
-            user,
-            passHash,
-            updatedAt: Date.now(),
-          },
-        },
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_identifier' }
-    );
-  } catch (err) {
-    console.warn('Could not backup account auth credential to cloud:', err);
-  }
-};
-
-/**
- * Retrieve account credentials from cloud to verify login on a secondary device.
- */
-export const fetchCloudCredential = async (
-  cleanEmail: string
-): Promise<{ user: AuthUser; passHash: string } | null> => {
-  const client = getSupabaseClient();
-  if (!client || !isSupabaseConfigured()) return null;
-  try {
-    const authIdentifier = `account_auth_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
-    const { data, error } = await client
-      .from('user_workspaces')
-      .select('workspace_data')
-      .eq('user_identifier', authIdentifier)
-      .maybeSingle();
-
-    if (error || !data || !data.workspace_data?.account) {
-      return null;
-    }
-    const acct = data.workspace_data.account;
-    if (acct?.user && acct?.passHash) {
-      if (acct.user.id.includes('mock')) {
-        acct.user.id = `usr_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
-      }
-      return { user: acct.user, passHash: acct.passHash };
-    }
-  } catch (err) {
-    console.warn('Failed to fetch cloud account credential:', err);
-  }
-  return null;
 };
 
 export const Auth = {
@@ -188,6 +187,13 @@ export const Auth = {
     pass: string
   ): Promise<{ success: boolean; user?: AuthUser; message?: string }> => {
     const cleanEmail = email.trim().toLowerCase();
+    const throttle = checkLoginThrottle(cleanEmail);
+    if (!throttle.allowed) {
+      return {
+        success: false,
+        message: `Too many failed attempts. Please try again in ${throttle.retryAfterSec}s.`,
+      };
+    }
     const cleanPass = pass.trim();
 
     if (!cleanEmail) {
@@ -217,25 +223,22 @@ export const Auth = {
             provider: 'supabase',
           };
           Auth.setCurrentUser(user);
-          await saveLocalCredential(cleanEmail, cleanPass, user);
-          const passHash = await hashPassword(cleanPass);
-          void saveCloudCredential(cleanEmail, passHash, user);
+          recordLoginSuccess(cleanEmail);
           return { success: true, user, message: 'Signed in via Supabase Cloud' };
         }
+        // If Supabase rejects the credentials, fall through to check the local-device
+        // account store below (handles accounts created before Supabase was configured).
       } catch (err: any) {
         console.warn('Supabase Auth attempt:', err);
       }
     }
 
-    // 2. Check registered local accounts credentials on this device
+    // 2. Local-device account fallback (covers accounts never registered in Supabase Auth)
     const credentialsMap = getLocalCredentialsMap();
     const storedRecord = credentialsMap[cleanEmail];
 
     if (storedRecord) {
-      const storedPass = storedRecord.pass;
-      const valid = storedPass.trim().startsWith('{')
-        ? await verifyPasswordHash(storedPass, cleanPass)
-        : storedPass === cleanPass;
+      const valid = await verifyPasswordHash(storedRecord.pass, cleanPass);
       if (valid) {
         let user = { ...storedRecord.user, lastLoginAt: Date.now() };
         if (user.id.includes('mock')) {
@@ -243,41 +246,79 @@ export const Auth = {
         }
         await saveLocalCredential(cleanEmail, cleanPass, user);
         Auth.setCurrentUser(user);
-        const passHash = await hashPassword(cleanPass);
-        void saveCloudCredential(cleanEmail, passHash, user);
+        recordLoginSuccess(cleanEmail);
         return { success: true, user, message: 'Signed in successfully' };
       } else {
-        return { success: false, message: 'Incorrect password. Please try again.' };
+        recordLoginFailure(cleanEmail);
+        return { success: false, message: 'Invalid email or password.' };
       }
     }
 
-    // 3. Multi-device cloud lookup: Account created on another device
-    const cloudRecord = await fetchCloudCredential(cleanEmail);
-    if (cloudRecord) {
-      const valid = await verifyPasswordHash(cloudRecord.passHash, cleanPass);
-      if (valid) {
-        let user = { ...cloudRecord.user, lastLoginAt: Date.now() };
-        if (user.id.includes('mock')) {
-          user.id = `usr_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
-        }
-        // Cache credentials locally on this device for offline availability
-        await saveLocalCredential(cleanEmail, cleanPass, user);
-        Auth.setCurrentUser(user);
-        return { success: true, user, message: 'Signed in successfully across devices!' };
-      } else {
-        return { success: false, message: 'Incorrect password. Please try again.' };
-      }
-    }
-
-    // 4. If account is not registered anywhere yet, require signup
+    // 3. Account not registered anywhere
+    recordLoginFailure(cleanEmail);
     return {
       success: false,
-      message: 'Account not found. Please create an account by clicking "Create Account" first.',
+      message: 'Invalid email or password.',
     };
   },
 
   /**
-   * Sign Up / Create a new personalized account with multi-device cloud persistence
+   * Send a password reset email via Supabase Auth. The recovery link expires in
+   * 1 hour by default (configured in the Supabase Dashboard, not overridden here).
+   */
+  requestPasswordReset: async (email: string): Promise<{ success: boolean; message: string }> => {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      return { success: false, message: 'Please enter a valid email address.' };
+    }
+    const client = getSupabaseClient();
+    if (!client || !isSupabaseConfigured()) {
+      return {
+        success: false,
+        message: 'Password reset requires cloud sync to be configured for this app.',
+      };
+    }
+    try {
+      const redirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
+      await client.auth.resetPasswordForEmail(cleanEmail, redirectTo ? { redirectTo } : undefined);
+    } catch (err) {
+      console.warn('resetPasswordForEmail error:', err);
+    }
+    // Always return a generic success message regardless of whether the account exists,
+    // to avoid leaking which emails are registered.
+    return {
+      success: true,
+      message: 'If an account exists for that email, a password reset link has been sent (expires in 1 hour).',
+    };
+  },
+
+  /**
+   * Complete a password reset after the user follows the emailed recovery link.
+   * Supabase automatically establishes a temporary "recovery" session from the link;
+   * this simply sets the new password on that session.
+   */
+  completePasswordRecovery: async (newPassword: string): Promise<{ success: boolean; message: string }> => {
+    const cleanNew = newPassword.trim();
+    if (!cleanNew || cleanNew.length < 8) {
+      return { success: false, message: 'New password must be at least 8 characters.' };
+    }
+    const client = getSupabaseClient();
+    if (!client || !isSupabaseConfigured()) {
+      return { success: false, message: 'Cloud sync is not configured; cannot complete password reset.' };
+    }
+    try {
+      const { error } = await client.auth.updateUser({ password: cleanNew });
+      if (error) {
+        return { success: false, message: error.message || 'Failed to update password.' };
+      }
+      return { success: true, message: 'Password updated successfully. You can now sign in.' };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Failed to update password.' };
+    }
+  },
+
+  /**
+   * Sign Up / Create a new personalized account
    */
   signUp: async (
     email: string,
@@ -290,8 +331,8 @@ export const Auth = {
     if (!cleanEmail || !cleanEmail.includes('@')) {
       return { success: false, message: 'Please enter a valid email address.' };
     }
-    if (!cleanPass || cleanPass.length < 6) {
-      return { success: false, message: 'Password must be at least 6 characters.' };
+    if (!cleanPass || cleanPass.length < 8) {
+      return { success: false, message: 'Password must be at least 8 characters.' };
     }
 
     const displayName =
@@ -300,8 +341,6 @@ export const Auth = {
         .split('@')[0]
         .replace(/[\._]/g, ' ')
         .replace(/\b\w/g, (c) => c.toUpperCase());
-
-    const passHash = await hashPassword(cleanPass);
 
     // 1. Attempt Supabase Sign Up if available
     const client = getSupabaseClient();
@@ -326,17 +365,25 @@ export const Auth = {
             lastLoginAt: Date.now(),
             provider: 'supabase',
           };
-          await saveLocalCredential(cleanEmail, cleanPass, user);
-          await saveCloudCredential(cleanEmail, passHash, user);
           Auth.setCurrentUser(user);
           return { success: true, user, message: 'Account created successfully in Supabase Cloud!' };
+        }
+        if (error) {
+          // Only hard-fail when the account genuinely already exists in Supabase; for any other
+          // failure (email confirmation required, send-rate-limited, offline, etc.) fall through
+          // to the local-device account below so temp/offline accounts keep working.
+          const alreadyExists = /already registered|already exists/i.test(error.message || '');
+          if (alreadyExists) {
+            return { success: false, message: error.message };
+          }
+          console.warn('Supabase sign up rejected, falling back to local account:', error.message);
         }
       } catch (err) {
         console.warn('Supabase sign up error:', err);
       }
     }
 
-    // 2. Multi-device registered account creation
+    // 2. Local-device account fallback (used when Supabase is unset, or unavailable/unconfirmed)
     const user: AuthUser = {
       id: `usr_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`,
       email: cleanEmail,
@@ -346,13 +393,12 @@ export const Auth = {
       provider: 'local',
     };
     await saveLocalCredential(cleanEmail, cleanPass, user);
-    await saveCloudCredential(cleanEmail, passHash, user);
     Auth.setCurrentUser(user);
     return { success: true, user, message: 'Account created successfully!' };
   },
 
   /**
-   * Change Password with strict current password validation and multi-device cloud persistence
+   * Change Password with strict current password validation
    */
   changePassword: async (
     currentPass: string,
@@ -369,52 +415,45 @@ export const Auth = {
     if (!cleanCurrent) {
       return { success: false, message: 'Please enter your current password.' };
     }
-    if (!cleanNew || cleanNew.length < 6) {
-      return { success: false, message: 'New password must be at least 6 characters long.' };
+    if (!cleanNew || cleanNew.length < 8) {
+      return { success: false, message: 'New password must be at least 8 characters long.' };
     }
     if (cleanNew === cleanCurrent) {
       return { success: false, message: 'New password cannot be identical to current password.' };
     }
 
-    // 1. Verify current password against local credentials
-    const credentialsMap = getLocalCredentialsMap();
-    const storedRecord = credentialsMap[cleanEmail];
-    let isCurrentValid = false;
+    const client = getSupabaseClient();
 
-    if (storedRecord && storedRecord.pass) {
-      const storedPass = storedRecord.pass;
-      isCurrentValid = storedPass.trim().startsWith('{')
-        ? await verifyPasswordHash(storedPass, cleanCurrent)
-        : storedPass === cleanCurrent;
-    }
-
-    // 2. If not verified locally, verify against cloud credentials
-    if (!isCurrentValid) {
-      const cloudRecord = await fetchCloudCredential(cleanEmail);
-      if (cloudRecord && cloudRecord.passHash) {
-        isCurrentValid = await verifyPasswordHash(cloudRecord.passHash, cleanCurrent);
+    // 1. If this is a Supabase-backed account, verify + update via Supabase Auth directly
+    if (client && isSupabaseConfigured() && user.provider === 'supabase') {
+      try {
+        const { error: verifyError } = await client.auth.signInWithPassword({
+          email: cleanEmail,
+          password: cleanCurrent,
+        });
+        if (verifyError) {
+          return { success: false, message: 'Current password is incorrect. Please check and try again.' };
+        }
+        const { error: updateError } = await client.auth.updateUser({ password: cleanNew });
+        if (updateError) {
+          return { success: false, message: updateError.message || 'Failed to update password.' };
+        }
+        return { success: true, message: 'Password updated successfully!' };
+      } catch (err: any) {
+        return { success: false, message: err?.message || 'Failed to update password.' };
       }
     }
+
+    // 2. Offline/local account: verify against the locally stored hash
+    const credentialsMap = getLocalCredentialsMap();
+    const storedRecord = credentialsMap[cleanEmail];
+    const isCurrentValid = storedRecord ? await verifyPasswordHash(storedRecord.pass, cleanCurrent) : false;
 
     if (!isCurrentValid) {
       return { success: false, message: 'Current password is incorrect. Please check and try again.' };
     }
 
-    // 3. Update password in Supabase Auth if applicable
-    const client = getSupabaseClient();
-    if (client && isSupabaseConfigured() && user.provider === 'supabase') {
-      try {
-        await client.auth.updateUser({ password: cleanNew });
-      } catch (err) {
-        console.warn('Supabase updateUser password notice:', err);
-      }
-    }
-
-    // 4. Hash new password with PBKDF2/AES-GCM and persist to local and cloud storage
-    const newPassHash = await hashPassword(cleanNew);
     await saveLocalCredential(cleanEmail, cleanNew, user);
-    await saveCloudCredential(cleanEmail, newPassHash, user);
-
     return { success: true, message: 'Password updated successfully!' };
   },
 
@@ -457,21 +496,11 @@ export const Auth = {
       // ignore
     }
 
-    // Update in Supabase cloud credential
-    try {
-      const cloudRecord = await fetchCloudCredential(user.email);
-      if (cloudRecord) {
-        await saveCloudCredential(user.email, cloudRecord.passHash, updatedUser);
-      }
-    } catch {
-      // ignore
-    }
-
     return updatedUser;
   },
 
   /**
-   * Update User Avatar URL across local session, saved accounts, and Supabase cloud credentials
+   * Update User Avatar URL across local session, saved accounts, and Supabase user metadata
    */
   updateCurrentUserAvatar: async (avatarUrl: string): Promise<AuthUser | null> => {
     const user = Auth.getCurrentUser();
@@ -519,16 +548,6 @@ export const Auth = {
       }
     }
 
-    // Update in Supabase cloud credential
-    try {
-      const cloudRecord = await fetchCloudCredential(user.email);
-      if (cloudRecord) {
-        await saveCloudCredential(user.email, cloudRecord.passHash, updatedUser);
-      }
-    } catch {
-      // ignore
-    }
-
     return updatedUser;
   },
 
@@ -536,6 +555,16 @@ export const Auth = {
    * Sign Out current device only (does not disconnect other active devices)
    */
   signOut: async () => {
+    // Revoke the live Supabase session/JWT; clearing local storage alone leaves the
+    // access & refresh tokens valid and subject to silent auto-refresh.
+    const client = getSupabaseClient();
+    if (client && isSupabaseConfigured()) {
+      try {
+        await client.auth.signOut();
+      } catch (err) {
+        console.warn('Supabase signOut error:', err);
+      }
+    }
     Auth.setCurrentUser(null);
   },
 };
