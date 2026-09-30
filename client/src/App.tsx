@@ -33,8 +33,6 @@ import {
   TrashModule,
 } from './types';
 
-} from './types';
-
 // Component Imports
 import { DashboardHomeView } from './components/DashboardHomeView';
 import { WorkfolioView } from './components/WorkfolioView';
