@@ -3,6 +3,7 @@ import { createServer } from "http";
 import path from "path";
 import { fileURLToPath } from "url";
 import { registerGeminiRoutes, setupGeminiLiveWebSocket } from "./geminiService.js";
+import { rateLimit, requireAuthForServerKeyUsage } from "./security.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,14 +15,39 @@ async function startServer() {
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-  // Global CORS and headers configuration
+  // Restrict CORS to explicitly allow-listed origins instead of "*"
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+
   app.use((req, res, next) => {
-    res.setHeader("Access-Control-Allow-Origin", "*");
+    const origin = req.headers.origin;
+    if (origin && allowedOrigins.includes(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Vary", "Origin");
+    } else if (allowedOrigins.length === 0 && process.env.NODE_ENV !== "production") {
+      // Dev convenience only: no allow-list configured outside production
+      res.setHeader("Access-Control-Allow-Origin", origin || "*");
+    }
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD");
-    res.setHeader("Access-Control-Allow-Headers", "*");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-gemini-api-key");
     if (req.method === "OPTIONS") {
       return res.sendStatus(204);
     }
+    next();
+  });
+
+  // Security headers: CSP, HSTS, and standard hardening headers on every response
+  app.use((_req, res, next) => {
+    res.setHeader(
+      "Content-Security-Policy",
+      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'"
+    );
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.setHeader("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
     next();
   });
 
@@ -31,8 +57,16 @@ async function startServer() {
   // Register Gemini Chat, Commands, TTS and Health routes on /api/gemini/*
   registerGeminiRoutes(app);
 
+  // Baseline rate limiting on every API route to blunt abuse/DoS attempts
+  app.use("/api/", rateLimit({ windowMs: 60_000, max: 60, keyPrefix: "api" }));
+
+  const hasClientOwnGroqKey = (req: express.Request): boolean => {
+    const auth = req.headers.authorization;
+    return Boolean(auth && auth !== "Bearer" && auth !== "Bearer ");
+  };
+
   // Proxy /api/groq to Groq API backend
-  app.all("/api/groq*", async (req, res) => {
+  app.all("/api/groq*", requireAuthForServerKeyUsage(hasClientOwnGroqKey), async (req, res) => {
     try {
       const subPath = req.originalUrl.replace(/^\/api\/groq/, "");
       const targetUrl = `https://api.groq.com/openai/v1${subPath}`;
@@ -70,7 +104,8 @@ async function startServer() {
       const buf = await upstreamRes.arrayBuffer();
       res.send(Buffer.from(buf));
     } catch (err: any) {
-      res.status(502).json({ error: "Groq proxy error", message: err?.message });
+      console.error("[groq proxy]", err);
+      res.status(502).json({ error: "Upstream service unavailable" });
     }
   });
 
@@ -108,7 +143,8 @@ async function startServer() {
       const buf = await upstreamRes.arrayBuffer();
       res.send(Buffer.from(buf));
     } catch (err: any) {
-      res.status(502).json({ error: "Supabase proxy error", message: err?.message });
+      console.error("[supabase proxy]", err);
+      res.status(502).json({ error: "Upstream service unavailable" });
     }
   });
 
@@ -121,7 +157,8 @@ async function startServer() {
       const data = await upstreamRes.json();
       res.status(upstreamRes.status).json(data);
     } catch (err: any) {
-      res.status(502).json({ error: "Weather proxy error", message: err?.message });
+      console.error("[weather proxy]", err);
+      res.status(502).json({ error: "Upstream service unavailable" });
     }
   });
 
@@ -141,6 +178,13 @@ async function startServer() {
   // Handle client-side routing - serve index.html for all other routes
   app.get("*", (_req, res) => {
     res.sendFile(path.join(staticPath, "index.html"));
+  });
+
+  // Global error handler: never leak stack traces or internal details to clients
+  app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error(`[unhandled error] ${req.method} ${req.originalUrl}:`, err);
+    if (res.headersSent) return;
+    res.status(500).json({ error: "Internal server error" });
   });
 
   const PORT = 3000;
