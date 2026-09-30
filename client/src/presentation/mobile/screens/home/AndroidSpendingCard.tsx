@@ -10,6 +10,35 @@ const MONTH_ABBR = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
 
+/**
+ * Expense dates are calendar dates in the user's local timezone.
+ *
+ * IMPORTANT:
+ * Do not use `toISOString().split('T')[0]` for these values.
+ * `toISOString()` converts the Date to UTC first, which can shift a
+ * local calendar date to the previous/next day.
+ */
+const pad2 = (value: number): string => String(value).padStart(2, '0');
+
+const getLocalDateKey = (date: Date = new Date()): string =>
+  `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+
+const normalizeExpenseDateKey = (value?: string | null): string => {
+  if (!value) return '';
+
+  const raw = String(value).trim();
+  if (!raw) return '';
+
+  // Expense records normally use YYYY-MM-DD. Preserve that calendar date
+  // exactly rather than parsing it as a UTC timestamp.
+  const dateOnlyMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (dateOnlyMatch) return dateOnlyMatch[1];
+
+  // Fallback for legacy values containing a full timestamp.
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? '' : getLocalDateKey(parsed);
+};
+
 export interface AndroidSpendingCardProps {
   expenses: ExpenseItem[];
   onNavigateToMoney: () => void;
@@ -21,19 +50,26 @@ export const AndroidSpendingCard: React.FC<AndroidSpendingCardProps> = ({
   onNavigateToMoney,
   onOpenAddExpense,
 }) => {
-  // Compute current month debits total (credits do not inflate spending)
-  const currentMonth = new Date().getMonth();
-  const currentYear = new Date().getFullYear();
+  // Use local calendar keys for date-only expense records.
+  const now = new Date();
+  const currentMonthPrefix = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
 
-  const monthDebits = expenses.filter((e) => {
-    if (!e.date) return false;
-    const d = new Date(e.date);
-    return d.getMonth() === currentMonth && d.getFullYear() === currentYear && !isCreditTransaction(e);
-  });
+  // Compute current month debits total.
+  // Using the YYYY-MM prefix avoids Date("YYYY-MM-DD") UTC parsing issues.
+  const totalMonthSpending = useMemo(() => {
+    return expenses
+      .filter((e) => {
+        const dateKey = normalizeExpenseDateKey(e.date);
+        return (
+          dateKey.startsWith(currentMonthPrefix) &&
+          !isCreditTransaction(e)
+        );
+      })
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  }, [expenses, currentMonthPrefix]);
 
-  const totalMonthSpending = monthDebits.reduce((sum, e) => sum + (e.amount || 0), 0);
-
-  // ALWAYS sort by actual transaction date and time descending, strictly taking the 4 newest real transactions
+  // ALWAYS sort by actual transaction date and time descending,
+  // strictly taking the 4 newest real transactions.
   const recentExpenses = useMemo(() => {
     return [...expenses]
       .filter((e) => e && e.active !== false && Number(e.amount) > 0)
@@ -41,32 +77,44 @@ export const AndroidSpendingCard: React.FC<AndroidSpendingCardProps> = ({
       .slice(0, 4);
   }, [expenses]);
 
-  // Group the 4 recent transactions by exact calendar date, one header per date
+  // Group the 4 recent transactions by their local calendar date.
   const dateGroups = useMemo(() => {
-    const todayDateStr = new Date().toISOString().split('T')[0];
+    const todayDateStr = getLocalDateKey();
+
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayDateStr = yesterday.toISOString().split('T')[0];
+    const yesterdayDateStr = getLocalDateKey(yesterday);
 
     const formatGroupDateLabel = (dateStr: string): string => {
-      if (!dateStr) return 'Unknown Date';
-      if (dateStr === todayDateStr) return 'Today';
-      if (dateStr === yesterdayDateStr) return 'Yesterday';
-      const d = new Date(`${dateStr}T00:00:00`);
-      if (Number.isNaN(d.getTime())) return dateStr;
+      const normalizedDate = normalizeExpenseDateKey(dateStr);
+
+      if (!normalizedDate) return 'Unknown Date';
+      if (normalizedDate === todayDateStr) return 'Today';
+      if (normalizedDate === yesterdayDateStr) return 'Yesterday';
+
+      const d = new Date(`${normalizedDate}T00:00:00`);
+      if (Number.isNaN(d.getTime())) return normalizedDate;
+
       return `${d.getDate()} ${MONTH_ABBR[d.getMonth()]} ${d.getFullYear()}`;
     };
 
     const groups: { key: string; label: string; items: ExpenseItem[] }[] = [];
+
     recentExpenses.forEach((item) => {
-      const dateKey = item.date || 'unknown';
+      const dateKey = normalizeExpenseDateKey(item.date) || 'unknown';
       const lastGroup = groups[groups.length - 1];
+
       if (lastGroup && lastGroup.key === dateKey) {
         lastGroup.items.push(item);
       } else {
-        groups.push({ key: dateKey, label: formatGroupDateLabel(dateKey), items: [item] });
+        groups.push({
+          key: dateKey,
+          label: formatGroupDateLabel(dateKey),
+          items: [item],
+        });
       }
     });
+
     return groups;
   }, [recentExpenses]);
 
