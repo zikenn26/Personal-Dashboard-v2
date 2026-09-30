@@ -81,11 +81,12 @@ export interface AndroidShellProps {
 
   onAddExpense?: (item: Omit<ExpenseItem, 'id'>) => void;
   onUpdateExpense?: (id: string, updates: Partial<ExpenseItem>) => void;
-  onBatchAddExpenses?: (items: Omit<ExpenseItem, 'id'>[]) => void;
+  onBatchAddExpenses?: (items: Omit<ExpenseItem, 'id'>[], log?: any) => void;
   onToggleExpense?: (id: string) => void;
   onDeleteExpense?: (id: string) => void;
   onDeleteBatchExpenses?: (batchId: any) => void;
   onDeleteImportLog?: (logId: string) => void;
+  onClearAllExpenses?: () => void;
 
   onToggleHabitDay: (habitId: string, dayIndex: number) => void;
   onAddHabit?: (title: string, category: string, icon: string, color: string) => void;
@@ -207,6 +208,7 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
   onOpenProfile,
   onOpenSettings,
   onOpenSmsSettings,
+  onClearAllExpenses,
   onToggleDarkMode,
   onToggleSound,
   onRefresh,
@@ -414,6 +416,11 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
             onUpdateExpense={onUpdateExpense}
             onDeleteExpense={onDeleteExpense}
             onOpenSmsSettings={onOpenSmsSettings}
+            onClearAllExpenses={onClearAllExpenses}
+            onBatchAddExpenses={onBatchAddExpenses}
+            onDeleteBatchExpenses={onDeleteBatchExpenses}
+            onDeleteImportLog={onDeleteImportLog}
+            soundEnabled={settings.soundEnabled}
           />
         )}
 

@@ -2216,6 +2216,7 @@ export default function App() {
           onExportData={handleExportData}
           onImportData={handleImportData}
           onResetData={handleResetData}
+          onClearAllExpenses={handleClearAllExpenses}
           onOpenSearch={() => setIsCommandPaletteOpen(true)}
           onOpenProfile={() => setIsSettingsOpen(true)}
           onOpenSettings={() => setIsSettingsOpen(true)}

@@ -309,7 +309,7 @@ export const AndroidWeatherWidget: React.FC = () => {
           </div>
         </div>
 
-        {/* Action Controls: Single clean refresh button */}
+        {/* Action Controls: Strictly ONE clean refresh button */}
         <div className="flex items-center shrink-0">
           <button
             type="button"
@@ -320,10 +320,9 @@ export const AndroidWeatherWidget: React.FC = () => {
             disabled={loading}
             aria-label="Refresh location and weather"
             title="Refresh location and weather"
-            className="h-7 px-2.5 rounded-full bg-white dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] text-[10px] font-bold text-violet-700 dark:text-violet-300 flex items-center gap-1.5 hover:bg-violet-50 active:scale-95 transition-all cursor-pointer shadow-2xs shrink-0"
+            className="w-7 h-7 rounded-full bg-white dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] text-violet-700 dark:text-violet-300 flex items-center justify-center hover:bg-violet-50 active:scale-95 transition-all cursor-pointer shadow-2xs shrink-0"
           >
-            <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin text-violet-600' : 'text-violet-600 dark:text-violet-400'}`} />
-            <span>{loading ? 'Updating...' : 'Refresh'}</span>
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-violet-600' : 'text-violet-600 dark:text-violet-400'}`} />
           </button>
         </div>
       </div>

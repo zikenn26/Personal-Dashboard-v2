@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { CreditCard, Plus, Trash2, ArrowUpRight, TrendingDown, TrendingUp, Calendar, Tag, DollarSign, Wallet, FileSpreadsheet, MessageSquare, Edit3, Settings, RotateCw } from 'lucide-react';
+import { CreditCard, Plus, Trash2, ArrowUpRight, TrendingDown, TrendingUp, Calendar, Tag, DollarSign, Wallet, FileSpreadsheet, MessageSquare, Edit3, Settings, RotateCw, AlertTriangle, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { ExpenseItem, ExcelImportLog } from '../../../../types';
 import { nativeService } from '../../../../services/nativeService';
 import { smsExpenseService } from '../../../../services/smsExpenseService';
@@ -12,6 +12,8 @@ import { AndroidActionSheet, ActionSheetItem } from '../../components/AndroidAct
 import { QuickExpenseSheet } from '../../components/QuickExpenseSheet';
 import { ControlledSmsRescanModal } from '../../components/ControlledSmsRescanModal';
 import { SmsExpenseModal } from '../../../../components/SmsExpenseModal';
+import { ExcelImportModal } from '../../../../components/ExcelImportModal';
+import { getMatchingExpensesForSheet } from '../../../../components/ExpenseTracker';
 import { compareExpensesByDateTimeDesc, getTransactionDisplayTitle, isCreditTransaction } from '../../../../utils/expenseUtils';
 import { SmsTransaction } from '../../../../services/smsExpenseService';
 import { Capacitor } from '@capacitor/core';
@@ -23,6 +25,11 @@ export interface AndroidMoneyScreenProps {
   onUpdateExpense?: (id: string, updates: Partial<ExpenseItem>) => void;
   onDeleteExpense?: (id: string) => void;
   onOpenSmsSettings?: () => void;
+  onClearAllExpenses?: () => void;
+  onBatchAddExpenses?: (items: Array<Omit<ExpenseItem, 'id'>>, log?: ExcelImportLog) => void;
+  onDeleteBatchExpenses?: (ids: string[]) => void;
+  onDeleteImportLog?: (logId: string) => void;
+  soundEnabled?: boolean;
 }
 
 type PeriodFilter = 'month' | 'today' | 'all';
@@ -34,6 +41,11 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   onUpdateExpense,
   onDeleteExpense,
   onOpenSmsSettings,
+  onClearAllExpenses,
+  onBatchAddExpenses,
+  onDeleteBatchExpenses,
+  onDeleteImportLog,
+  soundEnabled = true,
 }) => {
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('month');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -43,6 +55,20 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   const [activeActionExpense, setActiveActionExpense] = useState<ExpenseItem | null>(null);
   const [isRescanModalOpen, setIsRescanModalOpen] = useState(false);
   const [isSmsModalOpen, setIsSmsModalOpen] = useState(false);
+  const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
+  const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
+  const [showSheetLogs, setShowSheetLogs] = useState(false);
+  const [deleteSheetModal, setDeleteSheetModal] = useState<{
+    isOpen: boolean;
+    log: ExcelImportLog | null;
+    matchingCount: number;
+    matchingAmount: number;
+  }>({
+    isOpen: false,
+    log: null,
+    matchingCount: 0,
+    matchingAmount: 0,
+  });
 
   // Local reactive expenses mirror to ensure immediate display without requiring page reload
   const [localExpenses, setLocalExpenses] = useState<ExpenseItem[]>(expenses);
@@ -246,6 +272,63 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
     if (onDeleteExpense) onDeleteExpense(id);
   };
 
+  const handleExcelImportSuccess = (
+    newExpenses: Array<Omit<ExpenseItem, 'id'>>,
+    log: ExcelImportLog
+  ) => {
+    setIsExcelModalOpen(false);
+    if (onBatchAddExpenses) {
+      onBatchAddExpenses(newExpenses, log);
+    } else if (onAddExpense) {
+      newExpenses.forEach((item) => onAddExpense(item));
+    }
+    toast.success(`Imported ${log.addedCount} spendings from ${log.fileName}!`);
+  };
+
+  const handleOpenDeleteSheet = (log: ExcelImportLog) => {
+    void nativeService.triggerHaptic('warning');
+    const matching = getMatchingExpensesForSheet(log, activeExpenses);
+    const amount = matching.reduce((sum, item) => sum + (item.amount || 0), 0);
+    setDeleteSheetModal({
+      isOpen: true,
+      log,
+      matchingCount: matching.length,
+      matchingAmount: amount,
+    });
+  };
+
+  const handleConfirmDeleteSheet = (deleteSpendings: boolean) => {
+    const log = deleteSheetModal.log;
+    if (!log) return;
+    void nativeService.triggerHaptic('warning');
+
+    if (deleteSpendings) {
+      const matching = getMatchingExpensesForSheet(log, activeExpenses);
+      const matchingIds = matching.map((e) => e.id);
+      if (onDeleteBatchExpenses && matchingIds.length > 0) {
+        onDeleteBatchExpenses(matchingIds);
+      } else if (matchingIds.length > 0 && onDeleteExpense) {
+        matchingIds.forEach((id) => onDeleteExpense(id));
+      }
+    }
+
+    if (onDeleteImportLog) {
+      onDeleteImportLog(log.id);
+    }
+
+    setDeleteSheetModal({ isOpen: false, log: null, matchingCount: 0, matchingAmount: 0 });
+    toast.success(`Deleted sheet "${log.fileName}"`);
+  };
+
+  const handleConfirmClearAll = () => {
+    void nativeService.triggerHaptic('warning');
+    if (onClearAllExpenses) {
+      onClearAllExpenses();
+    }
+    setIsClearAllModalOpen(false);
+    toast.success('All transactions cleared successfully');
+  };
+
   const actionItems: ActionSheetItem[] = activeActionExpense
     ? [
         {
@@ -279,8 +362,8 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-1.5">
-          {/* Compact SMS Status Chip (Not a primary action, opens SMS settings) */}
+        <div className="flex items-center gap-1.5 flex-wrap justify-end">
+          {/* Compact SMS Status Chip */}
           <button
             type="button"
             onClick={handleSmsAction}
@@ -296,7 +379,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
             {smsPermissionStatus === 'granted' && isSmsEnabled ? (
               <>
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span>🟢 SMS Auto-Logging ON</span>
+                <span>🟢 SMS ON</span>
               </>
             ) : smsPermissionStatus === 'permanently_denied' ? (
               <>
@@ -325,6 +408,20 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
             <span>Rescan SMS</span>
           </button>
 
+          {/* Upload Excel Button */}
+          <button
+            type="button"
+            onClick={() => {
+              void nativeService.triggerHaptic('selection');
+              setIsExcelModalOpen(true);
+            }}
+            className="px-2.5 py-1.5 rounded-full border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-xs font-semibold flex items-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
+            title="Upload and extract expenses from Excel (.xlsx, .xls) or CSV"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>Upload Excel</span>
+          </button>
+
           {onAddExpense && (
             <button
               type="button"
@@ -341,32 +438,84 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         </div>
       </div>
 
-      {/* Spending Summary Card */}
-      <div className="p-4 rounded-3xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-md shadow-emerald-600/20 relative overflow-hidden">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold text-emerald-100 uppercase tracking-wider">
+      {/* Uploaded Spreadsheets Management Banner (when sheets exist) */}
+      {importLogs.length > 0 && (
+        <div className="p-2.5 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-800/60 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span className="text-xs font-bold text-emerald-950 dark:text-emerald-200">
+                Uploaded Spreadsheets ({importLogs.length})
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowSheetLogs(!showSheetLogs)}
+              className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 flex items-center gap-0.5 hover:underline cursor-pointer"
+            >
+              <span>{showSheetLogs ? 'Hide' : 'Manage'}</span>
+              {showSheetLogs ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            </button>
+          </div>
+
+          {showSheetLogs && (
+            <div className="space-y-1.5 pt-1">
+              {importLogs.map((log) => (
+                <div
+                  key={log.id}
+                  className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-[#121826] border border-emerald-100 dark:border-emerald-900/40 text-xs"
+                >
+                  <div className="min-w-0 flex-1 pr-2">
+                    <span className="font-semibold text-gray-900 dark:text-white block truncate">
+                      {log.fileName}
+                    </span>
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400 block truncate">
+                      {log.addedCount} items · ₹{Math.round(log.totalAmountAdded || 0).toLocaleString()} · {log.uploadDate ? new Date(log.uploadDate).toLocaleDateString() : 'Imported'}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleOpenDeleteSheet(log)}
+                    className="p-1 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 cursor-pointer transition-colors shrink-0"
+                    title={`Delete spreadsheet ${log.fileName}`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Compact Spending Summary Card */}
+      <div className="p-3 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-xs relative overflow-hidden">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[11px] font-semibold text-emerald-100 uppercase tracking-wider">
             Total Spending (This Month)
           </span>
-          <div className="p-1.5 rounded-full bg-white/15">
-            <Wallet className="w-4 h-4 text-white" />
+          <div className="p-1 rounded-lg bg-white/15">
+            <Wallet className="w-3.5 h-3.5 text-white" />
           </div>
         </div>
 
-        <div className="text-2xl font-black tracking-tight">
+        <div className="text-xl sm:text-2xl font-black tracking-tight leading-none mb-2">
           ₹{totalMonthSpending.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
         </div>
 
-        <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-white/15">
+        {/* Compact Grid: Today's Spend + Top Categories repositioned cleanly */}
+        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/15">
           <div>
-            <span className="text-[11px] text-emerald-200 block">Today&apos;s Spend</span>
-            <span className="text-sm font-bold">
+            <span className="text-[10px] text-emerald-200 block font-medium">Today&apos;s Spend</span>
+            <span className="text-xs sm:text-sm font-bold block">
               ₹{todaySpending.toLocaleString('en-IN')}
             </span>
           </div>
-          <div>
-            <span className="text-[11px] text-emerald-200 block">Top Category</span>
-            <span className="text-sm font-bold truncate block">
-              {categoryTotals[0]?.cat || 'None'}
+          <div className="min-w-0">
+            <span className="text-[10px] text-emerald-200 block font-medium truncate">Top Categories</span>
+            <span className="text-xs sm:text-sm font-bold block truncate" title={categoryTotals[0]?.cat}>
+              {categoryTotals[0] ? `${categoryTotals[0].cat} (₹${Math.round(categoryTotals[0].total)})` : 'None'}
             </span>
           </div>
         </div>
@@ -397,7 +546,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
       {categoryTotals.length > 0 && (
         <div className="space-y-1.5">
           <span className="text-xs font-bold text-gray-600 dark:text-gray-300 px-1">
-            Top Categories
+            Categories Filter
           </span>
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
             <button
@@ -412,7 +561,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
                   : 'bg-white dark:bg-[#121826] text-gray-600 dark:text-gray-400 border border-[#E8E5F3] dark:border-[#242D40]'
               }`}
             >
-              All Categories
+              All
             </button>
             {categoryTotals.map(({ cat, total }) => (
               <button
@@ -435,11 +584,26 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         </div>
       )}
 
-      {/* Header bar with count */}
+      {/* Header bar with count and Clear All action */}
       <div className="flex items-center justify-between px-1 pt-1">
         <span className="text-xs font-bold text-gray-600 dark:text-gray-300">
           Transactions ({filteredExpenses.length})
         </span>
+
+        {activeExpenses.length > 0 && onClearAllExpenses && (
+          <button
+            type="button"
+            onClick={() => {
+              void nativeService.triggerHaptic('selection');
+              setIsClearAllModalOpen(true);
+            }}
+            className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:text-rose-700 flex items-center gap-1 cursor-pointer px-2 py-0.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+            title="Clear all transactions"
+          >
+            <Trash2 className="w-3 h-3" />
+            <span>Clear All</span>
+          </button>
+        )}
       </div>
 
       {/* Transactions List */}
@@ -560,6 +724,97 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
           setIsRescanModalOpen(true);
         }}
       />
+
+      {/* Excel Spreadsheet Import Modal */}
+      <ExcelImportModal
+        isOpen={isExcelModalOpen}
+        onClose={() => setIsExcelModalOpen(false)}
+        onImportSuccess={handleExcelImportSuccess}
+        existingExpenses={expenses}
+        soundEnabled={soundEnabled}
+      />
+
+      {/* Clear All Confirmation Modal */}
+      {isClearAllModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs select-none">
+          <div className="w-[calc(100vw-2.5rem)] max-w-sm rounded-2xl bg-white dark:bg-[#111827] border border-gray-200 dark:border-gray-800 p-4 shadow-2xl space-y-3">
+            <div className="flex items-center gap-2.5 text-rose-600 dark:text-rose-400">
+              <div className="w-8 h-8 rounded-xl bg-rose-100 dark:bg-rose-950/60 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-4 h-4" />
+              </div>
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white">
+                Clear All Transactions?
+              </h3>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+              This will permanently delete all {activeExpenses.length} expense records. This action cannot be undone.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setIsClearAllModalOpen(false)}
+                className="px-3.5 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmClearAll}
+                className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs active:scale-95 transition-all cursor-pointer"
+              >
+                Clear All Transactions
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Spreadsheet Confirmation Modal */}
+      {deleteSheetModal.isOpen && deleteSheetModal.log && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs select-none">
+          <div className="w-[calc(100vw-2.5rem)] max-w-sm rounded-2xl bg-white dark:bg-[#111827] border border-gray-200 dark:border-gray-800 p-4 shadow-2xl space-y-3">
+            <div className="flex items-center gap-2.5 text-rose-600 dark:text-rose-400">
+              <div className="w-8 h-8 rounded-xl bg-rose-100 dark:bg-rose-950/60 flex items-center justify-center shrink-0">
+                <FileSpreadsheet className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-gray-900 dark:text-white truncate">
+                  Delete {deleteSheetModal.log.fileName}?
+                </h3>
+                <span className="text-[10px] text-gray-400 block truncate">
+                  {deleteSheetModal.matchingCount} imported items (₹{Math.round(deleteSheetModal.matchingAmount).toLocaleString()})
+                </span>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+              Choose how you would like to remove this spreadsheet:
+            </p>
+            <div className="space-y-1.5 pt-1">
+              <button
+                type="button"
+                onClick={() => handleConfirmDeleteSheet(true)}
+                className="w-full py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs active:scale-95 transition-all cursor-pointer text-center"
+              >
+                Delete Sheet & Its Spendings
+              </button>
+              <button
+                type="button"
+                onClick={() => handleConfirmDeleteSheet(false)}
+                className="w-full py-2 px-3 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 text-xs font-semibold transition-colors cursor-pointer text-center"
+              >
+                Delete Sheet Record Only (Keep Spendings)
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeleteSheetModal({ isOpen: false, log: null, matchingCount: 0, matchingAmount: 0 })}
+                className="w-full py-1.5 px-3 rounded-xl text-gray-500 dark:text-gray-400 text-xs font-semibold hover:underline cursor-pointer text-center"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Quote as QuoteIcon, CheckSquare, CreditCard, Flame, FileText, BookOpen, Film, Briefcase } from 'lucide-react';
+import { Target, CheckSquare, CreditCard, Flame, FileText, BookOpen, Film, Briefcase } from 'lucide-react';
 import {
   UserProfile,
   TodoItem,
@@ -192,20 +192,20 @@ export const AndroidHomeScreen: React.FC<AndroidHomeScreenProps> = ({
             </span>
           </button>
 
-          {/* 2. Quotes */}
+          {/* 2. Goals */}
           <button
             type="button"
             onClick={() => {
               void nativeService.triggerHaptic('selection');
-              onNavigate('quotes');
+              onNavigate('goals');
             }}
-            className="flex flex-col items-center justify-center p-2.5 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs hover:border-violet-300 active:scale-95 transition-all cursor-pointer group"
+            className="flex flex-col items-center justify-center p-2.5 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs hover:border-indigo-300 active:scale-95 transition-all cursor-pointer group"
           >
-            <div className="w-10 h-10 rounded-xl bg-violet-100 dark:bg-violet-950/80 text-violet-600 dark:text-violet-400 flex items-center justify-center mb-1.5 shadow-2xs group-hover:scale-105 transition-transform">
-              <QuoteIcon className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mb-1.5 shadow-2xs group-hover:scale-105 transition-transform">
+              <Target className="w-5 h-5" />
             </div>
             <span className="text-[11px] font-bold text-gray-800 dark:text-gray-200 text-center leading-tight">
-              Quotes
+              Goals
             </span>
           </button>
 
