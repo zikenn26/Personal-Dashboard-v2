@@ -1359,7 +1359,44 @@ export const Storage = {
   getAchievements: (): AchievementItem[] => loadFromStorage(STORAGE_KEYS.ACHIEVEMENTS, INITIAL_ACHIEVEMENTS),
   setAchievements: (items: AchievementItem[]) => saveToStorage(STORAGE_KEYS.ACHIEVEMENTS, items),
 
+  // Trash: soft-deleted items from any module, auto-purged after 30 days
+  getTrash: (): TrashItem[] => {
+    const raw = loadFromStorage<TrashItem[]>(STORAGE_KEYS.TRASH, []);
+    if (!Array.isArray(raw)) return [];
+    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const fresh = raw.filter((t) => now - t.deletedAt < THIRTY_DAYS_MS);
+    if (fresh.length !== raw.length) {
+      saveToStorage(STORAGE_KEYS.TRASH, fresh);
+    }
+    return fresh;
+  },
+  setTrash: (items: TrashItem[]) => saveToStorage(STORAGE_KEYS.TRASH, items),
+
+  moveToTrash: (module: TrashModule, data: any, label: string): TrashItem => {
+    const entry: TrashItem = {
+      id: `trash-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      module,
+      label,
+      data,
+      deletedAt: Date.now(),
+    };
+    const current = Storage.getTrash();
+    Storage.setTrash([entry, ...current]);
+    return entry;
+  },
+
+  removeFromTrash: (trashId: string) => {
+    const current = Storage.getTrash();
+    Storage.setTrash(current.filter((t) => t.id !== trashId));
+  },
+
+  emptyTrash: () => {
+    Storage.setTrash([]);
+  },
+
   getDoodles: (): DoodleItem[] => loadFromStorage(STORAGE_KEYS.DOODLES, []),
+
   setDoodles: (items: DoodleItem[]) => saveToStorage(STORAGE_KEYS.DOODLES, items),
 
   getTimeline: (): LifeMilestone[] => loadFromStorage(STORAGE_KEYS.TIMELINE, INITIAL_TIMELINE),
