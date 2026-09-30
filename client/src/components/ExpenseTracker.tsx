@@ -182,6 +182,11 @@ export const MONTH_NAMES = [
   'December',
 ];
 
+const MONTH_ABBR = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
 // Helper to reliably find all expenses originating from an Excel sheet upload
 export const getMatchingExpensesForSheet = (
   log: ExcelImportLog,
