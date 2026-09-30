@@ -22,7 +22,7 @@ import {
   EducationRecord,
   JobExperience,
   HobbyItem,
-  ExamItem,
+    ExamItem,
   WeeklyScheduleData,
   ScheduleActivity,
   DayOfWeek,
@@ -35,6 +35,8 @@ import {
   ResumeSectionConfig,
   ResumeThemeStyle,
   SmsTransactionLogItem,
+  TrashItem,
+  TrashModule,
 } from '../types';
 import { STOCK_IMAGES } from '../assets/stockImages';
 import { decryptJson, encryptJson, isEncryptedPayload, EncryptedPayload } from './crypto';
