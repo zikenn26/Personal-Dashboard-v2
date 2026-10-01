@@ -6,11 +6,7 @@ import {
   FileSpreadsheet,
   FileCode,
   CheckCircle2,
-  Calendar,
-  Layers,
-  ArrowDownLeft,
-  ArrowUpRight,
-  TrendingDown,
+  Table,
 } from 'lucide-react';
 import { BottomSheet } from '../gestures/BottomSheet';
 import { ExpenseItem } from '../../../types';
@@ -20,6 +16,9 @@ import { toast } from 'sonner';
 import {
   generateExpenseCSV,
   generateExpenseJSON,
+  generateExpenseExcelBuffer,
+  downloadExpenseExcel,
+  downloadExpenseCSV,
   downloadExpenseFile,
   shareExpenseExport,
 } from '../../../utils/expenseExport';
@@ -36,7 +35,7 @@ export interface ExportExpenseSheetProps {
 }
 
 type ExportScope = 'filtered' | 'all';
-type ExportFormat = 'csv' | 'json';
+type ExportFormat = 'xlsx' | 'csv' | 'json';
 
 export const ExportExpenseSheet: React.FC<ExportExpenseSheetProps> = ({
   isOpen,
@@ -48,7 +47,7 @@ export const ExportExpenseSheet: React.FC<ExportExpenseSheetProps> = ({
   soundEnabled = true,
 }) => {
   const [scope, setScope] = useState<ExportScope>('filtered');
-  const [format, setFormat] = useState<ExportFormat>('csv');
+  const [format, setFormat] = useState<ExportFormat>('xlsx');
   const [isCopied, setIsCopied] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
@@ -106,9 +105,10 @@ export const ExportExpenseSheet: React.FC<ExportExpenseSheetProps> = ({
 
     try {
       const filename = getExportFilename();
-      if (format === 'csv') {
-        const csv = generateExpenseCSV(targetExpenses);
-        downloadExpenseFile(csv, filename, 'text/csv;charset=utf-8;');
+      if (format === 'xlsx') {
+        downloadExpenseExcel(targetExpenses, filename);
+      } else if (format === 'csv') {
+        downloadExpenseCSV(targetExpenses, filename);
       } else {
         const json = generateExpenseJSON(targetExpenses);
         downloadExpenseFile(json, filename, 'application/json;charset=utf-8;');
@@ -137,11 +137,19 @@ export const ExportExpenseSheet: React.FC<ExportExpenseSheetProps> = ({
 
     try {
       const filename = getExportFilename();
-      const mimeType = format === 'csv' ? 'text/csv' : 'application/json';
-      const content =
-        format === 'csv'
-          ? generateExpenseCSV(targetExpenses)
-          : generateExpenseJSON(targetExpenses);
+      let mimeType = 'text/csv';
+      let content: string | Uint8Array = '';
+
+      if (format === 'xlsx') {
+        mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        content = generateExpenseExcelBuffer(targetExpenses);
+      } else if (format === 'csv') {
+        mimeType = 'text/csv';
+        content = generateExpenseCSV(targetExpenses);
+      } else {
+        mimeType = 'application/json';
+        content = generateExpenseJSON(targetExpenses);
+      }
 
       const title = `Expense Report (${targetExpenses.length} items, ₹${summary.debitTotal.toFixed(2)})`;
       const text = `LifeOS Expense Report\nPeriod: ${scope === 'filtered' ? currentPeriodLabel : 'All Time'}\nTotal Spending: ₹${summary.debitTotal.toFixed(2)}\nRecords: ${targetExpenses.length}`;
@@ -176,15 +184,15 @@ export const ExportExpenseSheet: React.FC<ExportExpenseSheetProps> = ({
 
     try {
       const content =
-        format === 'csv'
-          ? generateExpenseCSV(targetExpenses)
-          : generateExpenseJSON(targetExpenses);
+        format === 'json'
+          ? generateExpenseJSON(targetExpenses)
+          : generateExpenseCSV(targetExpenses);
 
       if (navigator.clipboard) {
         await navigator.clipboard.writeText(content);
         setIsCopied(true);
         setTimeout(() => setIsCopied(false), 2000);
-        toast.success(`Copied ${targetExpenses.length} transactions as ${format.toUpperCase()}!`);
+        toast.success(`Copied ${targetExpenses.length} transactions as ${format === 'json' ? 'JSON' : 'CSV/Excel table'}!`);
       } else {
         toast.error('Clipboard copy is not supported in this browser.');
       }
@@ -200,16 +208,16 @@ export const ExportExpenseSheet: React.FC<ExportExpenseSheetProps> = ({
       title={
         <div className="flex items-center gap-2">
           <Download className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-          <span className="font-bold text-gray-900 dark:text-white">Export Expenses</span>
+          <span className="font-bold text-gray-900 dark:text-white">Export Expense</span>
         </div>
       }
-      subtitle="Export transactions as CSV spreadsheet or JSON"
+      subtitle="Download Excel sheet or CSV spreadsheet"
       maxHeight="max-h-[85vh]"
     >
       <div className="p-4 space-y-4">
         {/* 1. Scope Selection */}
-        <div className="space-y-2">
-          <label className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
             Export Scope
           </label>
           <div className="grid grid-cols-2 gap-2">
@@ -286,72 +294,94 @@ export const ExportExpenseSheet: React.FC<ExportExpenseSheetProps> = ({
           </div>
         </div>
 
-        {/* 2. Format Selection */}
-        <div className="space-y-2">
-          <label className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+        {/* 2. Format Selection (Excel .xlsx, CSV .csv, JSON .json) */}
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
             Export Format
           </label>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
+            {/* Excel Option */}
+            <button
+              type="button"
+              onClick={() => {
+                void nativeService.triggerHaptic('selection');
+                setFormat('xlsx');
+              }}
+              className={`p-2.5 rounded-2xl border text-left transition-all cursor-pointer ${
+                format === 'xlsx'
+                  ? 'border-emerald-500 bg-emerald-50/90 dark:bg-emerald-950/50 ring-1 ring-emerald-500'
+                  : 'border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-[#1A2234] opacity-80'
+              }`}
+            >
+              <div className="p-1.5 w-fit rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 mb-1.5">
+                <FileSpreadsheet className="w-4 h-4" />
+              </div>
+              <span className="text-xs font-bold text-gray-900 dark:text-white block">
+                Excel Sheet
+              </span>
+              <span className="text-[10px] text-gray-500 dark:text-gray-400 block">
+                .xlsx file
+              </span>
+            </button>
+
+            {/* CSV Option */}
             <button
               type="button"
               onClick={() => {
                 void nativeService.triggerHaptic('selection');
                 setFormat('csv');
               }}
-              className={`p-3 rounded-2xl border text-left flex items-start gap-2.5 transition-all cursor-pointer ${
+              className={`p-2.5 rounded-2xl border text-left transition-all cursor-pointer ${
                 format === 'csv'
-                  ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/40 ring-1 ring-emerald-500'
+                  ? 'border-emerald-500 bg-emerald-50/90 dark:bg-emerald-950/50 ring-1 ring-emerald-500'
                   : 'border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-[#1A2234] opacity-80'
               }`}
             >
-              <div className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 shrink-0">
-                <FileSpreadsheet className="w-4 h-4" />
+              <div className="p-1.5 w-fit rounded-lg bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 mb-1.5">
+                <Table className="w-4 h-4" />
               </div>
-              <div>
-                <span className="text-xs font-bold text-gray-900 dark:text-white block">
-                  CSV Spreadsheet
-                </span>
-                <span className="text-[10px] text-gray-500 dark:text-gray-400 block mt-0.5">
-                  Excel, Google Sheets, Numbers
-                </span>
-              </div>
+              <span className="text-xs font-bold text-gray-900 dark:text-white block">
+                CSV Sheet
+              </span>
+              <span className="text-[10px] text-gray-500 dark:text-gray-400 block">
+                .csv file
+              </span>
             </button>
 
+            {/* JSON Option */}
             <button
               type="button"
               onClick={() => {
                 void nativeService.triggerHaptic('selection');
                 setFormat('json');
               }}
-              className={`p-3 rounded-2xl border text-left flex items-start gap-2.5 transition-all cursor-pointer ${
+              className={`p-2.5 rounded-2xl border text-left transition-all cursor-pointer ${
                 format === 'json'
-                  ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/40 ring-1 ring-emerald-500'
+                  ? 'border-emerald-500 bg-emerald-50/90 dark:bg-emerald-950/50 ring-1 ring-emerald-500'
                   : 'border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-[#1A2234] opacity-80'
               }`}
             >
-              <div className="p-2 rounded-xl bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 shrink-0">
+              <div className="p-1.5 w-fit rounded-lg bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 mb-1.5">
                 <FileCode className="w-4 h-4" />
               </div>
-              <div>
-                <span className="text-xs font-bold text-gray-900 dark:text-white block">
-                  JSON Data
-                </span>
-                <span className="text-[10px] text-gray-500 dark:text-gray-400 block mt-0.5">
-                  Raw backup & API integrations
-                </span>
-              </div>
+              <span className="text-xs font-bold text-gray-900 dark:text-white block">
+                JSON Data
+              </span>
+              <span className="text-[10px] text-gray-500 dark:text-gray-400 block">
+                .json file
+              </span>
             </button>
           </div>
         </div>
 
         {/* 3. Export Summary Preview Card */}
-        <div className="p-3.5 rounded-2xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] space-y-2">
-          <div className="flex items-center justify-between text-xs">
+        <div className="p-3 rounded-2xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] space-y-1.5 text-xs">
+          <div className="flex items-center justify-between">
             <span className="text-gray-500 dark:text-gray-400 font-medium">Selected Records</span>
             <span className="font-bold text-gray-900 dark:text-white">{summary.count} transactions</span>
           </div>
 
-          <div className="flex items-center justify-between text-xs">
+          <div className="flex items-center justify-between">
             <span className="text-gray-500 dark:text-gray-400 font-medium">Total Spending (Debits)</span>
             <span className="font-bold text-rose-600 dark:text-rose-400">
               ₹{summary.debitTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -359,8 +389,8 @@ export const ExportExpenseSheet: React.FC<ExportExpenseSheetProps> = ({
           </div>
 
           {summary.creditTotal > 0 && (
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-gray-500 dark:text-gray-400 font-medium">Total Received (Credits)</span>
+            <div className="flex items-center justify-between">
+              <span className="text-gray-500 dark:text-gray-400 font-medium">Total Credits (Refunds)</span>
               <span className="font-bold text-emerald-600 dark:text-emerald-400">
                 +₹{summary.creditTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               </span>
@@ -378,16 +408,22 @@ export const ExportExpenseSheet: React.FC<ExportExpenseSheetProps> = ({
         </div>
 
         {/* 4. Action Buttons */}
-        <div className="space-y-2 pt-1">
+        <div className="space-y-2 pt-0.5">
           {/* Primary Download Button */}
           <button
             type="button"
             onClick={handleDownload}
             disabled={isExporting || targetExpenses.length === 0}
-            className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-sm active:scale-[0.98] transition-all cursor-pointer"
+            className="w-full py-3 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-xs active:scale-[0.98] transition-all cursor-pointer"
           >
             <Download className="w-4 h-4 shrink-0" />
-            <span>Download {format.toUpperCase()} File</span>
+            <span>
+              {format === 'xlsx'
+                ? 'Download Excel Sheet (.xlsx)'
+                : format === 'csv'
+                ? 'Download CSV (.csv)'
+                : 'Download JSON (.json)'}
+            </span>
           </button>
 
           {/* Secondary Actions (Share & Copy) */}
@@ -416,7 +452,7 @@ export const ExportExpenseSheet: React.FC<ExportExpenseSheetProps> = ({
               ) : (
                 <>
                   <Copy className="w-3.5 h-3.5 text-purple-500" />
-                  <span>Copy to Clipboard</span>
+                  <span>Copy Content</span>
                 </>
               )}
             </button>

@@ -1,3 +1,4 @@
+import * as XLSX from 'xlsx';
 import { ExpenseItem } from '../types';
 import { isCreditTransaction } from './expenseUtils';
 import { nativeService } from '../services/nativeService';
@@ -51,6 +52,52 @@ export function generateExpenseCSV(expenses: ExpenseItem[]): string {
 }
 
 /**
+ * Generates an Excel workbook (.xlsx) binary buffer using SheetJS/XLSX.
+ */
+export function generateExpenseExcelBuffer(expenses: ExpenseItem[]): Uint8Array {
+  const data = expenses.map((item) => {
+    const isCredit = isCreditTransaction(item);
+    return {
+      'Transaction ID': item.id,
+      'Date': item.date || '',
+      'Time': item.time || '',
+      'Merchant / Title': item.name || '',
+      'Category': item.category || '',
+      'Amount': Number(item.amount) || 0,
+      'Type': isCredit ? 'CREDIT' : 'DEBIT',
+      'Payment Method': item.paymentMethod || '',
+      'Bank / Account': item.bankOrAccount || item.bankName || '',
+      'Reference ID': item.referenceId || item.smsReferenceId || item.upiReference || '',
+      'Source': item.source || 'manual',
+      'Notes': item.notes || '',
+    };
+  });
+
+  const worksheet = XLSX.utils.json_to_sheet(data);
+
+  // Set friendly column widths
+  worksheet['!cols'] = [
+    { wch: 18 }, // ID
+    { wch: 12 }, // Date
+    { wch: 8 },  // Time
+    { wch: 25 }, // Merchant
+    { wch: 16 }, // Category
+    { wch: 12 }, // Amount
+    { wch: 10 }, // Type
+    { wch: 16 }, // Payment Method
+    { wch: 22 }, // Bank / Account
+    { wch: 22 }, // Reference ID
+    { wch: 12 }, // Source
+    { wch: 25 }, // Notes
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Transactions');
+  const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+  return new Uint8Array(buffer);
+}
+
+/**
  * Generates formatted JSON representation of expenses.
  */
 export function generateExpenseJSON(expenses: ExpenseItem[]): string {
@@ -61,11 +108,13 @@ export function generateExpenseJSON(expenses: ExpenseItem[]): string {
  * Downloads a file onto the device using standard browser/WebView blob download.
  */
 export function downloadExpenseFile(
-  content: string,
+  content: string | Uint8Array,
   filename: string,
   mimeType: string = 'text/csv;charset=utf-8;'
 ): void {
-  const blob = new Blob([content], { type: mimeType });
+  const blob = content instanceof Uint8Array 
+    ? new Blob([content], { type: mimeType })
+    : new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -77,12 +126,36 @@ export function downloadExpenseFile(
 }
 
 /**
+ * Convenience helper to download CSV directly.
+ */
+export function downloadExpenseCSV(expenses: ExpenseItem[], filename?: string): void {
+  const dateStr = new Date().toISOString().split('T')[0];
+  const name = filename || `expense_transactions_${dateStr}.csv`;
+  const csv = generateExpenseCSV(expenses);
+  downloadExpenseFile(csv, name, 'text/csv;charset=utf-8;');
+}
+
+/**
+ * Convenience helper to download Excel (.xlsx) directly.
+ */
+export function downloadExpenseExcel(expenses: ExpenseItem[], filename?: string): void {
+  const dateStr = new Date().toISOString().split('T')[0];
+  const name = filename || `expense_transactions_${dateStr}.xlsx`;
+  const buffer = generateExpenseExcelBuffer(expenses);
+  downloadExpenseFile(
+    buffer,
+    name,
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  );
+}
+
+/**
  * Shares exported expenses using Web Share API (Level 2 with File support)
  * or falls back to nativeService.shareContent / text share.
  */
 export async function shareExpenseExport(options: {
   filename: string;
-  content: string;
+  content: string | Uint8Array;
   mimeType: string;
   title: string;
   text?: string;
@@ -92,7 +165,8 @@ export async function shareExpenseExport(options: {
   // Try Web Share API Level 2 with File attachment
   if (typeof navigator !== 'undefined' && 'canShare' in navigator) {
     try {
-      const file = new File([content], filename, { type: mimeType });
+      const blobPart = content instanceof Uint8Array ? content : content;
+      const file = new File([blobPart], filename, { type: mimeType });
       if (navigator.canShare({ files: [file] })) {
         await navigator.share({
           files: [file],
@@ -107,8 +181,13 @@ export async function shareExpenseExport(options: {
   }
 
   // Fallback to text content sharing via nativeService / standard share
+  const fallbackText =
+    typeof content === 'string'
+      ? `${title}\n\n${content.slice(0, 1000)}...`
+      : `${title}\n\nExported Excel file: ${filename}`;
+
   return nativeService.shareContent({
     title,
-    text: text || `${title}\n\n${content.slice(0, 1000)}...`,
+    text: text || fallbackText,
   });
 }

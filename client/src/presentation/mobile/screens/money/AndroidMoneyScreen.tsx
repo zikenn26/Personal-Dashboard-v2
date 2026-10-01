@@ -244,6 +244,29 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   const todayDateStr = getLocalDateKey(now);
   const weekStartDateStr = getMondayDateKey(now);
   const currentMonthPrefix = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
+  const [selectedMonthPrefix, setSelectedMonthPrefix] = useState<string>(() => currentMonthPrefix);
+
+  const formatMonthLabel = (prefix: string): string => {
+    if (!prefix || prefix.length < 7) return prefix;
+    const [yearStr, monthStr] = prefix.split('-');
+    const mIdx = parseInt(monthStr, 10) - 1;
+    if (mIdx >= 0 && mIdx < 12) {
+      return `${MONTH_ABBR[mIdx]} ${yearStr}`;
+    }
+    return prefix;
+  };
+
+  const availableMonths = useMemo(() => {
+    const monthSet = new Set<string>();
+    monthSet.add(currentMonthPrefix);
+    activeExpenses.forEach((e) => {
+      const dateKey = normalizeExpenseDateKey(e.date);
+      if (dateKey && dateKey.length >= 7) {
+        monthSet.add(dateKey.slice(0, 7));
+      }
+    });
+    return Array.from(monthSet).sort().reverse();
+  }, [activeExpenses, currentMonthPrefix]);
 
   const currentPeriodLabel = useMemo(() => {
     switch (periodFilter) {
@@ -252,13 +275,13 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
       case 'week':
         return 'This Week';
       case 'month':
-        return 'This Month';
+        return formatMonthLabel(selectedMonthPrefix);
       case 'all':
         return 'All Time';
       default:
         return 'Selected Period';
     }
-  }, [periodFilter]);
+  }, [periodFilter, selectedMonthPrefix]);
 
   // Spending totals are debit-only. Credits/refunds remain visible in the
   // transaction list but never inflate spending totals.
@@ -266,6 +289,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
     todaySpending,
     weekSpending,
     monthSpending,
+    selectedMonthSpending,
     allTimeSpending,
     monthCredits,
     categoryTotals,
@@ -273,6 +297,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
     let todayDebits = 0;
     let weekDebits = 0;
     let monthDebits = 0;
+    let selectedMonthDebits = 0;
     let allTimeDebits = 0;
     let monthCredits = 0;
     const catMap: Record<string, number> = {};
@@ -286,7 +311,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         case 'week':
           return dateKey >= weekStartDateStr && dateKey <= todayDateStr;
         case 'month':
-          return dateKey.startsWith(currentMonthPrefix);
+          return dateKey.startsWith(selectedMonthPrefix);
         case 'all':
           return true;
         default:
@@ -304,9 +329,10 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
       const isToday = dateKey === todayDateStr;
       const isThisWeek = dateKey >= weekStartDateStr && dateKey <= todayDateStr;
       const isThisMonth = dateKey.startsWith(currentMonthPrefix);
+      const isSelectedMonth = dateKey.startsWith(selectedMonthPrefix);
 
       if (isCredit) {
-        if (isThisMonth) monthCredits += amt;
+        if (isSelectedMonth) monthCredits += amt;
         return;
       }
 
@@ -314,6 +340,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
       if (isToday) todayDebits += amt;
       if (isThisWeek) weekDebits += amt;
       if (isThisMonth) monthDebits += amt;
+      if (isSelectedMonth) selectedMonthDebits += amt;
 
       // Category breakdown follows the selected period so the category
       // pills and transaction list always describe the same time window.
@@ -331,6 +358,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
       todaySpending: todayDebits,
       weekSpending: weekDebits,
       monthSpending: monthDebits,
+      selectedMonthSpending: selectedMonthDebits,
       allTimeSpending: allTimeDebits,
       monthCredits,
       categoryTotals: sortedCats,
@@ -338,6 +366,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   }, [
     activeExpenses,
     periodFilter,
+    selectedMonthPrefix,
     todayDateStr,
     weekStartDateStr,
     currentMonthPrefix,
@@ -359,7 +388,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
             if (dateKey < weekStartDateStr || dateKey > todayDateStr) return false;
             break;
           case 'month':
-            if (!dateKey.startsWith(currentMonthPrefix)) return false;
+            if (!dateKey.startsWith(selectedMonthPrefix)) return false;
             break;
           case 'all':
             break;
@@ -375,10 +404,10 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   }, [
     activeExpenses,
     periodFilter,
+    selectedMonthPrefix,
     selectedCategory,
     todayDateStr,
     weekStartDateStr,
-    currentMonthPrefix,
   ]);
 
   // Group the filtered transactions by normalized local calendar date.
@@ -524,20 +553,63 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
       {/* Top Banner */}
       <div className="flex items-center justify-between px-1">
         <div>
-          <h2 className="text-xl font-extrabold text-gray-900 dark:text-white tracking-tight">
-            Money & Expenses
+          <h2 className="text-lg font-black text-gray-900 dark:text-white tracking-tight flex items-center gap-1.5">
+            <span>Money & Expenses</span>
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+              {activeExpenses.length}
+            </span>
           </h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            {expenses.length} tracked records
-          </p>
         </div>
 
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
+          {/* Export Expense Button */}
+          <button
+            type="button"
+            id="btn-android-export-expenses"
+            onClick={() => {
+              void nativeService.triggerHaptic('selection');
+              setIsExportSheetOpen(true);
+            }}
+            className="px-2.5 py-1.5 rounded-full border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-xs font-bold flex items-center gap-1 shadow-2xs active:scale-95 transition-all cursor-pointer"
+            title="Export Expense: Download Excel sheet (.xlsx) or CSV (.csv)"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Export Expense</span>
+          </button>
+
+          {/* Upload Excel Button */}
+          <button
+            type="button"
+            onClick={() => {
+              void nativeService.triggerHaptic('selection');
+              setIsExcelModalOpen(true);
+            }}
+            className="px-2 py-1.5 rounded-full border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-xs font-semibold flex items-center gap-1 shadow-2xs active:scale-95 transition-all cursor-pointer"
+            title="Upload and extract expenses from Excel (.xlsx, .xls) or CSV"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>Excel</span>
+          </button>
+
+          {/* Controlled Rescan SMS Action Button */}
+          <button
+            type="button"
+            onClick={() => {
+              void nativeService.triggerHaptic('selection');
+              setIsRescanModalOpen(true);
+            }}
+            className="px-2 py-1.5 rounded-full border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-xs font-semibold flex items-center gap-1 shadow-2xs active:scale-95 transition-all cursor-pointer"
+            title="Controlled SMS Rescan"
+          >
+            <RotateCw className="w-3 h-3" />
+            <span>Rescan</span>
+          </button>
+
           {/* Compact SMS Status Chip */}
           <button
             type="button"
             onClick={handleSmsAction}
-            className="px-2 py-1 rounded-full border text-[11px] font-medium flex items-center gap-1.5 transition-all cursor-pointer bg-gray-50 dark:bg-gray-800/60 border-gray-200 dark:border-gray-700/80 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/60 shadow-2xs"
+            className="px-2 py-1.5 rounded-full border text-[11px] font-medium flex items-center gap-1 transition-all cursor-pointer bg-gray-50 dark:bg-gray-800/60 border-gray-200 dark:border-gray-700/80 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/60 shadow-2xs"
             title={
               smsPermissionStatus === 'granted' && isSmsEnabled
                 ? 'SMS Auto-Logging ON — Tap for settings'
@@ -549,7 +621,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
             {smsPermissionStatus === 'granted' && isSmsEnabled ? (
               <>
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span>🟢 SMS ON</span>
+                <span>SMS ON</span>
               </>
             ) : smsPermissionStatus === 'permanently_denied' ? (
               <>
@@ -559,52 +631,9 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
             ) : (
               <>
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                <span>Enable SMS</span>
+                <span>SMS</span>
               </>
             )}
-          </button>
-
-          {/* Primary Manual Rescan SMS Action Button */}
-          <button
-            type="button"
-            onClick={() => {
-              void nativeService.triggerHaptic('selection');
-              setIsRescanModalOpen(true);
-            }}
-            className="px-2.5 py-1.5 rounded-full border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-xs font-semibold flex items-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
-            title="Controlled SMS Rescan"
-          >
-            <RotateCw className="w-3.5 h-3.5" />
-            <span>Rescan SMS</span>
-          </button>
-
-          {/* Upload Excel Button */}
-          <button
-            type="button"
-            onClick={() => {
-              void nativeService.triggerHaptic('selection');
-              setIsExcelModalOpen(true);
-            }}
-            className="px-2.5 py-1.5 rounded-full border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-xs font-semibold flex items-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
-            title="Upload and extract expenses from Excel (.xlsx, .xls) or CSV"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            <span>Upload Excel</span>
-          </button>
-
-          {/* Export Expenses Button */}
-          <button
-            type="button"
-            id="btn-android-export-expenses"
-            onClick={() => {
-              void nativeService.triggerHaptic('selection');
-              setIsExportSheetOpen(true);
-            }}
-            className="px-2.5 py-1.5 rounded-full border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-xs font-semibold flex items-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
-            title="Export expenses as CSV spreadsheet or JSON"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Export</span>
           </button>
 
           {onAddExpense && (
@@ -614,7 +643,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
                 void nativeService.triggerHaptic('selection');
                 setIsAddSheetOpen(true);
               }}
-              className="px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer"
+              className="px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 shadow-xs active:scale-95 transition-all cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add</span>
@@ -674,66 +703,84 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         </div>
       )}
 
-      {/* Spending Summary Card
-          All four periods are calculated independently so selecting a filter
-          never changes the meaning of the headline totals. */}
-      <div className="p-3 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-xs relative overflow-hidden">
-        <div className="flex items-center justify-between mb-2">
-          <div>
-            <span className="text-[11px] font-semibold text-emerald-100 uppercase tracking-wider">
-              Spending Overview
+      {/* Compact Spending Summary Card */}
+      <div className="p-3 rounded-2xl bg-gradient-to-br from-emerald-600 via-teal-700 to-emerald-800 text-white shadow-xs relative overflow-hidden">
+        {/* Month Selector in Header of Banner */}
+        <div className="flex items-center justify-between gap-2 pb-2 border-b border-white/15">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Wallet className="w-3.5 h-3.5 text-emerald-200 shrink-0" />
+            <span className="text-xs font-bold text-white tracking-wide truncate">
+              {periodFilter === 'all'
+                ? 'All / Lifetime'
+                : selectedMonthPrefix === currentMonthPrefix
+                ? 'This Month'
+                : formatMonthLabel(selectedMonthPrefix)}
             </span>
-            <p className="text-[10px] text-emerald-100/80 mt-0.5">
-              Debit spending only · credits/refunds excluded
-            </p>
           </div>
-          <div className="p-1.5 rounded-lg bg-white/15">
-            <Wallet className="w-3.5 h-3.5 text-white" />
+
+          {/* Small compact month selector dropdown */}
+          <div className="flex items-center gap-1 bg-white/15 hover:bg-white/20 rounded-xl px-2 py-0.5 transition-colors shrink-0">
+            <Calendar className="w-3 h-3 text-emerald-100 shrink-0" />
+            <select
+              aria-label="Select Month"
+              value={periodFilter === 'all' ? 'all' : selectedMonthPrefix}
+              onChange={(e) => {
+                void nativeService.triggerHaptic('selection');
+                const val = e.target.value;
+                if (val === 'all') {
+                  setPeriodFilter('all');
+                } else {
+                  setSelectedMonthPrefix(val);
+                  setPeriodFilter('month');
+                }
+                setSelectedCategory('all');
+              }}
+              className="bg-transparent text-white text-[11px] font-bold focus:outline-none cursor-pointer [&>option]:text-gray-900 [&>option]:bg-white"
+            >
+              <optgroup label="Select Month">
+                {availableMonths.map((mKey) => (
+                  <option key={mKey} value={mKey}>
+                    {mKey === currentMonthPrefix ? `This Month (${formatMonthLabel(mKey)})` : formatMonthLabel(mKey)}
+                  </option>
+                ))}
+              </optgroup>
+              <option value="all">All / Lifetime Spending</option>
+            </select>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-x-3 gap-y-2 pt-2 border-t border-white/15">
+        {/* 4-Item Compact Spending Grid */}
+        <div className="grid grid-cols-2 gap-x-3 gap-y-2 pt-2.5">
           <div>
-            <span className="text-[10px] text-emerald-200 block font-medium">Today&apos;s Spending</span>
-            <span className="text-sm font-black block mt-0.5">
+            <span className="text-[10px] text-emerald-200 block font-medium">Spent Today</span>
+            <span className="text-sm font-black block mt-0.5 tracking-tight">
               ₹{todaySpending.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
 
           <div>
-            <span className="text-[10px] text-emerald-200 block font-medium">This Week&apos;s Spending</span>
-            <span className="text-sm font-black block mt-0.5">
+            <span className="text-[10px] text-emerald-200 block font-medium">This Week</span>
+            <span className="text-sm font-black block mt-0.5 tracking-tight">
               ₹{weekSpending.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
 
           <div>
-            <span className="text-[10px] text-emerald-200 block font-medium">This Month&apos;s Spending</span>
-            <span className="text-sm font-black block mt-0.5">
-              ₹{monthSpending.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <span className="text-[10px] text-emerald-200 block font-medium">
+              {selectedMonthPrefix === currentMonthPrefix ? 'This Month' : formatMonthLabel(selectedMonthPrefix)}
+            </span>
+            <span className="text-sm font-black block mt-0.5 tracking-tight">
+              ₹{selectedMonthSpending.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
 
           <div>
-            <span className="text-[10px] text-emerald-200 block font-medium">All-Time Spending</span>
-            <span className="text-sm font-black block mt-0.5">
+            <span className="text-[10px] text-emerald-200 block font-medium">All / Lifetime</span>
+            <span className="text-sm font-black block mt-0.5 tracking-tight">
               ₹{allTimeSpending.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
         </div>
-
-        {categoryTotals.length > 0 && (
-          <div className="mt-2 pt-2 border-t border-white/15 flex items-center justify-between gap-2">
-            <span className="text-[10px] text-emerald-200 font-medium">
-              Top category ({periodFilter === 'today' ? 'Today' : periodFilter === 'week' ? 'This Week' : periodFilter === 'month' ? 'This Month' : 'All Time'})
-            </span>
-            <span className="text-[10px] font-bold truncate text-right" title={categoryTotals[0]?.cat}>
-              {categoryTotals[0]
-                ? `${categoryTotals[0].cat} · ₹${Math.round(categoryTotals[0].total).toLocaleString('en-IN')}`
-                : 'None'}
-            </span>
-          </div>
-        )}
       </div>
 
       {/* Period Filter Tabs — controls the transaction list and category breakdown */}
@@ -760,7 +807,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
               : tab === 'week'
                 ? 'This Week'
                 : tab === 'month'
-                  ? 'This Month'
+                  ? (selectedMonthPrefix === currentMonthPrefix ? 'This Month' : formatMonthLabel(selectedMonthPrefix))
                   : 'All Time'}
           </button>
         ))}
@@ -808,44 +855,26 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         </div>
       )}
 
-      {/* Header bar with count, Export and Clear All actions */}
+      {/* Header bar with count and Clear All action */}
       <div className="flex items-center justify-between px-1 pt-1">
         <span className="text-xs font-bold text-gray-600 dark:text-gray-300">
           Transactions ({filteredExpenses.length})
         </span>
 
-        <div className="flex items-center gap-1.5">
-          {filteredExpenses.length > 0 && (
-            <button
-              type="button"
-              id="btn-android-export-list"
-              onClick={() => {
-                void nativeService.triggerHaptic('selection');
-                setIsExportSheetOpen(true);
-              }}
-              className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 flex items-center gap-1 cursor-pointer px-2 py-0.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors"
-              title="Export filtered transactions"
-            >
-              <Download className="w-3 h-3" />
-              <span>Export</span>
-            </button>
-          )}
-
-          {activeExpenses.length > 0 && onClearAllExpenses && (
-            <button
-              type="button"
-              onClick={() => {
-                void nativeService.triggerHaptic('selection');
-                setIsClearAllModalOpen(true);
-              }}
-              className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:text-rose-700 flex items-center gap-1 cursor-pointer px-2 py-0.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
-              title="Clear all transactions"
-            >
-              <Trash2 className="w-3 h-3" />
-              <span>Clear All</span>
-            </button>
-          )}
-        </div>
+        {activeExpenses.length > 0 && onClearAllExpenses && (
+          <button
+            type="button"
+            onClick={() => {
+              void nativeService.triggerHaptic('selection');
+              setIsClearAllModalOpen(true);
+            }}
+            className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:text-rose-700 flex items-center gap-1 cursor-pointer px-2 py-0.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+            title="Clear all transactions"
+          >
+            <Trash2 className="w-3 h-3" />
+            <span>Clear All</span>
+          </button>
+        )}
       </div>
 
       {/* Transactions List */}
