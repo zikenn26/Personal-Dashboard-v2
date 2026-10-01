@@ -234,6 +234,46 @@ let activeRealtimeChannel: any = null;
 let currentSyncStatus: 'synced' | 'syncing' | 'error' | 'idle' = 'idle';
 const statusListeners = new Set<(status: 'synced' | 'syncing' | 'error' | 'idle') => void>();
 
+// ---------------------------------------------------------------------------
+// Workspace sync ordering / stale-write protection
+// ---------------------------------------------------------------------------
+// The workspace is currently stored as one JSONB snapshot.  Multiple devices
+// can therefore race: an older snapshot can arrive after a newer deletion and
+// resurrect deleted data.  These values let this client reject stale remote
+// snapshots and serialize local writes.  The database `updated_at` column is
+// also used as the server-side write guard.
+let syncWriteQueue: Promise<void> = Promise.resolve();
+let latestLocalMutationTimestamp =
+  typeof window !== 'undefined'
+    ? Number(localStorage.getItem('lifeos_workspace_sync_clock') || '0')
+    : 0;
+let latestKnownRemoteTimestamp = 0;
+
+const getSyncTimestamp = (): number => {
+  const now = Date.now();
+  if (typeof window === 'undefined') {
+    return now;
+  }
+
+  try {
+    const key = 'lifeos_workspace_sync_clock';
+    const previous = Number(localStorage.getItem(key) || '0');
+    const next = Math.max(now, previous + 1, latestKnownRemoteTimestamp + 1);
+    localStorage.setItem(key, String(next));
+    return next;
+  } catch {
+    return now;
+  }
+};
+
+const parseSyncTimestamp = (value: any): number => {
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) return numeric;
+
+  const parsed = Date.parse(String(value || ''));
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
 export const getAutoSyncStatus = () => currentSyncStatus;
 
 /**
@@ -374,27 +414,50 @@ export const syncWorkspaceToSupabase = async (
     };
   }
 
+  if (!workspacePayload) {
+    return {
+      success: false,
+      message: 'No workspace payload supplied.',
+    };
+  }
+
+  // Every local write receives a monotonically increasing client timestamp.
+  // This is deliberately generated at commit time, not when the UI changed,
+  // so debounced auto-syncs cannot accidentally reuse an old ordering value.
+  const syncTimestampMs = getSyncTimestamp();
+  latestLocalMutationTimestamp = Math.max(latestLocalMutationTimestamp, syncTimestampMs);
+  const now = new Date(syncTimestampMs).toISOString();
+
+  // Serialize writes made by this browser/device.  Without this queue, an
+  // older in-flight request can finish after a newer request and overwrite it.
+  let resolveQueued!: () => void;
+  const previousQueue = syncWriteQueue;
+  syncWriteQueue = new Promise<void>((resolve) => {
+    resolveQueued = resolve;
+  });
+
+  await previousQueue;
+
   try {
     notifyStatus('syncing');
-    const now = new Date().toISOString();
-    lastPushedTimestamp = Date.now();
 
-    // Include device session id inside workspace_data metadata
     const enrichedPayload = {
       ...workspacePayload,
       _meta: {
+        ...(workspacePayload?._meta || {}),
         lastDeviceId: DEVICE_SESSION_ID,
-        clientTimestamp: Date.now(),
+        clientTimestamp: syncTimestampMs,
+        syncVersion: syncTimestampMs,
       },
     };
 
-    // Broadcast immediately over WebSocket to peer devices with sub-30ms latency
+    // Broadcast only after the local ordering value has been assigned.
     broadcastWorkspaceUpdate(enrichedPayload);
 
     const activeId = getCustomWorkspaceIdentifier();
-    const resolvedEmail = activeUserEmail || workspacePayload?.profile?.contactEmail || 'user@workspace.app';
+    const resolvedEmail =
+      activeUserEmail || workspacePayload?.profile?.contactEmail || 'user@workspace.app';
 
-    // Retrieve authenticated Supabase user ID if session exists
     let authenticatedUserId: string | null = null;
     try {
       const { data: authData } = await client.auth.getUser();
@@ -402,7 +465,7 @@ export const syncWorkspaceToSupabase = async (
         authenticatedUserId = authData.user.id;
       }
     } catch {
-      // Offline or unauthenticated
+      // Offline or unauthenticated; the database request below will report it.
     }
 
     const payloadToSave: Record<string, any> = {
@@ -411,27 +474,139 @@ export const syncWorkspaceToSupabase = async (
       workspace_data: enrichedPayload,
       updated_at: now,
     };
+
     if (authenticatedUserId) {
       payloadToSave.user_id = authenticatedUserId;
     }
 
-    const { error } = await client
+    // IMPORTANT:
+    // Do NOT use upsert here.  Upsert has no stale-write protection and was
+    // capable of allowing an older whole-workspace snapshot to resurrect
+    // deleted expenses.  First determine whether the row exists, then perform
+    // an UPDATE guarded by updated_at.
+    const { data: existingRow, error: lookupError } = await client
       .from('user_workspaces')
-      .upsert(payloadToSave, { onConflict: 'user_identifier' });
+      .select('updated_at')
+      .eq('user_identifier', activeId)
+      .maybeSingle();
 
-    if (error) {
-      console.warn('Supabase sync notice (will retry automatically):', error.message || error);
+    if (lookupError) {
       notifyStatus('error');
       return {
         success: false,
-        message: `Cloud sync notice: ${error.message}`,
+        message: `Cloud sync lookup failed: ${lookupError.message}`,
       };
     }
 
+    if (!existingRow) {
+      // First write for this workspace.
+      const { error: insertError } = await client
+        .from('user_workspaces')
+        .insert(payloadToSave);
+
+      if (insertError) {
+        // Another device may have created the row between SELECT and INSERT.
+        // Retry through the guarded UPDATE path rather than falling back to
+        // an unguarded upsert.
+        const { data: retryRow, error: retryLookupError } = await client
+          .from('user_workspaces')
+          .select('updated_at')
+          .eq('user_identifier', activeId)
+          .maybeSingle();
+
+        if (retryLookupError || !retryRow) {
+          notifyStatus('error');
+          return {
+            success: false,
+            message: `Cloud sync insert failed: ${insertError.message}`,
+          };
+        }
+
+        const remoteTimestamp = parseSyncTimestamp(retryRow.updated_at);
+        if (remoteTimestamp >= syncTimestampMs) {
+          latestKnownRemoteTimestamp = Math.max(latestKnownRemoteTimestamp, remoteTimestamp);
+          notifyStatus('synced');
+          return {
+            success: true,
+            message: 'Cloud already contains a newer workspace version; stale local write was rejected.',
+            timestamp: retryRow.updated_at,
+          };
+        }
+
+        const { error: guardedRetryError } = await client
+          .from('user_workspaces')
+          .update(payloadToSave)
+          .eq('user_identifier', activeId)
+          .lt('updated_at', now);
+
+        if (guardedRetryError) {
+          notifyStatus('error');
+          return {
+            success: false,
+            message: `Cloud sync retry failed: ${guardedRetryError.message}`,
+          };
+        }
+      }
+    } else {
+      const remoteTimestamp = parseSyncTimestamp(existingRow.updated_at);
+
+      // Never overwrite a newer server snapshot with an older client snapshot.
+      if (remoteTimestamp >= syncTimestampMs) {
+        latestKnownRemoteTimestamp = Math.max(latestKnownRemoteTimestamp, remoteTimestamp);
+        notifyStatus('synced');
+        return {
+          success: true,
+          message: 'Cloud already contains a newer workspace version; stale local write was rejected.',
+          timestamp: existingRow.updated_at,
+        };
+      }
+
+      // PostgreSQL evaluates the timestamp predicate at update time. If another
+      // device wins the race between SELECT and UPDATE, this UPDATE affects
+      // zero rows and our snapshot is safely discarded instead of resurrecting
+      // deleted records.
+      const { data: updatedRows, error: updateError } = await client
+        .from('user_workspaces')
+        .update(payloadToSave)
+        .eq('user_identifier', activeId)
+        .lt('updated_at', now)
+        .select('updated_at');
+
+      if (updateError) {
+        notifyStatus('error');
+        return {
+          success: false,
+          message: `Cloud sync update failed: ${updateError.message}`,
+        };
+      }
+
+      if (!updatedRows || updatedRows.length === 0) {
+        const { data: winnerRow } = await client
+          .from('user_workspaces')
+          .select('updated_at')
+          .eq('user_identifier', activeId)
+          .maybeSingle();
+
+        const winnerTimestamp = parseSyncTimestamp(winnerRow?.updated_at);
+        latestKnownRemoteTimestamp = Math.max(latestKnownRemoteTimestamp, winnerTimestamp);
+
+        notifyStatus('synced');
+        return {
+          success: true,
+          message: 'A newer workspace version won the sync race; stale local snapshot was not written.',
+          timestamp: winnerRow?.updated_at,
+        };
+      }
+    }
+
+    latestKnownRemoteTimestamp = Math.max(latestKnownRemoteTimestamp, syncTimestampMs);
     notifyStatus('synced');
+
     return {
       success: true,
-      message: isAutoSync ? 'Auto-synced to Supabase' : 'Workspace successfully backed up to Supabase Cloud',
+      message: isAutoSync
+        ? 'Auto-synced to Supabase'
+        : 'Workspace successfully backed up to Supabase Cloud',
       timestamp: now,
     };
   } catch (err: any) {
@@ -441,6 +616,8 @@ export const syncWorkspaceToSupabase = async (
       success: false,
       message: `Sync notice: ${err?.message || 'Network failure'}`,
     };
+  } finally {
+    resolveQueued();
   }
 };
 
@@ -552,9 +729,33 @@ export const subscribeToRealtimeWorkspace = (
             const payload = res?.payload;
             if (!payload || !payload.data) return;
 
-            // Ignore if this change originated from this same browser session
+            // Ignore if this change originated from this same browser session.
             if (payload.deviceId === DEVICE_SESSION_ID) {
               return;
+            }
+
+            const remoteClientTimestamp = parseSyncTimestamp(
+              payload.data?._meta?.syncVersion ?? payload.data?._meta?.clientTimestamp ?? payload.timestamp
+            );
+
+            // Never allow an older broadcast to roll the local workspace
+            // backwards after a newer local mutation.
+            if (
+              remoteClientTimestamp > 0 &&
+              remoteClientTimestamp < latestLocalMutationTimestamp
+            ) {
+              console.info('Ignoring stale workspace broadcast:', {
+                remoteClientTimestamp,
+                latestLocalMutationTimestamp,
+              });
+              return;
+            }
+
+            if (remoteClientTimestamp > 0) {
+              latestKnownRemoteTimestamp = Math.max(
+                latestKnownRemoteTimestamp,
+                remoteClientTimestamp
+              );
             }
 
             onRemoteChange(payload.data, payload.timestamp || new Date().toISOString());
@@ -617,13 +818,40 @@ export const subscribeToRealtimeWorkspace = (
             if (newRecord.user_identifier && newRecord.user_identifier !== activeId) return;
 
             const meta = newRecord.workspace_data?._meta;
-            // Ignore if this change originated from this same browser session
+            // Ignore if this change originated from this same browser session.
             if (meta?.lastDeviceId === DEVICE_SESSION_ID) {
               return;
             }
 
-            // Trigger silent real-time hydration on this device
-            onRemoteChange(newRecord.workspace_data, newRecord.updated_at || new Date().toISOString());
+            const remoteClientTimestamp = parseSyncTimestamp(
+              meta?.syncVersion ?? meta?.clientTimestamp ?? newRecord.updated_at
+            );
+
+            // Reject stale Postgres events. This is especially important after
+            // a deletion: an older snapshot must not be allowed to resurrect it.
+            if (
+              remoteClientTimestamp > 0 &&
+              remoteClientTimestamp < latestLocalMutationTimestamp
+            ) {
+              console.info('Ignoring stale Supabase realtime workspace update:', {
+                remoteClientTimestamp,
+                latestLocalMutationTimestamp,
+              });
+              return;
+            }
+
+            if (remoteClientTimestamp > 0) {
+              latestKnownRemoteTimestamp = Math.max(
+                latestKnownRemoteTimestamp,
+                remoteClientTimestamp
+              );
+            }
+
+            // Trigger silent real-time hydration on this device.
+            onRemoteChange(
+              newRecord.workspace_data,
+              newRecord.updated_at || new Date().toISOString()
+            );
             notifyStatus('synced');
           } catch (e) {
             console.warn('Realtime postgres_changes payload error:', e);
@@ -686,6 +914,31 @@ export const fetchWorkspaceFromSupabase = async (): Promise<CloudSyncResult> => 
         success: false,
         message: 'No existing cloud data found for this workspace. Ready for initial migration.',
       };
+    }
+
+    const cloudTimestamp = parseSyncTimestamp(
+      data.workspace_data?._meta?.syncVersion ??
+        data.workspace_data?._meta?.clientTimestamp ??
+        data.updated_at
+    );
+
+    // If this device has a newer local mutation, do not hand an older cloud
+    // snapshot to the app for hydration. The previous behavior could overwrite
+    // a freshly deleted expense with an older cloud array.
+    if (
+      cloudTimestamp > 0 &&
+      latestLocalMutationTimestamp > 0 &&
+      cloudTimestamp < latestLocalMutationTimestamp
+    ) {
+      return {
+        success: false,
+        message: 'Cloud snapshot is older than local changes; local workspace was preserved.',
+        timestamp: data.updated_at,
+      };
+    }
+
+    if (cloudTimestamp > 0) {
+      latestKnownRemoteTimestamp = Math.max(latestKnownRemoteTimestamp, cloudTimestamp);
     }
 
     return {
