@@ -239,4 +239,81 @@ describe('Habits & Streaks Persistence and Sync Engine', () => {
     expect(d2.getMonth()).toBe(8);
     expect(d2.getDate()).toBe(28);
   });
+
+  it('updates an existing habit using Storage.updateHabit and verifies persistence', () => {
+    const habit: HabitItem = {
+      id: 'hb-read-1',
+      title: 'Read 10 pages',
+      category: 'Learning',
+      icon: '📖',
+      completedDays: [true, false, false, false, false, false, false],
+      streak: 1,
+      color: '#3B82F6',
+    };
+    Storage.setHabits([habit]);
+
+    // Update habit details
+    const updated = Storage.updateHabit({
+      ...habit,
+      title: 'Read 25 pages daily',
+      category: 'Growth',
+      icon: '📚',
+      streak: 5,
+    });
+
+    expect(updated[0].title).toBe('Read 25 pages daily');
+    expect(updated[0].category).toBe('Growth');
+    expect(updated[0].icon).toBe('📚');
+
+    const stored = Storage.getHabits();
+    expect(stored[0].title).toBe('Read 25 pages daily');
+    expect(stored[0].streak).toBe(5);
+  });
+
+  it('preserves local habit custom updates when merging with cloud payload', () => {
+    const localHabit: HabitItem = {
+      id: 'hb-exercise',
+      title: 'Workout & Cardio Extra',
+      category: 'Health & Fitness',
+      icon: '🏋️',
+      completedDays: [true, true, false, false, false, false, false],
+      streak: 2,
+      color: '#10B981',
+    };
+    Storage.setHabits([localHabit]);
+
+    const cloudHabit: HabitItem = {
+      id: 'hb-exercise',
+      title: 'Workout',
+      category: 'Health',
+      icon: '💪',
+      completedDays: [true, false, false, false, false, false, false],
+      streak: 1,
+      color: '#EF4444',
+    };
+
+    Storage.importAllDataPayload({
+      habits: [cloudHabit],
+    });
+
+    const result = Storage.getHabits();
+    expect(result[0].title).toBe('Workout & Cardio Extra');
+    expect(result[0].category).toBe('Health & Fitness');
+    expect(result[0].icon).toBe('🏋️');
+    expect(result[0].color).toBe('#10B981');
+    expect(result[0].completedDays[1]).toBe(true);
+  });
+
+  it('never reverts habitActiveWeek to an older week from cloud payload', () => {
+    const currentWeekMonday = getWeekId(new Date());
+    Storage.setHabitActiveWeek(currentWeekMonday);
+
+    // Incoming older week from cloud
+    Storage.importAllDataPayload({
+      habitActiveWeek: '2026-08-01',
+    });
+
+    const activeWeek = Storage.getHabitActiveWeek();
+    expect(activeWeek).toBe(currentWeekMonday);
+  });
 });

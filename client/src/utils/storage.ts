@@ -1233,6 +1233,12 @@ export const Storage = {
 
   getHabits: (): HabitItem[] => loadFromStorage(STORAGE_KEYS.HABITS, INITIAL_HABITS),
   setHabits: (items: HabitItem[]) => saveToStorage(STORAGE_KEYS.HABITS, items),
+  updateHabit: (habit: HabitItem): HabitItem[] => {
+    const current = Storage.getHabits();
+    const updated = current.map((h) => (h.id === habit.id ? { ...h, ...habit } : h));
+    Storage.setHabits(updated);
+    return updated;
+  },
 
   getHabitHistory: (): HabitWeekRecord[] => {
     const raw = loadFromStorage<HabitWeekRecord[]>(STORAGE_KEYS.HABIT_HISTORY, []);
@@ -1847,7 +1853,6 @@ export const Storage = {
             if (cloudH && cloudH.id && !trashedIds.has(cloudH.id)) {
               const localH = habitMap.get(cloudH.id);
               if (localH) {
-                // Merge completed days and streak so completions are never lost
                 const mergedCompletedDays = [0, 1, 2, 3, 4, 5, 6].map((i) => {
                   return Boolean(localH.completedDays?.[i] || cloudH.completedDays?.[i]);
                 });
@@ -1888,14 +1893,14 @@ export const Storage = {
         }
       }
       if (typeof data.habitActiveWeek === 'string' && data.habitActiveWeek.trim()) {
-        const localWeek = Storage.getHabitActiveWeek();
+        const localWeek = Storage.getHabitActiveWeek().replace(/^week-/, '').trim();
         const cleanCloudWeek = data.habitActiveWeek.replace(/^week-/, '').trim();
-        const currentWeekMonday = getWeekId(new Date());
+        const currentWeekMonday = getWeekId(new Date()).replace(/^week-/, '').trim();
         if (!localWeek) {
           Storage.setHabitActiveWeek(cleanCloudWeek);
-        } else if (localWeek === currentWeekMonday) {
-          // Local is already on current week, do not revert to older week from cloud
-        } else {
+        } else if (cleanCloudWeek < currentWeekMonday && localWeek >= currentWeekMonday) {
+          // Local is already on current calendar week; NEVER revert to older week from cloud
+        } else if (cleanCloudWeek >= localWeek) {
           Storage.setHabitActiveWeek(cleanCloudWeek);
         }
       }

@@ -92,6 +92,7 @@ export interface AndroidShellProps {
 
   onToggleHabitDay: (habitId: string, dayIndex: number) => void;
   onAddHabit?: (title: string, category: string, icon: string, color: string) => void;
+  onUpdateHabit?: (habit: HabitItem) => void;
   onDeleteHabit?: (habitId: string) => void;
   onResetHabitWeek?: () => void;
   onSimulateMondayRollover?: () => void;
@@ -180,6 +181,7 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
   onDeleteImportLog,
   onToggleHabitDay,
   onAddHabit,
+  onUpdateHabit,
   onDeleteHabit,
   onResetHabitWeek,
   onSimulateMondayRollover,
@@ -444,6 +446,7 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
               habitHistory={habitHistory}
               onToggleHabitDay={onToggleHabitDay}
               onAddHabit={onAddHabit}
+              onUpdateHabit={onUpdateHabit}
               onDeleteHabit={onDeleteHabit}
               onResetWeek={onResetHabitWeek}
             />

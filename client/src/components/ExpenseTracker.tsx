@@ -42,6 +42,7 @@ import {
   ArrowUpDown,
   CalendarRange,
   Smartphone,
+  Download,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -1019,7 +1020,28 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     }
 
     if (selectedCategoryFilter !== 'all') {
-      list = list.filter((e) => e.category.toLowerCase() === selectedCategoryFilter.toLowerCase());
+      const filterLower = selectedCategoryFilter.toLowerCase().trim();
+      list = list.filter((e) => {
+        const cat = (e.category || '').toLowerCase().trim();
+        if (cat === filterLower) return true;
+        // Smart matching for common category families (Food, Transport, Utilities, etc.)
+        if (filterLower === 'food' || filterLower === 'food & dining') {
+          return cat.includes('food') || cat.includes('dining') || cat.includes('restaurant') || cat.includes('cafe') || cat.includes('snack');
+        }
+        if (filterLower === 'transport' || filterLower === 'travel') {
+          return cat.includes('transport') || cat.includes('travel') || cat.includes('cab') || cat.includes('auto') || cat.includes('uber') || cat.includes('ola');
+        }
+        if (filterLower === 'utilities' || filterLower === 'bills' || filterLower === 'bills & utilities') {
+          return cat.includes('utilit') || cat.includes('bill') || cat.includes('electric') || cat.includes('water') || cat.includes('recharge');
+        }
+        if (filterLower === 'groceries') {
+          return cat.includes('grocer') || cat.includes('supermarket') || cat.includes('mart');
+        }
+        if (filterLower === 'shopping') {
+          return cat.includes('shop') || cat.includes('clothing') || cat.includes('retail') || cat.includes('amazon');
+        }
+        return cat.includes(filterLower) || filterLower.includes(cat);
+      });
     }
 
     if (selectedSheetFilter) {
@@ -1189,6 +1211,79 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     if (itemIcon) return itemIcon;
     const cat = resolveCategoryDef(category);
     return cat ? cat.icon : '🏷️';
+  };
+
+  const availableCategories = useMemo(() => {
+    const set = new Set<string>();
+    EXPENSE_CATEGORIES.forEach((c) => set.add(c.name));
+    currentExpenses.forEach((e) => {
+      if (e.category && e.category.trim()) {
+        set.add(e.category.trim());
+      }
+    });
+    return Array.from(set);
+  }, [currentExpenses]);
+
+  const handleDownloadCSV = () => {
+    Sound.success(soundEnabled);
+    triggerConfetti();
+
+    const listToExport = currentExpenses.length > 0 ? currentExpenses : expenses;
+    if (listToExport.length === 0) {
+      alert('No transactions available to export.');
+      return;
+    }
+
+    const headers = [
+      'Transaction ID',
+      'Date',
+      'Time',
+      'Merchant / Title',
+      'Category',
+      'Amount',
+      'Type',
+      'Payment Method',
+      'Bank / Account',
+      'Reference ID',
+      'Source',
+      'Notes',
+    ];
+
+    const escapeCsv = (str: any) => {
+      if (str === null || str === undefined) return '""';
+      const s = String(str).replace(/"/g, '""');
+      return `"${s}"`;
+    };
+
+    const rows = listToExport.map((t) => {
+      const isCredit = isCreditTransaction(t);
+      return [
+        escapeCsv(t.id),
+        escapeCsv(t.date || ''),
+        escapeCsv(t.time || ''),
+        escapeCsv(t.name || ''),
+        escapeCsv(t.category || ''),
+        escapeCsv(t.amount),
+        escapeCsv(isCredit ? 'CREDIT' : 'DEBIT'),
+        escapeCsv(t.paymentMethod || ''),
+        escapeCsv(t.bankOrAccount || ''),
+        escapeCsv(t.referenceId || ''),
+        escapeCsv(t.source || 'manual'),
+        escapeCsv(t.notes || ''),
+      ].join(',');
+    });
+
+    const csvContent = [headers.join(','), ...rows].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const dateStr = new Date().toISOString().split('T')[0];
+    link.href = url;
+    link.setAttribute('download', `expense_transactions_${dateStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -1365,6 +1460,18 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
             {isSmsTrackingActive && (
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
             )}
+          </button>
+
+          {/* Floating Download CSV Button */}
+          <button
+            type="button"
+            id="btn-download-csv"
+            onClick={handleDownloadCSV}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-linear-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-xs font-bold shadow-md hover:shadow-lg transition-all cursor-pointer transform hover:-translate-y-0.5 active:translate-y-0"
+            title="Download CSV: Export your transaction history"
+          >
+            <Download className="w-3.5 h-3.5 shrink-0" />
+            <span>Download CSV</span>
           </button>
 
           {/* Upload Excel Button */}
@@ -1670,19 +1777,26 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
               <div className="flex items-center gap-1.5 shrink-0">
                 <Filter className="w-3.5 h-3.5 text-gray-400 shrink-0" />
                 <select
+                  id="expense-category-filter"
+                  data-testid="expense-category-filter"
+                  aria-label="Filter transactions by category"
                   value={selectedCategoryFilter}
                   onChange={(e) => {
                     Sound.click(soundEnabled);
                     setSelectedCategoryFilter(e.target.value);
+                    setTxCurrentPage(1);
                   }}
                   className="px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-50 dark:bg-[#242C3D] text-[#37352F] dark:text-white border border-[#E5E7EB] dark:border-[#2D3748] outline-none cursor-pointer hover:border-purple-300 dark:hover:border-purple-600 transition-colors"
                 >
                   <option value="all">All Categories</option>
-                  {EXPENSE_CATEGORIES.map((c) => (
-                    <option key={c.name} value={c.name}>
-                      {c.icon} {c.name}
-                    </option>
-                  ))}
+                  {availableCategories.map((catName) => {
+                    const def = resolveCategoryDef(catName);
+                    return (
+                      <option key={catName} value={catName}>
+                        {def?.icon || '🏷️'} {catName}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 

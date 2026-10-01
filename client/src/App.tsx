@@ -594,10 +594,14 @@ export default function App() {
     );
 
     // Re-verify on window focus for background wakeups: flush any pending local writes first
-    const handleFocus = () => {
+    const handleFocus = async () => {
       if (document.visibilityState === 'visible') {
-        flushAutoSyncImmediately(Storage.getAllDataPayload());
-        autoSyncFromCloud();
+        try {
+          await flushAutoSyncImmediately(Storage.getAllDataPayload());
+        } catch {
+          // ignore
+        }
+        await autoSyncFromCloud();
       }
     };
     window.addEventListener('focus', handleFocus);
@@ -1164,84 +1168,84 @@ export default function App() {
   // Habit Handlers
   const handleToggleHabitDay = (habitId: string, dayIndex: number) => {
     Sound.click(settings.soundEnabled);
-    let toggledHabit: HabitItem | null = null;
-    let isNowCompleted = false;
+    const currentMonday = getMondayOfWeek();
+    const currentWeekId = getWeekId(currentMonday);
+    const days = getWeekDaysInfo(currentMonday);
+    const dayInfo = days[dayIndex];
 
-    setHabits((prev) => {
-      const currentStored = Storage.getHabits();
-      const base = currentStored.length > 0 ? currentStored : prev;
-      const updated = base.map((h) => {
-        if (h.id === habitId) {
-          const newDays = [...h.completedDays];
-          newDays[dayIndex] = !newDays[dayIndex];
-          isNowCompleted = newDays[dayIndex];
-          const completedCount = newDays.filter(Boolean).length;
-          toggledHabit = {
-            ...h,
-            completedDays: newDays,
-            streak: completedCount > 0 ? Math.max(0, h.streak + (newDays[dayIndex] ? 1 : -1)) : 0,
-          };
-          return toggledHabit;
-        }
-        return h;
-      });
-      Storage.setHabits(updated);
-      return updated;
-    });
+    const currentStored = Storage.getHabits();
+    const base = habits.length > 0 ? habits : currentStored;
+    const target = base.find((h) => h.id === habitId);
+    if (!target) return;
+
+    const newDays = [...target.completedDays];
+    newDays[dayIndex] = !newDays[dayIndex];
+    const isNowCompleted = Boolean(newDays[dayIndex]);
+    const completedCount = newDays.filter(Boolean).length;
+    const toggledHabit: HabitItem = {
+      ...target,
+      completedDays: newDays,
+      streak: completedCount > 0 ? Math.max(0, target.streak + (isNowCompleted ? 1 : -1)) : 0,
+    };
+
+    const updatedHabits = base.map((h) => (h.id === habitId ? toggledHabit : h));
+    setHabits(updatedHabits);
+    Storage.setHabits(updatedHabits);
+    Storage.setHabitActiveWeek(currentWeekId);
+
+    // Record or update the discrete habit activity log
+    if (dayInfo) {
+      const currentActs = Storage.getHabitActivities();
+      if (isNowCompleted) {
+        const newActivity: HabitActivityLog = {
+          id: `act-${habitId}-${dayInfo.dateStr}-${Date.now()}`,
+          habitId,
+          habitTitle: toggledHabit.title,
+          category: toggledHabit.category,
+          icon: toggledHabit.icon,
+          color: toggledHabit.color,
+          dayIndex,
+          dayName: DAYS_OF_WEEK[dayIndex],
+          date: dayInfo.dateStr,
+          completed: true,
+          timestamp: Date.now(),
+        };
+        const nextActs = [
+          newActivity,
+          ...currentActs.filter((a) => !(a.habitId === habitId && a.date === dayInfo.dateStr)),
+        ];
+        setHabitActivities(nextActs);
+        Storage.setHabitActivities(nextActs);
+      } else {
+        const nextActs = currentActs.filter(
+          (a) => !(a.habitId === habitId && a.date === dayInfo.dateStr)
+        );
+        setHabitActivities(nextActs);
+        Storage.setHabitActivities(nextActs);
+      }
+    }
 
     isCloudReady.current = true;
     scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
+  };
 
-    // Record or update the discrete habit activity log
-    if (toggledHabit) {
-      const currentMonday = getMondayOfWeek();
-      const days = getWeekDaysInfo(currentMonday);
-      const dayInfo = days[dayIndex];
-
-      if (dayInfo) {
-        if (isNowCompleted) {
-          const habitToLog = toggledHabit as HabitItem;
-          const newActivity: HabitActivityLog = {
-            id: `act-${habitId}-${dayInfo.dateStr}-${Date.now()}`,
-            habitId,
-            habitTitle: habitToLog.title,
-            category: habitToLog.category,
-            icon: habitToLog.icon,
-            color: habitToLog.color,
-            dayIndex,
-            dayName: DAYS_OF_WEEK[dayIndex],
-            date: dayInfo.dateStr,
-            completed: true,
-            timestamp: Date.now(),
-          };
-          setHabitActivities((prevActs) => {
-            const currentActs = Storage.getHabitActivities();
-            const baseActs = currentActs.length > prevActs.length ? currentActs : prevActs;
-            const nextActs = [
-              newActivity,
-              ...baseActs.filter((a) => !(a.habitId === habitId && a.date === dayInfo.dateStr)),
-            ];
-            Storage.setHabitActivities(nextActs);
-            return nextActs;
-          });
-        } else {
-          setHabitActivities((prevActs) => {
-            const currentActs = Storage.getHabitActivities();
-            const baseActs = currentActs.length > 0 ? currentActs : prevActs;
-            const nextActs = baseActs.filter(
-              (a) => !(a.habitId === habitId && a.date === dayInfo.dateStr)
-            );
-            Storage.setHabitActivities(nextActs);
-            return nextActs;
-          });
-        }
-      }
-    }
+  const handleUpdateHabit = (updatedHabit: HabitItem) => {
+    Sound.click(settings.soundEnabled);
+    const currentStored = Storage.getHabits();
+    const base = habits.length > 0 ? habits : currentStored;
+    const updated = base.map((h) => (h.id === updatedHabit.id ? { ...h, ...updatedHabit } : h));
+    setHabits(updated);
+    Storage.setHabits(updated);
+    Storage.setHabitActiveWeek(getWeekId(getMondayOfWeek()));
+    isCloudReady.current = true;
+    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
   };
 
   const handleAddHabit = (title: string, category: string, icon: string, color: string) => {
     const cleanTitle = title.trim();
     if (!cleanTitle) return;
+    const currentMonday = getMondayOfWeek();
+    const currentWeekId = getWeekId(currentMonday);
     const newHabit: HabitItem = {
       id: `hb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       title: cleanTitle,
@@ -1251,24 +1255,21 @@ export default function App() {
       streak: 0,
       color: color || '#6366F1',
     };
-    setHabits((prev) => {
-      const currentStored = Storage.getHabits();
-      const base = currentStored.length > prev.length ? currentStored : prev;
-      const updated = [...base.filter((h) => h.id !== newHabit.id), newHabit];
-      Storage.setHabits(updated);
-      return updated;
-    });
+    const currentStored = Storage.getHabits();
+    const base = habits.length > 0 ? habits : currentStored;
+    const updated = [...base.filter((h) => h.id !== newHabit.id), newHabit];
+    setHabits(updated);
+    Storage.setHabits(updated);
+    Storage.setHabitActiveWeek(currentWeekId);
     isCloudReady.current = true;
     scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
   };
 
   const handleDeleteHabit = (id: string) => {
     const target = habits.find((h) => h.id === id) || Storage.getHabits().find((h) => h.id === id);
-    setHabits((prev) => {
-      const updated = prev.filter((h) => h.id !== id);
-      Storage.setHabits(updated);
-      return updated;
-    });
+    const updated = habits.filter((h) => h.id !== id);
+    setHabits(updated);
+    Storage.setHabits(updated);
     if (target) {
       Storage.moveToTrash('habits', target, target.title);
       setTrash(Storage.getTrash());
@@ -1278,14 +1279,14 @@ export default function App() {
   };
 
   const handleResetHabitWeek = () => {
-    setHabits((prev) => {
-      const updated = prev.map((h) => ({
-        ...h,
-        completedDays: [false, false, false, false, false, false, false],
-      }));
-      Storage.setHabits(updated);
-      return updated;
-    });
+    const currentStored = Storage.getHabits();
+    const base = habits.length > 0 ? habits : currentStored;
+    const updated = base.map((h) => ({
+      ...h,
+      completedDays: [false, false, false, false, false, false, false],
+    }));
+    setHabits(updated);
+    Storage.setHabits(updated);
     isCloudReady.current = true;
     scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
   };
@@ -2405,6 +2406,7 @@ export default function App() {
           onDeleteImportLog={handleDeleteImportLog}
           onToggleHabitDay={handleToggleHabitDay}
           onAddHabit={handleAddHabit}
+          onUpdateHabit={handleUpdateHabit}
           onDeleteHabit={handleDeleteHabit}
           onResetHabitWeek={handleResetHabitWeek}
           onSimulateMondayRollover={handleSimulateMondayRollover}
@@ -3556,6 +3558,7 @@ export default function App() {
                     habitActivities={habitActivities}
                     onToggleHabitDay={handleToggleHabitDay}
                     onAddHabit={handleAddHabit}
+                    onUpdateHabit={handleUpdateHabit}
                     onDeleteHabit={handleDeleteHabit}
                     onResetWeek={handleResetHabitWeek}
                     onSimulateMondayRollover={handleSimulateMondayRollover}

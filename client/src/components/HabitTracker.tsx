@@ -13,6 +13,7 @@ import {
   TrendingUp,
   X,
   RotateCcw,
+  Edit2,
 } from 'lucide-react';
 import { HabitItem, HabitWeekRecord, HabitActivityLog } from '../types';
 import { Sound } from '../utils/audio';
@@ -31,6 +32,7 @@ export interface HabitTrackerProps {
   habitActivities?: HabitActivityLog[];
   onToggleHabitDay: (habitId: string, dayIndex: number) => void;
   onAddHabit: (title: string, category: string, icon: string, color: string) => void;
+  onUpdateHabit?: (habit: HabitItem) => void;
   onDeleteHabit: (habitId: string) => void;
   onResetWeek?: () => void;
   onSimulateMondayRollover?: () => void;
@@ -46,6 +48,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
   habitActivities = [],
   onToggleHabitDay,
   onAddHabit,
+  onUpdateHabit,
   onDeleteHabit,
   onToggleHistoricalHabitDay,
   onAddHistoricalHabit,
@@ -61,6 +64,14 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
   const [newCategory, setNewCategory] = useState('Health');
   const [newIcon, setNewIcon] = useState('⚡');
   const [newColor, setNewColor] = useState('#6366F1');
+
+  // Edit Habit modal state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingHabit, setEditingHabit] = useState<HabitItem | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editCategory, setEditCategory] = useState('Health');
+  const [editIcon, setEditIcon] = useState('⚡');
+  const [editColor, setEditColor] = useState('#6366F1');
 
   // Compute current Monday & week info
   const currentMonday = getMondayOfWeek();
@@ -215,6 +226,38 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
     } else {
       onDeleteHabit(habitId);
     }
+  };
+
+  // Edit habit handlers
+  const handleStartEditHabit = (habit: HabitItem) => {
+    Sound.click(soundEnabled);
+    setEditingHabit(habit);
+    setEditTitle(habit.title);
+    setEditCategory(habit.category || 'Health');
+    setEditIcon(habit.icon || '⚡');
+    setEditColor(habit.color || '#6366F1');
+    setShowEditModal(true);
+  };
+
+  const handleSaveEditHabit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingHabit || !editTitle.trim()) return;
+    Sound.success(soundEnabled);
+
+    const updated: HabitItem = {
+      ...editingHabit,
+      title: editTitle.trim(),
+      category: editCategory || 'Health',
+      icon: editIcon || '⚡',
+      color: editColor || '#6366F1',
+    };
+
+    if (onUpdateHabit) {
+      onUpdateHabit(updated);
+    }
+
+    setShowEditModal(false);
+    setEditingHabit(null);
   };
 
   // Active week stats calculation
@@ -647,15 +690,25 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                         </div>
                       </div>
 
-                      {/* Delete button */}
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteHabitItem(habit.id)}
-                        className="text-[#9CA3AF] hover:text-rose-500 p-1 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer shrink-0"
-                        title="Delete habit"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {/* Action buttons */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleStartEditHabit(habit)}
+                          className="text-[#9CA3AF] hover:text-indigo-600 dark:hover:text-indigo-400 p-1 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition-colors cursor-pointer"
+                          title="Edit habit details"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteHabitItem(habit.id)}
+                          className="text-[#9CA3AF] hover:text-rose-500 p-1 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
+                          title="Delete habit"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
 
                     {/* Right: 7 Checkboxes */}
@@ -771,6 +824,127 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                   className="px-4 py-2 rounded-xl bg-[#6366F1] hover:bg-[#4F46E5] text-white text-xs font-bold cursor-pointer"
                 >
                   Save Habit
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 6. EDIT HABIT MODAL                                                       */}
+      {/* ========================================================================= */}
+      {showEditModal && editingHabit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-3xl bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-[#F3F4F6] dark:border-[#334155] pb-3">
+              <h3 className="text-base font-bold text-[#111827] dark:text-white flex items-center gap-2">
+                <Edit2 className="w-4 h-4 text-[#6366F1]" />
+                <span>Edit Habit</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEditModal(false);
+                  setEditingHabit(null);
+                }}
+                className="text-[#9CA3AF] hover:text-[#111827] dark:hover:text-white p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditHabit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-[#374151] dark:text-[#D1D5DB] mb-1">
+                  Habit Title
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  placeholder="e.g. Morning 20m Yoga, Read 10 Pages..."
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#E5E7EB] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-xs sm:text-sm text-[#111827] dark:text-white outline-none focus:ring-2 focus:ring-[#6366F1]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-[#374151] dark:text-[#D1D5DB] mb-1">
+                    Category
+                  </label>
+                  <select
+                    value={editCategory}
+                    onChange={(e) => setEditCategory(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-xs text-[#111827] dark:text-white outline-none"
+                  >
+                    <option value="Health">Health</option>
+                    <option value="Productivity">Productivity</option>
+                    <option value="Learning">Learning</option>
+                    <option value="Mindfulness">Mindfulness</option>
+                    <option value="Fitness">Fitness</option>
+                    <option value="Creativity">Creativity</option>
+                    <option value="Finance">Finance</option>
+                    <option value="Daily">Daily</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#374151] dark:text-[#D1D5DB] mb-1">
+                    Emoji Icon
+                  </label>
+                  <input
+                    type="text"
+                    value={editIcon}
+                    onChange={(e) => setEditIcon(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-xs text-center text-[#111827] dark:text-white outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#374151] dark:text-[#D1D5DB] mb-1">
+                  Accent Color
+                </label>
+                <div className="flex items-center gap-2">
+                  {['#6366F1', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#06B6D4', '#8B5CF6'].map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setEditColor(c)}
+                      className={`w-6 h-6 rounded-full border-2 transition-transform cursor-pointer ${
+                        editColor === c ? 'scale-125 border-gray-900 dark:border-white shadow-xs' : 'border-transparent'
+                      }`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                  <input
+                    type="color"
+                    value={editColor}
+                    onChange={(e) => setEditColor(e.target.value)}
+                    className="w-7 h-7 rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer p-0 bg-transparent"
+                    title="Custom color"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#F3F4F6] dark:border-[#334155]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEditModal(false);
+                    setEditingHabit(null);
+                  }}
+                  className="px-4 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#334155] text-xs font-bold text-[#4B5563] dark:text-[#9CA3AF] hover:bg-[#F3F4F6] cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-[#6366F1] hover:bg-[#4F46E5] text-white text-xs font-bold cursor-pointer"
+                >
+                  Save Changes
                 </button>
               </div>
             </form>

@@ -44,7 +44,10 @@ export function isCreditTransaction(expense?: Partial<ExpenseItem> | null): bool
   return (
     expense.direction === 'CREDIT' ||
     expense.transactionType === 'CREDIT' ||
-    expense.transactionType === 'income'
+    expense.transactionType === 'income' ||
+    (expense as any).type === 'income' ||
+    (expense as any).type === 'CREDIT' ||
+    (expense as any).type === 'credit'
   );
 }
 

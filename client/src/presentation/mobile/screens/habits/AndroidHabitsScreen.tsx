@@ -11,6 +11,7 @@ export interface AndroidHabitsScreenProps {
   habitHistory?: HabitWeekRecord[];
   onToggleHabitDay: (habitId: string, dayIndex: number) => void;
   onAddHabit?: (title: string, category: string, icon: string, color: string) => void;
+  onUpdateHabit?: (habit: HabitItem) => void;
   onDeleteHabit?: (habitId: string) => void;
   onResetWeek?: () => void;
 }
@@ -22,6 +23,7 @@ export const AndroidHabitsScreen: React.FC<AndroidHabitsScreenProps> = ({
   habitHistory = [],
   onToggleHabitDay,
   onAddHabit,
+  onUpdateHabit,
   onDeleteHabit,
   onResetWeek,
 }) => {
