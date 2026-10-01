@@ -1825,7 +1825,20 @@ export const Storage = {
         Storage.setProfile(mergedProfile);
       }
       if (data.todos) Storage.setTodos(data.todos);
-      if (data.habits) Storage.setHabits(data.habits);
+      if (data.habits) {
+        // Prevent stale empty cloud data from overwriting newer local habit data during initialization
+        const currentLocalHabits = Storage.getHabits();
+        if (
+          Array.isArray(data.habits) &&
+          data.habits.length === 0 &&
+          Array.isArray(currentLocalHabits) &&
+          currentLocalHabits.length > 0
+        ) {
+          // Keep existing local habits when incoming cloud payload has an empty array
+        } else {
+          Storage.setHabits(data.habits);
+        }
+      }
       if (Array.isArray(data.habitHistory)) Storage.setHabitHistory(data.habitHistory);
       if (typeof data.habitActiveWeek === 'string') Storage.setHabitActiveWeek(data.habitActiveWeek);
       if (Array.isArray(data.habitActivities)) Storage.setHabitActivities(data.habitActivities);
