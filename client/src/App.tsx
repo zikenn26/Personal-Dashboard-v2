@@ -608,7 +608,13 @@ export default function App() {
     if (isRemoteUpdating.current) {
       return;
     }
-
+  
+  console.log('[SYNC DEBUG] Auto-sync triggered', {
+  habitsCount: habits.length,
+  isCloudReady: isCloudReady.current,
+  isRemoteUpdating: isRemoteUpdating.current,
+});
+  
     scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 600);
   }, [
     profile,
