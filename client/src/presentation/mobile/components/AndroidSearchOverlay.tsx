@@ -92,6 +92,10 @@ const DASHBOARD_PAGES: PageSuggestion[] = [
       'excel',
       'sheets',
       'upi',
+      'export',
+      'csv',
+      'download',
+      'statement',
     ],
   },
   {

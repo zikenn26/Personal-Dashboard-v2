@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { CreditCard, Plus, Trash2, ArrowUpRight, TrendingDown, TrendingUp, Calendar, Tag, DollarSign, Wallet, FileSpreadsheet, MessageSquare, Edit3, Settings, RotateCw, AlertTriangle, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { CreditCard, Plus, Trash2, ArrowUpRight, TrendingDown, TrendingUp, Calendar, Tag, DollarSign, Wallet, FileSpreadsheet, MessageSquare, Edit3, Settings, RotateCw, AlertTriangle, X, ChevronDown, ChevronUp, Download, Share2 } from 'lucide-react';
 import { ExpenseItem, ExcelImportLog } from '../../../../types';
 import { nativeService } from '../../../../services/nativeService';
 import { smsExpenseService } from '../../../../services/smsExpenseService';
@@ -11,6 +11,7 @@ import { useLongPress } from '../../gestures/useLongPress';
 import { AndroidActionSheet, ActionSheetItem } from '../../components/AndroidActionSheet';
 import { QuickExpenseSheet } from '../../components/QuickExpenseSheet';
 import { ControlledSmsRescanModal } from '../../components/ControlledSmsRescanModal';
+import { ExportExpenseSheet } from '../../components/ExportExpenseSheet';
 import { SmsExpenseModal } from '../../../../components/SmsExpenseModal';
 import { ExcelImportModal } from '../../../../components/ExcelImportModal';
 import { getMatchingExpensesForSheet } from '../../../../components/ExpenseTracker';
@@ -93,6 +94,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   const [isRescanModalOpen, setIsRescanModalOpen] = useState(false);
   const [isSmsModalOpen, setIsSmsModalOpen] = useState(false);
   const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
+  const [isExportSheetOpen, setIsExportSheetOpen] = useState(false);
   const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
   const [showSheetLogs, setShowSheetLogs] = useState(false);
   const [deleteSheetModal, setDeleteSheetModal] = useState<{
@@ -242,6 +244,21 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   const todayDateStr = getLocalDateKey(now);
   const weekStartDateStr = getMondayDateKey(now);
   const currentMonthPrefix = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
+
+  const currentPeriodLabel = useMemo(() => {
+    switch (periodFilter) {
+      case 'today':
+        return 'Today';
+      case 'week':
+        return 'This Week';
+      case 'month':
+        return 'This Month';
+      case 'all':
+        return 'All Time';
+      default:
+        return 'Selected Period';
+    }
+  }, [periodFilter]);
 
   // Spending totals are debit-only. Credits/refunds remain visible in the
   // transaction list but never inflate spending totals.
@@ -462,6 +479,19 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
     toast.success('All transactions cleared successfully');
   };
 
+  const handleShareSingleExpense = (item: ExpenseItem) => {
+    void nativeService.triggerHaptic('selection');
+    const isCredit = isCreditTransaction(item);
+    const dateFormatted = item.date || 'N/A';
+    const timeFormatted = item.time ? ` at ${item.time}` : '';
+    const shareText = `Transaction Details:\nMerchant: ${getTransactionDisplayTitle(item)}\nAmount: ₹${Number(item.amount || 0).toFixed(2)} (${isCredit ? 'CREDIT' : 'DEBIT'})\nCategory: ${item.category}\nDate: ${dateFormatted}${timeFormatted}${item.paymentMethod ? `\nPayment: ${item.paymentMethod}` : ''}${item.bankOrAccount ? `\nAccount: ${item.bankOrAccount}` : ''}${item.referenceId ? `\nRef: ${item.referenceId}` : ''}${item.notes ? `\nNotes: ${item.notes}` : ''}`;
+
+    void nativeService.shareContent({
+      title: `${getTransactionDisplayTitle(item)} - ₹${Number(item.amount || 0).toFixed(2)}`,
+      text: shareText,
+    });
+  };
+
   const actionItems: ActionSheetItem[] = activeActionExpense
     ? [
         {
@@ -469,6 +499,13 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
           icon: <Edit3 className="w-4 h-4" />,
           onClick: () => {
             setEditingExpense(activeActionExpense);
+          },
+        },
+        {
+          label: 'Share / Export Transaction',
+          icon: <Share2 className="w-4 h-4" />,
+          onClick: () => {
+            handleShareSingleExpense(activeActionExpense);
           },
         },
         {
@@ -553,6 +590,21 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
           >
             <FileSpreadsheet className="w-3.5 h-3.5" />
             <span>Upload Excel</span>
+          </button>
+
+          {/* Export Expenses Button */}
+          <button
+            type="button"
+            id="btn-android-export-expenses"
+            onClick={() => {
+              void nativeService.triggerHaptic('selection');
+              setIsExportSheetOpen(true);
+            }}
+            className="px-2.5 py-1.5 rounded-full border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-xs font-semibold flex items-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
+            title="Export expenses as CSV spreadsheet or JSON"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Export</span>
           </button>
 
           {onAddExpense && (
@@ -756,26 +808,44 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         </div>
       )}
 
-      {/* Header bar with count and Clear All action */}
+      {/* Header bar with count, Export and Clear All actions */}
       <div className="flex items-center justify-between px-1 pt-1">
         <span className="text-xs font-bold text-gray-600 dark:text-gray-300">
           Transactions ({filteredExpenses.length})
         </span>
 
-        {activeExpenses.length > 0 && onClearAllExpenses && (
-          <button
-            type="button"
-            onClick={() => {
-              void nativeService.triggerHaptic('selection');
-              setIsClearAllModalOpen(true);
-            }}
-            className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:text-rose-700 flex items-center gap-1 cursor-pointer px-2 py-0.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
-            title="Clear all transactions"
-          >
-            <Trash2 className="w-3 h-3" />
-            <span>Clear All</span>
-          </button>
-        )}
+        <div className="flex items-center gap-1.5">
+          {filteredExpenses.length > 0 && (
+            <button
+              type="button"
+              id="btn-android-export-list"
+              onClick={() => {
+                void nativeService.triggerHaptic('selection');
+                setIsExportSheetOpen(true);
+              }}
+              className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 flex items-center gap-1 cursor-pointer px-2 py-0.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors"
+              title="Export filtered transactions"
+            >
+              <Download className="w-3 h-3" />
+              <span>Export</span>
+            </button>
+          )}
+
+          {activeExpenses.length > 0 && onClearAllExpenses && (
+            <button
+              type="button"
+              onClick={() => {
+                void nativeService.triggerHaptic('selection');
+                setIsClearAllModalOpen(true);
+              }}
+              className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:text-rose-700 flex items-center gap-1 cursor-pointer px-2 py-0.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+              title="Clear all transactions"
+            >
+              <Trash2 className="w-3 h-3" />
+              <span>Clear All</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Transactions List */}
@@ -918,6 +988,17 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         onClose={() => setIsExcelModalOpen(false)}
         onImportSuccess={handleExcelImportSuccess}
         existingExpenses={expenses}
+        soundEnabled={soundEnabled}
+      />
+
+      {/* Export Expenses BottomSheet */}
+      <ExportExpenseSheet
+        isOpen={isExportSheetOpen}
+        onClose={() => setIsExportSheetOpen(false)}
+        allExpenses={activeExpenses}
+        filteredExpenses={filteredExpenses}
+        currentPeriodLabel={currentPeriodLabel}
+        selectedCategory={selectedCategory}
         soundEnabled={soundEnabled}
       />
 
