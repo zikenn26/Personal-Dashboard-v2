@@ -72,7 +72,11 @@ import { ExpenseDistributionSection } from './ExpenseDistributionSection';
 import { DateRangePicker, type DateRange } from './DateRangePicker';
 import { isCreditTransaction } from '../utils/expenseUtils';
 import { downloadExpenseExcel, downloadExpenseCSV } from '../utils/expenseExport';
-
+import { FileSpreadsheet, Download, ChevronDown } from 'lucide-react';
+import {
+  downloadExpenseExcel,
+  downloadExpenseCSV,
+} from '../utils/expenseExport';
 
 interface ExpenseTrackerProps {
   expenses: ExpenseItem[];
@@ -1247,13 +1251,20 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     triggerConfetti();
 
     const listToExport = currentExpenses.length > 0 ? currentExpenses : expenses;
+
     if (listToExport.length === 0) {
       alert('No transactions available to export.');
       return;
     }
 
+    // Use the device's local calendar date for the filename.
     const dateStr = getLocalDateKey();
-    downloadExpenseExcel(listToExport, `expense_transactions_${dateStr}.xlsx`);
+
+    downloadExpenseExcel(
+      listToExport,
+      `expense_transactions_${dateStr}.xlsx`
+    );
+
     setIsExportMenuOpen(false);
   };
 
@@ -1262,13 +1273,20 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     triggerConfetti();
 
     const listToExport = currentExpenses.length > 0 ? currentExpenses : expenses;
+
     if (listToExport.length === 0) {
       alert('No transactions available to export.');
       return;
     }
 
+    // Use the device's local calendar date for the filename.
     const dateStr = getLocalDateKey();
-    downloadExpenseCSV(listToExport, `expense_transactions_${dateStr}.csv`);
+
+    downloadExpenseCSV(
+      listToExport,
+      `expense_transactions_${dateStr}.csv`
+    );
+
     setIsExportMenuOpen(false);
   };
 
