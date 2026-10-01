@@ -304,6 +304,7 @@ class SmsExpenseService {
   private isListening = false;
   private removeListenerCallback: (() => void) | null = null;
   private inFlightFingerprints = new Set<string>();
+  private inFlightTransactionKeys = new Set<string>();
 
   /**
    * Checks whether the current platform is Android (native Capacitor or Android browser)
@@ -694,6 +695,32 @@ class SmsExpenseService {
       // CHECKPOINT 2 — PARSER RESULT
       // =========================================================================
       const parsed = parseSmsTransaction(body, sender, timestamp);
+
+      // Use the extracted transaction/reference ID as the canonical in-flight key.
+      // If no reference ID exists, fall back to the normalized raw SMS payload.
+      // This is intentionally separate from the existing raw-body lock because two
+      // delivery paths can present the same transaction with minor body formatting
+      // differences.
+      const canonicalTransactionKey = parsed.referenceId
+        ? `ref:${parsed.referenceId.trim().toUpperCase()}`
+        : `raw:${body.trim().toLowerCase().replace(/\s+/g, ' ')}`;
+
+      if (this.inFlightTransactionKeys.has(canonicalTransactionKey)) {
+        logDeviceDiagnostic('warn', 'LifeOS_SMS:IN_FLIGHT_DUPLICATE', 'Same transaction is already being committed; skipping second writer', {
+          referenceId: parsed.referenceId || null,
+          sender: sender || '(unknown)',
+          keyType: parsed.referenceId ? 'referenceId' : 'rawSms',
+        });
+        return {
+          success: false,
+          status: 'duplicate_skipped',
+          reason: 'Transaction is already being committed through another SMS delivery path',
+          parsed,
+        };
+      }
+
+      this.inFlightTransactionKeys.add(canonicalTransactionKey);
+
       logDeviceDiagnostic('info', 'LifeOS_SMS:2_PARSER_RESULT', 'Parser extraction complete', {
         isTransaction: parsed.isTransaction,
         confidence: parsed.confidence,
@@ -967,6 +994,18 @@ class SmsExpenseService {
       };
     } finally {
       this.inFlightFingerprints.delete(inFlightKey);
+      // canonicalTransactionKey is created only after parsing, so recover it from
+      // the same body when no reference is available. For reference-based SMS the
+      // parser is deterministic; reparse only for lock cleanup.
+      try {
+        const cleanupParsed = parseSmsTransaction(body, sender, timestamp);
+        const cleanupKey = cleanupParsed.referenceId
+          ? `ref:${cleanupParsed.referenceId.trim().toUpperCase()}`
+          : `raw:${body.trim().toLowerCase().replace(/\s+/g, ' ')}`;
+        this.inFlightTransactionKeys.delete(cleanupKey);
+      } catch {
+        this.inFlightTransactionKeys.delete(`raw:${body.trim().toLowerCase().replace(/\s+/g, ' ')}`);
+      }
     }
   }
 
@@ -1144,9 +1183,13 @@ class SmsExpenseService {
 
       // Deduplicate candidates among themselves (same referenceId or identical amount+payee+date)
       const cleanRef = parsed.referenceId ? parsed.referenceId.trim().toUpperCase() : '';
+      // Reference ID is the strongest identity. Without one, use the raw SMS payload
+      // plus timestamp so two legitimate same-amount/same-payee transactions are not
+      // collapsed into one candidate merely because they happened on the same day.
+      const normalizedRaw = msg.body.trim().toLowerCase().replace(/\s+/g, ' ');
       const candidateKey = cleanRef
         ? `ref_${cleanRef}`
-        : `cand_${parsed.amount}_${parsed.date}_${(parsed.payee || parsed.merchant || '').toLowerCase()}`;
+        : `raw_${normalizedRaw}_${msg.timestamp}`;
 
       if (seenCandidateKeys.has(candidateKey)) {
         continue;
@@ -1227,9 +1270,9 @@ class SmsExpenseService {
     selectedCandidates: SmsTransactionCandidate[]
   ): Promise<SmsRescanResult> {
     const result: SmsRescanResult = {
-      scanned: selectedCandidates.length,
-      transactionsFound: selectedCandidates.length,
-      selected: selectedCandidates.length,
+      scanned: selectedCandidates?.length || 0,
+      transactionsFound: selectedCandidates?.length || 0,
+      selected: selectedCandidates?.length || 0,
       imported: 0,
       alreadyExisting: 0,
       failed: 0,
@@ -1241,123 +1284,64 @@ class SmsExpenseService {
       return result;
     }
 
+    // IMPORTANT: Manual rescan now uses the exact same canonical transaction
+    // pipeline as live SMS, background SMS, and inbox scan. There must be only
+    // one writer for SMS-derived expenses; otherwise a manual rescan can bypass
+    // the normal duplicate checks and create a second row for the same SMS.
+    const selectedKeys = new Set<string>();
+
     for (const cand of selectedCandidates) {
+      const normalizedRaw = (cand.rawSms || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      const cleanRef = cand.referenceId ? cand.referenceId.trim().toUpperCase() : '';
+      const transactionKey = cleanRef
+        ? `ref_${cleanRef}`
+        : `raw_${normalizedRaw}_${cand.timestamp}`;
+
+      // Protect the same selection from being submitted twice in one rescan action.
+      if (selectedKeys.has(transactionKey)) {
+        result.alreadyExisting++;
+        continue;
+      }
+      selectedKeys.add(transactionKey);
+
       try {
-        const currentExpenses = Storage.getExpenses();
-        const cleanRef = cand.referenceId ? cand.referenceId.trim().toUpperCase() : '';
+        // processSms reparses the original SMS and performs the canonical:
+        // eligibility -> parser -> reference/raw/context dedupe -> Storage write
+        // -> persistence verification -> fingerprinting -> audit -> sync -> UI event.
+        const processResult = this.processSms(
+          cand.rawSms,
+          cand.sender,
+          cand.timestamp,
+          false
+        );
 
-        // Deterministic check against existing transactions
-        let isAlreadyExisting = false;
-        let existingItem: ExpenseItem | undefined;
-
-        if (cleanRef) {
-          existingItem = currentExpenses.find(
-            (e) =>
-              (e.smsReferenceId && e.smsReferenceId.trim().toUpperCase() === cleanRef) ||
-              (e.referenceId && e.referenceId.trim().toUpperCase() === cleanRef) ||
-              (e.notes && e.notes.toUpperCase().includes(cleanRef))
-          );
-          if (existingItem) {
-            isAlreadyExisting = true;
-          }
+        if (processResult.status === 'logged' && processResult.expense) {
+          result.imported++;
+          result.importedExpenses.push(processResult.expense);
+          continue;
         }
 
-        if (!isAlreadyExisting) {
-          existingItem = currentExpenses.find(
-            (e) => e.rawSmsText && e.rawSmsText.trim().toLowerCase() === cand.rawSms.trim().toLowerCase()
-          );
-          if (existingItem) {
-            isAlreadyExisting = true;
-          }
-        }
-
-        if (isAlreadyExisting && existingItem) {
+        if (processResult.status === 'duplicate_skipped') {
           result.alreadyExisting++;
-          logDeviceDiagnostic('info', 'LifeOS_SMS:RESCAN_ALREADY_EXISTS', `Manual rescan item already existing in Spending: ${existingItem.name}`, {
-            candidateId: cand.id,
-            matchedExpenseId: existingItem.id,
-            payee: cand.payee,
-            amount: cand.amount,
-            referenceId: cand.referenceId,
-          });
+          logDeviceDiagnostic(
+            'info',
+            'LifeOS_SMS:RESCAN_ALREADY_EXISTS',
+            `Manual rescan item was already present or already processed: ${cand.payee}`,
+            {
+              candidateId: cand.id,
+              payee: cand.payee,
+              amount: cand.amount,
+              referenceId: cand.referenceId,
+              reason: processResult.reason,
+            }
+          );
           continue;
         }
 
-        // New transaction: construct canonical ExpenseItem
-        const notesParts: string[] = [];
-        if (cand.bankName) notesParts.push(cand.bankName);
-        if (cand.referenceId) notesParts.push(`Ref: ${cand.referenceId}`);
-        notesParts.push('Imported via SMS Rescan');
-
-        const newExpense: ExpenseItem = {
-          id: `exp-sms-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-          name: cand.payee || cand.merchant,
-          amount: cand.amount,
-          category: (cand.category as any) || 'Other',
-          date: cand.date,
-          time: cand.time,
-          paymentMethod: cand.paymentMethod as any,
-          notes: notesParts.join(' • '),
-          rawSmsText: cand.rawSms,
-          smsReferenceId: cand.referenceId,
-          referenceId: cand.referenceId,
-          upiReference: cand.paymentMethod === 'UPI' ? cand.referenceId : undefined,
-          source: 'sms_auto',
-          direction: cand.direction,
-          transactionType: cand.direction,
-          bankName: cand.bankName,
-          merchant: cand.merchant,
-          payee: cand.payee,
-          active: true,
-        };
-
-        // Mutate storage using canonical Storage.addExpense
-        Storage.addExpense(newExpense);
-
-        // Verification of persistence
-        const reloaded = Storage.getExpenses();
-        const isVerified = reloaded.some((e) => e.id === newExpense.id);
-
-        if (!isVerified) {
-          result.failed++;
-          result.failures.push({
-            candidateId: cand.id,
-            reason: `Storage verification failed: could not confirm persistence of ${cand.payee} (₹${cand.amount})`,
-          });
-          continue;
-        }
-
-        // Register fingerprints
-        if (cand.referenceId) {
-          Storage.addProcessedSmsFingerprint(`ref_id_${cand.referenceId.trim().toUpperCase()}`);
-        }
-        Storage.addProcessedSmsFingerprint(`raw_sms_${cand.rawSms.trim().toLowerCase().replace(/\s+/g, ' ')}`);
-
-        result.imported++;
-        result.importedExpenses.push(newExpense);
-
-        // Audit log
-        const logItem: SmsTransactionLogItem = {
-          id: `sms-log-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-          timestamp: cand.timestamp,
-          sender: cand.sender,
-          rawSms: cand.rawSms,
-          status: 'logged',
-          expenseId: newExpense.id,
-          parsed: {
-            amount: cand.amount,
-            merchant: cand.merchant,
-            category: cand.category,
-            type: cand.direction === 'CREDIT' ? 'income' : 'expense',
-            date: cand.date,
-            referenceId: cand.referenceId,
-          },
-        };
-        Storage.addSmsTransactionLog(logItem);
-
-        logDeviceDiagnostic('info', 'LifeOS_SMS:RESCAN_IMPORTED', `Manual Rescan logged: ${newExpense.name} (₹${newExpense.amount})`, {
-          expenseId: newExpense.id,
-          referenceId: newExpense.referenceId,
+        result.failed++;
+        result.failures.push({
+          candidateId: cand.id,
+          reason: processResult.reason || 'SMS was not accepted as a financial transaction',
         });
       } catch (err: any) {
         result.failed++;
@@ -1368,21 +1352,28 @@ class SmsExpenseService {
       }
     }
 
+    // processSms already dispatches the UI/cloud-sync event for each successful
+    // import. Emit one final consolidated event as well so screens that mounted
+    // during the rescan receive the complete latest expense list.
     if (result.imported > 0) {
-      // Re-sync to cloud workspace
-      try {
-        scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 150);
-      } catch {}
-
-      // Dispatch UI update events
       const freshExpenses = Storage.getExpenses();
-      broadcastDataChanged('expenses', { updatedExpenses: freshExpenses });
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(
-          new CustomEvent('sms_expense_auto_logged', {
-            detail: { updatedExpenses: freshExpenses, count: result.imported },
-          })
-        );
+      try {
+        broadcastDataChanged('expenses', { updatedExpenses: freshExpenses });
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('sms_expense_auto_logged', {
+              detail: {
+                updatedExpenses: freshExpenses,
+                count: result.imported,
+                source: 'manual_rescan',
+              },
+            })
+          );
+        }
+      } catch (eventErr) {
+        logDeviceDiagnostic('warn', 'LifeOS_SMS:RESCAN_UI_UPDATE', 'Failed to dispatch consolidated rescan UI event', {
+          error: eventErr instanceof Error ? eventErr.message : String(eventErr),
+        });
       }
 
       try {
