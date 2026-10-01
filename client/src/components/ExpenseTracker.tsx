@@ -73,6 +73,7 @@ import { DateRangePicker, type DateRange } from './DateRangePicker';
 import { isCreditTransaction } from '../utils/expenseUtils';
 import { downloadExpenseExcel, downloadExpenseCSV } from '../utils/expenseExport';
 
+
 interface ExpenseTrackerProps {
   expenses: ExpenseItem[];
   importLogs?: ExcelImportLog[];
@@ -1251,7 +1252,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       return;
     }
 
-    const dateStr = new Date().toISOString().split('T')[0];
+    const dateStr = getLocalDateKey();
     downloadExpenseExcel(listToExport, `expense_transactions_${dateStr}.xlsx`);
     setIsExportMenuOpen(false);
   };
@@ -1266,7 +1267,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       return;
     }
 
-    const dateStr = new Date().toISOString().split('T')[0];
+    const dateStr = getLocalDateKey();
     downloadExpenseCSV(listToExport, `expense_transactions_${dateStr}.csv`);
     setIsExportMenuOpen(false);
   };
