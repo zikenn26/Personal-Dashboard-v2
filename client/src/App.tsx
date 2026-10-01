@@ -181,7 +181,14 @@ export default function App() {
 
   // Current logged in user (initialized first to ensure user-scoped storage keys are ready)
   const authRequest = new URLSearchParams(window.location.search).get('auth');
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => Auth.getCurrentUser());
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
+    const u = Auth.getCurrentUser();
+    if (u) {
+      setCustomWorkspaceIdentifier(getUserWorkspaceKey(u));
+      setCustomWorkspaceEmail(u.email);
+    }
+    return u;
+  });
 
   // 1. Core State loaded from user-scoped localStorage
   const [profile, setProfile] = useState<UserProfile>(Storage.getProfile);
@@ -529,6 +536,13 @@ export default function App() {
 
     let isMounted = true;
 
+    // Safety timeout: ensure cloud readiness is established within 1500ms even if network hangs
+    const readyTimer = setTimeout(() => {
+      if (isMounted) {
+        isCloudReady.current = true;
+      }
+    }, 1500);
+
     // Fetch initial snapshot from cloud for current user session
     const autoSyncFromCloud = async () => {
       try {
@@ -579,9 +593,10 @@ export default function App() {
       }
     );
 
-    // Re-verify on window focus for background wakeups
+    // Re-verify on window focus for background wakeups: flush any pending local writes first
     const handleFocus = () => {
       if (document.visibilityState === 'visible') {
+        flushAutoSyncImmediately(Storage.getAllDataPayload());
         autoSyncFromCloud();
       }
     };
@@ -589,6 +604,7 @@ export default function App() {
 
     return () => {
       isMounted = false;
+      clearTimeout(readyTimer);
       unsubRealtime();
       window.removeEventListener('focus', handleFocus);
     };
@@ -614,6 +630,9 @@ export default function App() {
     profile,
     todos,
     habits,
+    habitHistory,
+    habitActiveWeek,
+    habitActivities,
     goals,
     vault,
     expenses,
@@ -1059,6 +1078,8 @@ export default function App() {
         Storage.setHabitHistory(result.updatedHistory);
         setHabitActiveWeek(result.newWeekId);
         Storage.setHabitActiveWeek(result.newWeekId);
+        isCloudReady.current = true;
+        scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
       } else if (!activeWeek) {
         // Initial setup on first visit
         setHabitActiveWeek(result.newWeekId);
@@ -1146,24 +1167,30 @@ export default function App() {
     let toggledHabit: HabitItem | null = null;
     let isNowCompleted = false;
 
-    const updated = habits.map((h) => {
-      if (h.id === habitId) {
-        const newDays = [...h.completedDays];
-        newDays[dayIndex] = !newDays[dayIndex];
-        isNowCompleted = newDays[dayIndex];
-        const completedCount = newDays.filter(Boolean).length;
-        toggledHabit = {
-          ...h,
-          completedDays: newDays,
-          streak: completedCount > 0 ? h.streak + (newDays[dayIndex] ? 1 : -1) : 0,
-        };
-        return toggledHabit;
-      }
-      return h;
+    setHabits((prev) => {
+      const currentStored = Storage.getHabits();
+      const base = currentStored.length > 0 ? currentStored : prev;
+      const updated = base.map((h) => {
+        if (h.id === habitId) {
+          const newDays = [...h.completedDays];
+          newDays[dayIndex] = !newDays[dayIndex];
+          isNowCompleted = newDays[dayIndex];
+          const completedCount = newDays.filter(Boolean).length;
+          toggledHabit = {
+            ...h,
+            completedDays: newDays,
+            streak: completedCount > 0 ? Math.max(0, h.streak + (newDays[dayIndex] ? 1 : -1)) : 0,
+          };
+          return toggledHabit;
+        }
+        return h;
+      });
+      Storage.setHabits(updated);
+      return updated;
     });
 
-    setHabits(updated);
-    Storage.setHabits(updated);
+    isCloudReady.current = true;
+    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
 
     // Record or update the discrete habit activity log
     if (toggledHabit) {
@@ -1187,56 +1214,80 @@ export default function App() {
             completed: true,
             timestamp: Date.now(),
           };
-          const nextActs = [
-            newActivity,
-            ...habitActivities.filter((a) => !(a.habitId === habitId && a.date === dayInfo.dateStr)),
-          ];
-          setHabitActivities(nextActs);
-          Storage.setHabitActivities(nextActs);
+          setHabitActivities((prevActs) => {
+            const currentActs = Storage.getHabitActivities();
+            const baseActs = currentActs.length > prevActs.length ? currentActs : prevActs;
+            const nextActs = [
+              newActivity,
+              ...baseActs.filter((a) => !(a.habitId === habitId && a.date === dayInfo.dateStr)),
+            ];
+            Storage.setHabitActivities(nextActs);
+            return nextActs;
+          });
         } else {
-          const nextActs = habitActivities.filter(
-            (a) => !(a.habitId === habitId && a.date === dayInfo.dateStr)
-          );
-          setHabitActivities(nextActs);
-          Storage.setHabitActivities(nextActs);
+          setHabitActivities((prevActs) => {
+            const currentActs = Storage.getHabitActivities();
+            const baseActs = currentActs.length > 0 ? currentActs : prevActs;
+            const nextActs = baseActs.filter(
+              (a) => !(a.habitId === habitId && a.date === dayInfo.dateStr)
+            );
+            Storage.setHabitActivities(nextActs);
+            return nextActs;
+          });
         }
       }
     }
   };
 
   const handleAddHabit = (title: string, category: string, icon: string, color: string) => {
+    const cleanTitle = title.trim();
+    if (!cleanTitle) return;
     const newHabit: HabitItem = {
-      id: `hb-${Date.now()}`,
-      title,
-      category,
-      icon,
+      id: `hb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      title: cleanTitle,
+      category: category || 'Daily',
+      icon: icon || '⚡',
       completedDays: [false, false, false, false, false, false, false],
       streak: 0,
-      color,
+      color: color || '#6366F1',
     };
-    const updated = [...habits, newHabit];
-    setHabits(updated);
-    Storage.setHabits(updated);
+    setHabits((prev) => {
+      const currentStored = Storage.getHabits();
+      const base = currentStored.length > prev.length ? currentStored : prev;
+      const updated = [...base.filter((h) => h.id !== newHabit.id), newHabit];
+      Storage.setHabits(updated);
+      return updated;
+    });
+    isCloudReady.current = true;
+    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
   };
 
   const handleDeleteHabit = (id: string) => {
-    const target = habits.find((h) => h.id === id);
-    const updated = habits.filter((h) => h.id !== id);
-    setHabits(updated);
-    Storage.setHabits(updated);
+    const target = habits.find((h) => h.id === id) || Storage.getHabits().find((h) => h.id === id);
+    setHabits((prev) => {
+      const updated = prev.filter((h) => h.id !== id);
+      Storage.setHabits(updated);
+      return updated;
+    });
     if (target) {
       Storage.moveToTrash('habits', target, target.title);
       setTrash(Storage.getTrash());
     }
+    isCloudReady.current = true;
+    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
   };
 
   const handleResetHabitWeek = () => {
-    const updated = habits.map((h) => ({
-      ...h,
-      completedDays: [false, false, false, false, false, false, false],
-    }));
-    setHabits(updated);
-    Storage.setHabits(updated);
+    setHabits((prev) => {
+      const updated = prev.map((h) => ({
+        ...h,
+        completedDays: [false, false, false, false, false, false, false],
+      }));
+      Storage.setHabits(updated);
+      return updated;
+    });
+    isCloudReady.current = true;
+    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
   };
 
   // Simulates or forces a clean Monday rollover: archives the previous week into past records
@@ -1276,6 +1327,10 @@ export default function App() {
     Storage.setHabits(freshHabits);
     setHabitHistory(updatedHistory);
     Storage.setHabitHistory(updatedHistory);
+    setHabitActiveWeek(currentWeekId);
+    Storage.setHabitActiveWeek(currentWeekId);
+    isCloudReady.current = true;
+    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
   };
 
   // Historical Habit Handlers (Allows user to edit and toggle habits from previous weeks)
@@ -1387,6 +1442,8 @@ export default function App() {
         Storage.setHabitActivities(nextGlobal);
       }
     }
+    isCloudReady.current = true;
+    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
   };
 
   const handleAddHistoricalHabit = (
@@ -1429,6 +1486,8 @@ export default function App() {
 
     setHabitHistory(updatedHistory);
     Storage.setHabitHistory(updatedHistory);
+    isCloudReady.current = true;
+    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
   };
 
   const handleDeleteHistoricalHabit = (weekId: string, habitId: string) => {
@@ -1455,6 +1514,8 @@ export default function App() {
 
     setHabitHistory(updatedHistory);
     Storage.setHabitHistory(updatedHistory);
+    isCloudReady.current = true;
+    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
   };
 
   // Goal Handlers

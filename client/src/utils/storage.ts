@@ -1825,29 +1825,114 @@ export const Storage = {
         Storage.setProfile(mergedProfile);
       }
       if (data.todos) Storage.setTodos(data.todos);
-      if (data.habits) {
-        // Prevent stale empty cloud data from overwriting newer local habit data during initialization
+      if (Array.isArray(data.habits)) {
         const currentLocalHabits = Storage.getHabits();
-        if (
-          Array.isArray(data.habits) &&
-          data.habits.length === 0 &&
-          Array.isArray(currentLocalHabits) &&
-          currentLocalHabits.length > 0
-        ) {
+        const trash = Storage.getTrash().filter((t) => t.module === 'habits');
+        const trashedIds = new Set(trash.map((t) => t.data?.id || t.id).filter(Boolean));
+
+        if (data.habits.length === 0 && currentLocalHabits.length > 0) {
           // Keep existing local habits when incoming cloud payload has an empty array
         } else {
-          Storage.setHabits(data.habits);
+          const habitMap = new Map<string, HabitItem>();
+          
+          // 1. Add current local habits (excluding trashed)
+          currentLocalHabits.forEach((h) => {
+            if (h && h.id && !trashedIds.has(h.id)) {
+              habitMap.set(h.id, h);
+            }
+          });
+
+          // 2. Merge cloud habits
+          data.habits.forEach((cloudH: any) => {
+            if (cloudH && cloudH.id && !trashedIds.has(cloudH.id)) {
+              const localH = habitMap.get(cloudH.id);
+              if (localH) {
+                // Merge completed days and streak so completions are never lost
+                const mergedCompletedDays = [0, 1, 2, 3, 4, 5, 6].map((i) => {
+                  return Boolean(localH.completedDays?.[i] || cloudH.completedDays?.[i]);
+                });
+                const mergedStreak = Math.max(localH.streak || 0, cloudH.streak || 0);
+                habitMap.set(cloudH.id, {
+                  ...cloudH,
+                  ...localH,
+                  title: localH.title || cloudH.title,
+                  category: localH.category || cloudH.category,
+                  icon: localH.icon || cloudH.icon,
+                  color: localH.color || cloudH.color,
+                  completedDays: mergedCompletedDays,
+                  streak: mergedStreak,
+                });
+              } else {
+                habitMap.set(cloudH.id, cloudH);
+              }
+            }
+          });
+
+          Storage.setHabits(Array.from(habitMap.values()));
         }
       }
-      if (Array.isArray(data.habitHistory)) Storage.setHabitHistory(data.habitHistory);
-      if (typeof data.habitActiveWeek === 'string') Storage.setHabitActiveWeek(data.habitActiveWeek);
-      if (Array.isArray(data.habitActivities)) Storage.setHabitActivities(data.habitActivities);
+      if (Array.isArray(data.habitHistory)) {
+        const localHist = Storage.getHabitHistory();
+        if (data.habitHistory.length === 0 && localHist.length > 0) {
+          // Keep local history
+        } else {
+          const histMap = new Map<string, HabitWeekRecord>();
+          localHist.forEach((h) => { if (h && h.id) histMap.set(h.id, h); });
+          data.habitHistory.forEach((cloudH: any) => {
+            if (cloudH && cloudH.id) {
+              const localH = histMap.get(cloudH.id);
+              histMap.set(cloudH.id, localH ? { ...cloudH, ...localH } : cloudH);
+            }
+          });
+          Storage.setHabitHistory(Array.from(histMap.values()));
+        }
+      }
+      if (typeof data.habitActiveWeek === 'string' && data.habitActiveWeek.trim()) {
+        const localWeek = Storage.getHabitActiveWeek();
+        const cleanCloudWeek = data.habitActiveWeek.replace(/^week-/, '').trim();
+        const currentWeekMonday = getWeekId(new Date());
+        if (!localWeek) {
+          Storage.setHabitActiveWeek(cleanCloudWeek);
+        } else if (localWeek === currentWeekMonday) {
+          // Local is already on current week, do not revert to older week from cloud
+        } else {
+          Storage.setHabitActiveWeek(cleanCloudWeek);
+        }
+      }
+      if (Array.isArray(data.habitActivities)) {
+        const localActs = Storage.getHabitActivities();
+        const actMap = new Map<string, HabitActivityLog>();
+        localActs.forEach((a) => { if (a && a.id) actMap.set(a.id, a); });
+        data.habitActivities.forEach((a: any) => {
+          if (a && a.id && !actMap.has(a.id)) {
+            actMap.set(a.id, a);
+          }
+        });
+        Storage.setHabitActivities(Array.from(actMap.values()).slice(0, 500));
+      }
       if (data.goals) Storage.setGoals(data.goals);
       if (data.vaultEncrypted) Storage.restoreEncryptedVault(data.vaultEncrypted);
       else if (data.vault) Storage.restoreEncryptedVault(null);
 
       if (Array.isArray(data.expenses)) {
-        Storage.setExpenses(data.expenses);
+        const currentLocal = Storage.getExpenses();
+        if (data.expenses.length === 0 && currentLocal.length > 0) {
+          // Keep existing local expenses when incoming cloud payload has an empty array
+        } else {
+          // Deterministic merge of cloud and local expenses by id
+          const existingMap = new Map(currentLocal.map((e) => [e.id, e]));
+          data.expenses.forEach((cloudExp: any) => {
+            if (cloudExp && cloudExp.id) {
+              const existing = existingMap.get(cloudExp.id);
+              if (existing) {
+                existingMap.set(cloudExp.id, { ...existing, ...cloudExp });
+              } else {
+                existingMap.set(cloudExp.id, cloudExp);
+              }
+            }
+          });
+          Storage.setExpenses(Array.from(existingMap.values()));
+        }
       }
       if (Array.isArray(data.excelImportLogs)) {
         Storage.setExcelImportLogs(data.excelImportLogs);

@@ -40,8 +40,11 @@ export function formatDateIso(d: Date): string {
  * Parses a YYYY-MM-DD string into a Date object at midnight local time
  */
 export function parseIsoDate(iso: string): Date {
-  const [y, m, d] = iso.split('-').map(Number);
-  return new Date(y, m - 1, d, 0, 0, 0, 0);
+  if (!iso) return new Date();
+  const clean = String(iso).replace(/^week-/, '').trim();
+  const [y, m, d] = clean.split('-').map(Number);
+  if (!y || isNaN(y)) return new Date();
+  return new Date(y, (m || 1) - 1, d || 1, 0, 0, 0, 0);
 }
 
 /**
@@ -262,26 +265,28 @@ export function checkAndRollOverHabits(
   now: Date = new Date()
 ): RolloverResult {
   const currentWeekId = getWeekId(now);
+  const cleanCurrentWeekId = currentWeekId.replace(/^week-/, '').trim();
+  const cleanLastWeekId = lastActiveWeekId ? lastActiveWeekId.replace(/^week-/, '').trim() : null;
 
   // If no previous week recorded, this is initial initialization
-  if (!lastActiveWeekId) {
+  if (!cleanLastWeekId) {
     const historyToUse = currentHistory && currentHistory.length > 0
       ? currentHistory
       : generateDefaultHabitHistory(getMondayOfWeek(now));
 
     return {
       didRollover: false,
-      newWeekId: currentWeekId,
+      newWeekId: cleanCurrentWeekId,
       updatedHabits: currentHabits,
       updatedHistory: historyToUse,
     };
   }
 
   // If we are still in the same week, no rollover needed
-  if (lastActiveWeekId === currentWeekId) {
+  if (cleanLastWeekId === cleanCurrentWeekId) {
     return {
       didRollover: false,
-      newWeekId: currentWeekId,
+      newWeekId: cleanCurrentWeekId,
       updatedHabits: currentHabits,
       updatedHistory: currentHistory,
     };
@@ -289,46 +294,46 @@ export function checkAndRollOverHabits(
 
   // NEW WEEK DETECTED (Monday or later in a new week)!
   // 1. Archive previous week's activities & habits
-  const lastMonday = parseIsoDate(lastActiveWeekId);
+  const lastMonday = parseIsoDate(cleanLastWeekId);
   const lastSunday = getSundayOfWeek(lastMonday);
-  const totalDone = currentHabits.reduce(
-    (acc, h) => acc + h.completedDays.filter(Boolean).length,
+  const totalDone = (currentHabits || []).reduce(
+    (acc, h) => acc + (h.completedDays || []).filter(Boolean).length,
     0
   );
-  const totalPossible = currentHabits.length * 7;
+  const totalPossible = (currentHabits || []).length * 7;
   const completionRate = totalPossible > 0 ? Math.round((totalDone / totalPossible) * 100) : 0;
 
   const previousRecord: HabitWeekRecord = {
-    id: `week-${lastActiveWeekId}`,
-    weekStart: lastActiveWeekId,
+    id: `week-${cleanLastWeekId}`,
+    weekStart: cleanLastWeekId,
     weekEnd: formatDateIso(lastSunday),
     label: formatWeekRange(lastMonday),
     archivedAt: Date.now(),
     completionRate,
     totalDone,
     totalPossible,
-    habits: JSON.parse(JSON.stringify(currentHabits)),
-    activities: extractActivitiesFromHabits(currentHabits, lastMonday),
+    habits: JSON.parse(JSON.stringify(currentHabits || [])),
+    activities: extractActivitiesFromHabits(currentHabits || [], lastMonday),
   };
 
   // Prepend or update archive, avoiding duplicate week records
-  const filteredHistory = currentHistory.filter((r) => r.id !== previousRecord.id && r.weekStart !== lastActiveWeekId);
+  const filteredHistory = (currentHistory || []).filter((r) => r.id !== previousRecord.id && r.weekStart !== cleanLastWeekId);
   const updatedHistory = [previousRecord, ...filteredHistory];
 
   // 2. Start fresh for the new week!
-  const freshHabits: HabitItem[] = currentHabits.map((h) => {
-    const wasActiveLastWeek = h.completedDays.filter(Boolean).length >= 4;
+  const freshHabits: HabitItem[] = (currentHabits || []).map((h) => {
+    const wasActiveLastWeek = (h.completedDays || []).filter(Boolean).length >= 4;
     return {
       ...h,
       completedDays: [false, false, false, false, false, false, false],
       // If user had strong consistency, preserve or reward streak, otherwise keep count
-      streak: wasActiveLastWeek ? h.streak : Math.max(0, Math.floor(h.streak * 0.8)),
+      streak: wasActiveLastWeek ? (h.streak || 0) : Math.max(0, Math.floor((h.streak || 0) * 0.8)),
     };
   });
 
   return {
     didRollover: true,
-    newWeekId: currentWeekId,
+    newWeekId: cleanCurrentWeekId,
     updatedHabits: freshHabits,
     updatedHistory,
     archivedRecord: previousRecord,
