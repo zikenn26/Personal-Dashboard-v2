@@ -340,6 +340,26 @@ class SmsExpenseService {
   }
 
   /**
+   * Ensures that the native SMS listener is active and registered
+   */
+  public async ensureNativeListenerRegistered(): Promise<void> {
+    if (this.isListening) return;
+    if (!(await this.isNativePluginAvailable())) return;
+    try {
+      const handle = await SmsTransaction.addListener('onSmsReceived', (data) => {
+        if (!this.isAutoTrackingEnabled()) return;
+        this.processSms(data.body, data.sender, data.timestamp, true);
+      });
+      this.removeListenerCallback = () => {
+        handle.remove();
+      };
+      this.isListening = true;
+    } catch (err) {
+      console.warn('Could not register native SMS listener:', err);
+    }
+  }
+
+  /**
    * Sets auto-tracking enabled state and syncs to native SharedPreferences
    */
   public async setAutoTrackingEnabled(enabled: boolean): Promise<void> {
@@ -361,6 +381,7 @@ class SmsExpenseService {
     }
 
     if (enabled) {
+      await this.ensureNativeListenerRegistered();
       // If enabled, immediately sync any pending background messages
       await this.syncPendingBackgroundMessages();
     }
@@ -1414,15 +1435,7 @@ class SmsExpenseService {
         }
 
         // 3. Register native real-time incoming SMS event listener
-        const handle = await SmsTransaction.addListener('onSmsReceived', (data) => {
-          if (!this.isAutoTrackingEnabled()) return;
-          this.processSms(data.body, data.sender, data.timestamp, true);
-        });
-
-        this.removeListenerCallback = () => {
-          handle.remove();
-        };
-        this.isListening = true;
+        await this.ensureNativeListenerRegistered();
 
         // 4. Always sync any background transactions intercepted while app was closed
         if (this.isAutoTrackingEnabled()) {

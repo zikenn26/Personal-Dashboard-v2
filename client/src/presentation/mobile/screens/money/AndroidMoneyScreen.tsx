@@ -142,12 +142,13 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
       if (isMounted) {
         setIsSmsEnabled(true);
         setSmsPermissionStatus('granted');
-        const customEvt = e as CustomEvent<{ updatedExpenses?: ExpenseItem[] }>;
-        if (customEvt?.detail?.updatedExpenses && Array.isArray(customEvt.detail.updatedExpenses)) {
-          setLocalExpenses(customEvt.detail.updatedExpenses);
-        } else {
-          setLocalExpenses(Storage.getExpenses());
-        }
+        const customEvt = e as CustomEvent<{ updatedExpenses?: ExpenseItem[]; expense?: ExpenseItem }>;
+        const fresh =
+          customEvt?.detail?.updatedExpenses && Array.isArray(customEvt.detail.updatedExpenses)
+            ? customEvt.detail.updatedExpenses
+            : Storage.getExpenses();
+        setLocalExpenses(fresh);
+        setSelectedMonthPrefix(currentMonthPrefix);
       }
     };
 
@@ -448,6 +449,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   }, [filteredExpenses, todayDateStr]);
   const handleDelete = (id: string) => {
     void nativeService.triggerHaptic('warning');
+    setLocalExpenses((prev) => prev.filter((e) => e.id !== id));
     if (onDeleteExpense) onDeleteExpense(id);
   };
 
@@ -942,7 +944,17 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         <QuickExpenseSheet
           isOpen={isAddSheetOpen}
           onClose={() => setIsAddSheetOpen(false)}
-          onAddExpense={onAddExpense}
+          onAddExpense={(item) => {
+            const optimistic: ExpenseItem = {
+              ...item,
+              id: `exp-${Date.now()}`,
+              direction: item.direction || 'DEBIT',
+              transactionType: item.transactionType || 'DEBIT',
+              active: true,
+            };
+            setLocalExpenses((prev) => [optimistic, ...prev]);
+            onAddExpense(item);
+          }}
         />
       )}
 

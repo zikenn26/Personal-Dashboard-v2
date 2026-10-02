@@ -187,3 +187,25 @@ export function formatTransactionAmount(amount: number): string {
   const safeNum = Number(amount) || 0;
   return `₹${safeNum.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
+
+const pad2 = (value: number): string => String(value).padStart(2, '0');
+
+export const getLocalDateKey = (date: Date = new Date()): string =>
+  `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+
+export const normalizeExpenseDateKey = (value?: string | null): string => {
+  if (!value) return '';
+
+  const raw = String(value).trim();
+  if (!raw) return '';
+
+  // Preserve an existing YYYY-MM-DD date exactly, including ISO timestamps.
+  const dateOnlyMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (dateOnlyMatch) return dateOnlyMatch[1];
+
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    return getLocalDateKey(parsed);
+  }
+  return '';
+};

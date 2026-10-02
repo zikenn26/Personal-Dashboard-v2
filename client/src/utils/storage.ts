@@ -1799,6 +1799,7 @@ export const Storage = {
       activeAlarm: Storage.getActiveAlarm(),
       alarmSnoozeInterval: Storage.getAlarmSnoozeInterval(),
       commandMappings: Storage.getCommandMappings(),
+      trash: Storage.getTrash(),
     };
   },
 
@@ -1810,7 +1811,7 @@ export const Storage = {
         'expenses', 'excelImportLogs', 'journal', 'media', 'achievements', 'doodles',
         'timeline', 'projects', 'skills', 'settings', 'sections',
         'photos', 'resume', 'quotes', 'exams', 'schedule', 'version', 'activeAlarm', 'alarmSnoozeInterval',
-        'commandMappings'
+        'commandMappings', 'trash'
       ];
       const hasKnownKey = knownKeys.some((k) => k in data && data[k] !== undefined);
       if (!hasKnownKey) return false;
@@ -1919,25 +1920,42 @@ export const Storage = {
       if (data.vaultEncrypted) Storage.restoreEncryptedVault(data.vaultEncrypted);
       else if (data.vault) Storage.restoreEncryptedVault(null);
 
+      if (Array.isArray(data.trash)) {
+        const localTrash = Storage.getTrash();
+        const trashMap = new Map<string, TrashItem>();
+        localTrash.forEach((t) => { if (t && t.id) trashMap.set(t.id, t); });
+        data.trash.forEach((t: any) => { if (t && t.id) trashMap.set(t.id, t); });
+        Storage.setTrash(Array.from(trashMap.values()).slice(0, 200));
+      }
+
       if (Array.isArray(data.expenses)) {
         const currentLocal = Storage.getExpenses();
-        if (data.expenses.length === 0 && currentLocal.length > 0) {
-          // Keep existing local expenses when incoming cloud payload has an empty array
-        } else {
-          // Deterministic merge of cloud and local expenses by id
-          const existingMap = new Map(currentLocal.map((e) => [e.id, e]));
-          data.expenses.forEach((cloudExp: any) => {
-            if (cloudExp && cloudExp.id) {
-              const existing = existingMap.get(cloudExp.id);
-              if (existing) {
-                existingMap.set(cloudExp.id, { ...existing, ...cloudExp });
-              } else {
-                existingMap.set(cloudExp.id, cloudExp);
-              }
+        const trash = Storage.getTrash().filter((t) => t.module === 'expenses');
+        const trashedIds = new Set(trash.map((t) => t.data?.id || t.id).filter(Boolean));
+
+        // Authoritative cloud expenses, strictly excluding any trashed/deleted IDs
+        const validCloudExpenses = data.expenses.filter((e: any) => e && e.id && !trashedIds.has(e.id));
+        const cloudIdSet = new Set(validCloudExpenses.map((e: any) => e.id));
+
+        // Preserve recently created local auto-logged SMS expenses (last 15 mins) that have not synced yet
+        const fifteenMinutesAgo = Date.now() - 15 * 60 * 1000;
+        const unsyncedRecentLocalSms = currentLocal.filter((localExp) => {
+          if (!localExp || !localExp.id || trashedIds.has(localExp.id) || cloudIdSet.has(localExp.id)) {
+            return false;
+          }
+          if (localExp.source === 'sms_auto') {
+            const idTimeMatch = localExp.id.match(/^exp-sms-(\d+)/);
+            if (idTimeMatch) {
+              const createdTime = parseInt(idTimeMatch[1], 10);
+              return createdTime > fifteenMinutesAgo;
             }
-          });
-          Storage.setExpenses(Array.from(existingMap.values()));
-        }
+            return true;
+          }
+          return false;
+        });
+
+        const mergedExpenses = [...unsyncedRecentLocalSms, ...validCloudExpenses];
+        Storage.setExpenses(mergedExpenses);
       }
       if (Array.isArray(data.excelImportLogs)) {
         Storage.setExcelImportLogs(data.excelImportLogs);

@@ -96,6 +96,8 @@ import {
   setCustomWorkspaceEmail,
 } from './utils/supabase';
 import { nativeService } from './services/nativeService';
+import { normalizeExpenseDateKey, getLocalDateKey } from './utils/expenseUtils';
+import { toast } from 'sonner';
 
 import {
   Moon,
@@ -593,11 +595,15 @@ export default function App() {
       }
     );
 
-    // Re-verify on window focus for background wakeups: flush any pending local writes first
+    // On window focus / visibility change for background wakeups:
+    // 1. Process any pending background SMS messages received while app was inactive
+    // 2. Fetch authoritative state from Supabase Cloud (never overwrite newer cloud data with stale local data)
     const handleFocus = async () => {
       if (document.visibilityState === 'visible') {
         try {
-          await flushAutoSyncImmediately(Storage.getAllDataPayload());
+          if (smsExpenseService.isAutoTrackingEnabled()) {
+            await smsExpenseService.syncPendingBackgroundMessages();
+          }
         } catch {
           // ignore
         }
@@ -605,12 +611,14 @@ export default function App() {
       }
     };
     window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
 
     return () => {
       isMounted = false;
       clearTimeout(readyTimer);
       unsubRealtime();
       window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
     };
   }, [currentUser?.id, currentUser?.email]);
 
@@ -1556,13 +1564,42 @@ export default function App() {
   const handleAddExpense = (item: Omit<ExpenseItem, 'id'>) => {
     const isCredit = item.direction === 'CREDIT' || item.transactionType === 'CREDIT' || item.transactionType === 'income';
     const direction: 'DEBIT' | 'CREDIT' = isCredit ? 'CREDIT' : 'DEBIT';
+    const currentStored = Storage.getExpenses();
+
+    // Redundancy / Duplicate Check:
+    // If an identical transaction (same amount, same date, matching merchant/title) was already
+    // recorded today (e.g. from SMS auto-logging or rapid tap), avoid redundant duplicate!
+    const cleanName = (item.name || '').trim().toLowerCase();
+    const itemAmt = Number(item.amount) || 0;
+    const itemDate = item.date || getLocalDateKey(new Date());
+
+    const isDuplicate = currentStored.some((existing) => {
+      if (Math.abs(Number(existing.amount) - itemAmt) > 0.01) return false;
+      const exDate = normalizeExpenseDateKey(existing.date);
+      const reqDate = normalizeExpenseDateKey(itemDate);
+      if (exDate !== reqDate) return false;
+      const existingName = (existing.name || '').trim().toLowerCase();
+      return (
+        existingName === cleanName ||
+        (existing.merchant && existing.merchant.toLowerCase().includes(cleanName)) ||
+        (cleanName && existingName.includes(cleanName))
+      );
+    });
+
+    if (isDuplicate) {
+      toast.info(`Transaction of ₹${itemAmt} is already recorded in Spending today`, {
+        description: 'Skipped redundant duplicate entry',
+      });
+      return;
+    }
+
     const newExpense: ExpenseItem = {
       ...item,
       id: `exp-${Date.now()}`,
       direction,
       transactionType: direction,
     };
-    const updated = [newExpense, ...expenses];
+    const updated = [newExpense, ...currentStored];
     setExpenses(updated);
     Storage.setExpenses(updated);
 

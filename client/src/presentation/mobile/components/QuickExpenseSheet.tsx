@@ -26,6 +26,7 @@ import {
   getTransactionDisplayTitle,
   getAvailableTransactionMetadata,
   formatTransactionAmount,
+  getLocalDateKey,
 } from '../../../utils/expenseUtils';
 
 export interface QuickExpenseSheetProps {
@@ -51,7 +52,7 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
   const [directionState, setDirectionState] = useState<'DEBIT' | 'CREDIT'>('DEBIT');
   const [category, setCategory] = useState('Dining Out');
   const [paymentMethod, setPaymentMethod] = useState<'UPI' | 'Credit Card' | 'Debit Card' | 'Cash' | 'Net Banking'>('UPI');
-  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(() => getLocalDateKey());
   const [notes, setNotes] = useState('');
   const [isEditFormExpanded, setIsEditFormExpanded] = useState(false);
 
@@ -66,7 +67,7 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
       );
       setCategory(initialExpense.category || 'Dining Out');
       setPaymentMethod((initialExpense.paymentMethod as any) || 'UPI');
-      setDate(initialExpense.date || new Date().toISOString().split('T')[0]);
+      setDate(initialExpense.date || getLocalDateKey());
       setNotes(initialExpense.notes || '');
       setIsEditFormExpanded(false);
     } else {
@@ -75,7 +76,7 @@ export const QuickExpenseSheet: React.FC<QuickExpenseSheetProps> = ({
       setDirectionState('DEBIT');
       setCategory('Dining Out');
       setPaymentMethod('UPI');
-      setDate(new Date().toISOString().split('T')[0]);
+      setDate(getLocalDateKey());
       setNotes('');
       setIsEditFormExpanded(true);
     }
