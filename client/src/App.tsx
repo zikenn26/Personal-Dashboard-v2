@@ -65,6 +65,7 @@ import { ExamsSection } from './components/ExamsSection';
 import { AuthModal } from './components/AuthModal';
 import { AvatarPickerModal } from './components/AvatarPickerModal';
 import { BrandLogo } from './components/BrandLogo';
+import { EXPENSE_CATEGORIES } from './components/ExpenseTracker';
 import { STOCK_IMAGES } from './assets/stockImages';
 import LandingPage from './components/LandingPage';
 import { usePlatformMode } from './presentation/mobile/shell/usePlatformMode';

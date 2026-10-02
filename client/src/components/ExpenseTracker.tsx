@@ -76,6 +76,8 @@ import { downloadExpenseExcel, downloadExpenseCSV } from '../utils/expenseExport
 interface ExpenseTrackerProps {
   expenses: ExpenseItem[];
   importLogs?: ExcelImportLog[];
+  searchQuery?: string;
+  onSearchQueryChange?: (query: string) => void;
   onAddExpense: (expense: Omit<ExpenseItem, 'id'>) => void;
   onUpdateExpense?: (id: string, updated: Partial<ExpenseItem>) => void;
   onBatchAddExpenses?: (expenses: Array<Omit<ExpenseItem, 'id'>>, log?: ExcelImportLog) => void;
