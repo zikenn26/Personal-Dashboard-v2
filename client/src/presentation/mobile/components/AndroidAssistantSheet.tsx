@@ -19,6 +19,7 @@ import {
 } from '../../../services/ai';
 import { InteractiveOption } from '../../../services/commandIntentEngine';
 import { MainNavView, UserProfile } from '../../../types';
+import { BrandLogo } from '../../../components/BrandLogo';
 
 export interface AndroidAssistantSheetProps {
   isOpen: boolean;
@@ -332,9 +333,7 @@ export const AndroidAssistantSheet: React.FC<AndroidAssistantSheetProps> = ({
           <div className="w-10 h-1 rounded-full bg-gray-300 dark:bg-gray-700 mx-auto mb-2" />
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-violet-600 flex items-center justify-center text-white shadow-xs">
-                <Sparkles className="w-4 h-4 text-white" />
-              </div>
+              <BrandLogo size={32} className="rounded-xl shadow-xs shrink-0" alt="Zikenn AI" />
               <div>
                 <h3 className="text-sm font-bold text-gray-900 dark:text-white leading-tight">
                   Zikenn AI

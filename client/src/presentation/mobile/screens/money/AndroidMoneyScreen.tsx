@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { CreditCard, Plus, Trash2, ArrowUpRight, TrendingDown, TrendingUp, Calendar, Tag, DollarSign, Wallet, FileSpreadsheet, MessageSquare, Edit3, Settings, RotateCw, AlertTriangle, X, ChevronDown, ChevronUp, Download, Share2 } from 'lucide-react';
+import { CreditCard, Plus, Trash2, ArrowUpRight, TrendingDown, TrendingUp, Calendar, Tag, DollarSign, Wallet, FileSpreadsheet, MessageSquare, Edit3, Settings, RotateCw, AlertTriangle, X, ChevronDown, ChevronUp, Download, Share2, Search, RotateCcw, Filter, SlidersHorizontal } from 'lucide-react';
 import { ExpenseItem, ExcelImportLog } from '../../../../types';
 import { nativeService } from '../../../../services/nativeService';
 import { smsExpenseService } from '../../../../services/smsExpenseService';
@@ -111,6 +111,11 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
 
   // Local reactive expenses mirror to ensure immediate display without requiring page reload
   const [localExpenses, setLocalExpenses] = useState<ExpenseItem[]>(expenses);
+
+  // Search & Filter State (Merchant, Category, Amount Range)
+  const [searchQuery, setSearchQuery] = useState('');
+  const [minAmount, setMinAmount] = useState('');
+  const [maxAmount, setMaxAmount] = useState('');
 
   useEffect(() => {
     setLocalExpenses(expenses);
@@ -399,6 +404,33 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
           return false;
         }
 
+        // Merchant / Payee / Note Search Filter
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase().trim();
+          const nameMatch = (e.name || '').toLowerCase().includes(q);
+          const catMatch = (e.category || '').toLowerCase().includes(q);
+          const notesMatch = (e.notes || '').toLowerCase().includes(q);
+          const bankMatch = (e.bankOrAccount || '').toLowerCase().includes(q);
+          if (!nameMatch && !catMatch && !notesMatch && !bankMatch) {
+            return false;
+          }
+        }
+
+        // Amount Range Filter
+        if (minAmount.trim() !== '') {
+          const minNum = parseFloat(minAmount);
+          if (!isNaN(minNum) && Number(e.amount || 0) < minNum) {
+            return false;
+          }
+        }
+
+        if (maxAmount.trim() !== '') {
+          const maxNum = parseFloat(maxAmount);
+          if (!isNaN(maxNum) && Number(e.amount || 0) > maxNum) {
+            return false;
+          }
+        }
+
         return true;
       })
       .sort(compareExpensesByDateTimeDesc);
@@ -407,6 +439,9 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
     periodFilter,
     selectedMonthPrefix,
     selectedCategory,
+    searchQuery,
+    minAmount,
+    maxAmount,
     todayDateStr,
     weekStartDateStr,
   ]);
@@ -857,6 +892,84 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         </div>
       )}
 
+      {/* Search and Filter Bar (Merchant, Amount Range, Category) */}
+      <div className="p-2.5 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] space-y-2 shadow-2xs">
+        {/* Merchant Search Input */}
+        <div className="relative">
+          <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search merchant, payee, or notes..."
+            className="w-full pl-8 pr-8 py-1.5 rounded-xl text-xs bg-gray-50 dark:bg-[#1A2234] border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-0.5"
+              title="Clear search"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Amount Range (Min & Max) & Reset */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 flex-1">
+            <div className="relative flex-1">
+              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-gray-400 uppercase">
+                Min
+              </span>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                placeholder="₹0"
+                value={minAmount}
+                onChange={(e) => setMinAmount(e.target.value)}
+                className="w-full pl-7 pr-1.5 py-1 rounded-lg text-xs font-mono bg-gray-50 dark:bg-[#1A2234] border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+            </div>
+            <span className="text-gray-300 dark:text-gray-600 font-bold">–</span>
+            <div className="relative flex-1">
+              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-gray-400 uppercase">
+                Max
+              </span>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                placeholder="₹Max"
+                value={maxAmount}
+                onChange={(e) => setMaxAmount(e.target.value)}
+                className="w-full pl-8 pr-1.5 py-1 rounded-lg text-xs font-mono bg-gray-50 dark:bg-[#1A2234] border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+            </div>
+          </div>
+
+          {(searchQuery || minAmount || maxAmount || selectedCategory !== 'all') && (
+            <button
+              type="button"
+              onClick={() => {
+                void nativeService.triggerHaptic('selection');
+                setSearchQuery('');
+                setMinAmount('');
+                setMaxAmount('');
+                setSelectedCategory('all');
+              }}
+              className="px-2 py-1 rounded-lg text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 border border-rose-200 dark:border-rose-900 flex items-center gap-1 shrink-0 cursor-pointer"
+              title="Reset search and filters"
+            >
+              <RotateCcw className="w-2.5 h-2.5" />
+              <span>Reset</span>
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Header bar with count and Clear All action */}
       <div className="flex items-center justify-between px-1 pt-1">
         <span className="text-xs font-bold text-gray-600 dark:text-gray-300">
@@ -885,10 +998,14 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
           <CreditCard className="w-10 h-10 text-emerald-400 mx-auto opacity-60" />
           <div>
             <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
-              No transactions in this period
+              {Boolean(searchQuery || minAmount || maxAmount || selectedCategory !== 'all')
+                ? 'No transactions found matching your filters'
+                : 'No transactions in this period'}
             </p>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              {periodFilter === 'today'
+              {Boolean(searchQuery || minAmount || maxAmount || selectedCategory !== 'all')
+                ? 'Try clearing the merchant search, adjusting the amount range, or resetting filters.'
+                : periodFilter === 'today'
                 ? 'No transactions were recorded today.'
                 : periodFilter === 'week'
                   ? 'No transactions were recorded this week.'
@@ -897,7 +1014,22 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
                     : 'No transactions have been recorded yet.'}
             </p>
           </div>
-          {onAddExpense && (
+          {Boolean(searchQuery || minAmount || maxAmount || selectedCategory !== 'all') ? (
+            <button
+              type="button"
+              onClick={() => {
+                void nativeService.triggerHaptic('selection');
+                setSearchQuery('');
+                setMinAmount('');
+                setMaxAmount('');
+                setSelectedCategory('all');
+              }}
+              className="px-4 py-2 rounded-full bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900 font-bold text-xs inline-flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition-all"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset all filters</span>
+            </button>
+          ) : onAddExpense ? (
             <button
               type="button"
               onClick={() => {
@@ -909,7 +1041,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
               <Plus className="w-3.5 h-3.5" />
               <span>Add Expense</span>
             </button>
-          )}
+          ) : null}
         </div>
       ) : (
         <div className="space-y-4">

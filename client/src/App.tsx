@@ -64,6 +64,7 @@ import { QuotesManagerView } from './components/QuotesManagerView';
 import { ExamsSection } from './components/ExamsSection';
 import { AuthModal } from './components/AuthModal';
 import { AvatarPickerModal } from './components/AvatarPickerModal';
+import { BrandLogo } from './components/BrandLogo';
 import { STOCK_IMAGES } from './assets/stockImages';
 import LandingPage from './components/LandingPage';
 import { usePlatformMode } from './presentation/mobile/shell/usePlatformMode';
@@ -2888,9 +2889,7 @@ export default function App() {
                 className="flex items-center gap-2.5 px-1 py-1 text-left cursor-pointer hover:opacity-80 transition-opacity w-full overflow-hidden"
                 title="Personal Dashboard Home"
               >
-                <div className="w-8 h-8 rounded-xl bg-purple-600 dark:bg-purple-500 text-white flex items-center justify-center font-black text-sm shadow-xs shrink-0">
-                  ✨
-                </div>
+                <BrandLogo size={32} className="rounded-xl shadow-xs shrink-0" alt="Personal Dashboard Logo" />
                 <AnimatePresence initial={false}>
                   {!isSidebarCollapsed && (
                     <motion.div
@@ -3306,9 +3305,12 @@ export default function App() {
               <div className="relative w-72 max-w-[85vw] bg-[#F7F7F5] dark:bg-[#111827] border-r border-[#EDECE9] dark:border-[#1F2937] flex flex-col justify-between p-4 z-10 animate-in slide-in-from-left overflow-y-auto shadow-2xl">
                 <div className="space-y-4">
                   <div className="flex items-center justify-between pb-2 border-b border-[#EDECE9] dark:border-[#1F2937]">
-                    <span className="text-sm font-bold text-[#37352F] dark:text-white truncate">
-                      💼 {profile.name}&apos;s Personal Dashboard
-                    </span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <BrandLogo size={24} className="rounded-lg shadow-xs shrink-0" alt="Personal Dashboard Logo" />
+                      <span className="text-sm font-bold text-[#37352F] dark:text-white truncate">
+                        {profile.name}&apos;s Personal Dashboard
+                      </span>
+                    </div>
                     <button
                       onClick={() => setIsMobileSidebarOpen(false)}
                       className="p-1 text-[#787774] hover:text-[#37352F] dark:hover:text-white cursor-pointer rounded-lg hover:bg-[#E5E7EB] dark:hover:bg-[#1F2937]"

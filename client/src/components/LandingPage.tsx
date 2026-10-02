@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { BrandLogo } from "./BrandLogo";
 import {
   ArrowRight, BarChart3, BookOpen, Check, CheckCircle2, CircleDollarSign,
   Flame, Goal, Grid2X2, LayoutDashboard, Menu, Moon, NotebookPen, Plus,
@@ -266,9 +267,7 @@ export default function LandingPage({ onSignIn, onSignUp, onGetStarted }: Landin
     <div className="site-shell min-h-screen w-full overflow-x-hidden relative">
       <header className="site-header">
         <a className="brand" href="#top" onClick={(e) => { e.preventDefault(); scrollTo('top'); }}>
-          <span className="brand-mark">
-            <Sparkles size={17} />
-          </span>
+          <BrandLogo size={28} className="rounded-lg shrink-0 shadow-2xs" alt="Personal Dashboard Logo" />
           <span>personal-dashboard</span>
         </a>
 
@@ -573,9 +572,7 @@ export default function LandingPage({ onSignIn, onSignUp, onGetStarted }: Landin
 
       <footer id="footer">
         <a className="brand" href="#top" onClick={(e) => { e.preventDefault(); scrollTo('top'); }}>
-          <span className="brand-mark">
-            <Sparkles size={17} />
-          </span>
+          <BrandLogo size={28} className="rounded-lg shrink-0 shadow-2xs" alt="Personal Dashboard Logo" />
           <span>personal-dashboard</span>
         </a>
         <span>© 2026 Make room for what matters.</span>

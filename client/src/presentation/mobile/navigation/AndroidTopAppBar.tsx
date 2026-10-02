@@ -2,6 +2,7 @@ import React from 'react';
 import { Search, Sparkles } from 'lucide-react';
 import { UserProfile } from '../../../types';
 import { nativeService } from '../../../services/nativeService';
+import { BrandLogo } from '../../../components/BrandLogo';
 
 export interface AndroidTopAppBarProps {
   profile: UserProfile;
@@ -46,9 +47,7 @@ export const AndroidTopAppBar: React.FC<AndroidTopAppBarProps> = ({
       <div className="h-11 sm:h-12 flex items-center justify-between gap-3 max-w-lg mx-auto">
         {/* Left: Small Brand Icon + Compact Single-Line Title */}
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-7 h-7 rounded-full bg-violet-600 flex items-center justify-center text-white shadow-xs shrink-0">
-            <Sparkles className="w-3.5 h-3.5 text-white" />
-          </div>
+          <BrandLogo size={28} className="rounded-lg shadow-xs shrink-0" alt="Personal Dashboard Logo" />
           <span className="text-[15px] font-semibold text-gray-900 dark:text-gray-100 tracking-tight truncate leading-none">
             {title}
           </span>
