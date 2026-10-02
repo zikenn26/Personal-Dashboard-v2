@@ -72,11 +72,6 @@ import { ExpenseDistributionSection } from './ExpenseDistributionSection';
 import { DateRangePicker, type DateRange } from './DateRangePicker';
 import { isCreditTransaction } from '../utils/expenseUtils';
 import { downloadExpenseExcel, downloadExpenseCSV } from '../utils/expenseExport';
-import { FileSpreadsheet, Download, ChevronDown } from 'lucide-react';
-import {
-  downloadExpenseExcel,
-  downloadExpenseCSV,
-} from '../utils/expenseExport';
 
 interface ExpenseTrackerProps {
   expenses: ExpenseItem[];
