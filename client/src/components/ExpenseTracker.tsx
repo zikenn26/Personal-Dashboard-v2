@@ -267,6 +267,8 @@ export const getMatchingExpensesForSheet = (
 export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   expenses,
   importLogs: propImportLogs,
+  searchQuery: propSearchQuery,
+  onSearchQueryChange,
   onAddExpense,
   onUpdateExpense,
   onBatchAddExpenses,
@@ -678,7 +680,14 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   const [modalDateRange, setModalDateRange] = useState<DateRange>({ startDate: '', endDate: '' });
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc' | 'name-asc'>('date-desc');
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [internalSearchQuery, setInternalSearchQuery] = useState<string>('');
+  const searchQuery = propSearchQuery !== undefined ? propSearchQuery : internalSearchQuery;
+  const setSearchQuery = (val: string) => {
+    if (onSearchQueryChange) {
+      onSearchQueryChange(val);
+    }
+    setInternalSearchQuery(val);
+  };
   const [minAmount, setMinAmount] = useState<string>('');
   const [maxAmount, setMaxAmount] = useState<string>('');
   const [txCurrentPage, setTxCurrentPage] = useState<number>(1);
@@ -802,11 +811,14 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   // Save Modal (Create or Update)
   const handleSaveForm = (e: React.FormEvent) => {
     e.preventDefault();
-    const parsedAmount = parseFloat(formAmount);
+    const sanitizedAmountStr = formAmount.replace(',', '.');
+    const parsedAmount = parseFloat(sanitizedAmountStr);
     if (!formName.trim() || isNaN(parsedAmount) || parsedAmount <= 0) return;
 
     Sound.success(soundEnabled);
     triggerConfetti();
+
+    const resolvedDate = formDate.trim() || getLocalDateKey();
 
     if (editingExpense) {
       if (onUpdateExpense) {
@@ -814,7 +826,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
           name: formName.trim(),
           amount: parsedAmount,
           category: formCategory,
-          date: formDate,
+          date: resolvedDate,
           paymentMethod: formPaymentMethod,
           billingCycle: formBillingCycle,
           notes: formNotes.trim(),
@@ -828,7 +840,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
         name: formName.trim(),
         amount: parsedAmount,
         category: formCategory,
-        date: formDate,
+        date: resolvedDate,
         paymentMethod: formPaymentMethod,
         billingCycle: formBillingCycle,
         notes: formNotes.trim(),
@@ -1114,7 +1126,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     const selectedPrefix = `${selectedYear}-${String(selectedMonthIndex + 1).padStart(2, '0')}`;
 
     if (activeFilter === 'today') {
-      list = list.filter((e) => e.date === todayStr);
+      list = list.filter((e) => normalizeExpenseDateKey(e.date) === todayStr);
     } else if (activeFilter === 'week') {
       const todayKey = getLocalDateKey();
       const mondayKey = getLocalDateKey(getStartOfLocalWeek());
@@ -1800,39 +1812,57 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
               </button>
             </div>
 
-            {/* ================================================================= */}
-            {/* SEARCH AND FILTER BAR (Merchant, Category, Amount Range, Date)    */}
-            {/* ================================================================= */}
-            <div className="p-3.5 sm:p-4 rounded-2xl bg-gray-50/90 dark:bg-[#151D2A] border border-gray-200/90 dark:border-gray-800 space-y-3 shadow-2xs">
-              {/* Row 1: Merchant Search + Category Selector + Amount Range */}
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center">
-                {/* 1. Merchant Search Input */}
-                <div className="md:col-span-5 relative">
-                  <Search className="w-4 h-4 text-gray-400 dark:text-gray-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="text"
-                    id="expense-merchant-search"
-                    data-testid="expense-merchant-search"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search merchant, payee, or note..."
-                    className="w-full pl-9 pr-8 py-2 rounded-xl text-xs bg-white dark:bg-[#1F2937] border border-gray-200 dark:border-gray-700 text-[#37352F] dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all shadow-2xs"
-                  />
-                  {searchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setSearchQuery('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-0.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
-                      title="Clear merchant search"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
+            {/* Quick Filters Pill Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-1 pt-1">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                {(['all', 'today', 'week', 'month'] as const).map((filterKey) => (
+                  <button
+                    key={filterKey}
+                    type="button"
+                    onClick={() => {
+                      Sound.click(soundEnabled);
+                      setActiveFilter(filterKey);
+                      if (filterKey !== 'all') {
+                        setCustomDateRange({ startDate: '', endDate: '' });
+                      }
+                    }}
+                    className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
+                      activeFilter === filterKey
+                        ? 'bg-purple-600 text-white shadow-2xs'
+                        : 'bg-white dark:bg-[#1A202C] text-[#787774] dark:text-[#9CA3AF] hover:text-[#37352F] dark:hover:text-white border border-[#E5E7EB] dark:border-[#2D3748]'
+                    }`}
+                  >
+                    {filterKey === 'all'
+                      ? 'All'
+                      : filterKey === 'today'
+                      ? 'Today'
+                      : filterKey === 'week'
+                      ? 'This Week'
+                      : `${MONTH_NAMES[selectedMonthIndex]}`}
+                  </button>
+                ))}
 
-                {/* 2. Category Dropdown */}
-                <div className="md:col-span-3 relative">
-                  <Filter className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                {/* Date Range Picker */}
+                <DateRangePicker
+                  dateRange={customDateRange}
+                  isActive={activeFilter === 'custom'}
+                  onChange={(range) => {
+                    Sound.click(soundEnabled);
+                    setCustomDateRange(range);
+                    setActiveFilter('custom');
+                    setTxCurrentPage(1);
+                  }}
+                  onClear={() => {
+                    Sound.click(soundEnabled);
+                    setCustomDateRange({ startDate: '', endDate: '' });
+                    setActiveFilter('all');
+                    setTxCurrentPage(1);
+                  }}
+                  compact
+                />
+
+                {/* Category Dropdown Filter */}
+                <div className="relative">
                   <select
                     id="expense-category-filter"
                     data-testid="expense-category-filter"
@@ -1843,7 +1873,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                       setSelectedCategoryFilter(e.target.value);
                       setTxCurrentPage(1);
                     }}
-                    className="w-full pl-8 pr-7 py-2 rounded-xl text-xs font-semibold bg-white dark:bg-[#1F2937] border border-gray-200 dark:border-gray-700 text-[#37352F] dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all shadow-2xs cursor-pointer appearance-none truncate"
+                    className="pl-3 pr-7 py-1 rounded-full text-xs font-semibold bg-white dark:bg-[#1A202C] text-[#37352F] dark:text-white border border-[#E5E7EB] dark:border-[#2D3748] outline-none cursor-pointer appearance-none truncate"
                   >
                     <option value="all">All Categories</option>
                     {availableCategories.map((catName) => {
@@ -1855,166 +1885,44 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                       );
                     })}
                   </select>
-                  <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                </div>
-
-                {/* 3. Amount Range (Min & Max) */}
-                <div className="md:col-span-4 flex items-center gap-1.5">
-                  <div className="relative flex-1">
-                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
-                      Min
-                    </span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="any"
-                      placeholder="₹0"
-                      value={minAmount}
-                      onChange={(e) => setMinAmount(e.target.value)}
-                      className="w-full pl-9 pr-2 py-2 rounded-xl text-xs font-mono bg-white dark:bg-[#1F2937] border border-gray-200 dark:border-gray-700 text-[#37352F] dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all shadow-2xs"
-                    />
-                  </div>
-                  <span className="text-gray-300 dark:text-gray-600 font-bold">–</span>
-                  <div className="relative flex-1">
-                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
-                      Max
-                    </span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="any"
-                      placeholder="₹Max"
-                      value={maxAmount}
-                      onChange={(e) => setMaxAmount(e.target.value)}
-                      className="w-full pl-9 pr-2 py-2 rounded-xl text-xs font-mono bg-white dark:bg-[#1F2937] border border-gray-200 dark:border-gray-700 text-[#37352F] dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all shadow-2xs"
-                    />
-                  </div>
+                  <ChevronDown className="w-3 h-3 text-gray-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
                 </div>
               </div>
 
-              {/* Row 2: Amount Range Quick Chips + Time Filters + Sort Order + Reset */}
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-200/60 dark:border-gray-800">
-                {/* Left: Quick Date Filters + Amount Quick Chips */}
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <div className="flex items-center gap-1 bg-white dark:bg-[#1F2937] p-0.5 rounded-full border border-gray-200 dark:border-gray-700 shadow-2xs">
-                    {(['all', 'today', 'week', 'month'] as const).map((filterKey) => (
-                      <button
-                        key={filterKey}
-                        type="button"
-                        onClick={() => {
-                          Sound.click(soundEnabled);
-                          setActiveFilter(filterKey);
-                          if (filterKey !== 'all') {
-                            setCustomDateRange({ startDate: '', endDate: '' });
-                          }
-                        }}
-                        className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold transition-colors cursor-pointer ${
-                          activeFilter === filterKey
-                            ? 'bg-purple-600 text-white shadow-2xs'
-                            : 'text-[#787774] dark:text-[#9CA3AF] hover:text-[#37352F] dark:hover:text-white'
-                        }`}
-                      >
-                        {filterKey === 'all'
-                          ? 'All'
-                          : filterKey === 'today'
-                          ? 'Today'
-                          : filterKey === 'week'
-                          ? 'This Week'
-                          : `${MONTH_NAMES[selectedMonthIndex]}`}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Date Range Picker */}
-                  <DateRangePicker
-                    dateRange={customDateRange}
-                    isActive={activeFilter === 'custom'}
-                    onChange={(range) => {
+              {/* Sort Order & Reset */}
+              <div className="flex items-center gap-1.5 ml-auto">
+                <div className="relative">
+                  <select
+                    value={sortBy}
+                    onChange={(e) => {
                       Sound.click(soundEnabled);
-                      setCustomDateRange(range);
-                      setActiveFilter('custom');
-                      setTxCurrentPage(1);
+                      setSortBy(e.target.value as any);
                     }}
-                    onClear={() => {
-                      Sound.click(soundEnabled);
-                      setCustomDateRange({ startDate: '', endDate: '' });
-                      setActiveFilter('all');
-                      setTxCurrentPage(1);
-                    }}
-                    compact
-                  />
-
-                  {/* Amount quick preset chips */}
-                  <div className="hidden xl:flex items-center gap-1 ml-1 pl-1 border-l border-gray-200 dark:border-gray-700">
-                    <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase">Range:</span>
-                    {[
-                      { label: '< ₹500', min: '', max: '500' },
-                      { label: '₹500-2k', min: '500', max: '2000' },
-                      { label: '₹2k-10k', min: '2000', max: '10000' },
-                      { label: '₹10k+', min: '10000', max: '' },
-                    ].map((preset) => {
-                      const isActive = minAmount === preset.min && maxAmount === preset.max;
-                      return (
-                        <button
-                          key={preset.label}
-                          type="button"
-                          onClick={() => {
-                            Sound.click(soundEnabled);
-                            if (isActive) {
-                              setMinAmount('');
-                              setMaxAmount('');
-                            } else {
-                              setMinAmount(preset.min);
-                              setMaxAmount(preset.max);
-                            }
-                          }}
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold transition-colors cursor-pointer border ${
-                            isActive
-                              ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/80 dark:text-purple-300 border-purple-300 dark:border-purple-700'
-                              : 'bg-white dark:bg-[#1F2937] text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-purple-300'
-                          }`}
-                        >
-                          {preset.label}
-                        </button>
-                      );
-                    })}
-                  </div>
+                    className="pl-3 pr-7 py-1 rounded-full text-xs font-semibold bg-white dark:bg-[#1A202C] text-[#37352F] dark:text-white border border-[#E5E7EB] dark:border-[#2D3748] outline-none cursor-pointer appearance-none"
+                    title="Sort expenses list"
+                  >
+                    <option value="date-desc">Newest First</option>
+                    <option value="date-asc">Oldest First</option>
+                    <option value="amount-desc">Amount: High to Low</option>
+                    <option value="amount-asc">Amount: Low to High</option>
+                    <option value="name-asc">Merchant (A-Z)</option>
+                  </select>
+                  <ChevronDown className="w-3 h-3 text-gray-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
                 </div>
 
-                {/* Right: Sort Dropdown + Reset Button */}
-                <div className="flex items-center gap-2 ml-auto">
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <ArrowUpDown className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                    <select
-                      value={sortBy}
-                      onChange={(e) => {
-                        Sound.click(soundEnabled);
-                        setSortBy(e.target.value as any);
-                      }}
-                      className="px-2.5 py-1 rounded-xl text-[11px] font-semibold bg-white dark:bg-[#1F2937] text-[#37352F] dark:text-white border border-gray-200 dark:border-gray-700 outline-none cursor-pointer shadow-2xs hover:border-purple-300 dark:hover:border-purple-600 transition-colors"
-                      title="Sort expenses list"
-                    >
-                      <option value="date-desc">Newest First</option>
-                      <option value="date-asc">Oldest First</option>
-                      <option value="amount-desc">Amount: High to Low</option>
-                      <option value="amount-asc">Amount: Low to High</option>
-                      <option value="name-asc">Merchant (A-Z)</option>
-                    </select>
-                  </div>
-
-                  {isAnyFilterActive && (
-                    <button
-                      type="button"
-                      onClick={clearAllFilters}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-xl text-[11px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-900/80 transition-colors cursor-pointer shadow-2xs"
-                      title="Reset all active search and filter criteria"
-                    >
-                      <RotateCcw className="w-3 h-3" />
-                      <span>Reset</span>
-                    </button>
-                  )}
-                </div>
+                {isAnyFilterActive && (
+                  <button
+                    type="button"
+                    onClick={clearAllFilters}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 border border-rose-200 dark:border-rose-900/80 transition-colors cursor-pointer shadow-2xs"
+                    title="Reset all active search and filter criteria"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Reset</span>
+                  </button>
+                )}
               </div>
+            </div>
 
               {/* Active Filter Badges summary */}
               {isAnyFilterActive && (
@@ -2028,11 +1936,12 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
 
                     {searchQuery.trim() && (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white dark:bg-[#1F2937] text-[11px] font-medium border border-purple-200 dark:border-purple-800 shadow-2xs">
-                        Merchant: &ldquo;{searchQuery}&rdquo;
+                        Search: &ldquo;{searchQuery}&rdquo;
                         <button
                           type="button"
                           onClick={() => setSearchQuery('')}
                           className="hover:text-rose-500 cursor-pointer ml-0.5"
+                          title="Clear search"
                         >
                           <X className="w-3 h-3" />
                         </button>
@@ -2104,7 +2013,6 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                   </button>
                 </div>
               )}
-            </div>
 
             {/* Transaction Items (Grouped by Today, Yesterday, Earlier) */}
             <div className="space-y-4 pt-1">

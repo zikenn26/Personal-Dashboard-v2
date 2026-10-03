@@ -1937,24 +1937,25 @@ export const Storage = {
         const validCloudExpenses = data.expenses.filter((e: any) => e && e.id && !trashedIds.has(e.id));
         const cloudIdSet = new Set(validCloudExpenses.map((e: any) => e.id));
 
-        // Preserve recently created local auto-logged SMS expenses (last 15 mins) that have not synced yet
-        const fifteenMinutesAgo = Date.now() - 15 * 60 * 1000;
-        const unsyncedRecentLocalSms = currentLocal.filter((localExp) => {
+        // Preserve recently created local unsynced expenses (last 2 hours) that have not synced yet
+        const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
+        const unsyncedRecentLocal = currentLocal.filter((localExp) => {
           if (!localExp || !localExp.id || trashedIds.has(localExp.id) || cloudIdSet.has(localExp.id)) {
             return false;
           }
-          if (localExp.source === 'sms_auto') {
-            const idTimeMatch = localExp.id.match(/^exp-sms-(\d+)/);
-            if (idTimeMatch) {
-              const createdTime = parseInt(idTimeMatch[1], 10);
-              return createdTime > fifteenMinutesAgo;
+          // Parse timestamp if present in ID (e.g. exp-172..., exp-sms-172...)
+          const idTimeMatch = localExp.id.match(/^exp(?:-sms)?-(\d+)/);
+          if (idTimeMatch) {
+            const createdTime = parseInt(idTimeMatch[1], 10);
+            if (!isNaN(createdTime)) {
+              return createdTime > twoHoursAgo;
             }
-            return true;
           }
-          return false;
+          // Preserve any non-trashed local expense
+          return true;
         });
 
-        const mergedExpenses = [...unsyncedRecentLocalSms, ...validCloudExpenses];
+        const mergedExpenses = [...unsyncedRecentLocal, ...validCloudExpenses];
         Storage.setExpenses(mergedExpenses);
       }
       if (Array.isArray(data.excelImportLogs)) {

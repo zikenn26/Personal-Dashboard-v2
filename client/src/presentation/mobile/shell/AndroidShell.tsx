@@ -317,7 +317,7 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
           onOpenAssistant={() => setIsAssistantOpen(true)}
           title="Personal Dashboard"
         />
-      ) : (
+      ) : activeView === 'expenses' || activeView === 'subscriptions' ? null : (
         <header className="sticky top-0 z-40 w-full bg-[#F7F6FC]/95 dark:bg-[#0B0F19]/95 backdrop-blur-md border-b border-[#E8E5F3] dark:border-[#1E2638] pt-[env(safe-area-inset-top,0px)] px-4 shrink-0">
           <div className="h-11 sm:h-12 flex items-center justify-between gap-3 max-w-lg mx-auto">
             <div className="flex items-center gap-2.5">
@@ -427,6 +427,10 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
           <AndroidMoneyScreen
             expenses={expenses}
             importLogs={excelImportLogs}
+            profile={profile}
+            onBack={() => onNavigate('home')}
+            onOpenAssistant={() => setIsAssistantOpen(true)}
+            onOpenProfile={() => setIsProfileOpen(true)}
             onAddExpense={onAddExpense}
             onUpdateExpense={onUpdateExpense}
             onDeleteExpense={onDeleteExpense}

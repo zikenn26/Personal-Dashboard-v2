@@ -204,6 +204,7 @@ export default function App() {
   const [goals, setGoals] = useState<GoalItem[]>(Storage.getGoals);
   const [vault, setVault] = useState<VaultCredential[]>(Storage.getVault);
   const [expenses, setExpenses] = useState<ExpenseItem[]>(Storage.getExpenses);
+  const [spendingSearchQuery, setSpendingSearchQuery] = useState<string>('');
   const [excelImportLogs, setExcelImportLogs] = useState<ExcelImportLog[]>(Storage.getExcelImportLogs);
   const [journal, setJournal] = useState<JournalEntry[]>(Storage.getJournal);
   const [media, setMedia] = useState<MediaItem[]>(Storage.getMedia);
@@ -795,7 +796,7 @@ export default function App() {
     activeView,
   ]);
 
-  // 4. Global Keyboard Shortcuts (Cmd+K / Ctrl+K and Cmd+\ / Ctrl+\)
+  // 4. Global Keyboard Shortcuts (Cmd+K / Ctrl+K, Cmd+\ / Ctrl+\, and / to focus search)
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -812,10 +813,21 @@ export default function App() {
           return next;
         });
       }
+      if (
+        e.key === '/' &&
+        (activeView === 'expenses' || activeView === 'subscriptions') &&
+        !['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)
+      ) {
+        e.preventDefault();
+        const searchInput = document.getElementById('expense-merchant-search');
+        if (searchInput) {
+          searchInput.focus();
+        }
+      }
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [settings.soundEnabled]);
+  }, [settings.soundEnabled, activeView]);
 
   // Settings update handler
   const handleUpdateSettings = (newSettings: AppSettings) => {
@@ -1568,36 +1580,9 @@ export default function App() {
     const direction: 'DEBIT' | 'CREDIT' = isCredit ? 'CREDIT' : 'DEBIT';
     const currentStored = Storage.getExpenses();
 
-    // Redundancy / Duplicate Check:
-    // If an identical transaction (same amount, same date, matching merchant/title) was already
-    // recorded today (e.g. from SMS auto-logging or rapid tap), avoid redundant duplicate!
-    const cleanName = (item.name || '').trim().toLowerCase();
-    const itemAmt = Number(item.amount) || 0;
-    const itemDate = item.date || getLocalDateKey(new Date());
-
-    const isDuplicate = currentStored.some((existing) => {
-      if (Math.abs(Number(existing.amount) - itemAmt) > 0.01) return false;
-      const exDate = normalizeExpenseDateKey(existing.date);
-      const reqDate = normalizeExpenseDateKey(itemDate);
-      if (exDate !== reqDate) return false;
-      const existingName = (existing.name || '').trim().toLowerCase();
-      return (
-        existingName === cleanName ||
-        (existing.merchant && existing.merchant.toLowerCase().includes(cleanName)) ||
-        (cleanName && existingName.includes(cleanName))
-      );
-    });
-
-    if (isDuplicate) {
-      toast.info(`Transaction of ₹${itemAmt} is already recorded in Spending today`, {
-        description: 'Skipped redundant duplicate entry',
-      });
-      return;
-    }
-
     const newExpense: ExpenseItem = {
       ...item,
-      id: `exp-${Date.now()}`,
+      id: `exp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       direction,
       transactionType: direction,
     };
@@ -1623,17 +1608,18 @@ export default function App() {
     newItems: Array<Omit<ExpenseItem, 'id'>>,
     newLog?: ExcelImportLog
   ) => {
+    const currentStored = Storage.getExpenses();
     const created: ExpenseItem[] = newItems.map((item, idx) => {
       const isCredit = item.direction === 'CREDIT' || item.transactionType === 'CREDIT' || item.transactionType === 'income';
       const direction: 'DEBIT' | 'CREDIT' = isCredit ? 'CREDIT' : 'DEBIT';
       return {
         ...item,
-        id: `exp-${Date.now()}-${idx}`,
+        id: `exp-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
         direction,
         transactionType: direction,
       };
     });
-    const updated = [...created, ...expenses];
+    const updated = [...created, ...currentStored];
     setExpenses(updated);
     Storage.setExpenses(updated);
 
@@ -1664,7 +1650,8 @@ export default function App() {
 
   const handleUpdateExpense = (id: string, updated: Partial<ExpenseItem>) => {
     Sound.click(settings.soundEnabled);
-    const next = expenses.map((e) => (e.id === id ? { ...e, ...updated } : e));
+    const currentStored = Storage.getExpenses();
+    const next = currentStored.map((e) => (String(e.id) === String(id) ? { ...e, ...updated } : e));
     setExpenses(next);
     Storage.setExpenses(next);
 
@@ -1681,7 +1668,8 @@ export default function App() {
   };
 
   const handleToggleExpense = (id: string) => {
-    const updated = expenses.map((e) => (e.id === id ? { ...e, active: !e.active } : e));
+    const currentStored = Storage.getExpenses();
+    const updated = currentStored.map((e) => (String(e.id) === String(id) ? { ...e, active: !e.active } : e));
     setExpenses(updated);
     Storage.setExpenses(updated);
 
@@ -1701,7 +1689,6 @@ export default function App() {
     const deleteIds = new Set(itemsToDelete.map((e) => String(e.id).trim()));
     const currentStored = Storage.getExpenses();
 
-    const nextExpenses = expenses.filter((e) => !deleteIds.has(String(e.id).trim()));
     const nextStored = currentStored.filter((e) => !deleteIds.has(String(e.id).trim()));
 
     // 1. Immediately persist synchronously to localStorage (both scoped and unscoped)
@@ -1723,19 +1710,20 @@ export default function App() {
     setTrash(Storage.getTrash());
 
     // 3. Immediately update React state with fresh array reference
-    setExpenses([...nextExpenses]);
+    setExpenses([...nextStored]);
+    setAtomicPendingDeletion(null);
 
     // 4. Dispatch 'dashboard-data-updated' event to notify all listening components
     window.dispatchEvent(
       new CustomEvent('dashboard-data-updated', {
-        detail: { module: 'expenses', updatedExpenses: nextExpenses, deletedCount: itemsToDelete.length },
+        detail: { module: 'expenses', updatedExpenses: nextStored, deletedCount: itemsToDelete.length },
       })
     );
 
     // 5. Flush auto sync immediately to Supabase
     flushAutoSyncImmediately({
       ...Storage.getAllDataPayload(),
-      expenses: nextExpenses,
+      expenses: nextStored,
     });
 
     // 6. Trigger Undo Toast
@@ -1743,24 +1731,20 @@ export default function App() {
       clearTimeout(expenseUndoTimerRef.current);
     }
     const primaryItem = itemsToDelete[0];
-    const itemIndex = expenses.findIndex((e) => e.id === primaryItem.id);
-    setExpenseUndoToast({
-      item: primaryItem,
-      index: itemIndex >= 0 ? itemIndex : 0,
-    });
-    expenseUndoTimerRef.current = setTimeout(() => {
-      setExpenseUndoToast(null);
-    }, 6000);
+    if (primaryItem) {
+      const itemIndex = currentStored.findIndex((e) => String(e.id) === String(primaryItem.id));
+      setExpenseUndoToast({
+        item: primaryItem,
+        index: itemIndex >= 0 ? itemIndex : 0,
+      });
+      expenseUndoTimerRef.current = setTimeout(() => {
+        setExpenseUndoToast(null);
+      }, 6000);
+    }
   };
 
   const handleDeleteExpense = (idOrIds: string | string[], skipConfirm = true) => {
     Sound.click(settings.soundEnabled);
-
-    // 1. ATOMIC LOCK CHECK: Block incoming requests if an atomic transaction is already pending
-    if (atomicPendingDeletion) {
-      console.warn('Blocked: An expense deletion transaction is currently locked in an atomic pending state.');
-      return;
-    }
 
     const targetIds = Array.isArray(idOrIds)
       ? idOrIds.map((s) => String(s).trim()).filter(Boolean)
@@ -1775,27 +1759,44 @@ export default function App() {
     const seen = new Set<string>();
 
     for (const e of expenses) {
-      if (idSet.has(String(e.id).trim()) && !seen.has(e.id)) {
+      if (idSet.has(String(e.id).trim()) && !seen.has(String(e.id))) {
         itemsToDelete.push(e);
-        seen.add(e.id);
+        seen.add(String(e.id));
       }
     }
     for (const e of currentStored) {
-      if (idSet.has(String(e.id).trim()) && !seen.has(e.id)) {
+      if (idSet.has(String(e.id).trim()) && !seen.has(String(e.id))) {
         itemsToDelete.push(e);
-        seen.add(e.id);
+        seen.add(String(e.id));
       }
     }
 
     if (itemsToDelete.length === 0) {
-      console.warn(`Expense(s) not found for deletion: ${targetIds.join(', ')}`);
+      // Even if item object wasn't found in memory, purge the IDs from storage directly
+      const nextStored = currentStored.filter((e) => !idSet.has(String(e.id).trim()));
+      Storage.setExpenses(nextStored);
+      setExpenses(nextStored);
+      targetIds.forEach((id) => {
+        Storage.moveToTrash('expenses', { id, name: 'Deleted Expense', amount: 0, category: 'Others', date: '' } as any, `Expense ID ${id}`);
+      });
+      setTrash(Storage.getTrash());
+      setAtomicPendingDeletion(null);
+      window.dispatchEvent(
+        new CustomEvent('dashboard-data-updated', {
+          detail: { module: 'expenses', updatedExpenses: nextStored },
+        })
+      );
+      flushAutoSyncImmediately({
+        ...Storage.getAllDataPayload(),
+        expenses: nextStored,
+      });
       return;
     }
 
     const isMultiple = itemsToDelete.length > 1;
 
-    // 2. Multi-record deletion or unconfirmed deletion locks the atomic pending confirmation state
-    if (isMultiple || !skipConfirm) {
+    // Multi-record deletion confirmation only if skipConfirm is explicitly false
+    if (!skipConfirm) {
       const totalAmount = itemsToDelete.reduce((sum, e) => sum + Number(e.amount || 0), 0);
       const label = isMultiple
         ? `${itemsToDelete.length} expenses totaling ₹${totalAmount.toLocaleString()}`
@@ -1814,7 +1815,7 @@ export default function App() {
       return;
     }
 
-    // 3. Single record deletion already confirmed
+    // Direct deletion confirmed
     executeAtomicExpenseDeletion(itemsToDelete);
   };
 
@@ -1867,8 +1868,15 @@ export default function App() {
 
   const handleDeleteBatchExpenses = (ids: string[]) => {
     Sound.click(settings.soundEnabled);
-    const idSet = new Set(ids);
-    const updated = expenses.filter((e) => !idSet.has(e.id));
+    const idSet = new Set(ids.map((id) => String(id).trim()));
+    const currentStored = Storage.getExpenses();
+    const toDelete = currentStored.filter((e) => idSet.has(String(e.id).trim()));
+    toDelete.forEach((item) => {
+      Storage.moveToTrash('expenses', item, `${item.name} (₹${Number(item.amount).toLocaleString()})`);
+    });
+    setTrash(Storage.getTrash());
+
+    const updated = currentStored.filter((e) => !idSet.has(String(e.id).trim()));
     setExpenses(updated);
     Storage.setExpenses(updated);
     window.dispatchEvent(
@@ -1884,6 +1892,12 @@ export default function App() {
 
   const handleClearAllExpenses = () => {
     Sound.click(settings.soundEnabled);
+    const currentStored = Storage.getExpenses();
+    currentStored.forEach((item) => {
+      Storage.moveToTrash('expenses', item, `${item.name} (₹${Number(item.amount).toLocaleString()})`);
+    });
+    setTrash(Storage.getTrash());
+
     setExpenses([]);
     Storage.setExpenses([]);
     setExcelImportLogs([]);
@@ -2636,36 +2650,75 @@ export default function App() {
               )}
             </div>
 
-            {/* Notion Search Bar: Compact icon on mobile, bar on sm+ */}
-            <button
-              type="button"
-              onClick={() => {
-                Sound.click(settings.soundEnabled);
-                setIsCommandPaletteOpen(true);
-              }}
-              className="flex items-center gap-1.5 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-[#F7F7F5] dark:bg-[#1F2937] border border-[#EDECE9] dark:border-[#374151] hover:border-[#D1D5DB] dark:hover:border-[#4B5563] text-xs text-[#787774] dark:text-[#9CA3AF] shadow-2xs cursor-pointer transition-all sm:w-36 md:w-44 justify-between"
-              title="Search (⌘K)"
-            >
-              <div className="flex items-center gap-1.5 truncate">
-                <Search className="w-3.5 h-3.5 text-[#9CA3AF]" />
-                <span className="hidden sm:inline truncate">
-                  {activeView === 'tasks'
-                    ? 'Search tasks...'
-                    : activeView === 'expenses' || activeView === 'subscriptions'
-                    ? 'Search spending...'
-                    : activeView === 'habits'
-                    ? 'Search habits...'
-                    : activeView === 'journal' || activeView === 'docs'
-                    ? 'Search journal...'
-                    : activeView === 'vault'
-                    ? 'Search vault...'
-                    : 'Search pages...'}
-                </span>
+            {/* Top Navigation Search: Live spending search when on Spending, otherwise Command Palette trigger */}
+            {activeView === 'expenses' || activeView === 'subscriptions' ? (
+              <div className="relative flex items-center">
+                <div className="flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-xl bg-[#F7F7F5] dark:bg-[#1F2937] border border-[#EDECE9] dark:border-[#374151] focus-within:border-purple-500 focus-within:ring-2 focus-within:ring-purple-500/20 text-xs text-[#787774] dark:text-[#9CA3AF] shadow-2xs transition-all w-36 sm:w-56 md:w-64 focus-within:w-48 sm:focus-within:w-64 md:focus-within:w-72">
+                  <Search className="w-3.5 h-3.5 text-[#9CA3AF] shrink-0 pointer-events-none" />
+                  <input
+                    type="text"
+                    id="expense-merchant-search"
+                    data-testid="expense-merchant-search"
+                    value={spendingSearchQuery}
+                    onChange={(e) => setSpendingSearchQuery(e.target.value)}
+                    placeholder="Search spending..."
+                    className="w-full bg-transparent text-xs text-[#37352F] dark:text-white placeholder:text-[#9CA3AF] focus:outline-none"
+                  />
+                  {spendingSearchQuery ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        Sound.click(settings.soundEnabled);
+                        setSpendingSearchQuery('');
+                      }}
+                      className="p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 cursor-pointer shrink-0"
+                      title="Clear spending search"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  ) : (
+                    <kbd
+                      onClick={() => {
+                        Sound.click(settings.soundEnabled);
+                        setIsCommandPaletteOpen(true);
+                      }}
+                      className="hidden sm:inline px-1.5 py-0.2 rounded bg-white dark:bg-[#111827] border border-[#EDECE9] dark:border-[#374151] text-[9px] font-mono cursor-pointer shrink-0 hover:bg-gray-50 dark:hover:bg-[#1F2937]"
+                      title="Open Command Palette (⌘K)"
+                    >
+                      ⌘K
+                    </kbd>
+                  )}
+                </div>
               </div>
-              <kbd className="hidden sm:inline px-1.5 py-0.2 rounded bg-white dark:bg-[#111827] border border-[#EDECE9] dark:border-[#374151] text-[9px] font-mono">
-                ⌘K
-              </kbd>
-            </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  Sound.click(settings.soundEnabled);
+                  setIsCommandPaletteOpen(true);
+                }}
+                className="flex items-center gap-1.5 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-[#F7F7F5] dark:bg-[#1F2937] border border-[#EDECE9] dark:border-[#374151] hover:border-[#D1D5DB] dark:hover:border-[#4B5563] text-xs text-[#787774] dark:text-[#9CA3AF] shadow-2xs cursor-pointer transition-all sm:w-36 md:w-44 justify-between"
+                title="Search (⌘K)"
+              >
+                <div className="flex items-center gap-1.5 truncate">
+                  <Search className="w-3.5 h-3.5 text-[#9CA3AF]" />
+                  <span className="hidden sm:inline truncate">
+                    {activeView === 'tasks'
+                      ? 'Search tasks...'
+                      : activeView === 'habits'
+                      ? 'Search habits...'
+                      : activeView === 'journal' || activeView === 'docs'
+                      ? 'Search journal...'
+                      : activeView === 'vault'
+                      ? 'Search vault...'
+                      : 'Search pages...'}
+                  </span>
+                </div>
+                <kbd className="hidden sm:inline px-1.5 py-0.2 rounded bg-white dark:bg-[#111827] border border-[#EDECE9] dark:border-[#374151] text-[9px] font-mono">
+                  ⌘K
+                </kbd>
+              </button>
+            )}
 
             {/* Theme Toggle (Light / Dark Mode) */}
             <button
@@ -3648,6 +3701,8 @@ export default function App() {
                 <ExpenseTracker
                   expenses={expenses}
                   importLogs={excelImportLogs}
+                  searchQuery={spendingSearchQuery}
+                  onSearchQueryChange={setSpendingSearchQuery}
                   onAddExpense={handleAddExpense}
                   onUpdateExpense={handleUpdateExpense}
                   onBatchAddExpenses={handleBatchAddExpenses}
