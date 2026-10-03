@@ -872,4 +872,32 @@ html.dark .lifemap-hero h1,
   min-height: 297mm;
 }
 
+/* Ensure clean letter-spacing, line-height, and font metrics for Printable Resume */
+#printable-resume-page,
+#printable-resume-page * {
+  letter-spacing: 0px !important;
+  word-spacing: normal !important;
+  font-feature-settings: "liga" 0 !important;
+  font-variant-ligatures: none !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#printable-resume-page h1,
+#printable-resume-page h2,
+#printable-resume-page h3,
+#printable-resume-page h4,
+#printable-resume-page p,
+#printable-resume-page span,
+#printable-resume-page a,
+#printable-resume-page li {
+  letter-spacing: 0px !important;
+}
+
+#printable-resume-page {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  color: #1e293b !important;
+  background-color: #ffffff !important;
+}
+
 
