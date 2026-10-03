@@ -317,7 +317,7 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
           onOpenAssistant={() => setIsAssistantOpen(true)}
           title="Personal Dashboard"
         />
-      ) : activeView === 'expenses' || activeView === 'subscriptions' ? null : (
+      ) : activeView === 'expenses' || activeView === 'subscriptions' || activeView === 'workfolio' || activeView === 'portfolio' || activeView === 'resume' || activeView === 'projects' ? null : (
         <header className="sticky top-0 z-40 w-full bg-[#F7F6FC]/95 dark:bg-[#0B0F19]/95 backdrop-blur-md border-b border-[#E8E5F3] dark:border-[#1E2638] pt-[env(safe-area-inset-top,0px)] px-4 shrink-0">
           <div className="h-11 sm:h-12 flex items-center justify-between gap-3 max-w-lg mx-auto">
             <div className="flex items-center gap-2.5">
@@ -518,6 +518,14 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
               projects={projects}
               skills={skills}
               resume={resume}
+              onBack={() => onNavigate('home')}
+              onUpdateProfile={onUpdateProfile}
+              onUpdateProjects={onUpdateProjects}
+              onUpdateSkills={onUpdateSkills}
+              onUpdateResume={onUpdateResume}
+              onAddProject={onAddProject}
+              onDeleteProject={onDeleteProject}
+              soundEnabled={settings.soundEnabled}
             />
           )}
 

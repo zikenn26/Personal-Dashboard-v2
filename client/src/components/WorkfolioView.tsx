@@ -12,6 +12,7 @@ import { ResumeView, ResumeFormatStyle } from './ResumeView';
 import { WebPortfolioView } from './WebPortfolioView';
 import { EditProfileModal } from './EditProfileModal';
 import { ResumePreviewModal } from './ResumePreviewModal';
+import { PrintableResumePreviewModal } from './PrintableResumePreviewModal';
 import { ProjectDetailModal } from './ProjectDetailModal';
 import { Sound } from '../utils/audio';
 import { nativeService } from '../services/nativeService';
@@ -465,17 +466,22 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
                 <div className="grid grid-cols-2 gap-2.5">
                   <button
                     type="button"
-                    onClick={handleDownloadPDF}
-                    disabled={isExportingPDF}
-                    className="bg-[#1A302A] hover:bg-[#13231F] text-white py-2.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 shadow-2xs transition-colors cursor-pointer"
+                    onClick={() => {
+                      Sound.click(soundEnabled);
+                      setShowPreviewModal(true);
+                    }}
+                    className="bg-[#6d28d9] hover:bg-[#5b21b6] text-white py-2.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 shadow-2xs transition-colors cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5" />
-                    <span>{isExportingPDF ? 'Generating...' : 'Download PDF'}</span>
+                    <span>Preview &amp; PDF</span>
                   </button>
 
                   <button
                     type="button"
-                    onClick={handlePrint}
+                    onClick={() => {
+                      Sound.click(soundEnabled);
+                      setShowPreviewModal(true);
+                    }}
                     className="bg-white hover:bg-gray-50 border border-gray-200 text-gray-800 py-2.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 shadow-2xs transition-colors cursor-pointer"
                   >
                     <Printer className="w-3.5 h-3.5 text-gray-600" />
@@ -605,24 +611,64 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
       )}
 
       {showPreviewModal && (
-        <ResumePreviewModal
+        <PrintableResumePreviewModal
           isOpen={showPreviewModal}
           onClose={() => setShowPreviewModal(false)}
-          onDownloadPDF={handleDownloadPDF}
-          onPrint={handlePrint}
-          isExportingPDF={isExportingPDF}
+          contact={{
+            name: profile.name || 'Gulshan Kumar Nayak',
+            title: profile.title || 'Full Stack Systems Engineer & Architect',
+            location: profile.location || 'Bengaluru, IN',
+            track: 'Senior IC / System Track',
+            email: profile.contactEmail || 'gulshan.nayak@example.com',
+            github: profile.github || 'https://github.com/gulshan',
+            linkedin: profile.linkedin || 'https://linkedin.com/in/gulshan',
+          }}
+          experiences={
+            resume?.experiences && resume.experiences.length > 0
+              ? resume.experiences.map((exp) => ({
+                  role: exp.role,
+                  company: exp.company,
+                  period: exp.period,
+                  achievements:
+                    exp.achievements && exp.achievements.length > 0
+                      ? exp.achievements
+                      : exp.details
+                      ? [exp.details]
+                      : [],
+                }))
+              : undefined
+          }
+          projects={
+            projects.length > 0
+              ? projects.map((p) => ({
+                  title: p.title,
+                  techStack: p.techStack || p.tech,
+                  badge: p.category || 'Production',
+                  description: p.description,
+                  liveUrl: p.liveUrl || p.link,
+                  githubUrl: p.githubUrl || p.github,
+                }))
+              : undefined
+          }
+          competencies={
+            skills.length > 0
+              ? skills.map((s) => ({
+                  category: s.category,
+                  stack: s.skills.map((sk) => sk.name).join(', '),
+                }))
+              : undefined
+          }
+          education={
+            resume?.education && resume.education.length > 0
+              ? resume.education.map((edu) => ({
+                  degree: edu.degree,
+                  school: `${edu.school}${edu.highlights ? ' • ' + edu.highlights.join(' • ') : ''}`,
+                  year: edu.year,
+                }))
+              : undefined
+          }
           soundEnabled={soundEnabled}
-        >
-          <div className="p-4 bg-white flex justify-center">
-            <ResumeView
-              sheetRef={null as any}
-              profile={profile}
-              projects={projects}
-              skills={skills}
-              visibleSections={visibleSections}
-            />
-          </div>
-        </ResumePreviewModal>
+        />
       )}
 
       {selectedProject && (

@@ -836,3 +836,40 @@ html.dark .lifemap-hero h1,
   z-index: 20;
 }
 
+/* ========================================================================== */
+/* PRINTABLE PROFESSIONAL RESUME (A4 / PDF) STYLES                            */
+/* ========================================================================== */
+
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+
+@media print {
+  body {
+    background-color: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .page-container {
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 100vh !important;
+    padding: 16mm 18mm !important;
+  }
+}
+
+.page-container {
+  width: 210mm;
+  min-height: 297mm;
+}
+
+

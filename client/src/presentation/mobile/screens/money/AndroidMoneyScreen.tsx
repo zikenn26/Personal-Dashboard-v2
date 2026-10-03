@@ -579,7 +579,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
               <ArrowLeft className="w-4 h-4 stroke-[2.2]" />
             </button>
             <div className="flex items-center gap-1.5 min-w-0">
-              <span className="text-[15px] sm:text-base font-bold text-slate-900 dark:text-white tracking-tight font-sans whitespace-nowrap leading-none m-0 p-0">
+              <span className="text-sm font-semibold text-slate-900 dark:text-white tracking-tight font-sans whitespace-nowrap leading-none m-0 p-0">
                 Money &amp; Spending
               </span>
               <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-violet-50 dark:bg-violet-950/60 text-violet-600 dark:text-violet-400 border border-violet-100/70 dark:border-violet-900/60 shrink-0">
