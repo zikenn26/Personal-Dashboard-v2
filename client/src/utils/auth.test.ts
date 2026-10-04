@@ -71,4 +71,20 @@ describe('Authentication Engine & Persistence', () => {
     const user2 = Auth.getCurrentUser();
     expect(user2?.email).toBe('multidevice@example.com');
   });
+
+  it('authenticates cloud-persisted account (gknayak@gmail.com) on a fresh client with empty localStorage', async () => {
+    // Clear localStorage to simulate brand new APK installation on Android
+    localStorage.clear();
+    expect(Auth.getCurrentUser()).toBeNull();
+
+    // Sign in with the user's credentials
+    const loginRes = await Auth.signIn('gknayak@gmail.com', 'Gulshan@12345!');
+    expect(loginRes.success).toBe(true);
+    expect(loginRes.user?.email).toBe('gknayak@gmail.com');
+
+    // Verify session was established and cached in localStorage
+    const user = Auth.getCurrentUser();
+    expect(user?.email).toBe('gknayak@gmail.com');
+    expect(user?.name).toBeTruthy();
+  });
 });

@@ -37,28 +37,48 @@ export const isSupabaseConfigured = (): boolean => {
 };
 
 /**
+ * Detects if running inside Capacitor Android native platform, Android WebView,
+ * or native mobile wrapper.
+ */
+export const isNativeOrMobile = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  try {
+    if (Capacitor.isNativePlatform()) return true;
+    if ((window as any).Capacitor?.isNativePlatform?.()) return true;
+    if ((window as any).androidBridge !== undefined) return true;
+    if (window.location.protocol === 'capacitor:' || window.location.protocol === 'ionic:') return true;
+    // Capacitor on Android serves from https://localhost with empty port
+    if (
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
+      !window.location.port &&
+      typeof navigator !== 'undefined' &&
+      navigator.userAgent.includes('Android')
+    ) {
+      return true;
+    }
+  } catch {
+    // Ignore
+  }
+  return false;
+};
+
+/**
  * Checks if running inside an iframe, Cloud Run preview container, or dev environment
  * where third-party requests may be restricted by sandbox or CORS policies.
  * In native Capacitor (Android), this returns false so requests go directly to Supabase.
  */
 const isIframeOrPreview = (): boolean => {
   if (typeof window === 'undefined') return false;
-  try {
-    if (Capacitor.isNativePlatform()) {
-      return false;
-    }
-  } catch {
-    // Ignore if Capacitor is not present in pure web runtime
-  }
+  if (isNativeOrMobile()) return false;
   try {
     const isIframe = window.self !== window.top;
     const isAiStudio =
       window.location.hostname.includes('run.app') ||
       window.location.hostname.includes('aistudio');
-    const isLocal =
-      window.location.hostname === 'localhost' ||
-      window.location.hostname === '127.0.0.1';
-    return isIframe || isAiStudio || isLocal || Boolean(import.meta.env.DEV);
+    const isLocalDev =
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
+      Boolean(window.location.port);
+    return isIframe || isAiStudio || isLocalDev || Boolean(import.meta.env.DEV);
   } catch {
     return true;
   }
@@ -70,6 +90,7 @@ const isIframeOrPreview = (): boolean => {
  * "TypeError: Failed to fetch" caused by iframe sandboxes or CORS restrictions.
  */
 export const supabaseFetch: typeof fetch = async (input, init) => {
+  const isMobile = isNativeOrMobile();
   const urlStr =
     typeof input === 'string'
       ? input
@@ -78,15 +99,18 @@ export const supabaseFetch: typeof fetch = async (input, init) => {
       : (input as Request)?.url || '';
 
   if (urlStr && supabaseUrl && urlStr.startsWith(supabaseUrl)) {
-    const proxiedUrl = urlStr.replace(supabaseUrl, '/api/supabase');
-
     // In iframe or preview container, route through same-origin proxy first
-    if (isIframeOrPreview()) {
+    // On native mobile (Android APK), NEVER route through same-origin proxy (/api/supabase)
+    if (!isMobile && isIframeOrPreview()) {
+      const proxiedUrl = urlStr.replace(supabaseUrl, '/api/supabase');
       try {
         const proxyRes = await fetch(proxiedUrl, init);
         // If proxy handled the request successfully (not 404 from static hosts), return
         if (proxyRes.status !== 404) {
-          return proxyRes;
+          const contentType = proxyRes.headers.get('content-type') || '';
+          if (!contentType.includes('text/html')) {
+            return proxyRes;
+          }
         }
       } catch (proxyErr) {
         // Fall back to direct fetch if proxy fails
@@ -97,13 +121,20 @@ export const supabaseFetch: typeof fetch = async (input, init) => {
     try {
       return await fetch(input, init);
     } catch (directErr) {
-      // If direct fetch fails with TypeError: Failed to fetch, retry via proxy
-      try {
-        const fallbackRes = await fetch(proxiedUrl, init);
-        return fallbackRes;
-      } catch {
-        throw directErr;
+      // If direct fetch fails, only retry via proxy on web preview environments (never in native APK)
+      if (!isMobile && isIframeOrPreview()) {
+        const proxiedUrl = urlStr.replace(supabaseUrl, '/api/supabase');
+        try {
+          const fallbackRes = await fetch(proxiedUrl, init);
+          const contentType = fallbackRes.headers.get('content-type') || '';
+          if (!contentType.includes('text/html')) {
+            return fallbackRes;
+          }
+        } catch {
+          throw directErr;
+        }
       }
+      throw directErr;
     }
   }
 

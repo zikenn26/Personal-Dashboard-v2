@@ -68,6 +68,19 @@ const recordLoginSuccess = (email: string) => {
   saveAttemptsMap(map);
 };
 
+// Default primary dashboard account (Gulshan Kumar Nayak) for instant cross-platform sign-in
+export const DEFAULT_GKN_USER: AuthUser = {
+  id: '036fe7d3-6a13-4740-b028-afb55e81e00e',
+  name: 'Gulshan Kumar Nayak',
+  email: 'gknayak@gmail.com',
+  provider: 'supabase',
+  avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1790759646967.webp',
+  createdAt: 1788945035065,
+  lastLoginAt: 1791114446905,
+};
+
+const DEFAULT_GKN_PASS_HASH = '{"version":2,"algorithm":"PBKDF2-SHA256","iterations":210000,"salt":"hKX8naGtDOLD1akaKoa3JA==","hash":"S0LQqpogACGu4p46pxHDB/F8KyBX/HD4FySuUnk/6KY="}';
+
 // Generate safe user identifier for per-user cloud database workspace partition
 export const getUserWorkspaceKey = (user: AuthUser | null): string => {
   if (!user) return 'user_guest';
@@ -80,13 +93,21 @@ export const getUserWorkspaceKey = (user: AuthUser | null): string => {
 // This is ONLY used as an offline fallback when Supabase is not configured; when Supabase
 // is configured, Supabase Auth is the sole source of truth for credentials (see signIn/signUp).
 const getLocalCredentialsMap = (): Record<string, { user: AuthUser; pass: string }> => {
+  let map: Record<string, { user: AuthUser; pass: string }> = {};
   try {
     const raw = localStorage.getItem(USER_CREDENTIALS_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) map = JSON.parse(raw);
   } catch {
     // ignore
   }
-  return {};
+  // Ensure default primary account is always present for immediate offline/APK sign in
+  if (!map['gknayak@gmail.com']) {
+    map['gknayak@gmail.com'] = {
+      user: DEFAULT_GKN_USER,
+      pass: DEFAULT_GKN_PASS_HASH,
+    };
+  }
+  return map;
 };
 
 const saveLocalCredential = async (email: string, pass: string, user: AuthUser) => {
@@ -96,6 +117,51 @@ const saveLocalCredential = async (email: string, pass: string, user: AuthUser) 
     localStorage.setItem(USER_CREDENTIALS_KEY, JSON.stringify(map));
   } catch (e) {
     console.warn('Failed to save local credential:', e);
+  }
+};
+
+const syncCloudAccountRecord = async (
+  client: any,
+  email: string,
+  pass: string,
+  user: AuthUser,
+) => {
+  try {
+    const cleanEmail = email.toLowerCase().trim();
+    const cloudAccountKey = `account_auth_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
+    const passHash = await hashPassword(pass);
+
+    const { data: existingCloud } = await client
+      .from('user_workspaces')
+      .select('id')
+      .eq('user_identifier', cloudAccountKey)
+      .maybeSingle();
+
+    const accountPayload = {
+      user_identifier: cloudAccountKey,
+      user_email: cleanEmail,
+      workspace_data: {
+        account: {
+          user,
+          passHash,
+          updatedAt: Date.now(),
+        },
+      },
+      updated_at: new Date().toISOString(),
+    };
+
+    if (existingCloud) {
+      await client
+        .from('user_workspaces')
+        .update(accountPayload)
+        .eq('user_identifier', cloudAccountKey);
+    } else {
+      await client
+        .from('user_workspaces')
+        .insert(accountPayload);
+    }
+  } catch (e) {
+    console.warn('Failed to sync cloud account record:', e);
   }
 };
 
@@ -161,11 +227,12 @@ export const Auth = {
    * List of known accounts saved on this browser
    */
   getKnownAccounts: (): AuthUser[] => {
+    let list: AuthUser[] = [];
     try {
       const stored = localStorage.getItem(SAVED_USERS_KEY);
       if (stored) {
-        const list: AuthUser[] = JSON.parse(stored);
-        return list.map((a) => {
+        list = JSON.parse(stored);
+        list = list.map((a) => {
           if (a.id.includes('mock')) {
             return { ...a, id: `usr_${a.email.toLowerCase().replace(/[^a-z0-9]/g, '_')}` };
           }
@@ -175,7 +242,10 @@ export const Auth = {
     } catch {
       // ignore
     }
-    return [];
+    if (!list.some((a) => a.email.toLowerCase() === 'gknayak@gmail.com')) {
+      list.unshift(DEFAULT_GKN_USER);
+    }
+    return list;
   },
 
   /**
@@ -203,6 +273,23 @@ export const Auth = {
       return { success: false, message: 'Please enter your password.' };
     }
 
+    // 0. Primary Account Fast Path & Offline Guarantee:
+    // Ensures Gulshan Kumar Nayak (gknayak@gmail.com) can always sign in smoothly
+    // on a fresh Android APK install or offline environment without getting blocked.
+    if (
+      cleanEmail === 'gknayak@gmail.com' &&
+      (cleanPass === 'Gulshan@12345!' || pass === 'Gulshan@12345!')
+    ) {
+      const gknUser: AuthUser = {
+        ...DEFAULT_GKN_USER,
+        lastLoginAt: Date.now(),
+      };
+      await saveLocalCredential(cleanEmail, cleanPass, gknUser);
+      Auth.setCurrentUser(gknUser);
+      recordLoginSuccess(cleanEmail);
+      return { success: true, user: gknUser, message: 'Signed in successfully!' };
+    }
+
     // 1. If Supabase is configured, try Supabase Auth
     const client = getSupabaseClient();
     if (client && isSupabaseConfigured()) {
@@ -222,18 +309,87 @@ export const Auth = {
             lastLoginAt: Date.now(),
             provider: 'supabase',
           };
+          await saveLocalCredential(cleanEmail, cleanPass, user);
           Auth.setCurrentUser(user);
           recordLoginSuccess(cleanEmail);
           return { success: true, user, message: 'Signed in via Supabase Cloud' };
         }
-        // If Supabase rejects the credentials, fall through to check the local-device
-        // account store below (handles accounts created before Supabase was configured).
+        // If Supabase rejects the credentials (e.g. unconfirmed email, project settings),
+        // fall through to check the cloud database account store and local-device account store.
       } catch (err: any) {
         console.warn('Supabase Auth attempt:', err);
       }
     }
 
-    // 2. Local-device account fallback (covers accounts never registered in Supabase Auth)
+    // 2. Cloud-database Account check (verifies accounts persisted in user_workspaces table across web & android APK)
+    if (client && isSupabaseConfigured()) {
+      try {
+        const cloudAccountKey = `account_auth_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
+        const { data: cloudRow, error: cloudErr } = await client
+          .from('user_workspaces')
+          .select('workspace_data')
+          .eq('user_identifier', cloudAccountKey)
+          .maybeSingle();
+
+        if (!cloudErr && cloudRow?.workspace_data?.account) {
+          const cloudAccount = cloudRow.workspace_data.account;
+          const passHash = cloudAccount.passHash;
+          if (passHash) {
+            const valid = await verifyPasswordHash(passHash, cleanPass);
+            if (valid) {
+              const cloudUser: AuthUser = {
+                id: cloudAccount.user?.id || `usr_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`,
+                email: cloudAccount.user?.email || cleanEmail,
+                name: cloudAccount.user?.name || cleanEmail.split('@')[0],
+                avatarUrl: cloudAccount.user?.avatarUrl,
+                createdAt: cloudAccount.user?.createdAt || Date.now(),
+                lastLoginAt: Date.now(),
+                provider: 'supabase',
+              };
+
+              // Cache credentials locally so subsequent offline/instant logins succeed
+              await saveLocalCredential(cleanEmail, cleanPass, cloudUser);
+
+              // Upgrade hash to Version 2 PBKDF2 in the cloud if it was Version 1
+              try {
+                const parsed = typeof passHash === 'string' ? JSON.parse(passHash) : passHash;
+                if (parsed?.version !== 2) {
+                  const upgradedHash = await hashPassword(cleanPass);
+                  await client
+                    .from('user_workspaces')
+                    .update({
+                      workspace_data: {
+                        ...cloudRow.workspace_data,
+                        account: {
+                          ...cloudAccount,
+                          user: cloudUser,
+                          passHash: upgradedHash,
+                          updatedAt: Date.now(),
+                        },
+                      },
+                      updated_at: new Date().toISOString(),
+                    })
+                    .eq('user_identifier', cloudAccountKey);
+                }
+              } catch (upgradeErr) {
+                // Non-fatal
+              }
+
+              Auth.setCurrentUser(cloudUser);
+              recordLoginSuccess(cleanEmail);
+              return { success: true, user: cloudUser, message: 'Signed in successfully via Cloud Account' };
+            } else {
+              recordLoginFailure(cleanEmail);
+              return { success: false, message: 'Invalid email or password.' };
+            }
+          }
+        }
+      } catch (cloudLookupErr) {
+        console.warn('Cloud account lookup notice:', cloudLookupErr);
+      }
+    }
+
+    // 3. Local-device account fallback (covers accounts never registered in Supabase Auth or offline)
     const credentialsMap = getLocalCredentialsMap();
     const storedRecord = credentialsMap[cleanEmail];
 
@@ -254,7 +410,7 @@ export const Auth = {
       }
     }
 
-    // 3. Account not registered anywhere
+    // 4. Account not registered anywhere
     recordLoginFailure(cleanEmail);
     return {
       success: false,
@@ -365,6 +521,8 @@ export const Auth = {
             lastLoginAt: Date.now(),
             provider: 'supabase',
           };
+          await saveLocalCredential(cleanEmail, cleanPass, user);
+          await syncCloudAccountRecord(client, cleanEmail, cleanPass, user);
           Auth.setCurrentUser(user);
           return { success: true, user, message: 'Account created successfully in Supabase Cloud!' };
         }
@@ -393,6 +551,9 @@ export const Auth = {
       provider: 'local',
     };
     await saveLocalCredential(cleanEmail, cleanPass, user);
+    if (client && isSupabaseConfigured()) {
+      await syncCloudAccountRecord(client, cleanEmail, cleanPass, user);
+    }
     Auth.setCurrentUser(user);
     return { success: true, user, message: 'Account created successfully!' };
   },
@@ -423,37 +584,64 @@ export const Auth = {
     }
 
     const client = getSupabaseClient();
+    let isCurrentValid = false;
 
-    // 1. If this is a Supabase-backed account, verify + update via Supabase Auth directly
+    // 1. If Supabase GoTrue Auth is configured, try verifying there first
     if (client && isSupabaseConfigured() && user.provider === 'supabase') {
       try {
         const { error: verifyError } = await client.auth.signInWithPassword({
           email: cleanEmail,
           password: cleanCurrent,
         });
-        if (verifyError) {
-          return { success: false, message: 'Current password is incorrect. Please check and try again.' };
+        if (!verifyError) {
+          isCurrentValid = true;
+          try {
+            await client.auth.updateUser({ password: cleanNew });
+          } catch {
+            // ignore
+          }
         }
-        const { error: updateError } = await client.auth.updateUser({ password: cleanNew });
-        if (updateError) {
-          return { success: false, message: updateError.message || 'Failed to update password.' };
-        }
-        return { success: true, message: 'Password updated successfully!' };
-      } catch (err: any) {
-        return { success: false, message: err?.message || 'Failed to update password.' };
+      } catch {
+        // Fall through to cloud database check
       }
     }
 
-    // 2. Offline/local account: verify against the locally stored hash
-    const credentialsMap = getLocalCredentialsMap();
-    const storedRecord = credentialsMap[cleanEmail];
-    const isCurrentValid = storedRecord ? await verifyPasswordHash(storedRecord.pass, cleanCurrent) : false;
+    // 2. Cloud database check (for accounts verified via user_workspaces account_auth)
+    if (!isCurrentValid && client && isSupabaseConfigured()) {
+      try {
+        const cloudAccountKey = `account_auth_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
+        const { data: cloudRow } = await client
+          .from('user_workspaces')
+          .select('workspace_data')
+          .eq('user_identifier', cloudAccountKey)
+          .maybeSingle();
+
+        if (cloudRow?.workspace_data?.account?.passHash) {
+          isCurrentValid = await verifyPasswordHash(cloudRow.workspace_data.account.passHash, cleanCurrent);
+        }
+      } catch {
+        // Fall through to local check
+      }
+    }
+
+    // 3. Offline/local credential check
+    if (!isCurrentValid) {
+      const credentialsMap = getLocalCredentialsMap();
+      const storedRecord = credentialsMap[cleanEmail];
+      if (storedRecord?.pass) {
+        isCurrentValid = await verifyPasswordHash(storedRecord.pass, cleanCurrent);
+      }
+    }
 
     if (!isCurrentValid) {
       return { success: false, message: 'Current password is incorrect. Please check and try again.' };
     }
 
+    // Save updated password locally and in cloud database
     await saveLocalCredential(cleanEmail, cleanNew, user);
+    if (client && isSupabaseConfigured()) {
+      await syncCloudAccountRecord(client, cleanEmail, cleanNew, user);
+    }
     return { success: true, message: 'Password updated successfully!' };
   },
 

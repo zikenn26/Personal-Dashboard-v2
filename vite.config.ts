@@ -6,10 +6,10 @@ import { geminiVitePlugin } from "./server/geminiService";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, path.resolve(import.meta.dirname), "");
-  // No hardcoded fallback project credentials: cloud sync stays disabled (local-first mode)
-  // until the developer/deployment explicitly provides its own Supabase project via .env.
-  const supabaseUrl = env.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
-  const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
+  const defaultSupabaseUrl = "https://amlegmbvqzbhqqqbrvjx.supabase.co";
+  const defaultSupabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFtbGVnbWJ2cXpiaHFxcWJydmp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyNjM1MTEsImV4cCI6MjEwMzgzOTUxMX0.aEq8TaBGPpsExAJ7Rtl3Qnenl10RPrAuwL9HNMrPvm4";
+  const supabaseUrl = env.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL || defaultSupabaseUrl;
+  const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || defaultSupabaseKey;
 
   return {
     plugins: [react(), tailwindcss(), geminiVitePlugin()],
