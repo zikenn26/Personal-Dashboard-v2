@@ -5,6 +5,7 @@ import {
   MapPinOff,
   Navigation,
   Droplets,
+  CloudRain,
 } from 'lucide-react';
 import { nativeService } from '../../../../services/nativeService';
 
@@ -16,6 +17,7 @@ interface WeatherSnapshot {
   humidity: number;
   windSpeed: number;
   weatherCode: number;
+  rainChance: number;
   lat: number;
   lon: number;
 }
@@ -115,13 +117,20 @@ export const AndroidWeatherWidget: React.FC = () => {
       const resolvedCity = cityName || (await reverseGeocodeCity(lat, lon));
 
       const res = await fetch(
-        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,is_day,weather_code,wind_speed_10m&timezone=auto`,
+        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,is_day,weather_code,wind_speed_10m,precipitation&hourly=precipitation_probability&timezone=auto`,
         { signal: AbortSignal.timeout(6000) }
       );
 
       if (res.ok) {
         const data = await res.json();
         const current = data.current;
+        const currentHour = new Date().getHours();
+        const hourlyProb = Array.isArray(data.hourly?.precipitation_probability)
+          ? data.hourly.precipitation_probability[currentHour]
+          : null;
+        const fallbackProb = current.precipitation > 0 ? 85 : (current.weather_code >= 51 && current.weather_code <= 67 ? 75 : current.weather_code >= 80 ? 60 : 10);
+        const resolvedRainChance = typeof hourlyProb === 'number' ? Math.round(hourlyProb) : fallbackProb;
+
         const snapshot: WeatherSnapshot = {
           temperature: Math.round(current.temperature_2m),
           condition: getWeatherLabel(current.weather_code, Boolean(current.is_day)),
@@ -130,6 +139,7 @@ export const AndroidWeatherWidget: React.FC = () => {
           humidity: current.relative_humidity_2m,
           windSpeed: Math.round(current.wind_speed_10m),
           weatherCode: current.weather_code,
+          rainChance: resolvedRainChance,
           lat,
           lon,
         };
@@ -253,6 +263,17 @@ export const AndroidWeatherWidget: React.FC = () => {
             <MapPin className="w-3 h-3 text-violet-600 dark:text-violet-400 shrink-0" />
             <span className="truncate">{weather?.cityName || 'Local Area'}</span>
           </div>
+
+          {/* Rain Prediction Icon & Percentage */}
+          {weather && (
+            <span
+              className="inline-flex items-center gap-1 text-[10px] font-semibold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/60 px-1.5 py-0.5 rounded-full border border-sky-200/60 dark:border-sky-800/50 shrink-0"
+              title={`Rain Prediction: ${weather.rainChance ?? 0}% chance of rain`}
+            >
+              <CloudRain className="w-3 h-3 text-sky-500 fill-sky-400/20 shrink-0" />
+              <span>{weather.rainChance ?? 0}%</span>
+            </span>
+          )}
 
           {weather && (
             <span className="hidden sm:inline-flex items-center gap-0.5 text-[10px] text-gray-500 dark:text-gray-400">

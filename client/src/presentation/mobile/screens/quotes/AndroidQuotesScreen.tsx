@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Quote as QuoteIcon, Plus, Copy, Check, Trash2, Sparkles, Share2 } from 'lucide-react';
+import { Quote as QuoteIcon, Plus, Copy, Check, Trash2, Sparkles, Share2, Search, X } from 'lucide-react';
 import { QuoteItem } from '../../../../types';
 import { INITIAL_QUOTES } from '../../../../utils/storage';
 import { nativeService } from '../../../../services/nativeService';
@@ -18,6 +18,7 @@ export const AndroidQuotesScreen: React.FC<AndroidQuotesScreenProps> = ({
   onDeleteQuote,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [searchQuery, setSearchQuery] = useState('');
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [activeActionQuote, setActiveActionQuote] = useState<QuoteItem | null>(null);
@@ -38,9 +39,18 @@ export const AndroidQuotesScreen: React.FC<AndroidQuotesScreenProps> = ({
   }, [availableQuotes]);
 
   const filteredQuotes = useMemo(() => {
-    if (selectedCategory === 'All') return availableQuotes;
-    return availableQuotes.filter((q) => q.category === selectedCategory);
-  }, [availableQuotes, selectedCategory]);
+    return availableQuotes.filter((q) => {
+      if (selectedCategory !== 'All' && q.category !== selectedCategory) return false;
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase().trim();
+        const matchesText = q.text.toLowerCase().includes(query);
+        const matchesAuthor = q.author.toLowerCase().includes(query);
+        const matchesCategory = q.category?.toLowerCase().includes(query);
+        if (!matchesText && !matchesAuthor && !matchesCategory) return false;
+      }
+      return true;
+    });
+  }, [availableQuotes, selectedCategory, searchQuery]);
 
   const handleCopy = (quote: QuoteItem) => {
     void nativeService.triggerHaptic('success');
@@ -131,6 +141,27 @@ export const AndroidQuotesScreen: React.FC<AndroidQuotesScreenProps> = ({
             {cat}
           </button>
         ))}
+      </div>
+
+      {/* Quote Search Bar */}
+      <div className="relative">
+        <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search quotes, authors, wisdom..."
+          className="w-full pl-8 pr-8 py-2 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] text-xs text-gray-900 dark:text-white placeholder-gray-400 shadow-2xs focus:outline-hidden focus:border-violet-500"
+        />
+        {searchQuery && (
+          <button
+            type="button"
+            onClick={() => setSearchQuery('')}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
 
       {/* Quote Cards */}

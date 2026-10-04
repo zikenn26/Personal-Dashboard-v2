@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StickyNote, Copy, Trash2, Plus, Check } from 'lucide-react';
+import { StickyNote, Copy, Undo2, Plus, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { nativeService } from '../../../../services/nativeService';
 
@@ -17,6 +17,7 @@ export const AndroidScratchPad: React.FC = () => {
     }
   });
 
+  const [history, setHistory] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -28,11 +29,18 @@ export const AndroidScratchPad: React.FC = () => {
     }
   };
 
+  const updateContentWithHistory = (newVal: string) => {
+    if (newVal !== content) {
+      setHistory((prev) => [...prev.slice(-30), content]);
+    }
+    setContent(newVal);
+    saveContent(newVal);
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     let val = e.target.value;
     if (val === '') {
-      setContent('');
-      saveContent('');
+      updateContentWithHistory('');
       return;
     }
     // If text is non-empty and does not start with '-', format first line
@@ -49,11 +57,17 @@ export const AndroidScratchPad: React.FC = () => {
       return line;
     });
     val = formatted.join('\n');
-    setContent(val);
-    saveContent(val);
+    updateContentWithHistory(val);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Ctrl+Z or Cmd+Z keyboard shortcut for Undo
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      handleUndo();
+      return;
+    }
+
     if (e.key === 'Enter') {
       e.preventDefault();
       const textarea = e.currentTarget;
@@ -61,8 +75,7 @@ export const AndroidScratchPad: React.FC = () => {
       const before = value.substring(0, selectionStart);
       const after = value.substring(selectionEnd);
       const nextVal = `${before}\n- ${after}`;
-      setContent(nextVal);
-      saveContent(nextVal);
+      updateContentWithHistory(nextVal);
       requestAnimationFrame(() => {
         const newPos = selectionStart + 3; // '\n- ' has length 3
         textarea.selectionStart = newPos;
@@ -92,8 +105,7 @@ export const AndroidScratchPad: React.FC = () => {
       const before = value.substring(0, selectionStart);
       const after = value.substring(selectionEnd);
       const nextVal = `${before}${formattedPaste}${after}`;
-      setContent(nextVal);
-      saveContent(nextVal);
+      updateContentWithHistory(nextVal);
       requestAnimationFrame(() => {
         const newPos = selectionStart + formattedPaste.length;
         textarea.selectionStart = newPos;
@@ -110,12 +122,17 @@ export const AndroidScratchPad: React.FC = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleClear = () => {
-    void nativeService.triggerHaptic('warning');
-    const emptyVal = '- ';
-    setContent(emptyVal);
-    saveContent(emptyVal);
-    toast.info('Scratch pad cleared');
+  const handleUndo = () => {
+    void nativeService.triggerHaptic('selection');
+    if (history.length === 0) {
+      toast.info('Nothing to undo');
+      return;
+    }
+    const previous = history[history.length - 1];
+    setHistory((prev) => prev.slice(0, -1));
+    setContent(previous);
+    saveContent(previous);
+    toast.success('Undone last edit');
     if (textareaRef.current) {
       textareaRef.current.focus();
     }
@@ -125,8 +142,7 @@ export const AndroidScratchPad: React.FC = () => {
     void nativeService.triggerHaptic('selection');
     const trimmed = content.trimEnd();
     const nextVal = trimmed ? `${trimmed}\n- ` : '- ';
-    setContent(nextVal);
-    saveContent(nextVal);
+    updateContentWithHistory(nextVal);
     if (textareaRef.current) {
       textareaRef.current.focus();
       requestAnimationFrame(() => {
@@ -179,12 +195,13 @@ export const AndroidScratchPad: React.FC = () => {
           </button>
           <button
             type="button"
-            onClick={handleClear}
-            className="p-1.5 rounded-lg text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 active:scale-95 transition-all cursor-pointer"
-            title="Clear pad"
-            aria-label="Clear pad"
+            onClick={handleUndo}
+            disabled={history.length === 0}
+            className="p-1.5 rounded-lg text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 active:scale-95 transition-all cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed"
+            title="Undo delete / edit"
+            aria-label="Undo delete or edit"
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            <Undo2 className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>

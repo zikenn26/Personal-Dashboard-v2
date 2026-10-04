@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { CheckSquare, Plus, Check, Trash2, Filter, Calendar, Tag, AlertCircle, Sparkles } from 'lucide-react';
+import { CheckSquare, Plus, Check, Trash2, Filter, Calendar, Tag, AlertCircle, Sparkles, Search, X } from 'lucide-react';
 import { TodoItem, Priority, TaskStatus } from '../../../../types';
 import { nativeService } from '../../../../services/nativeService';
 import { CARD_SURFACE_CLASSES } from '../../design-system/materialYou';
@@ -29,6 +29,7 @@ export const AndroidTasksScreen: React.FC<AndroidTasksScreenProps> = ({
 }) => {
   const [filterTab, setFilterTab] = useState<FilterTab>('pending');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
   const [editingTodo, setEditingTodo] = useState<TodoItem | null>(null);
   const [confirmCompleteTodo, setConfirmCompleteTodo] = useState<TodoItem | null>(null);
@@ -55,9 +56,20 @@ export const AndroidTasksScreen: React.FC<AndroidTasksScreenProps> = ({
       // Category filter
       if (selectedCategory !== 'all' && t.category !== selectedCategory) return false;
 
+      // Task-specific search query filter
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const matches =
+          t.title.toLowerCase().includes(q) ||
+          t.category?.toLowerCase().includes(q) ||
+          t.notes?.toLowerCase().includes(q) ||
+          t.priority?.toLowerCase().includes(q);
+        if (!matches) return false;
+      }
+
       return true;
     });
-  }, [todos, filterTab, selectedCategory]);
+  }, [todos, filterTab, selectedCategory, searchQuery]);
 
   const handleToggle = (id: string) => {
     void nativeService.triggerHaptic('success');
@@ -166,6 +178,27 @@ export const AndroidTasksScreen: React.FC<AndroidTasksScreenProps> = ({
         )}
       </div>
 
+      {/* Search Tasks Bar */}
+      <div className="relative">
+        <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search tasks, checklists & priority..."
+          className="w-full pl-8 pr-8 py-2 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] text-xs text-gray-900 dark:text-white placeholder-gray-400 shadow-2xs focus:outline-hidden focus:border-violet-500"
+        />
+        {searchQuery && (
+          <button
+            type="button"
+            onClick={() => setSearchQuery('')}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
       {/* Primary Filter Tabs */}
       <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] select-none">
         {(['pending', 'urgent', 'all', 'completed'] as FilterTab[]).map((tab) => (
@@ -209,6 +242,27 @@ export const AndroidTasksScreen: React.FC<AndroidTasksScreenProps> = ({
           ))}
         </div>
       )}
+
+      {/* Task Search Bar */}
+      <div className="relative">
+        <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search tasks, priority, categories..."
+          className="w-full pl-8 pr-8 py-2 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] text-xs text-gray-900 dark:text-white placeholder-gray-400 shadow-2xs focus:outline-hidden focus:border-violet-500"
+        />
+        {searchQuery && (
+          <button
+            type="button"
+            onClick={() => setSearchQuery('')}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
 
       {/* Header bar with count */}
       <div className="flex items-center justify-between px-1 pt-1">

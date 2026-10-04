@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Flame, Plus, Trash2, RotateCcw, Check, Sparkles, Award } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Flame, Plus, Trash2, RotateCcw, Check, Sparkles, Award, Search, X } from 'lucide-react';
 import { HabitItem, HabitWeekRecord } from '../../../../types';
 import { nativeService } from '../../../../services/nativeService';
 import { useLongPress } from '../../gestures/useLongPress';
@@ -29,6 +29,16 @@ export const AndroidHabitsScreen: React.FC<AndroidHabitsScreenProps> = ({
 }) => {
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
   const [activeActionHabit, setActiveActionHabit] = useState<HabitItem | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Habit search query filter
+  const filteredHabits = useMemo(() => {
+    if (!searchQuery.trim()) return habits;
+    const q = searchQuery.toLowerCase().trim();
+    return habits.filter(
+      (h) => h.title.toLowerCase().includes(q) || h.category?.toLowerCase().includes(q)
+    );
+  }, [habits, searchQuery]);
 
   // Overall completion rate for the week
   const { totalCompleted, totalPossible, completionRate } = (() => {
@@ -68,7 +78,7 @@ export const AndroidHabitsScreen: React.FC<AndroidHabitsScreenProps> = ({
       <div className="flex items-center justify-between px-1">
         <div>
           <h2 className="text-xl font-extrabold text-gray-900 dark:text-white tracking-tight">
-            Habits & Streaks
+            Habits
           </h2>
           <p className="text-xs text-gray-500 dark:text-gray-400">
             {habits.length} habits tracked this week
@@ -117,27 +127,48 @@ export const AndroidHabitsScreen: React.FC<AndroidHabitsScreenProps> = ({
         </div>
       </div>
 
+      {/* Search Habits Bar */}
+      <div className="relative">
+        <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search habits & routines..."
+          className="w-full pl-8 pr-8 py-2 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] text-xs text-gray-900 dark:text-white placeholder-gray-400 shadow-2xs focus:outline-hidden focus:border-amber-500"
+        />
+        {searchQuery && (
+          <button
+            type="button"
+            onClick={() => setSearchQuery('')}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
       {/* Header bar with count */}
       <div className="flex items-center justify-between px-1 pt-1">
         <span className="text-xs font-bold text-gray-600 dark:text-gray-300">
-          Habits ({habits.length})
+          Habits ({filteredHabits.length})
         </span>
       </div>
 
       {/* Habit List */}
-      {habits.length === 0 ? (
+      {filteredHabits.length === 0 ? (
         <div className="p-8 text-center rounded-3xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40]">
           <Flame className="w-10 h-10 text-amber-400 mx-auto mb-2 opacity-60" />
           <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
-            No habits configured yet
+            {searchQuery ? 'No habits match your search' : 'No habits configured yet'}
           </p>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-            Build lasting daily routines. Tap &ldquo;Add Habit&rdquo; above!
+            {searchQuery ? 'Try searching for a different routine or keyword.' : 'Build lasting daily routines. Tap “Add Habit” above!'}
           </p>
         </div>
       ) : (
         <div className="space-y-2.5">
-          {habits.map((habit) => (
+          {filteredHabits.map((habit) => (
             <HabitItemCard
               key={habit.id}
               habit={habit}

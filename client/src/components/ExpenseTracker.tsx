@@ -1071,7 +1071,13 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
         (e) =>
           e.name.toLowerCase().includes(q) ||
           e.category.toLowerCase().includes(q) ||
-          (e.notes && e.notes.toLowerCase().includes(q))
+          (e.notes && e.notes.toLowerCase().includes(q)) ||
+          (e.merchant && e.merchant.toLowerCase().includes(q)) ||
+          (e.payee && e.payee.toLowerCase().includes(q)) ||
+          (e.paymentMethod && e.paymentMethod.toLowerCase().includes(q)) ||
+          (e.bankName && e.bankName.toLowerCase().includes(q)) ||
+          (e.referenceId && e.referenceId.toLowerCase().includes(q)) ||
+          String(e.amount).includes(q)
       );
     }
 
@@ -1886,6 +1892,34 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                     })}
                   </select>
                   <ChevronDown className="w-3 h-3 text-gray-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+
+                {/* Search Spending Input */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setTxCurrentPage(1);
+                    }}
+                    placeholder="Search spending, merchants, amounts..."
+                    className="pl-8 pr-7 py-1 rounded-full text-xs font-semibold bg-white dark:bg-[#1A202C] text-[#37352F] dark:text-white border border-[#E5E7EB] dark:border-[#2D3748] outline-none focus:border-purple-500 w-36 sm:w-52 placeholder-gray-400"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery('');
+                        setTxCurrentPage(1);
+                      }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+                      title="Clear search"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
                 </div>
               </div>
 

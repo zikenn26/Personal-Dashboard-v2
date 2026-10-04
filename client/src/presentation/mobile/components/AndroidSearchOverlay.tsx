@@ -17,6 +17,8 @@ import {
   Settings,
   Sparkles,
   LayoutGrid,
+  StickyNote,
+  CloudRain,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -205,15 +207,9 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
   goals,
 }) => {
   const [query, setQuery] = useState('');
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // Determine current section scope from activeView
-  const defaultScope = useMemo<'section' | 'pages' | 'all'>(() => {
-    if (activeView === 'home') return 'pages';
-    return 'section';
-  }, [activeView]);
-
-  const [filterType, setFilterType] = useState<'section' | 'pages' | 'all'>(defaultScope);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const isHomePage = activeView === 'home';
 
   // Section details
   const sectionInfo = useMemo(() => {
@@ -231,7 +227,7 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
         return {
           id: 'expenses',
           label: 'Spending',
-          placeholder: 'Search transactions, merchants, amount...',
+          placeholder: 'Search spending, merchants, categories, amount...',
           count: expenses.length,
           unit: 'transactions',
         };
@@ -248,7 +244,7 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
         return {
           id: 'journal',
           label: 'Journal',
-          placeholder: 'Search journal entries & notes...',
+          placeholder: 'Search journal entries & thoughts...',
           count: journal.length,
           unit: 'entries',
         };
@@ -276,11 +272,19 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
           count: quotes.length,
           unit: 'quotes',
         };
+      case 'home':
+        return {
+          id: 'global',
+          label: 'Main Page & Global Search',
+          placeholder: 'Search pages, scratch pad, tasks, spending, habits...',
+          count: DASHBOARD_PAGES.length,
+          unit: 'destinations',
+        };
       default:
         return {
-          id: 'pages',
-          label: 'Pages',
-          placeholder: 'Search pages, tools & navigation...',
+          id: 'global',
+          label: 'Global Search',
+          placeholder: 'Search pages, scratch pad, tasks, spending, habits...',
           count: DASHBOARD_PAGES.length,
           unit: 'destinations',
         };
@@ -297,11 +301,10 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
     return unregister;
   }, [isOpen, onClose]);
 
-  // Autofocus input and reset scope based on current page when opened
+  // Autofocus input and reset query when opened
   useEffect(() => {
     if (isOpen) {
       setQuery('');
-      setFilterType(activeView === 'home' ? 'pages' : 'section');
       const timer = setTimeout(() => {
         inputRef.current?.focus();
       }, 100);
@@ -382,12 +385,15 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
       title: `"${qu.text?.slice(0, 45)}..."`,
       subtitle: `Quote · ${qu.author || 'Unknown'}`,
       type: 'quote',
-      view: 'home',
+      view: 'quotes',
       icon: <QuoteIcon className="w-4 h-4 text-purple-500" />,
     });
 
-    // SECTION SPECIFIC SEARCH (when filterType === 'section')
-    if (filterType === 'section' && activeView !== 'home') {
+    // =========================================================================
+    // A. SECTION-SPECIFIC SEARCH (when activeView is NOT home)
+    // Strictly search ONLY content relevant to this current section!
+    // =========================================================================
+    if (!isHomePage) {
       if (activeView === 'tasks') {
         const filtered = todos.filter((t) => {
           if (!q) return true;
@@ -399,7 +405,7 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
           );
         });
         filtered.forEach((t) => list.push(mapTask(t)));
-        return list.slice(0, 40);
+        return list.slice(0, 50);
       }
 
       if (activeView === 'expenses' || activeView === 'subscriptions') {
@@ -423,7 +429,7 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
           );
         });
         filtered.forEach((e) => list.push(mapExpense(e)));
-        return list.slice(0, 40);
+        return list.slice(0, 50);
       }
 
       if (activeView === 'habits') {
@@ -432,7 +438,7 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
           return h.title.toLowerCase().includes(q) || h.category?.toLowerCase().includes(q);
         });
         filtered.forEach((h) => list.push(mapHabit(h)));
-        return list.slice(0, 40);
+        return list.slice(0, 50);
       }
 
       if (activeView === 'journal' || activeView === 'docs') {
@@ -441,7 +447,7 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
           return j.title?.toLowerCase().includes(q) || j.content?.toLowerCase().includes(q);
         });
         filtered.forEach((j) => list.push(mapJournal(j)));
-        return list.slice(0, 40);
+        return list.slice(0, 50);
       }
 
       if (activeView === 'media') {
@@ -450,7 +456,7 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
           return m.title?.toLowerCase().includes(q) || m.creator?.toLowerCase().includes(q) || m.type?.toLowerCase().includes(q);
         });
         filtered.forEach((m) => list.push(mapMedia(m)));
-        return list.slice(0, 40);
+        return list.slice(0, 50);
       }
 
       if (activeView === 'goals') {
@@ -459,7 +465,7 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
           return g.title?.toLowerCase().includes(q) || g.category?.toLowerCase().includes(q);
         });
         filtered.forEach((g) => list.push(mapGoal(g)));
-        return list.slice(0, 40);
+        return list.slice(0, 50);
       }
 
       if (activeView === 'quotes') {
@@ -468,14 +474,35 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
           return qu.text?.toLowerCase().includes(q) || qu.author?.toLowerCase().includes(q);
         });
         filtered.forEach((qu) => list.push(mapQuote(qu)));
-        return list.slice(0, 40);
+        return list.slice(0, 50);
       }
     }
 
-    // 1. MATCH PAGES & HUBS (if filterType is 'pages' or 'all', or when on 'home')
-    if (filterType === 'pages' || filterType === 'all' || activeView === 'home') {
-      DASHBOARD_PAGES.forEach((page) => {
-        if (!q) {
+    // =========================================================================
+    // B. GLOBAL SEARCH (when on the Main Landing Page - home)
+    // Searches:
+    // 1. Sections & Pages
+    // 2. Texts present on the Main Page (Scratch Pad Sticky Note, Weather text, etc.)
+    // 3. Texts and content across the entire application (tasks, spending, habits, journal, media, goals, quotes)
+    // =========================================================================
+
+    // 1. Sections & Pages
+    DASHBOARD_PAGES.forEach((page) => {
+      if (!q) {
+        list.push({
+          id: page.id,
+          title: page.title,
+          subtitle: page.subtitle,
+          type: 'page',
+          view: page.view,
+          icon: page.icon,
+        });
+      } else {
+        const matchTitle = page.title.toLowerCase().includes(q);
+        const matchSubtitle = page.subtitle.toLowerCase().includes(q);
+        const matchKeyword = page.keywords.some((kw) => kw.includes(q) || q.includes(kw));
+
+        if (matchTitle || matchSubtitle || matchKeyword) {
           list.push({
             id: page.id,
             title: page.title,
@@ -484,29 +511,50 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
             view: page.view,
             icon: page.icon,
           });
-        } else {
-          const matchTitle = page.title.toLowerCase().includes(q);
-          const matchSubtitle = page.subtitle.toLowerCase().includes(q);
-          const matchKeyword = page.keywords.some((kw) => kw.includes(q) || q.includes(kw));
+        }
+      }
+    });
 
-          if (matchTitle || matchSubtitle || matchKeyword) {
+    // 2. Main Page Texts: Scratch Pad Sticky Notes & Weather
+    if (q) {
+      try {
+        const scratchText = localStorage.getItem('lifeos_scratchpad_notes') || '';
+        if (scratchText && scratchText.toLowerCase().includes(q)) {
+          const lines = scratchText.split('\n');
+          const matchedLine = lines.find((l) => l.toLowerCase().includes(q)) || scratchText.slice(0, 60);
+          list.push({
+            id: 'main-scratchpad-match',
+            title: matchedLine.replace(/^[-*•\s]+/, '').trim().slice(0, 50) || 'Scratch Pad Note',
+            subtitle: 'Main Page · Scratch Pad Sticky Note',
+            type: 'page',
+            view: 'home',
+            icon: <StickyNote className="w-4 h-4 text-amber-500" />,
+          });
+        }
+      } catch {}
+
+      try {
+        const cachedWeather = localStorage.getItem('lifeos_android_weather');
+        if (cachedWeather) {
+          const w = JSON.parse(cachedWeather);
+          if (w && (w.cityName?.toLowerCase().includes(q) || w.condition?.toLowerCase().includes(q))) {
             list.push({
-              id: page.id,
-              title: page.title,
-              subtitle: page.subtitle,
+              id: 'main-weather-match',
+              title: `${w.cityName || 'Weather'}: ${w.condition || ''} (${w.temperature}°C)`,
+              subtitle: 'Main Page · Live Weather Grid',
               type: 'page',
-              view: page.view,
-              icon: page.icon,
+              view: 'home',
+              icon: <CloudRain className="w-4 h-4 text-sky-500" />,
             });
           }
         }
-      });
+      } catch {}
     }
 
-    // 2. MATCH USER DATA RECORDS ACROSS ALL MODULES (when filterType is 'all' or user types query in all)
-    if (filterType === 'all' && q) {
+    // 3. Texts/Content present across the entire application
+    if (q) {
       todos.forEach((t) => {
-        if (t.title.toLowerCase().includes(q) || t.category?.toLowerCase().includes(q)) {
+        if (t.title.toLowerCase().includes(q) || t.category?.toLowerCase().includes(q) || t.notes?.toLowerCase().includes(q)) {
           list.push(mapTask(t));
         }
       });
@@ -515,7 +563,8 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
         if (
           e.name?.toLowerCase().includes(q) ||
           e.category?.toLowerCase().includes(q) ||
-          e.bankName?.toLowerCase().includes(q) ||
+          e.merchant?.toLowerCase().includes(q) ||
+          e.notes?.toLowerCase().includes(q) ||
           String(e.amount).includes(q)
         ) {
           list.push(mapExpense(e));
@@ -534,6 +583,12 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
         }
       });
 
+      quotes.forEach((qu) => {
+        if (qu.text?.toLowerCase().includes(q) || qu.author?.toLowerCase().includes(q)) {
+          list.push(mapQuote(qu));
+        }
+      });
+
       media.forEach((m) => {
         if (m.title?.toLowerCase().includes(q) || m.creator?.toLowerCase().includes(q)) {
           list.push(mapMedia(m));
@@ -547,8 +602,8 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
       });
     }
 
-    return list.slice(0, 40);
-  }, [query, filterType, activeView, todos, expenses, habits, journal, quotes, media, goals]);
+    return list.slice(0, 50);
+  }, [query, isHomePage, activeView, todos, expenses, habits, journal, quotes, media, goals]);
 
   const handleSelectResult = (res: SearchResultItem) => {
     void nativeService.triggerHaptic('selection');
@@ -558,12 +613,9 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
 
   if (!isOpen) return null;
 
-  const currentPlaceholder =
-    filterType === 'pages'
-      ? 'Search pages, tools & navigation...'
-      : filterType === 'all'
-      ? 'Search entire workspace...'
-      : sectionInfo.placeholder;
+  const currentPlaceholder = isHomePage
+    ? 'Global search: pages, notes, tasks, spending, habits...'
+    : sectionInfo.placeholder;
 
   return (
     <AnimatePresence>
@@ -606,57 +658,21 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
           </button>
         </div>
 
-        {/* Quick Filter Tabs */}
+        {/* Section Context Pill Indicator */}
         <div className="flex items-center gap-1.5 py-2 border-b border-[#E8E5F3]/60 dark:border-[#242D40]/60 shrink-0 overflow-x-auto no-scrollbar">
-          {activeView !== 'home' && (
-            <button
-              type="button"
-              onClick={() => {
-                void nativeService.triggerHaptic('selection');
-                setFilterType('section');
-              }}
-              className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 ${
-                filterType === 'section'
-                  ? 'bg-violet-600 text-white shadow-2xs'
-                  : 'bg-white dark:bg-[#121826] text-gray-600 dark:text-gray-400 border border-[#E8E5F3] dark:border-[#242D40]'
-              }`}
-            >
-              <span>{sectionInfo.label}</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${filterType === 'section' ? 'bg-violet-700 text-violet-100' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'}`}>
-                {sectionInfo.count}
+          {isHomePage ? (
+            <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-violet-600 text-white shadow-2xs flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Global Search (Pages, Notes, Tasks, Spending)</span>
+            </span>
+          ) : (
+            <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-violet-600 text-white shadow-2xs flex items-center gap-1.5">
+              <span>Searching {sectionInfo.label} Only</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-violet-700 text-violet-100">
+                {sectionInfo.count} {sectionInfo.unit}
               </span>
-            </button>
+            </span>
           )}
-
-          <button
-            type="button"
-            onClick={() => {
-              void nativeService.triggerHaptic('selection');
-              setFilterType('pages');
-            }}
-            className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap ${
-              filterType === 'pages'
-                ? 'bg-violet-600 text-white shadow-2xs'
-                : 'bg-white dark:bg-[#121826] text-gray-600 dark:text-gray-400 border border-[#E8E5F3] dark:border-[#242D40]'
-            }`}
-          >
-            Pages & Hubs
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              void nativeService.triggerHaptic('selection');
-              setFilterType('all');
-            }}
-            className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap ${
-              filterType === 'all'
-                ? 'bg-violet-600 text-white shadow-2xs'
-                : 'bg-white dark:bg-[#121826] text-gray-600 dark:text-gray-400 border border-[#E8E5F3] dark:border-[#242D40]'
-            }`}
-          >
-            All Workspace
-          </button>
         </div>
 
         {/* Results Body */}
@@ -664,11 +680,9 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
           {!query.trim() && (
             <div className="px-1 pb-1 flex items-center justify-between">
               <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                {filterType === 'section'
-                  ? `${sectionInfo.label} (${results.length} ${sectionInfo.unit})`
-                  : filterType === 'pages'
+                {isHomePage
                   ? `Suggested Pages (${results.length} destinations)`
-                  : 'Workspace Items'}
+                  : `${sectionInfo.label} (${results.length} ${sectionInfo.unit})`}
               </span>
               <span className="text-[10px] text-gray-400">
                 {results.length} {results.length === 1 ? 'item' : 'items'}
@@ -682,9 +696,9 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
                 No matching results found for &ldquo;{query}&rdquo;
               </p>
               <p className="text-[11px] text-gray-400 mt-1">
-                {filterType === 'section'
-                  ? `No matching ${sectionInfo.unit} found. Try switching to "All Workspace" or "Pages".`
-                  : 'Try searching with different keywords.'}
+                {!isHomePage
+                  ? `No matching ${sectionInfo.unit} found in ${sectionInfo.label}. Try searching with different keywords.`
+                  : 'Try searching with different keywords or search for specific items.'}
               </p>
             </div>
           ) : (

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Film, Book, Gamepad2, Tv, Plus, Star, Trash2, Check, Sparkles } from 'lucide-react';
+import { Film, Book, Gamepad2, Tv, Plus, Star, Trash2, Check, Sparkles, Search, X } from 'lucide-react';
 import { MediaItem } from '../../../../types';
 import { nativeService } from '../../../../services/nativeService';
 import { useLongPress } from '../../gestures/useLongPress';
@@ -23,6 +23,7 @@ export const AndroidLibraryScreen: React.FC<AndroidLibraryScreenProps> = ({
   onDeleteMedia,
 }) => {
   const [filterType, setFilterType] = useState<MediaTypeFilter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     try {
       return (localStorage.getItem('lifeos_media_screen_mode') as ViewMode) || 'list';
@@ -41,9 +42,18 @@ export const AndroidLibraryScreen: React.FC<AndroidLibraryScreenProps> = ({
   const [newRating, setNewRating] = useState(5);
 
   const filteredMedia = useMemo(() => {
-    if (filterType === 'all') return media;
-    return media.filter((m) => m.type === filterType);
-  }, [media, filterType]);
+    return media.filter((m) => {
+      if (filterType !== 'all' && m.type !== filterType) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const matchesTitle = m.title.toLowerCase().includes(q);
+        const matchesCreator = m.creator?.toLowerCase().includes(q);
+        const matchesType = m.type?.toLowerCase().includes(q);
+        if (!matchesTitle && !matchesCreator && !matchesType) return false;
+      }
+      return true;
+    });
+  }, [media, filterType, searchQuery]);
 
   const handleRate = (id: string, rating: number) => {
     void nativeService.triggerHaptic('selection');
@@ -146,6 +156,27 @@ export const AndroidLibraryScreen: React.FC<AndroidLibraryScreenProps> = ({
             {tab === 'all' ? 'All' : tab === 'series' ? 'TV' : tab}
           </button>
         ))}
+      </div>
+
+      {/* Media Search Bar */}
+      <div className="relative">
+        <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search books, movies, series & games..."
+          className="w-full pl-8 pr-8 py-2 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] text-xs text-gray-900 dark:text-white placeholder-gray-400 shadow-2xs focus:outline-hidden focus:border-violet-500"
+        />
+        {searchQuery && (
+          <button
+            type="button"
+            onClick={() => setSearchQuery('')}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
 
       {/* Header bar with count and View Mode Toggle */}

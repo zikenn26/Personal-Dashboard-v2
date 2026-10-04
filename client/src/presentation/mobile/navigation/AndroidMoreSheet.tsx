@@ -98,10 +98,10 @@ export const AndroidMoreSheet: React.FC<AndroidMoreSheetProps> = ({
     },
     {
       id: 'habits',
-      label: 'Habits & Streaks',
+      label: 'Habits',
       icon: Flame,
       color: 'bg-orange-100 text-orange-600 dark:bg-orange-950/80 dark:text-orange-400',
-      desc: 'Build habits, streaks & momentum',
+      desc: 'Build habits, streaks & daily routine',
     },
     {
       id: 'goals',

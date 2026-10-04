@@ -395,7 +395,13 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
           const catMatch = (e.category || '').toLowerCase().includes(q);
           const notesMatch = (e.notes || '').toLowerCase().includes(q);
           const bankMatch = (e.bankOrAccount || '').toLowerCase().includes(q);
-          if (!nameMatch && !catMatch && !notesMatch && !bankMatch) {
+          const merchantMatch = (e.merchant || '').toLowerCase().includes(q);
+          const payeeMatch = (e.payee || '').toLowerCase().includes(q);
+          const methodMatch = (e.paymentMethod || '').toLowerCase().includes(q);
+          const refMatch = (e.referenceId || '').toLowerCase().includes(q);
+          const amountMatch = String(e.amount || '').includes(q);
+          const dateMatch = (e.date || '').includes(q);
+          if (!nameMatch && !catMatch && !notesMatch && !bankMatch && !merchantMatch && !payeeMatch && !methodMatch && !refMatch && !amountMatch && !dateMatch) {
             return false;
           }
         }
@@ -662,7 +668,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search merchant, notes..."
+              placeholder="Search spending, merchants, categories, amount..."
               className="w-full pl-8 pr-8 py-1.5 rounded-xl text-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
               autoFocus
             />

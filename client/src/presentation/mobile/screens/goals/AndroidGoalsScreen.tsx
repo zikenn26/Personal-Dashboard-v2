@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Target, Plus, Check, Trash2, Calendar, TrendingUp, Flag } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Target, Plus, Check, Trash2, Calendar, TrendingUp, Flag, Search, X } from 'lucide-react';
 import { GoalItem, GoalStatus } from '../../../../types';
 import { nativeService } from '../../../../services/nativeService';
 import { useLongPress } from '../../gestures/useLongPress';
@@ -35,8 +35,18 @@ export const AndroidGoalsScreen: React.FC<AndroidGoalsScreenProps> = ({
   const [newCategory, setNewCategory] = useState('Career');
   const [newTargetDate, setNewTargetDate] = useState('');
 
-  const activeGoals = goals.filter((g) => g.status !== 'completed');
-  const completedGoals = goals.filter((g) => g.status === 'completed');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredGoals = useMemo(() => {
+    if (!searchQuery.trim()) return goals;
+    const q = searchQuery.toLowerCase().trim();
+    return goals.filter(
+      (g) => g.title.toLowerCase().includes(q) || g.category?.toLowerCase().includes(q)
+    );
+  }, [goals, searchQuery]);
+
+  const activeGoals = filteredGoals.filter((g) => g.status !== 'completed');
+  const completedGoals = filteredGoals.filter((g) => g.status === 'completed');
 
   const handleIncrementProgress = (goal: GoalItem, delta: number) => {
     void nativeService.triggerHaptic('success');
@@ -119,10 +129,31 @@ export const AndroidGoalsScreen: React.FC<AndroidGoalsScreenProps> = ({
         )}
       </div>
 
+      {/* Goal Search Bar */}
+      <div className="relative">
+        <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search goals, targets & milestones..."
+          className="w-full pl-8 pr-8 py-2 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] text-xs text-gray-900 dark:text-white placeholder-gray-400 shadow-2xs focus:outline-hidden focus:border-violet-500"
+        />
+        {searchQuery && (
+          <button
+            type="button"
+            onClick={() => setSearchQuery('')}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
       {/* Header bar with count and View Mode Toggle */}
       <div className="flex items-center justify-between px-1 pt-1">
         <span className="text-xs font-bold text-gray-600 dark:text-gray-300">
-          Goals ({goals.length})
+          Goals ({filteredGoals.length})
         </span>
         <ViewModeToggle
           mode={viewMode}
@@ -136,19 +167,21 @@ export const AndroidGoalsScreen: React.FC<AndroidGoalsScreenProps> = ({
       </div>
 
       {/* Goal Cards or Tiles */}
-      {goals.length === 0 ? (
+      {filteredGoals.length === 0 ? (
         <div className="p-8 text-center rounded-3xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40]">
           <Target className="w-10 h-10 text-violet-400 mx-auto mb-2 opacity-60" />
           <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
-            No goals set yet
+            {searchQuery ? 'No matching goals found' : 'No goals set yet'}
           </p>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-            Set inspiring targets with milestones and progress tracking.
+            {searchQuery
+              ? 'Try searching with other keywords or clear search.'
+              : 'Set inspiring targets with milestones and progress tracking.'}
           </p>
         </div>
       ) : viewMode === 'tiles' ? (
         <div className="grid grid-cols-2 gap-2.5">
-          {goals.map((goal) => (
+          {filteredGoals.map((goal) => (
             <div
               key={goal.id}
               onContextMenu={(e) => {
@@ -196,7 +229,7 @@ export const AndroidGoalsScreen: React.FC<AndroidGoalsScreenProps> = ({
         </div>
       ) : (
         <div className="space-y-3">
-          {goals.map((goal) => (
+          {filteredGoals.map((goal) => (
             <GoalItemCard
               key={goal.id}
               goal={goal}

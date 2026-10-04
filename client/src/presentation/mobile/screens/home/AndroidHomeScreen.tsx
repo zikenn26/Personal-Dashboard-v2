@@ -92,7 +92,7 @@ export const AndroidHomeScreen: React.FC<AndroidHomeScreenProps> = ({
         onOpenAddExpense={() => setIsExpenseSheetOpen(true)}
       />
 
-      {/* 8. HABITS & MOMENTUM CARD */}
+      {/* 8. HABITS CARD */}
       <AndroidHabitsCard
         habits={habits}
         onToggleHabitDay={onToggleHabitDay}

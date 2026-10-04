@@ -27,6 +27,8 @@ import {
   Book,
   PenTool,
   Check,
+  StickyNote,
+  CloudRain,
 } from 'lucide-react';
 import {
   TodoItem,
@@ -194,6 +196,12 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   // Dynamic Section Configuration based on activeView
   const sectionMeta = useMemo(() => {
     switch (activeView) {
+      case 'home':
+        return {
+          label: 'Main Page & Global Search',
+          placeholder: 'Search pages, scratch pad notes, tasks, spending, habits...',
+          emptyHint: 'pages or items',
+        };
       case 'tasks':
         return {
           label: 'Tasks',
@@ -204,13 +212,13 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       case 'subscriptions':
         return {
           label: 'Spending',
-          placeholder: 'Search transactions, merchants, amount, category...',
+          placeholder: 'Search spending, transactions, merchants, category, amount...',
           emptyHint: 'transactions',
         };
       case 'habits':
         return {
           label: 'Habits',
-          placeholder: 'Search habits, streaks & routines...',
+          placeholder: 'Search habits & routines...',
           emptyHint: 'habits',
         };
       case 'docs':
@@ -578,7 +586,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       return quoteResults.slice(0, 20);
     }
 
-    // MAIN HOME PAGE: Search workspace destinations, tools, system settings & quick actions!
+    // MAIN HOME PAGE: Search workspace destinations, tools, system settings, main page texts & global application content!
     const homeResults: Array<{
       id: string;
       title: string;
@@ -606,7 +614,95 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       }
     });
 
-    // 2. Quick Action Triggers
+    // 2. Texts Present on Main Page (Scratch Pad Sticky Note, Weather)
+    if (rawQ) {
+      try {
+        const scratchText = localStorage.getItem('lifeos_scratchpad_notes') || '';
+        if (scratchText && scratchText.toLowerCase().includes(rawQ)) {
+          const lines = scratchText.split('\n');
+          const matchedLine = lines.find((l) => l.toLowerCase().includes(rawQ)) || scratchText.slice(0, 60);
+          homeResults.push({
+            id: 'main-scratchpad-match',
+            title: `Sticky Note: "${matchedLine.replace(/^[-*•\s]+/, '').trim().slice(0, 50)}"`,
+            subtitle: 'Main Page · Scratch Pad Sticky Note',
+            icon: <StickyNote className="w-4 h-4 text-amber-500" />,
+            category: 'Main Page',
+            action: () => onNavigate('home'),
+          });
+        }
+      } catch {}
+
+      try {
+        const cachedWeather = localStorage.getItem('lifeos_current_weather_cache') || localStorage.getItem('lifeos_android_weather');
+        if (cachedWeather) {
+          const w = JSON.parse(cachedWeather);
+          if (w && (w.cityName?.toLowerCase().includes(rawQ) || w.condition?.toLowerCase().includes(rawQ) || ('rain'.includes(rawQ) && w.rainChance))) {
+            homeResults.push({
+              id: 'main-weather-match',
+              title: `${w.cityName || 'Weather'}: ${w.condition || ''} (${w.temperature}°C) · ${w.rainChance ?? 0}% rain`,
+              subtitle: 'Main Page · Live Weather Grid',
+              icon: <CloudRain className="w-4 h-4 text-sky-500" />,
+              category: 'Main Page',
+              action: () => onNavigate('home'),
+            });
+          }
+        }
+      } catch {}
+    }
+
+    // 3. Texts/Content Present Across the Entire Application (Global Search)
+    if (rawQ) {
+      todos.forEach((t) => {
+        if (t.title.toLowerCase().includes(rawQ) || t.category?.toLowerCase().includes(rawQ) || t.notes?.toLowerCase().includes(rawQ)) {
+          homeResults.push(mapTask(t));
+        }
+      });
+
+      expenses.forEach((e) => {
+        if (
+          e.name?.toLowerCase().includes(rawQ) ||
+          e.category?.toLowerCase().includes(rawQ) ||
+          e.merchant?.toLowerCase().includes(rawQ) ||
+          e.payee?.toLowerCase().includes(rawQ) ||
+          e.notes?.toLowerCase().includes(rawQ) ||
+          String(e.amount).includes(rawQ)
+        ) {
+          homeResults.push(mapExpense(e));
+        }
+      });
+
+      habits.forEach((h) => {
+        if (h.title.toLowerCase().includes(rawQ) || h.category?.toLowerCase().includes(rawQ)) {
+          homeResults.push(mapHabit(h));
+        }
+      });
+
+      journal.forEach((j) => {
+        if (j.title?.toLowerCase().includes(rawQ) || j.content?.toLowerCase().includes(rawQ)) {
+          homeResults.push(mapJournal(j));
+        }
+      });
+
+      quotes.forEach((qu) => {
+        if (qu.text?.toLowerCase().includes(rawQ) || qu.author?.toLowerCase().includes(rawQ)) {
+          homeResults.push(mapQuote(qu));
+        }
+      });
+
+      media.forEach((m) => {
+        if (m.title?.toLowerCase().includes(rawQ) || m.creator?.toLowerCase().includes(rawQ)) {
+          homeResults.push(mapMedia(m));
+        }
+      });
+
+      vault.forEach((v) => {
+        if (v.service?.toLowerCase().includes(rawQ) || v.username?.toLowerCase().includes(rawQ)) {
+          homeResults.push(mapVault(v));
+        }
+      });
+    }
+
+    // 4. Quick Action Triggers
     if (rawQ.includes('task') || rawQ.includes('todo')) {
       homeResults.push({
         id: 'act-add-task',
@@ -651,7 +747,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       });
     }
 
-    // 3. System Actions
+    // 5. System Actions
     if (rawQ.includes('theme') || rawQ.includes('dark') || rawQ.includes('light')) {
       homeResults.push({
         id: 'sys-theme',
@@ -674,7 +770,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       });
     }
 
-    return homeResults.slice(0, 15);
+    return homeResults.slice(0, 30);
   }, [
     query,
     activeView,

@@ -29,6 +29,7 @@ interface WeatherData {
   humidity: number;
   windSpeed: number;
   weatherCode: number;
+  rainChance?: number;
   isDay: boolean;
   cityName: string;
   timestamp: number;
@@ -181,7 +182,7 @@ export const CurrentWeatherWidget: React.FC<CurrentWeatherWidgetProps> = ({ soun
   const fetchWeather = useCallback(async (lat: number, lon: number, locationName?: string, isUserGps = false) => {
     try {
       setErrorMsg(null);
-      const queryParams = `latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,wind_speed_10m&timezone=auto`;
+      const queryParams = `latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,wind_speed_10m,precipitation&hourly=precipitation_probability&timezone=auto`;
       
       let data: any = null;
 
@@ -286,12 +287,20 @@ export const CurrentWeatherWidget: React.FC<CurrentWeatherWidgetProps> = ({ soun
         }
       }
 
+      const currentHour = new Date().getHours();
+      const hourlyProb = Array.isArray(data.hourly?.precipitation_probability)
+        ? data.hourly.precipitation_probability[currentHour]
+        : null;
+      const fallbackProb = (current.precipitation && current.precipitation > 0) ? 80 : (current.weather_code >= 51 && current.weather_code <= 67 ? 75 : current.weather_code >= 80 ? 60 : 10);
+      const resolvedRainChance = typeof hourlyProb === 'number' ? Math.round(hourlyProb) : fallbackProb;
+
       const freshWeather: WeatherData = {
         temperature: current.temperature_2m,
         apparentTemperature: current.apparent_temperature,
         humidity: current.relative_humidity_2m,
         windSpeed: current.wind_speed_10m,
         weatherCode: current.weather_code,
+        rainChance: resolvedRainChance,
         isDay: current.is_day === 1,
         cityName: finalCity,
         timestamp: Date.now(),
@@ -429,11 +438,15 @@ export const CurrentWeatherWidget: React.FC<CurrentWeatherWidgetProps> = ({ soun
 
       <span className="text-gray-300 dark:text-gray-600">•</span>
 
-      {/* Location & Humidity */}
+      {/* Location, Rain Prediction & Humidity */}
       <div className="flex items-center gap-2 text-[11px] text-[#787774] dark:text-[#9CA3AF]">
         <span className="flex items-center gap-1 truncate max-w-[110px] sm:max-w-[140px]" title={weather.cityName}>
           <MapPin className="w-3 h-3 shrink-0 text-violet-500" />
           <span className="truncate">{weather.cityName}</span>
+        </span>
+        <span className="inline-flex items-center gap-0.5 text-[10px] text-sky-600 dark:text-sky-400 font-semibold" title={`Rain Prediction: ${weather.rainChance ?? (weather.weatherCode >= 51 ? 75 : 10)}% chance of rain`}>
+          <CloudRain className="w-3 h-3 text-sky-500 fill-sky-400/20" />
+          <span>{weather.rainChance ?? (weather.weatherCode >= 51 ? 75 : 10)}%</span>
         </span>
         <span className="hidden sm:inline-flex items-center gap-0.5 text-[10px]" title={`Humidity ${weather.humidity}%`}>
           <Droplets className="w-2.5 h-2.5 text-sky-400" />

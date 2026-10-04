@@ -47,7 +47,7 @@ export const AndroidHabitsCard: React.FC<AndroidHabitsCardProps> = ({
             <Flame className="w-4 h-4 fill-amber-500 text-amber-500" />
           </div>
           <div className="flex items-center gap-2 min-w-0">
-            <span className="truncate">Habits &amp; Momentum</span>
+            <span className="truncate">Habits</span>
             {maxStreak > 0 && (
               <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/80 border border-amber-200/60 dark:border-amber-800/40 text-[10px] font-bold text-amber-600 dark:text-amber-400 font-mono shrink-0">
                 <Flame className="w-2.5 h-2.5 fill-amber-500 text-amber-500" />

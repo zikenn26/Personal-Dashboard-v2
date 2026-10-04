@@ -277,7 +277,7 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
       case 'subscriptions':
         return 'Money & Spending';
       case 'habits':
-        return 'Habits & Momentum';
+        return 'Habits';
       case 'journal':
         return 'Dear Diary';
       case 'quotes':
