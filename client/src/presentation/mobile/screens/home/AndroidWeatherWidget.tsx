@@ -1,19 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Sun,
-  Moon,
-  CloudSun,
-  CloudMoon,
-  Cloud,
-  CloudRain,
-  CloudSnow,
-  CloudLightning,
-  Wind,
-  Droplets,
   MapPin,
   RefreshCw,
   MapPinOff,
   Navigation,
+  Droplets,
 } from 'lucide-react';
 import { nativeService } from '../../../../services/nativeService';
 
@@ -54,7 +45,6 @@ export const AndroidWeatherWidget: React.FC = () => {
 
   const [loading, setLoading] = useState(false);
 
-  // Intentional lifecycle: check permission on launch without endless loops
   useEffect(() => {
     let isMounted = true;
 
@@ -74,7 +64,6 @@ export const AndroidWeatherWidget: React.FC = () => {
         } else if (platformPerm === 'denied') {
           setLocationStatus('denied');
         } else {
-          // 'prompt' - Not yet determined: intentionally trigger permission prompt on launch
           void fetchWeatherWithActualLocation();
         }
       } catch {
@@ -115,7 +104,7 @@ export const AndroidWeatherWidget: React.FC = () => {
         return 'Local Area';
       }
     } catch {
-      // Fallback if reverse geocoder fails
+      // Fallback
     }
     return 'Local Area';
   };
@@ -150,7 +139,7 @@ export const AndroidWeatherWidget: React.FC = () => {
         localStorage.setItem('lifeos_location_permitted', 'true');
       }
     } catch {
-      // Preserve existing cache if network fails temporarily
+      // Preserve existing cache
     } finally {
       setLoading(false);
     }
@@ -192,125 +181,86 @@ export const AndroidWeatherWidget: React.FC = () => {
     return isDay ? 'Clear Day' : 'Clear Night';
   };
 
-  const getWeatherIcon = () => {
-    if (!weather) return <Sun className="w-5 h-5 text-amber-500" />;
-    const { weatherCode: code, isDay } = weather;
-    if (code === 0) {
-      return isDay ? <Sun className="w-5 h-5 text-amber-500" /> : <Moon className="w-5 h-5 text-indigo-400" />;
-    }
-    if (code <= 2) {
-      return isDay ? <CloudSun className="w-5 h-5 text-amber-400" /> : <CloudMoon className="w-5 h-5 text-indigo-300" />;
-    }
-    if (code === 3) return <Cloud className="w-5 h-5 text-gray-400" />;
-    if (code >= 51 && code <= 67) return <CloudRain className="w-5 h-5 text-blue-400" />;
-    if (code >= 71 && code <= 77) return <CloudSnow className="w-5 h-5 text-sky-300" />;
-    if (code >= 95) return <CloudLightning className="w-5 h-5 text-yellow-500" />;
-    return <Sun className="w-5 h-5 text-amber-500" />;
-  };
-
-  // 1. STATE: Location Permission Denied (Compact, non-destructive fallback state, zero horizontal overflow)
+  // Compact fallback if location is denied
   if (locationStatus === 'denied' && !weather) {
     return (
-      <div className="w-full bg-gray-50/80 dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] rounded-3xl p-3 shadow-2xs">
+      <div className="w-full bg-gray-50/80 dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] rounded-2xl px-3 py-2 shadow-2xs">
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5 min-w-0 flex-1">
-            <div className="w-8 h-8 rounded-2xl bg-gray-200/80 dark:bg-gray-800 text-gray-500 dark:text-gray-400 flex items-center justify-center shrink-0">
-              <MapPinOff className="w-4 h-4" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <span className="text-xs font-bold text-gray-900 dark:text-white block truncate">
-                Location Access Needed
-              </span>
-              <span className="text-[10px] text-gray-500 dark:text-gray-400 block truncate">
-                Allow location to view actual local weather
-              </span>
-            </div>
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <MapPinOff className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+            <span className="text-xs font-semibold text-gray-700 dark:text-gray-300 truncate">
+              Location access needed for weather
+            </span>
           </div>
 
           <button
             type="button"
             onClick={handleRequestLocation}
             disabled={loading}
-            className="px-3 py-1 rounded-full bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs flex items-center gap-1 active:scale-95 transition-all shadow-2xs cursor-pointer shrink-0"
+            className="px-2.5 py-1 rounded-full bg-violet-600 hover:bg-violet-700 text-white font-bold text-[11px] flex items-center gap-1 active:scale-95 transition-all shadow-2xs cursor-pointer shrink-0"
           >
-            {loading ? (
-              <RefreshCw className="w-3 h-3 animate-spin" />
-            ) : (
-              <Navigation className="w-3 h-3" />
-            )}
-            <span>Allow</span>
+            {loading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Navigation className="w-3 h-3" />}
+            <span>Enable</span>
           </button>
         </div>
       </div>
     );
   }
 
-  // 2. STATE: Prompt for Location Permission (Initial state, clean and compact)
+  // Compact prompt state
   if (locationStatus === 'prompt' && !weather) {
     return (
-      <div className="w-full bg-gradient-to-r from-violet-600/10 via-purple-600/10 to-indigo-600/10 dark:from-violet-950/40 dark:via-purple-950/30 dark:to-indigo-950/40 border border-[#E8E5F3] dark:border-[#242D40] rounded-3xl p-3 shadow-2xs">
+      <div className="w-full bg-gradient-to-r from-violet-600/10 via-purple-600/10 to-indigo-600/10 dark:from-violet-950/40 dark:via-purple-950/30 dark:to-indigo-950/40 border border-[#E8E5F3] dark:border-[#242D40] rounded-2xl px-3 py-2 shadow-2xs">
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5 min-w-0 flex-1">
-            <div className="w-8 h-8 rounded-2xl bg-white dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] text-violet-600 dark:text-violet-400 flex items-center justify-center shadow-2xs shrink-0">
-              <MapPin className="w-4 h-4" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <span className="text-xs font-bold text-gray-900 dark:text-white block truncate">
-                Live Weather
-              </span>
-              <span className="text-[10px] text-gray-500 dark:text-gray-400 block truncate">
-                Real-time forecast for your actual location
-              </span>
-            </div>
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <MapPin className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400 shrink-0" />
+            <span className="text-xs font-semibold text-gray-800 dark:text-gray-200 truncate">
+              Live Local Weather
+            </span>
           </div>
 
           <button
             type="button"
             onClick={handleRequestLocation}
             disabled={loading}
-            className="px-3 py-1 rounded-full bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs flex items-center gap-1 active:scale-95 transition-all shadow-2xs cursor-pointer shrink-0"
+            className="px-2.5 py-1 rounded-full bg-violet-600 hover:bg-violet-700 text-white font-bold text-[11px] flex items-center gap-1 active:scale-95 transition-all shadow-2xs cursor-pointer shrink-0"
           >
-            {loading ? (
-              <RefreshCw className="w-3 h-3 animate-spin" />
-            ) : (
-              <Navigation className="w-3 h-3" />
-            )}
-            <span>Allow</span>
+            {loading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Navigation className="w-3 h-3" />}
+            <span>Enable</span>
           </button>
         </div>
       </div>
     );
   }
 
-  // 3. STATE: Weather Loaded (Strict hierarchy, responsive layout, ZERO horizontal overflow)
-  // Preferred hierarchy:
-  // 1. Temperature + condition
-  // 2. Location/place name
-  // 3. Secondary weather info
+  // Compact, streamlined weather bar (No Sun/Moon icon, no wind speed, small height)
   return (
-    <div className="w-full bg-gradient-to-br from-violet-600/10 via-purple-600/10 to-indigo-600/10 dark:from-violet-950/40 dark:via-purple-950/30 dark:to-indigo-950/40 border border-[#E8E5F3] dark:border-[#242D40] rounded-3xl p-3 sm:p-3.5 shadow-2xs overflow-hidden">
-      {/* Top Row: Weather Icon + Temperature & Condition (Left) + Refresh Button (Right) */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2.5 min-w-0 flex-1">
-          <div className="w-10 h-10 rounded-2xl bg-white dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] flex items-center justify-center shadow-2xs shrink-0">
-            {getWeatherIcon()}
-          </div>
-
-          <div className="min-w-0 flex-1">
-            {/* 1. Primary: Temperature + Condition */}
-            <div className="flex items-baseline gap-1.5 flex-wrap leading-tight">
-              <span className="text-xl sm:text-2xl font-black text-gray-900 dark:text-white tracking-tight">
-                {weather ? `${weather.temperature}°C` : '--°C'}
-              </span>
-              <span className="text-xs font-bold text-gray-700 dark:text-gray-300 truncate">
-                {weather?.condition || (loading ? 'Updating...' : 'Weather Ready')}
-              </span>
-            </div>
-          </div>
+    <div className="w-full bg-gradient-to-r from-violet-600/10 via-purple-600/10 to-indigo-600/10 dark:from-violet-950/40 dark:via-purple-950/30 dark:to-indigo-950/40 border border-[#E8E5F3] dark:border-[#242D40] rounded-2xl px-3 py-2 shadow-2xs overflow-hidden">
+      <div className="flex items-center justify-between gap-2.5">
+        {/* Left: Temperature + Condition */}
+        <div className="flex items-baseline gap-2 min-w-0">
+          <span className="text-base sm:text-lg font-black text-gray-900 dark:text-white tracking-tight leading-none shrink-0">
+            {weather ? `${weather.temperature}°C` : '--°C'}
+          </span>
+          <span className="text-xs font-semibold text-gray-700 dark:text-gray-300 truncate leading-none">
+            {weather?.condition || (loading ? 'Updating...' : 'Weather Ready')}
+          </span>
         </div>
 
-        {/* Action Controls: Strictly ONE clean refresh button */}
-        <div className="flex items-center shrink-0">
+        {/* Right: Location + Humidity + Refresh */}
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1 text-[11px] font-medium text-violet-700 dark:text-violet-300 truncate max-w-[130px] sm:max-w-[180px]">
+            <MapPin className="w-3 h-3 text-violet-600 dark:text-violet-400 shrink-0" />
+            <span className="truncate">{weather?.cityName || 'Local Area'}</span>
+          </div>
+
+          {weather && (
+            <span className="hidden sm:inline-flex items-center gap-0.5 text-[10px] text-gray-500 dark:text-gray-400">
+              <Droplets className="w-2.5 h-2.5 text-blue-400" />
+              <span>{weather.humidity}%</span>
+            </span>
+          )}
+
           <button
             type="button"
             onClick={() => {
@@ -318,35 +268,14 @@ export const AndroidWeatherWidget: React.FC = () => {
               void fetchWeatherWithActualLocation();
             }}
             disabled={loading}
-            aria-label="Refresh location and weather"
-            title="Refresh location and weather"
-            className="w-7 h-7 rounded-full bg-white dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] text-violet-700 dark:text-violet-300 flex items-center justify-center hover:bg-violet-50 active:scale-95 transition-all cursor-pointer shadow-2xs shrink-0"
+            aria-label="Refresh weather"
+            title="Refresh weather"
+            className="w-6 h-6 rounded-full bg-white dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] text-violet-700 dark:text-violet-300 flex items-center justify-center hover:bg-violet-50 active:scale-95 transition-all cursor-pointer shadow-2xs shrink-0"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-violet-600' : 'text-violet-600 dark:text-violet-400'}`} />
+            <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin text-violet-600' : 'text-violet-600 dark:text-violet-400'}`} />
           </button>
         </div>
       </div>
-
-      {/* 2. Middle Row: Clearly Visible Resolved City / Place Name */}
-      <div className="flex items-center gap-1 text-xs font-semibold text-violet-700 dark:text-violet-300 mt-2 truncate">
-        <MapPin className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400 shrink-0" />
-        <span className="truncate">{weather?.cityName || 'Detected Location'}</span>
-      </div>
-
-      {/* 3. Bottom Row: Secondary Weather Information (Humidity & Wind) */}
-      {weather && (
-        <div className="flex items-center gap-3 text-[10px] text-gray-500 dark:text-gray-400 mt-1 pt-1 border-t border-violet-100/60 dark:border-violet-950/40">
-          <span className="flex items-center gap-1 font-medium">
-            <Droplets className="w-3 h-3 text-blue-400" />
-            <span>Humidity {weather.humidity}%</span>
-          </span>
-          <span>•</span>
-          <span className="flex items-center gap-1 font-medium">
-            <Wind className="w-3 h-3 text-teal-400" />
-            <span>Wind {weather.windSpeed} km/h</span>
-          </span>
-        </div>
-      )}
     </div>
   );
 };

@@ -10,6 +10,10 @@ import {
   Settings,
   ChevronRight,
   Trash2,
+  BookOpen,
+  Quote,
+  Film,
+  Briefcase,
 } from 'lucide-react';
 import { BottomSheet } from '../gestures/BottomSheet';
 import { MainNavView, AppSettings } from '../../../types';
@@ -60,40 +64,58 @@ export const AndroidMoreSheet: React.FC<AndroidMoreSheetProps> = ({
   };
 
   /**
-   * Only features NOT already represented by:
-   * - Home
-   * - Tasks
-   * - Money
-   * - Quick Access (Add Task, Add Expense, Add Habit, Add Note, Journal, Quotes, Library, Portfolio)
+   * Complete application feature launcher for sections not in bottom bar (Home, Tasks, Money).
+   * Includes Journal, Quotes, Media, and Portfolio alongside Habits, Goals, Exams, Timeline, Vault, etc.
    */
   const features: MoreFeatureItem[] = [
     {
-      id: 'assistant',
-      label: 'Zikenn AI',
-      icon: Sparkles,
-      color: 'bg-violet-100 text-violet-600 dark:bg-violet-950/80 dark:text-violet-400',
-      desc: 'Smart dashboard assistant',
+      id: 'journal',
+      label: 'Daily Journal',
+      icon: BookOpen,
+      color: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/80 dark:text-emerald-400',
+      desc: 'Dear Diary, reflections & mood',
+    },
+    {
+      id: 'quotes',
+      label: 'Quotes Collection',
+      icon: Quote,
+      color: 'bg-amber-100 text-amber-600 dark:bg-amber-950/80 dark:text-amber-400',
+      desc: 'Daily wisdom, philosophy & authors',
+    },
+    {
+      id: 'media',
+      label: 'Media Library',
+      icon: Film,
+      color: 'bg-fuchsia-100 text-fuchsia-600 dark:bg-fuchsia-950/80 dark:text-fuchsia-400',
+      desc: 'Books, movies & reading lists',
+    },
+    {
+      id: 'portfolio',
+      label: 'Portfolio & CV',
+      icon: Briefcase,
+      color: 'bg-purple-100 text-purple-600 dark:bg-purple-950/80 dark:text-purple-400',
+      desc: 'Dossier, projects & PDF resume',
     },
     {
       id: 'habits',
       label: 'Habits & Streaks',
       icon: Flame,
-      color: 'bg-amber-100 text-amber-600 dark:bg-amber-950/80 dark:text-amber-400',
-      desc: 'Build better habits & momentum',
+      color: 'bg-orange-100 text-orange-600 dark:bg-orange-950/80 dark:text-orange-400',
+      desc: 'Build habits, streaks & momentum',
     },
     {
       id: 'goals',
-      label: 'Goals',
+      label: 'Goals & OKRs',
       icon: Target,
-      color: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/80 dark:text-emerald-400',
-      desc: 'Track your goals & progress',
+      color: 'bg-teal-100 text-teal-600 dark:bg-teal-950/80 dark:text-teal-400',
+      desc: 'Long-term targets & progress',
     },
     {
       id: 'exams',
       label: 'Competitive Exams',
       icon: GraduationCap,
       color: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-950/80 dark:text-indigo-400',
-      desc: 'Prepare for exams & syllabus',
+      desc: 'Exam preparation & syllabus',
     },
     {
       id: 'timeline',
@@ -107,27 +129,34 @@ export const AndroidMoreSheet: React.FC<AndroidMoreSheetProps> = ({
       label: 'Password Vault',
       icon: Shield,
       color: 'bg-cyan-100 text-cyan-600 dark:bg-cyan-950/80 dark:text-cyan-400',
-      desc: 'Encrypted accounts & secrets',
+      desc: 'Encrypted credentials & PIN secrets',
     },
     {
       id: 'backup',
       label: 'Backup & Restore',
       icon: Database,
-      color: 'bg-teal-100 text-teal-600 dark:bg-teal-950/80 dark:text-teal-400',
+      color: 'bg-sky-100 text-sky-600 dark:bg-sky-950/80 dark:text-sky-400',
       desc: 'Export & recover JSON snapshots',
     },
     {
       id: 'trash',
-      label: 'Trash',
+      label: 'Trash Bin',
       icon: Trash2,
       color: 'bg-rose-100 text-rose-600 dark:bg-rose-950/80 dark:text-rose-400',
-      desc: 'Recently deleted items, restore within 30 days',
+      desc: 'Recover deleted items within 30 days',
+    },
+    {
+      id: 'assistant',
+      label: 'Zikenn AI',
+      icon: Sparkles,
+      color: 'bg-violet-100 text-violet-600 dark:bg-violet-950/80 dark:text-violet-400',
+      desc: 'Executive voice & smart assistant',
     },
     {
       id: 'settings',
       label: 'Settings',
       icon: Settings,
-      color: 'bg-violet-100 text-violet-600 dark:bg-violet-950/80 dark:text-violet-400',
+      color: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
       desc: 'System preferences & theme',
     },
   ];

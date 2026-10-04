@@ -475,34 +475,16 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
   return (
     <div className="space-y-3.5 pb-8">
       {/* ========================================================================= */}
-      {/* 1. GREETING & HERO HEADER WITH REDUCED QUOTE TILE & FLIP CLOCK */}
+      {/* 1. COMPACT WEATHER BAR (TOPMOST) */}
       {/* ========================================================================= */}
       <div className="space-y-2.5 pb-0">
-        {/* Greeting Header with Compact Weather Widget */}
         <motion.div
-          initial={{ opacity: 0, y: 10 }}
+          initial={{ opacity: 0, y: -4 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+          transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+          className="flex items-center justify-between"
         >
-          <div>
-            <h1 className="workspace-heading font-extrabold text-[#37352F] dark:text-white tracking-tight flex items-center gap-2 flex-wrap">
-              <span>{greeting}, {profile.name}!</span>
-              <span className="inline-block text-2xl">{greetingEmoji}</span>
-            </h1>
-            <p className="text-xs sm:text-sm text-[#787774] dark:text-[#9CA3AF] mt-0.5 font-medium flex items-center gap-2">
-              <span>Let&apos;s make today meaningful and productive.</span>
-            </p>
-          </div>
-
-          <motion.div
-            initial={{ opacity: 0, scale: 0.96 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.4, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
-            className="self-start sm:self-auto shrink-0"
-          >
-            <CurrentWeatherWidget soundEnabled={soundEnabled} />
-          </motion.div>
+          <CurrentWeatherWidget soundEnabled={soundEnabled} />
         </motion.div>
 
         {/* Side-by-Side: 2x Quote Tile + 3/4th Size Date & Clock Tile */}

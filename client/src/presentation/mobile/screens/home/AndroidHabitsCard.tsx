@@ -44,9 +44,17 @@ export const AndroidHabitsCard: React.FC<AndroidHabitsCardProps> = ({
       <div className={CARD_HEADER_CLASSES}>
         <div className={CARD_TITLE_CLASSES}>
           <div className="w-7 h-7 rounded-lg bg-amber-100 dark:bg-amber-950 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-            <Flame className="w-4 h-4" />
+            <Flame className="w-4 h-4 fill-amber-500 text-amber-500" />
           </div>
-          <span>Habits &amp; Momentum</span>
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="truncate">Habits &amp; Momentum</span>
+            {maxStreak > 0 && (
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/80 border border-amber-200/60 dark:border-amber-800/40 text-[10px] font-bold text-amber-600 dark:text-amber-400 font-mono shrink-0">
+                <Flame className="w-2.5 h-2.5 fill-amber-500 text-amber-500" />
+                <span>{maxStreak}d</span>
+              </span>
+            )}
+          </div>
         </div>
 
         <button
@@ -55,42 +63,15 @@ export const AndroidHabitsCard: React.FC<AndroidHabitsCardProps> = ({
             void nativeService.triggerHaptic('selection');
             onNavigateToHabits();
           }}
-          className="text-xs font-semibold text-violet-600 dark:text-violet-400 flex items-center gap-1 hover:underline cursor-pointer"
+          className="text-xs font-semibold text-violet-600 dark:text-violet-400 flex items-center gap-1 hover:underline cursor-pointer shrink-0"
         >
           <span>All Habits</span>
           <ArrowRight className="w-3.5 h-3.5" />
         </button>
       </div>
 
-      {/* Body: Compact Daily Summary */}
+      {/* Body: Compact Daily Habit List */}
       <div className={CARD_BODY_CLASSES}>
-        {/* Concise Today Progress Bar */}
-        <div className="mb-2 p-2.5 rounded-2xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40">
-          <div className="flex items-center justify-between text-xs mb-1">
-            <div className="flex items-center gap-1.5">
-              <span className="font-bold text-gray-800 dark:text-gray-200 text-[11px]">
-                Today&apos;s Progress
-              </span>
-              <span className="text-[10px] font-medium text-amber-700 dark:text-amber-300">
-                ({completedToday}/{totalHabits} done)
-              </span>
-            </div>
-
-            <div className="flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 font-mono">
-              <Flame className="w-3 h-3 fill-amber-500 text-amber-500" />
-              <span>{maxStreak}d streak</span>
-            </div>
-          </div>
-
-          <div className="w-full h-1.5 rounded-full bg-gray-200/80 dark:bg-gray-800 overflow-hidden">
-            <div
-              style={{ width: `${todayPercentage}%` }}
-              className="h-full rounded-full bg-gradient-to-r from-amber-500 to-orange-500 transition-all duration-500"
-            />
-          </div>
-        </div>
-
-        {/* Compact Daily Habit List */}
         {displayHabits.length === 0 ? (
           <div className="py-3 text-center">
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-1.5">
@@ -118,17 +99,17 @@ export const AndroidHabitsCard: React.FC<AndroidHabitsCardProps> = ({
                   key={h.id}
                   className="flex items-center justify-between p-2 rounded-2xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] transition-all"
                 >
-                  {/* Habit title & streak */}
+                  {/* Habit title & streak placed side by side next to title to save space */}
                   <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
                     <span className="text-sm leading-none shrink-0">{h.icon || '⚡'}</span>
-                    <div className="min-w-0 flex-1">
-                      <span className="text-xs font-bold text-gray-900 dark:text-white block truncate">
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                      <span className="text-xs font-bold text-gray-900 dark:text-white truncate">
                         {h.title}
                       </span>
-                      <div className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
+                      <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400 shrink-0">
                         <Flame className="w-2.5 h-2.5 fill-amber-500 text-amber-500" />
-                        <span>{h.streak || 0}d streak</span>
-                      </div>
+                        <span>{h.streak || 0}d</span>
+                      </span>
                     </div>
                   </div>
 

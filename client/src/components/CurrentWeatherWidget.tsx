@@ -410,41 +410,35 @@ export const CurrentWeatherWidget: React.FC<CurrentWeatherWidgetProps> = ({ soun
 
   return (
     <div
-      className={`inline-flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] shadow-2xs hover:shadow-xs transition-all select-none relative group bg-gradient-to-r ${bgGradient}`}
+      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] shadow-2xs hover:shadow-xs transition-all select-none relative group bg-gradient-to-r ${bgGradient}`}
     >
-      {/* Weather Condition Icon */}
-      <div className="relative shrink-0 flex items-center justify-center">
-        <WeatherIcon className={`w-6 h-6 ${iconColor} drop-shadow-xs transition-transform group-hover:scale-110`} />
+      {/* Weather Temperature & Condition (No Sun/Moon icon, no wind speed) */}
+      <div className="flex items-baseline gap-2 min-w-0">
+        <button
+          type="button"
+          onClick={toggleUnit}
+          title="Click to toggle °C / °F"
+          className="text-sm font-extrabold text-[#37352F] dark:text-white hover:text-[#6366F1] dark:hover:text-[#818CF8] transition-colors cursor-pointer leading-none"
+        >
+          {formatTemp(weather.temperature)}
+        </button>
+        <span className="text-xs font-semibold text-[#787774] dark:text-[#9CA3AF] truncate max-w-[120px] sm:max-w-[150px] leading-none">
+          {label}
+        </span>
       </div>
 
-      {/* Weather Temperature & Condition */}
-      <div className="flex flex-col min-w-0">
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={toggleUnit}
-            title="Click to toggle °C / °F"
-            className="text-sm font-extrabold text-[#37352F] dark:text-white hover:text-[#6366F1] dark:hover:text-[#818CF8] transition-colors cursor-pointer"
-          >
-            {formatTemp(weather.temperature)}
-          </button>
-          <span className="text-[11px] font-semibold text-[#787774] dark:text-[#9CA3AF] truncate max-w-[95px] sm:max-w-[120px]">
-            {label}
-          </span>
-        </div>
+      <span className="text-gray-300 dark:text-gray-600">•</span>
 
-        {/* Location & Extra Stats */}
-        <div className="flex items-center gap-2 text-[10px] text-[#787774] dark:text-[#9CA3AF]">
-          <span className="flex items-center gap-0.5 truncate max-w-[85px] sm:max-w-[110px]" title={weather.cityName}>
-            <MapPin className="w-2.5 h-2.5 shrink-0 text-gray-400" />
-            <span className="truncate">{weather.cityName}</span>
-          </span>
-          <span className="hidden sm:inline-block text-gray-300 dark:text-gray-600">•</span>
-          <span className="hidden sm:inline-flex items-center gap-0.5" title={`Humidity ${weather.humidity}%`}>
-            <Droplets className="w-2.5 h-2.5 text-sky-400" />
-            <span>{weather.humidity}%</span>
-          </span>
-        </div>
+      {/* Location & Humidity */}
+      <div className="flex items-center gap-2 text-[11px] text-[#787774] dark:text-[#9CA3AF]">
+        <span className="flex items-center gap-1 truncate max-w-[110px] sm:max-w-[140px]" title={weather.cityName}>
+          <MapPin className="w-3 h-3 shrink-0 text-violet-500" />
+          <span className="truncate">{weather.cityName}</span>
+        </span>
+        <span className="hidden sm:inline-flex items-center gap-0.5 text-[10px]" title={`Humidity ${weather.humidity}%`}>
+          <Droplets className="w-2.5 h-2.5 text-sky-400" />
+          <span>{weather.humidity}%</span>
+        </span>
       </div>
 
       {/* Refresh Button */}
@@ -452,7 +446,7 @@ export const CurrentWeatherWidget: React.FC<CurrentWeatherWidgetProps> = ({ soun
         type="button"
         onClick={handleManualRefresh}
         title="Refresh current weather"
-        className="p-1 rounded-lg text-gray-400 hover:text-[#6366F1] dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer ml-0.5"
+        className="p-1 rounded-lg text-gray-400 hover:text-[#6366F1] dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer ml-1"
       >
         <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin text-[#6366F1]' : ''}`} />
       </button>

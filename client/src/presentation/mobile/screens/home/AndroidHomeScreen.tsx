@@ -16,6 +16,7 @@ import { INITIAL_QUOTES } from '../../../../utils/storage';
 import { nativeService } from '../../../../services/nativeService';
 import { HorizontalPager } from '../../gestures/HorizontalPager';
 import { AndroidWeatherWidget } from './AndroidWeatherWidget';
+import { AndroidScratchPad } from './AndroidScratchPad';
 import { AndroidDateStrip } from '../../components/AndroidDateStrip';
 import { AndroidTasksCard } from './AndroidTasksCard';
 import { AndroidSpendingCard } from './AndroidSpendingCard';
@@ -66,186 +67,15 @@ export const AndroidHomeScreen: React.FC<AndroidHomeScreenProps> = ({
   const [isHabitSheetOpen, setIsHabitSheetOpen] = useState(false);
   const [isNoteSheetOpen, setIsNoteSheetOpen] = useState(false);
 
-  // Time-aware greeting & sun/moon emoji matching Screen B
-  const { greetingText, timeEmoji } = (() => {
-    const hour = new Date().getHours();
-    if (hour < 12) return { greetingText: 'Good morning', timeEmoji: '🌅' };
-    if (hour < 17) return { greetingText: 'Good afternoon', timeEmoji: '☀️' };
-    return { greetingText: 'Good evening', timeEmoji: '🌙' };
-  })();
-
-  const displayName = profile?.name ? profile.name.split(' ')[0] : 'Gulshan';
-
   return (
-    <div className="w-full max-w-lg mx-auto space-y-2.5 px-3.5 pb-24 pt-2">
-      {/* 1. COMPACT GREETING matching Material You */}
-      <div className="px-1">
-        <span className="text-xs sm:text-sm font-semibold text-gray-600 dark:text-gray-300 block leading-tight">
-          {greetingText},
-        </span>
-        <div className="flex items-center gap-1.5 mt-0.5">
-          <h2 className="text-lg font-bold text-gray-900 dark:text-white tracking-tight leading-tight">
-            {displayName}!
-          </h2>
-          <span className="text-base">{timeEmoji}</span>
-        </div>
-      </div>
-
-      {/* 2. WEATHER / CURRENT INFORMATION (Screen B) */}
+    <div className="w-full max-w-lg mx-auto space-y-2.5 px-3.5 pb-24 pt-1.5">
+      {/* 1. COMPACT WEATHER WIDGET (Topmost) */}
       <AndroidWeatherWidget />
 
-      {/* 4. CALENDAR GRID / DATE STRIP (Temporarily hidden, underlying component preserved) */}
-      {/* <AndroidDateStrip /> */}
+      {/* 2. STICKY NOTES / SCRATCH PAD */}
+      <AndroidScratchPad />
 
-      {/* 5. QUICK ACCESS GRID (Row 1: Actions, Row 2: Navigation) */}
-      <div className="space-y-2 pt-1">
-        <span className="text-xs font-bold text-gray-600 dark:text-gray-300 tracking-tight px-1">
-          Quick Access
-        </span>
-
-        {/* 2 Rows x 4 Columns */}
-        <div className="grid grid-cols-4 gap-2">
-          {/* ROW 1: ACTIONS */}
-          {/* 1. Add Task */}
-          <button
-            type="button"
-            onClick={() => {
-              void nativeService.triggerHaptic('selection');
-              setIsTaskSheetOpen(true);
-            }}
-            className="flex flex-col items-center justify-center p-2.5 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs hover:border-violet-300 dark:hover:border-violet-600/50 active:scale-95 transition-all cursor-pointer group"
-          >
-            <div className="w-10 h-10 rounded-xl bg-violet-100 dark:bg-violet-950/80 text-violet-600 dark:text-violet-400 flex items-center justify-center mb-1.5 shadow-2xs group-hover:scale-105 transition-transform">
-              <CheckSquare className="w-5 h-5" />
-            </div>
-            <span className="text-[11px] font-bold text-gray-800 dark:text-gray-200 text-center leading-tight">
-              Add Task
-            </span>
-          </button>
-
-          {/* 2. Add Expense */}
-          <button
-            type="button"
-            onClick={() => {
-              void nativeService.triggerHaptic('selection');
-              setIsExpenseSheetOpen(true);
-            }}
-            className="flex flex-col items-center justify-center p-2.5 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs hover:border-emerald-300 dark:hover:border-emerald-600/50 active:scale-95 transition-all cursor-pointer group"
-          >
-            <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-1.5 shadow-2xs group-hover:scale-105 transition-transform">
-              <CreditCard className="w-5 h-5" />
-            </div>
-            <span className="text-[11px] font-bold text-gray-800 dark:text-gray-200 text-center leading-tight">
-              Add Expense
-            </span>
-          </button>
-
-          {/* 3. Add Habit */}
-          <button
-            type="button"
-            onClick={() => {
-              void nativeService.triggerHaptic('selection');
-              setIsHabitSheetOpen(true);
-            }}
-            className="flex flex-col items-center justify-center p-2.5 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs hover:border-amber-300 dark:hover:border-amber-600/50 active:scale-95 transition-all cursor-pointer group"
-          >
-            <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-1.5 shadow-2xs group-hover:scale-105 transition-transform">
-              <Flame className="w-5 h-5" />
-            </div>
-            <span className="text-[11px] font-bold text-gray-800 dark:text-gray-200 text-center leading-tight">
-              Add Habit
-            </span>
-          </button>
-
-          {/* 4. Add Note */}
-          <button
-            type="button"
-            onClick={() => {
-              void nativeService.triggerHaptic('selection');
-              setIsNoteSheetOpen(true);
-            }}
-            className="flex flex-col items-center justify-center p-2.5 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs hover:border-rose-300 dark:hover:border-rose-600/50 active:scale-95 transition-all cursor-pointer group"
-          >
-            <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 flex items-center justify-center mb-1.5 shadow-2xs group-hover:scale-105 transition-transform">
-              <FileText className="w-5 h-5" />
-            </div>
-            <span className="text-[11px] font-bold text-gray-800 dark:text-gray-200 text-center leading-tight">
-              Add Note
-            </span>
-          </button>
-
-          {/* ROW 2: CORE DESTINATIONS */}
-          {/* 1. Journal */}
-          <button
-            type="button"
-            onClick={() => {
-              void nativeService.triggerHaptic('selection');
-              onNavigate('journal');
-            }}
-            className="flex flex-col items-center justify-center p-2.5 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs hover:border-pink-300 active:scale-95 transition-all cursor-pointer group"
-          >
-            <div className="w-10 h-10 rounded-xl bg-pink-100 dark:bg-pink-950/80 text-pink-600 dark:text-pink-400 flex items-center justify-center mb-1.5 shadow-2xs group-hover:scale-105 transition-transform">
-              <BookOpen className="w-5 h-5" />
-            </div>
-            <span className="text-[11px] font-bold text-gray-800 dark:text-gray-200 text-center leading-tight">
-              Journal
-            </span>
-          </button>
-
-          {/* 2. Goals */}
-          <button
-            type="button"
-            onClick={() => {
-              void nativeService.triggerHaptic('selection');
-              onNavigate('goals');
-            }}
-            className="flex flex-col items-center justify-center p-2.5 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs hover:border-indigo-300 active:scale-95 transition-all cursor-pointer group"
-          >
-            <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mb-1.5 shadow-2xs group-hover:scale-105 transition-transform">
-              <Target className="w-5 h-5" />
-            </div>
-            <span className="text-[11px] font-bold text-gray-800 dark:text-gray-200 text-center leading-tight">
-              Goals
-            </span>
-          </button>
-
-          {/* 3. Library */}
-          <button
-            type="button"
-            onClick={() => {
-              void nativeService.triggerHaptic('selection');
-              onNavigate('media');
-            }}
-            className="flex flex-col items-center justify-center p-2.5 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs hover:border-blue-300 active:scale-95 transition-all cursor-pointer group"
-          >
-            <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-950/80 text-blue-600 dark:text-blue-400 flex items-center justify-center mb-1.5 shadow-2xs group-hover:scale-105 transition-transform">
-              <Film className="w-5 h-5" />
-            </div>
-            <span className="text-[11px] font-bold text-gray-800 dark:text-gray-200 text-center leading-tight">
-              Library
-            </span>
-          </button>
-
-          {/* 4. Portfolio */}
-          <button
-            type="button"
-            onClick={() => {
-              void nativeService.triggerHaptic('selection');
-              onNavigate('workfolio');
-            }}
-            className="flex flex-col items-center justify-center p-2.5 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs hover:border-indigo-300 active:scale-95 transition-all cursor-pointer group"
-          >
-            <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mb-1.5 shadow-2xs group-hover:scale-105 transition-transform">
-              <Briefcase className="w-5 h-5" />
-            </div>
-            <span className="text-[11px] font-bold text-gray-800 dark:text-gray-200 text-center leading-tight">
-              Portfolio
-            </span>
-          </button>
-        </div>
-      </div>
-
-      {/* 6. TODAY'S TASKS CARD */}
+      {/* 3. TODAY'S TASKS CARD */}
       <AndroidTasksCard
         todos={todos}
         onToggleTodo={onToggleTodo}
