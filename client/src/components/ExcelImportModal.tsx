@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   Filter,
   Check,
+  Trash2,
 } from 'lucide-react';
 import {
   parseExpensesFromExcel,
@@ -30,6 +31,9 @@ interface ExcelImportModalProps {
   ) => void;
   existingExpenses: ExpenseItem[];
   soundEnabled: boolean;
+  importLogs?: ExcelImportLog[];
+  onOpenDeleteSheet?: (log: ExcelImportLog) => void;
+  initialTab?: 'upload' | 'uploaded';
 }
 
 export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
@@ -38,7 +42,11 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   onImportSuccess,
   existingExpenses,
   soundEnabled,
+  importLogs = [],
+  onOpenDeleteSheet,
+  initialTab = 'upload',
 }) => {
+  const [modalTab, setModalTab] = useState<'upload' | 'uploaded'>(initialTab);
   const [isDragging, setIsDragging] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -174,8 +182,97 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
           </button>
         </div>
 
-        {/* Body Content */}
-        <div className="py-4 space-y-4">
+        {/* Top Tab Bar if uploaded sheets exist */}
+        {importLogs.length > 0 && (
+          <div className="flex items-center gap-2 pt-3 border-b border-[#F3F4F6] dark:border-[#2D3748] pb-2">
+            <button
+              type="button"
+              onClick={() => {
+                Sound.click(soundEnabled);
+                setModalTab('upload');
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                modalTab === 'upload'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+              }`}
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Upload Spreadsheet</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                Sound.click(soundEnabled);
+                setModalTab('uploaded');
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                modalTab === 'uploaded'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+              }`}
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Uploaded Spreadsheets</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-950 text-[10px] font-bold text-emerald-800 dark:text-emerald-200">
+                {importLogs.length}
+              </span>
+            </button>
+          </div>
+        )}
+
+        {/* Uploaded Spreadsheets View */}
+        {modalTab === 'uploaded' ? (
+          <div className="py-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                Previously Uploaded Sheets ({importLogs.length})
+              </span>
+              <button
+                type="button"
+                onClick={() => setModalTab('upload')}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 cursor-pointer"
+              >
+                <Upload className="w-3 h-3" />
+                <span>Upload New Sheet</span>
+              </button>
+            </div>
+
+            <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+              {importLogs.map((log) => (
+                <div
+                  key={log.id}
+                  className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-[#111827] border border-slate-200/80 dark:border-slate-800"
+                >
+                  <div className="min-w-0 flex-1 pr-3">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <span className="font-semibold text-slate-900 dark:text-white block truncate text-xs sm:text-sm">
+                        {log.fileName}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 block truncate">
+                      {log.addedCount} items · ₹{Math.round(log.totalAmountAdded || 0).toLocaleString('en-IN')}
+                      {log.dateRange ? ` · ${log.dateRange.min} to ${log.dateRange.max}` : ''}
+                    </span>
+                  </div>
+                  {onOpenDeleteSheet && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenDeleteSheet(log)}
+                      className="p-2 rounded-xl text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 cursor-pointer transition-colors shrink-0"
+                      title={`Delete spreadsheet ${log.fileName}`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          /* Body Content */
+          <div className="py-4 space-y-4">
           {error && (
             <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 rounded-xl flex items-start gap-2.5 text-xs text-rose-700 dark:text-rose-300">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
@@ -470,6 +567,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
             </div>
           )}
         </div>
+      )}
 
         {/* Footer Actions */}
         <div className="flex items-center justify-between pt-4 border-t border-[#F3F4F6] dark:border-[#2D3748]">

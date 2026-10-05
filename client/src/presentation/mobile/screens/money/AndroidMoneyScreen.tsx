@@ -19,6 +19,7 @@ import {
   Utensils,
   ShoppingBag,
   DollarSign,
+  Upload,
 } from 'lucide-react';
 import { ExpenseItem, ExcelImportLog } from '../../../../types';
 import { nativeService } from '../../../../services/nativeService';
@@ -27,6 +28,7 @@ import { Storage } from '../../../../utils/storage';
 import { toast } from 'sonner';
 import { SwipeActionRow } from '../../gestures/SwipeActionRow';
 import { useLongPress } from '../../gestures/useLongPress';
+import { BottomSheet } from '../../gestures/BottomSheet';
 import { AndroidActionSheet, ActionSheetItem } from '../../components/AndroidActionSheet';
 import { QuickExpenseSheet } from '../../components/QuickExpenseSheet';
 import { ControlledSmsRescanModal } from '../../components/ControlledSmsRescanModal';
@@ -157,9 +159,10 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   const [isRescanModalOpen, setIsRescanModalOpen] = useState(false);
   const [isSmsModalOpen, setIsSmsModalOpen] = useState(false);
   const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
+  const [isExcelMenuOpen, setIsExcelMenuOpen] = useState(false);
+  const [isUploadedSheetsOpen, setIsUploadedSheetsOpen] = useState(false);
   const [isExportSheetOpen, setIsExportSheetOpen] = useState(false);
   const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
-  const [showSheetLogs, setShowSheetLogs] = useState(false);
   const [isHeaderSearchOpen, setIsHeaderSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -265,47 +268,6 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
       window.removeEventListener('dashboard-data-updated', handleDashboardUpdated);
     };
   }, [currentMonthPrefix]);
-
-  const trashedExpenses = useMemo(() => {
-    return Storage.getTrash().filter((t) => t.module === 'expenses');
-  }, [localExpenses, expenses]);
-
-  const handleRestoreAllTrashExpenses = () => {
-    void nativeService.triggerHaptic('selection');
-    const trash = Storage.getTrash();
-    const current = Storage.getExpenses();
-    const currentIds = new Set(current.map((e) => e.id));
-
-    const restored: ExpenseItem[] = [];
-    const remainingTrash: any[] = [];
-
-    trash.forEach((t) => {
-      if (t.module === 'expenses' && t.data) {
-        const item = t.data as ExpenseItem;
-        if (!currentIds.has(item.id)) {
-          restored.push({ ...item, active: true });
-          currentIds.add(item.id);
-        }
-      } else {
-        remainingTrash.push(t);
-      }
-    });
-
-    if (restored.length > 0) {
-      const updated = [...restored, ...current];
-      Storage.setExpenses(updated);
-      Storage.setTrash(remainingTrash);
-      setLocalExpenses(updated);
-      toast.success(`Restored ${restored.length} spendings from Trash!`);
-      window.dispatchEvent(
-        new CustomEvent('dashboard-data-updated', {
-          detail: { module: 'expenses', updatedExpenses: updated },
-        })
-      );
-    } else {
-      toast.info('No deleted spendings found in Trash');
-    }
-  };
 
   const activeExpenses = useMemo(() => {
     const source = localExpenses && localExpenses.length >= 0 ? localExpenses : expenses;
@@ -784,12 +746,17 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
               type="button"
               onClick={() => {
                 void nativeService.triggerHaptic('selection');
-                setIsExcelModalOpen(true);
+                setIsExcelMenuOpen(true);
               }}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 active:scale-95 transition-all cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 active:scale-95 transition-all cursor-pointer"
             >
               <FileSpreadsheet className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
               <span>Excel</span>
+              {importLogs.length > 0 && (
+                <span className="inline-flex items-center justify-center px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-emerald-200 dark:bg-emerald-800 text-emerald-900 dark:text-emerald-100">
+                  {importLogs.length}
+                </span>
+              )}
             </button>
 
             {/* Rescan */}
@@ -821,73 +788,6 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
 
       {/* BEGIN: MainContent */}
       <main className="flex-1 px-3.5 pt-3 pb-6 space-y-3">
-        {/* Compact Spreadsheets Status Banner */}
-        <section
-          className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-900/60"
-          data-purpose="spreadsheet-sync-indicator"
-        >
-          <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-900 dark:text-emerald-200">
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" />
-            <span className="tracking-tight">Uploaded Spreadsheets ({importLogs.length})</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowSheetLogs(!showSheetLogs)}
-            className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-emerald-800 dark:text-emerald-300 hover:text-emerald-950 dark:hover:text-emerald-100 cursor-pointer"
-          >
-            <span>{showSheetLogs ? 'Hide' : 'Manage'}</span>
-            <ChevronDown className={`w-3 h-3 text-emerald-700 dark:text-emerald-400 transition-transform ${showSheetLogs ? 'rotate-180' : ''}`} />
-          </button>
-        </section>
-
-        {/* Uploaded Spreadsheets Expanded List */}
-        {showSheetLogs && importLogs.length > 0 && (
-          <div className="space-y-1.5 p-2 rounded-xl bg-white dark:bg-[#151d2e] border border-emerald-100 dark:border-emerald-900/40 text-xs shadow-2xs">
-            {importLogs.map((log) => (
-              <div
-                key={log.id}
-                className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800"
-              >
-                <div className="min-w-0 flex-1 pr-2">
-                  <span className="font-semibold text-slate-900 dark:text-white block truncate text-[11px]">
-                    {log.fileName}
-                  </span>
-                  <span className="text-[10px] text-slate-500 dark:text-slate-400 block truncate">
-                    {log.addedCount} items · ₹{Math.round(log.totalAmountAdded || 0).toLocaleString('en-IN')}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleOpenDeleteSheet(log)}
-                  className="p-1 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 cursor-pointer transition-colors shrink-0"
-                  title={`Delete spreadsheet ${log.fileName}`}
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Trashed Spendings Recovery Banner */}
-        {trashedExpenses.length > 0 && (
-          <section className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-900/60 shadow-2xs">
-            <div className="flex items-center gap-1.5 text-xs font-medium text-amber-900 dark:text-amber-200 min-w-0 pr-2">
-              <RotateCcw className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-              <span className="truncate">
-                {trashedExpenses.length} deleted {trashedExpenses.length === 1 ? 'spending' : 'spendings'} in Trash
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={handleRestoreAllTrashExpenses}
-              className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-900 dark:text-amber-100 bg-amber-200/70 hover:bg-amber-300/80 dark:bg-amber-900/70 dark:hover:bg-amber-800/80 px-2 py-0.5 rounded-md cursor-pointer active:scale-95 transition-all shrink-0"
-            >
-              <span>Restore</span>
-            </button>
-          </section>
-        )}
-
         {/* Space-Efficient KPI Card */}
         <section
           className="rounded-xl p-3.5 text-white shadow-sm border border-emerald-700/60 bg-gradient-to-br from-[#064e3b] via-[#065f46] to-[#047857]"
@@ -1248,7 +1148,111 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         onImportSuccess={handleExcelImportSuccess}
         existingExpenses={activeExpenses}
         soundEnabled={soundEnabled}
+        importLogs={importLogs}
+        onOpenDeleteSheet={(log) => {
+          setIsExcelModalOpen(false);
+          handleOpenDeleteSheet(log);
+        }}
       />
+
+      {/* Excel Options Action Sheet */}
+      <AndroidActionSheet
+        isOpen={isExcelMenuOpen}
+        onClose={() => setIsExcelMenuOpen(false)}
+        title="Excel Spreadsheets"
+        subtitle={
+          importLogs.length > 0
+            ? `${importLogs.length} spreadsheet${importLogs.length === 1 ? '' : 's'} connected`
+            : 'Import or manage spreadsheet data'
+        }
+        actions={[
+          {
+            label: 'Upload Spreadsheet',
+            icon: <Upload className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />,
+            onClick: () => {
+              setIsExcelModalOpen(true);
+            },
+          },
+          {
+            label: `Uploaded Spreadsheets (${importLogs.length})`,
+            icon: <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />,
+            onClick: () => {
+              setIsUploadedSheetsOpen(true);
+            },
+          },
+        ]}
+      />
+
+      {/* Uploaded Spreadsheets Bottom Sheet */}
+      <BottomSheet
+        isOpen={isUploadedSheetsOpen}
+        onClose={() => setIsUploadedSheetsOpen(false)}
+        title={
+          <div className="flex items-center gap-2">
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <span>Uploaded Spreadsheets</span>
+          </div>
+        }
+        subtitle={`${importLogs.length} spreadsheet${importLogs.length === 1 ? '' : 's'} imported`}
+      >
+        <div className="p-4 space-y-3 pb-8">
+          <button
+            type="button"
+            onClick={() => {
+              setIsUploadedSheetsOpen(false);
+              setIsExcelModalOpen(true);
+            }}
+            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
+          >
+            <Upload className="w-4 h-4" />
+            <span>Upload New Spreadsheet</span>
+          </button>
+
+          {importLogs.length === 0 ? (
+            <div className="py-8 text-center text-slate-500 dark:text-slate-400 space-y-1">
+              <FileSpreadsheet className="w-10 h-10 text-emerald-500/40 mx-auto mb-2" />
+              <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                No uploaded spreadsheets yet
+              </p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Upload Money Manager or custom Excel/CSV exports to track your spendings.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {importLogs.map((log) => (
+                <div
+                  key={log.id}
+                  className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-800"
+                >
+                  <div className="min-w-0 flex-1 pr-3">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <span className="font-semibold text-slate-900 dark:text-white block truncate text-xs">
+                        {log.fileName}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 block truncate">
+                      {log.addedCount} items · ₹{Math.round(log.totalAmountAdded || 0).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsUploadedSheetsOpen(false);
+                      handleOpenDeleteSheet(log);
+                    }}
+                    className="p-2 rounded-xl text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 active:scale-90 cursor-pointer transition-all shrink-0"
+                    title={`Delete spreadsheet ${log.fileName}`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </BottomSheet>
 
       {/* Export Expense Sheet */}
       <ExportExpenseSheet

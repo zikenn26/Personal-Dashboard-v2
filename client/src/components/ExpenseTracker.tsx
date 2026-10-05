@@ -3046,6 +3046,11 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
         onImportSuccess={handleImportSuccess}
         existingExpenses={expenses}
         soundEnabled={soundEnabled}
+        importLogs={importLogs}
+        onOpenDeleteSheet={(log) => {
+          setShowImportModal(false);
+          handleOpenDeleteSheetModal(log);
+        }}
       />
 
       {/* SMS Expense Auto-Logging Modal */}
