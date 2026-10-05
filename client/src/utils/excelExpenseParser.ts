@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { ExpenseItem } from '../types';
+import { normalizeExpenseDateKey } from './expenseUtils';
 
 export interface ParsedSpreadsheetResult {
   fileName: string;
@@ -128,9 +129,9 @@ export function parseSmartDate(val: unknown): { date: string; time?: string } | 
   const str = String(val).trim();
   if (!str) return null;
 
-  // 3. Match DD/MM/YYYY or DD-MM-YYYY with optional time
-  // e.g. "08/09/2026 16:48:25" or "08/09/2026" or "8/9/2026"
-  const ddmmyyyyMatch = str.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  // 3. Match DD/MM/YYYY or DD-MM-YYYY with optional time and AM/PM
+  // e.g. "08/09/2026 16:48:25" or "08/09/2026 04:48 PM" or "8/9/2026"
+  const ddmmyyyyMatch = str.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?(?:\s*(am|pm))?)?/i);
   if (ddmmyyyyMatch) {
     const day = parseInt(ddmmyyyyMatch[1], 10);
     const month = parseInt(ddmmyyyyMatch[2], 10);
@@ -140,7 +141,15 @@ export function parseSmartDate(val: unknown): { date: string; time?: string } | 
       const yStr = String(year);
       const mStr = String(month).padStart(2, '0');
       const dStr = String(day).padStart(2, '0');
-      const timeStr = ddmmyyyyMatch[4] !== undefined ? `${String(ddmmyyyyMatch[4]).padStart(2, '0')}:${String(ddmmyyyyMatch[5] || '00').padStart(2, '0')}` : undefined;
+      let timeStr: string | undefined;
+      if (ddmmyyyyMatch[4] !== undefined) {
+        let hour = parseInt(ddmmyyyyMatch[4], 10);
+        const minute = parseInt(ddmmyyyyMatch[5] || '0', 10);
+        const meridiem = ddmmyyyyMatch[7]?.toLowerCase();
+        if (meridiem === 'pm' && hour < 12) hour += 12;
+        if (meridiem === 'am' && hour === 12) hour = 0;
+        timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+      }
       return { date: `${yStr}-${mStr}-${dStr}`, time: timeStr };
     }
   }
@@ -359,7 +368,7 @@ export async function parseExpensesFromExcel(
       categoryColIdx = idx;
     } else if (noteColIdx === -1 && /note|desc|merchant|item|title|detail|remark|payee|narration/i.test(colName)) {
       noteColIdx = idx;
-    } else if (amountColIdx === -1 && /inr|amount|price|cost|total|debit|rs|rupee|expense$/i.test(colName)) {
+    } else if (amountColIdx === -1 && /inr|amount|price|cost|total|debit|withdrawal|dr\b|rs|rupee|expense$/i.test(colName)) {
       // Don't mistake "Income/Expense" for amount
       if (!colName.includes('income')) {
         amountColIdx = idx;
@@ -567,22 +576,22 @@ export function deduplicateExpenses(
   const duplicateExpenses: DuplicateMatchInfo[] = [];
 
   for (const incoming of incomingExpenses) {
-    const incDate = (incoming.date || '').trim();
+    const incDate = normalizeExpenseDateKey(incoming.date);
     const incAmount = Math.round(Number(incoming.amount) * 100) / 100;
     const incNameNorm = normalizeForComparison(incoming.name);
     const incCatNorm = normalizeForComparison(incoming.category);
-    const incTime = extractTimeFromNotes(incoming.notes);
+    const incTime = incoming.time || extractTimeFromNotes(incoming.notes);
 
     // Pass 1: Strict match on Date, Amount, Name, Category, and Time (if present)
     let matchIdx = pool.findIndex((p) => {
       if (p.matched) return false;
       const ex = p.expense;
-      if (ex.date !== incDate) return false;
+      if (normalizeExpenseDateKey(ex.date) !== incDate) return false;
       if (Math.abs(ex.amount - incAmount) >= 0.01) return false;
 
       const exNameNorm = normalizeForComparison(ex.name);
       const exCatNorm = normalizeForComparison(ex.category);
-      const exTime = extractTimeFromNotes(ex.notes);
+      const exTime = ex.time || extractTimeFromNotes(ex.notes);
 
       // If both have specific times logged and they don't match, they are distinct transactions
       if (incTime && exTime && incTime !== exTime) {
@@ -600,12 +609,12 @@ export function deduplicateExpenses(
       matchIdx = pool.findIndex((p) => {
         if (p.matched) return false;
         const ex = p.expense;
-        if (ex.date !== incDate) return false;
+        if (normalizeExpenseDateKey(ex.date) !== incDate) return false;
         if (Math.abs(ex.amount - incAmount) >= 0.01) return false;
 
         const exNameNorm = normalizeForComparison(ex.name);
         const exCatNorm = normalizeForComparison(ex.category);
-        const exTime = extractTimeFromNotes(ex.notes);
+        const exTime = ex.time || extractTimeFromNotes(ex.notes);
 
         if (incTime && exTime && incTime !== exTime) {
           return false;

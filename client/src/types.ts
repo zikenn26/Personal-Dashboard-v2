@@ -140,6 +140,8 @@ export interface ExpenseItem {
   accountLast4?: string;
   payee?: string;
   merchant?: string;
+  createdAt?: number | string;
+  updatedAt?: number | string;
 }
 
 export interface ParsedSmsTransaction {

@@ -242,26 +242,6 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
     window.addEventListener('sms_expense_auto_logged', handleSmsAutoLogged);
     window.addEventListener('dashboard-data-updated', handleDashboardUpdated);
 
-    // Auto-rescue check: if current month has 0 active spendings, check if any were accidentally trashed
-    try {
-      const currentMonthExpenses = Storage.getExpenses().filter((e) =>
-        normalizeExpenseDateKey(e.date).startsWith(currentMonthPrefix)
-      );
-      if (currentMonthExpenses.length === 0) {
-        const rescued = Storage.rescueTrashedExpensesForMonth(currentMonthPrefix);
-        if (rescued > 0) {
-          const fresh = Storage.getExpenses();
-          setLocalExpenses(fresh);
-          toast.success(`Recovered ${rescued} spendings for ${formatMonthLabel(currentMonthPrefix)}!`);
-          window.dispatchEvent(
-            new CustomEvent('dashboard-data-updated', {
-              detail: { module: 'expenses', updatedExpenses: fresh },
-            })
-          );
-        }
-      }
-    } catch {}
-
     return () => {
       isMounted = false;
       window.removeEventListener('sms_expense_auto_logged', handleSmsAutoLogged);

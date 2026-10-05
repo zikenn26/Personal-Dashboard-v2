@@ -199,12 +199,31 @@ export const normalizeExpenseDateKey = (value?: string | null): string => {
   const raw = String(value).trim();
   if (!raw) return '';
 
-  // Preserve an existing YYYY-MM-DD date exactly, including ISO timestamps.
-  const dateOnlyMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (dateOnlyMatch) return dateOnlyMatch[1];
+  // 1. Direct YYYY-MM-DD or YYYY/MM/DD match (including ISO timestamps e.g. 2026-10-05T12:00:00Z)
+  const ymdMatch = raw.match(/^(\d{4})[\/\.-](\d{1,2})[\/\.-](\d{1,2})/);
+  if (ymdMatch) {
+    const y = ymdMatch[1];
+    const m = pad2(parseInt(ymdMatch[2], 10));
+    const d = pad2(parseInt(ymdMatch[3], 10));
+    return `${y}-${m}-${d}`;
+  }
 
+  // 2. DD/MM/YYYY or DD-MM-YYYY match (standard in Money Manager and Indian financial statements)
+  const dmyMatch = raw.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})/);
+  if (dmyMatch) {
+    const d = pad2(parseInt(dmyMatch[1], 10));
+    const m = pad2(parseInt(dmyMatch[2], 10));
+    const y = dmyMatch[3];
+    return `${y}-${m}-${d}`;
+  }
+
+  // 3. Fallback to standard Date parse
   const parsed = new Date(raw);
   if (!Number.isNaN(parsed.getTime())) {
+    // If constructed from UTC midnight, avoid negative timezone shift
+    if (raw.includes('T00:00:00') || (raw.endsWith('Z') && parsed.getUTCHours() === 0 && parsed.getUTCMinutes() === 0)) {
+      return `${parsed.getUTCFullYear()}-${pad2(parsed.getUTCMonth() + 1)}-${pad2(parsed.getUTCDate())}`;
+    }
     return getLocalDateKey(parsed);
   }
   return '';

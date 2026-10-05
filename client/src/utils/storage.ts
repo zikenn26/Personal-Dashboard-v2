@@ -1321,13 +1321,19 @@ export const Storage = {
   setExpenses: (items: ExpenseItem[]) => saveToStorage(STORAGE_KEYS.EXPENSES, items),
   addExpense: (expense: ExpenseItem): ExpenseItem[] => {
     const current = Storage.getExpenses();
+    const nowMs = Date.now();
+    const expenseWithTimestamps: ExpenseItem = {
+      ...expense,
+      createdAt: expense.createdAt || nowMs,
+      updatedAt: expense.updatedAt || nowMs,
+    };
     const existingIndex = current.findIndex((e) => e.id === expense.id);
     let updated: ExpenseItem[];
     if (existingIndex >= 0) {
       updated = [...current];
-      updated[existingIndex] = { ...updated[existingIndex], ...expense };
+      updated[existingIndex] = { ...updated[existingIndex], ...expenseWithTimestamps };
     } else {
-      updated = [expense, ...current];
+      updated = [expenseWithTimestamps, ...current];
     }
     Storage.setExpenses(updated);
 
@@ -1401,6 +1407,17 @@ export const Storage = {
     if (!idOrFileName || !idOrFileName.trim()) return false;
     const term = idOrFileName.trim().toLowerCase();
     const base = term.replace(/\.[^/.]+$/, '');
+
+    // Never consider an active sheet deleted!
+    const activeLogs = Storage.getExcelImportLogs();
+    const isActive = activeLogs.some((l) => {
+      if (l.id && l.id.toLowerCase() === term) return true;
+      const logFileLower = (l.fileName || '').trim().toLowerCase();
+      const logBase = logFileLower.replace(/\.[^/.]+$/, '');
+      return logFileLower === term || (base && logBase === base);
+    });
+    if (isActive) return false;
+
     const current = Storage.getDeletedSheetIds();
     return current.some((s) => {
       const lower = s.toLowerCase();
@@ -1990,7 +2007,42 @@ export const Storage = {
 
       if (Array.isArray(data.deletedSheetIds)) {
         const currentDeleted = Storage.getDeletedSheetIds();
-        const mergedDeleted = new Set([...currentDeleted, ...data.deletedSheetIds]);
+        // Collect active log IDs and fileNames from both local and incoming
+        const activeIds = new Set<string>();
+        const activeNames = new Set<string>();
+        Storage.getExcelImportLogs().forEach((l) => {
+          if (l.id) activeIds.add(l.id.toLowerCase());
+          if (l.fileName) {
+            const lower = l.fileName.trim().toLowerCase();
+            activeNames.add(lower);
+            const base = lower.replace(/\.[^/.]+$/, '');
+            if (base) activeNames.add(base);
+          }
+        });
+        if (Array.isArray(data.excelImportLogs)) {
+          data.excelImportLogs.forEach((l: any) => {
+            if (l?.id) activeIds.add(String(l.id).toLowerCase());
+            if (l?.fileName) {
+              const lower = String(l.fileName).trim().toLowerCase();
+              activeNames.add(lower);
+              const base = lower.replace(/\.[^/.]+$/, '');
+              if (base) activeNames.add(base);
+            }
+          });
+        }
+
+        const mergedDeleted = new Set(
+          [...currentDeleted, ...data.deletedSheetIds].filter((idOrName) => {
+            if (!idOrName || typeof idOrName !== 'string') return false;
+            const lower = idOrName.trim().toLowerCase();
+            const base = lower.replace(/\.[^/.]+$/, '');
+            // Do not keep in deleted list if currently active
+            if (activeIds.has(lower) || activeNames.has(lower) || (base && activeNames.has(base))) {
+              return false;
+            }
+            return true;
+          })
+        );
         Storage.setDeletedSheetIds(Array.from(mergedDeleted));
       }
 
@@ -2120,30 +2172,37 @@ export const Storage = {
           }
           return true;
         });
-        const cloudIdSet = new Set(validCloudExpenses.map((e: any) => e.id));
 
-        const nowPrefix = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
-
-        // Preserve ALL non-trashed local expenses that are not already in cloud,
-        // and ALWAYS preserve any local expense belonging to current month or newer
-        const unsyncedLocal = currentLocal.filter((localExp) => {
+        // Filter valid local expenses
+        const validLocalExpenses = currentLocal.filter((localExp) => {
           if (!localExp || !localExp.id) return false;
           if (trashedIds.has(localExp.id)) return false;
           if (Storage.isSheetDeleted(localExp.importBatchId) || Storage.isSheetDeleted(localExp.sourceFile)) {
             return false;
           }
-          // Always keep local expenses that are not in cloud
-          if (!cloudIdSet.has(localExp.id)) return true;
-          // For items in current month, prefer local copy to prevent older cloud snapshots from reverting edits
-          const dateKey = normalizeExpenseDateKey(localExp.date);
-          if (dateKey.startsWith(nowPrefix)) return true;
-          return false;
+          return true;
         });
 
-        // Combine unsynced local (first) and cloud expenses, deduplicating by ID
+        // Combine cloud and local expenses using Last-Write-Wins (LWW) conflict resolution
         const finalMap = new Map<string, ExpenseItem>();
-        validCloudExpenses.forEach((e) => finalMap.set(e.id, e));
-        unsyncedLocal.forEach((e) => finalMap.set(e.id, e)); // Local takes precedence!
+        validCloudExpenses.forEach((cloudExp) => finalMap.set(cloudExp.id, cloudExp));
+
+        validLocalExpenses.forEach((localExp) => {
+          const existingCloud = finalMap.get(localExp.id);
+          if (!existingCloud) {
+            // Unsynced local item (created locally while offline or not yet in cloud) -> preserve!
+            finalMap.set(localExp.id, localExp);
+          } else {
+            // Item exists in both: compare updatedAt timestamps
+            const localUpdated = Number(localExp.updatedAt || localExp.createdAt || 0);
+            const cloudUpdated = Number(existingCloud.updatedAt || existingCloud.createdAt || 0);
+            if (localUpdated > cloudUpdated) {
+              finalMap.set(localExp.id, localExp);
+            } else {
+              finalMap.set(localExp.id, existingCloud);
+            }
+          }
+        });
 
         const mergedExpenses = Array.from(finalMap.values());
         Storage.setExpenses(mergedExpenses);

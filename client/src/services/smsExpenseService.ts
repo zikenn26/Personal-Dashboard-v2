@@ -6,6 +6,7 @@ import { broadcastDataChanged } from './commandMappingService';
 import { nativeService } from './nativeService';
 import { Sound } from '../utils/audio';
 import { parseSmsTransaction } from './smsParser';
+import { normalizeExpenseDateKey } from '../utils/expenseUtils';
 import { scheduleAutoSyncToSupabase, getCustomWorkspaceIdentifier } from '../utils/supabase';
 import { toast } from 'sonner';
 
@@ -572,8 +573,8 @@ class SmsExpenseService {
       // Different amounts to the same payee are NEVER duplicates:
       if (Math.abs(Number(e.amount) - parsed.amount) > 0.01) return false;
 
-      // Must match exact date
-      if (e.date !== parsed.date) return false;
+      // Must match exact date (canonicalized)
+      if (normalizeExpenseDateKey(e.date) !== normalizeExpenseDateKey(parsed.date)) return false;
 
       // If existing expense has a specific reference ID and candidate does not,
       // they cannot be assumed duplicates without identical raw text.
@@ -866,8 +867,9 @@ class SmsExpenseService {
       if (parsed.referenceId) notesParts.push(`Ref: ${parsed.referenceId}`);
       notesParts.push('Auto-logged from SMS');
 
+      const nowMs = Date.now();
       const newExpense: ExpenseItem = {
-        id: `exp-sms-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        id: `exp-sms-${nowMs}-${Math.random().toString(36).substr(2, 5)}`,
         name: parsed.payee || parsed.merchant,
         amount: parsed.amount,
         category: parsed.category,
@@ -889,6 +891,8 @@ class SmsExpenseService {
         merchant: parsed.merchant,
         payee: parsed.payee || parsed.merchant,
         active: true,
+        createdAt: nowMs,
+        updatedAt: nowMs,
       };
 
       // Mutate storage using canonical Storage.addExpense

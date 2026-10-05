@@ -242,11 +242,13 @@ export const getMatchingExpensesForSheet = (
   const baseLogName = normLogName.replace(/\.[^/.]+$/, '');
 
   return allExpenses.filter((e) => {
-    // 1. Direct batch ID match
-    if (log.id && e.importBatchId === log.id) return true;
+    // 1. Direct batch ID match — primary and most accurate
+    if (log.id && e.importBatchId) {
+      return e.importBatchId === log.id;
+    }
 
-    // 2. Source file match (exact, case-insensitive, or extensionless)
-    if (e.sourceFile) {
+    // 2. Source file match (only as fallback for legacy items without importBatchId)
+    if (!e.importBatchId && e.sourceFile) {
       const normSource = e.sourceFile.trim().toLowerCase();
       if (normSource === normLogName) return true;
 

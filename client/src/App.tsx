@@ -556,11 +556,6 @@ export default function App() {
           isRemoteUpdating.current = true;
           Storage.importAllDataPayload(result.data);
 
-          // Check if current month spendings were lost in trash and rescue them
-          const nowStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
-          Storage.rescueTrashedExpensesForMonth(nowStr);
-          Storage.restoreAuthoritativeMonthExpenses(nowStr);
-
           handleHydrateAllFromStorage(false);
           setTimeout(() => {
             isRemoteUpdating.current = false;
@@ -568,14 +563,6 @@ export default function App() {
 
           // Ensure cloud is immediately updated with merged state
           void flushAutoSyncImmediately(Storage.getAllDataPayload());
-        } else if (isMounted) {
-          // If no cloud data or offline, still rescue any accidentally trashed current-month spendings
-          const nowStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
-          const rescued = Storage.rescueTrashedExpensesForMonth(nowStr);
-          const restored = Storage.restoreAuthoritativeMonthExpenses(nowStr);
-          if (rescued > 0 || restored > 0) {
-            handleHydrateAllFromStorage(false);
-          }
         }
       } catch (err) {
         console.warn('Initial cloud sync check:', err);
@@ -1596,12 +1583,15 @@ export default function App() {
     const isCredit = item.direction === 'CREDIT' || item.transactionType === 'CREDIT' || item.transactionType === 'income';
     const direction: 'DEBIT' | 'CREDIT' = isCredit ? 'CREDIT' : 'DEBIT';
     const currentStored = Storage.getExpenses();
+    const nowMs = Date.now();
 
     const newExpense: ExpenseItem = {
       ...item,
-      id: `exp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: (item as any).id || `exp-${nowMs}-${Math.random().toString(36).slice(2, 6)}`,
       direction,
       transactionType: direction,
+      createdAt: nowMs,
+      updatedAt: nowMs,
     };
     const updated = [newExpense, ...currentStored];
     setExpenses(updated);
@@ -1626,14 +1616,17 @@ export default function App() {
     newLog?: ExcelImportLog
   ) => {
     const currentStored = Storage.getExpenses();
+    const nowMs = Date.now();
     const created: ExpenseItem[] = newItems.map((item, idx) => {
       const isCredit = item.direction === 'CREDIT' || item.transactionType === 'CREDIT' || item.transactionType === 'income';
       const direction: 'DEBIT' | 'CREDIT' = isCredit ? 'CREDIT' : 'DEBIT';
       return {
         ...item,
-        id: `exp-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+        id: (item as any).id || `exp-${nowMs}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
         direction,
         transactionType: direction,
+        createdAt: nowMs,
+        updatedAt: nowMs,
       };
     });
     const updated = [...created, ...currentStored];
@@ -1688,7 +1681,8 @@ export default function App() {
   const handleUpdateExpense = (id: string, updated: Partial<ExpenseItem>) => {
     Sound.click(settings.soundEnabled);
     const currentStored = Storage.getExpenses();
-    const next = currentStored.map((e) => (String(e.id) === String(id) ? { ...e, ...updated } : e));
+    const nowMs = Date.now();
+    const next = currentStored.map((e) => (String(e.id) === String(id) ? { ...e, ...updated, updatedAt: nowMs } : e));
     setExpenses(next);
     Storage.setExpenses(next);
 
@@ -1706,7 +1700,8 @@ export default function App() {
 
   const handleToggleExpense = (id: string) => {
     const currentStored = Storage.getExpenses();
-    const updated = currentStored.map((e) => (String(e.id) === String(id) ? { ...e, active: !e.active } : e));
+    const nowMs = Date.now();
+    const updated = currentStored.map((e) => (String(e.id) === String(id) ? { ...e, active: !e.active, updatedAt: nowMs } : e));
     setExpenses(updated);
     Storage.setExpenses(updated);
 
@@ -1733,6 +1728,19 @@ export default function App() {
     try {
       localStorage.setItem(getScopedKey(STORAGE_KEYS.EXPENSES), JSON.stringify(nextStored));
       localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(nextStored));
+    } catch {}
+
+    // Clean up local backups so deleted items cannot be restored by stale local storage caches
+    try {
+      const rawImported = localStorage.getItem('lifeos_last_imported_sheet_expenses');
+      if (rawImported) {
+        const parsed = JSON.parse(rawImported);
+        if (Array.isArray(parsed)) {
+          const filtered = parsed.filter((e) => !deleteIds.has(String(e.id).trim()));
+          localStorage.setItem('lifeos_last_imported_sheet_expenses', JSON.stringify(filtered));
+        }
+      }
+      localStorage.setItem('lifeos_expenses_backup', JSON.stringify(nextStored));
     } catch {}
 
     // 2. Clean up spreadsheet logs if all expenses cleared
@@ -1916,6 +1924,19 @@ export default function App() {
     const updated = currentStored.filter((e) => !idSet.has(String(e.id).trim()));
     setExpenses(updated);
     Storage.setExpenses(updated);
+
+    try {
+      const rawImported = localStorage.getItem('lifeos_last_imported_sheet_expenses');
+      if (rawImported) {
+        const parsed = JSON.parse(rawImported);
+        if (Array.isArray(parsed)) {
+          const filtered = parsed.filter((e) => !idSet.has(String(e.id).trim()));
+          localStorage.setItem('lifeos_last_imported_sheet_expenses', JSON.stringify(filtered));
+        }
+      }
+      localStorage.setItem('lifeos_expenses_backup', JSON.stringify(updated));
+    } catch {}
+
     window.dispatchEvent(
       new CustomEvent('dashboard-data-updated', {
         detail: { module: 'expenses', updatedExpenses: updated },
@@ -1942,6 +1963,8 @@ export default function App() {
     try {
       localStorage.removeItem(STORAGE_KEYS.EXPENSES);
       localStorage.removeItem(STORAGE_KEYS.EXCEL_IMPORT_LOGS);
+      localStorage.removeItem('lifeos_last_imported_sheet_expenses');
+      localStorage.removeItem('lifeos_expenses_backup');
       localStorage.setItem(getScopedKey(STORAGE_KEYS.EXPENSES), '[]');
       localStorage.setItem(getScopedKey(STORAGE_KEYS.EXCEL_IMPORT_LOGS), '[]');
     } catch {}
