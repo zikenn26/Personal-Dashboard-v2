@@ -8,6 +8,7 @@ import {
   FileSpreadsheet,
   Edit3,
   RotateCw,
+  RotateCcw,
   X,
   ChevronDown,
   Download,
@@ -237,12 +238,74 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
 
     window.addEventListener('sms_expense_auto_logged', handleSmsAutoLogged);
     window.addEventListener('dashboard-data-updated', handleDashboardUpdated);
+
+    // Auto-rescue check: if current month has 0 active spendings, check if any were accidentally trashed
+    try {
+      const currentMonthExpenses = Storage.getExpenses().filter((e) =>
+        normalizeExpenseDateKey(e.date).startsWith(currentMonthPrefix)
+      );
+      if (currentMonthExpenses.length === 0) {
+        const rescued = Storage.rescueTrashedExpensesForMonth(currentMonthPrefix);
+        if (rescued > 0) {
+          const fresh = Storage.getExpenses();
+          setLocalExpenses(fresh);
+          toast.success(`Recovered ${rescued} spendings for ${formatMonthLabel(currentMonthPrefix)}!`);
+          window.dispatchEvent(
+            new CustomEvent('dashboard-data-updated', {
+              detail: { module: 'expenses', updatedExpenses: fresh },
+            })
+          );
+        }
+      }
+    } catch {}
+
     return () => {
       isMounted = false;
       window.removeEventListener('sms_expense_auto_logged', handleSmsAutoLogged);
       window.removeEventListener('dashboard-data-updated', handleDashboardUpdated);
     };
   }, [currentMonthPrefix]);
+
+  const trashedExpenses = useMemo(() => {
+    return Storage.getTrash().filter((t) => t.module === 'expenses');
+  }, [localExpenses, expenses]);
+
+  const handleRestoreAllTrashExpenses = () => {
+    void nativeService.triggerHaptic('selection');
+    const trash = Storage.getTrash();
+    const current = Storage.getExpenses();
+    const currentIds = new Set(current.map((e) => e.id));
+
+    const restored: ExpenseItem[] = [];
+    const remainingTrash: any[] = [];
+
+    trash.forEach((t) => {
+      if (t.module === 'expenses' && t.data) {
+        const item = t.data as ExpenseItem;
+        if (!currentIds.has(item.id)) {
+          restored.push({ ...item, active: true });
+          currentIds.add(item.id);
+        }
+      } else {
+        remainingTrash.push(t);
+      }
+    });
+
+    if (restored.length > 0) {
+      const updated = [...restored, ...current];
+      Storage.setExpenses(updated);
+      Storage.setTrash(remainingTrash);
+      setLocalExpenses(updated);
+      toast.success(`Restored ${restored.length} spendings from Trash!`);
+      window.dispatchEvent(
+        new CustomEvent('dashboard-data-updated', {
+          detail: { module: 'expenses', updatedExpenses: updated },
+        })
+      );
+    } else {
+      toast.info('No deleted spendings found in Trash');
+    }
+  };
 
   const activeExpenses = useMemo(() => {
     const source = localExpenses && localExpenses.length >= 0 ? localExpenses : expenses;
@@ -470,11 +533,13 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
     log: ExcelImportLog
   ) => {
     setIsExcelModalOpen(false);
+    Storage.removeDeletedSheet(log.id, log.fileName);
     if (onBatchAddExpenses) {
       onBatchAddExpenses(newExpenses, log);
     } else if (onAddExpense) {
       newExpenses.forEach((item) => onAddExpense(item));
     }
+    setLocalExpenses(Storage.getExpenses());
     toast.success(`Imported ${log.addedCount} spendings from ${log.fileName}!`);
   };
 
@@ -495,9 +560,12 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
     if (!log) return;
     void nativeService.triggerHaptic('warning');
 
+    Storage.addDeletedSheet(log.id, log.fileName);
+
     if (deleteSpendings) {
       const matching = getMatchingExpensesForSheet(log, activeExpenses);
       const matchingIds = matching.map((e) => e.id);
+      setLocalExpenses((prev) => prev.filter((e) => !matchingIds.includes(e.id)));
       if (onDeleteBatchExpenses && matchingIds.length > 0) {
         onDeleteBatchExpenses(matchingIds);
       } else if (matchingIds.length > 0 && onDeleteExpense) {
@@ -799,6 +867,25 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
               </div>
             ))}
           </div>
+        )}
+
+        {/* Trashed Spendings Recovery Banner */}
+        {trashedExpenses.length > 0 && (
+          <section className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-900/60 shadow-2xs">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-amber-900 dark:text-amber-200 min-w-0 pr-2">
+              <RotateCcw className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span className="truncate">
+                {trashedExpenses.length} deleted {trashedExpenses.length === 1 ? 'spending' : 'spendings'} in Trash
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleRestoreAllTrashExpenses}
+              className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-900 dark:text-amber-100 bg-amber-200/70 hover:bg-amber-300/80 dark:bg-amber-900/70 dark:hover:bg-amber-800/80 px-2 py-0.5 rounded-md cursor-pointer active:scale-95 transition-all shrink-0"
+            >
+              <span>Restore</span>
+            </button>
+          </section>
         )}
 
         {/* Space-Efficient KPI Card */}

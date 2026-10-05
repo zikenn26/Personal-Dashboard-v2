@@ -105,10 +105,23 @@ export function parseSmartDate(val: unknown): { date: string; time?: string } | 
 
   // 2. If it's already a JS Date object
   if (val instanceof Date && !isNaN(val.getTime())) {
-    const yStr = val.getFullYear();
-    const mStr = String(val.getMonth() + 1).padStart(2, '0');
-    const dStr = String(val.getDate()).padStart(2, '0');
-    const timeStr = `${String(val.getHours()).padStart(2, '0')}:${String(val.getMinutes()).padStart(2, '0')}`;
+    let yStr: string;
+    let mStr: string;
+    let dStr: string;
+    let timeStr: string | undefined;
+
+    // In SheetJS with cellDates: true, date-only cells are constructed as UTC midnight (00:00:00.000Z).
+    // Using local getMonth()/getDate() in any timezone behind UTC shifts the date to the previous day/month (e.g. Oct 1 -> Sep 30).
+    if (val.getUTCHours() === 0 && val.getUTCMinutes() === 0 && val.getUTCSeconds() === 0) {
+      yStr = String(val.getUTCFullYear());
+      mStr = String(val.getUTCMonth() + 1).padStart(2, '0');
+      dStr = String(val.getUTCDate()).padStart(2, '0');
+    } else {
+      yStr = String(val.getFullYear());
+      mStr = String(val.getMonth() + 1).padStart(2, '0');
+      dStr = String(val.getDate()).padStart(2, '0');
+      timeStr = `${String(val.getHours()).padStart(2, '0')}:${String(val.getMinutes()).padStart(2, '0')}`;
+    }
     return { date: `${yStr}-${mStr}-${dStr}`, time: timeStr };
   }
 
@@ -152,9 +165,18 @@ export function parseSmartDate(val: unknown): { date: string; time?: string } | 
   const parsedTimestamp = Date.parse(str);
   if (!isNaN(parsedTimestamp)) {
     const d = new Date(parsedTimestamp);
-    const yStr = d.getFullYear();
-    const mStr = String(d.getMonth() + 1).padStart(2, '0');
-    const dStr = String(d.getDate()).padStart(2, '0');
+    let yStr: string;
+    let mStr: string;
+    let dStr: string;
+    if (str.includes('T00:00:00') || (str.endsWith('Z') && d.getUTCHours() === 0 && d.getUTCMinutes() === 0)) {
+      yStr = String(d.getUTCFullYear());
+      mStr = String(d.getUTCMonth() + 1).padStart(2, '0');
+      dStr = String(d.getUTCDate()).padStart(2, '0');
+    } else {
+      yStr = String(d.getFullYear());
+      mStr = String(d.getMonth() + 1).padStart(2, '0');
+      dStr = String(d.getDate()).padStart(2, '0');
+    }
     return { date: `${yStr}-${mStr}-${dStr}` };
   }
 

@@ -462,7 +462,7 @@ export const syncWorkspaceToSupabase = async (
   try {
     notifyStatus('syncing');
 
-    const syncTimestampMs = getSyncTimestamp();
+    let syncTimestampMs = getSyncTimestamp();
     latestLocalMutationTimestamp = Math.max(
       latestLocalMutationTimestamp,
       syncTimestampMs
@@ -472,7 +472,7 @@ export const syncWorkspaceToSupabase = async (
       syncTimestampMs
     );
 
-    const now = new Date(syncTimestampMs).toISOString();
+    let now = new Date(syncTimestampMs).toISOString();
 
     // Include a monotonic client-side version in the payload. Receivers use
     // this to reject older Broadcast/Postgres snapshots.
@@ -590,55 +590,35 @@ export const syncWorkspaceToSupabase = async (
       );
 
       if (remoteVersion >= syncTimestampMs) {
-        notifyStatus('synced');
-        return {
-          success: true,
-          message: 'Newer cloud state already exists; local snapshot not overwritten.',
-          timestamp: existing.updated_at,
-        };
+        // Monotonically advance sync clock ahead of remote snapshot to ensure user's local mutation is preserved
+        syncTimestampMs = remoteVersion + 1000;
+        latestLocalMutationTimestamp = syncTimestampMs;
+        try {
+          localStorage.setItem('lifeos_workspace_sync_clock', String(syncTimestampMs));
+        } catch {}
+        now = new Date(syncTimestampMs).toISOString();
+        payloadToSave.updated_at = now;
+        if (payloadToSave.workspace_data?._meta) {
+          payloadToSave.workspace_data._meta.syncVersion = syncTimestampMs;
+          payloadToSave.workspace_data._meta.clientTimestamp = syncTimestampMs;
+        }
       }
 
       const { data: updatedRows, error: updateError } = await client
         .from('user_workspaces')
         .update(payloadToSave)
         .eq('user_identifier', activeId)
-        .lt('updated_at', now)
         .select('updated_at');
 
       if (updateError) {
         console.warn(
-          'Supabase guarded update notice:',
+          'Supabase update notice:',
           updateError.message || updateError
         );
         notifyStatus('error');
         return {
           success: false,
           message: `Cloud sync notice: ${updateError.message}`,
-        };
-      }
-
-      // Zero rows means another device won the race after our read.
-      if (!updatedRows || updatedRows.length === 0) {
-        const { data: winner } = await client
-          .from('user_workspaces')
-          .select('workspace_data, updated_at')
-          .eq('user_identifier', activeId)
-          .maybeSingle();
-
-        const winnerVersion = getPayloadSyncTimestamp(
-          winner?.workspace_data,
-          winner?.updated_at
-        );
-        latestKnownRemoteTimestamp = Math.max(
-          latestKnownRemoteTimestamp,
-          winnerVersion
-        );
-
-        notifyStatus('synced');
-        return {
-          success: true,
-          message: 'Another device wrote a newer state; local snapshot not overwritten.',
-          timestamp: winner?.updated_at,
         };
       }
     }

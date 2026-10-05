@@ -42,6 +42,7 @@ import { STOCK_IMAGES } from '../assets/stockImages';
 import { decryptJson, encryptJson, isEncryptedPayload, EncryptedPayload } from './crypto';
 import { INITIAL_USER_EXAMS } from '../data/defaultExams';
 import { getMondayOfWeek, getWeekId, formatWeekRange } from './habitWeekManager';
+import { normalizeExpenseDateKey } from './expenseUtils';
 
 export const STORAGE_KEYS = {
   TODOS: 'notion_os_v4_todos',
@@ -77,6 +78,7 @@ export const STORAGE_KEYS = {
   SMS_AUTO_TRACKING_ENABLED: 'notion_os_v4_sms_auto_tracking_enabled',
   SMS_PROCESSED_FINGERPRINTS: 'notion_os_v4_sms_processed_fingerprints',
   SMS_TRANSACTION_LOGS: 'notion_os_v4_sms_transaction_logs',
+  DELETED_SHEET_IDS: 'notion_os_v4_deleted_sheet_ids',
   TRASH: 'notion_os_v4_trash',
 };
 
@@ -1351,9 +1353,59 @@ export const Storage = {
   },
   deleteExcelImportLog: (id: string) => {
     const logs = Storage.getExcelImportLogs();
+    const target = logs.find((l) => l.id === id);
+    if (target) {
+      Storage.addDeletedSheet(target.id, target.fileName);
+    } else {
+      Storage.addDeletedSheet(id);
+    }
     const updated = logs.filter((l) => l.id !== id);
     Storage.setExcelImportLogs(updated);
     return updated;
+  },
+
+  getDeletedSheetIds: (): string[] => {
+    const raw = loadFromStorage<string[]>(STORAGE_KEYS.DELETED_SHEET_IDS, []);
+    return Array.isArray(raw) ? raw : [];
+  },
+  setDeletedSheetIds: (ids: string[]) => saveToStorage(STORAGE_KEYS.DELETED_SHEET_IDS, ids),
+  addDeletedSheet: (id: string, fileName?: string) => {
+    const current = Storage.getDeletedSheetIds();
+    const next = new Set(current.map((s) => s.toLowerCase()));
+    if (id && id.trim()) next.add(id.trim().toLowerCase());
+    if (fileName && fileName.trim()) {
+      const lower = fileName.trim().toLowerCase();
+      next.add(lower);
+      const base = lower.replace(/\.[^/.]+$/, '');
+      if (base) next.add(base);
+    }
+    const arr = Array.from(next);
+    Storage.setDeletedSheetIds(arr);
+    return arr;
+  },
+  removeDeletedSheet: (id: string, fileName?: string) => {
+    const current = Storage.getDeletedSheetIds();
+    const toRemove = new Set<string>();
+    if (id && id.trim()) toRemove.add(id.trim().toLowerCase());
+    if (fileName && fileName.trim()) {
+      const lower = fileName.trim().toLowerCase();
+      toRemove.add(lower);
+      const base = lower.replace(/\.[^/.]+$/, '');
+      if (base) toRemove.add(base);
+    }
+    const filtered = current.filter((item) => !toRemove.has(item.toLowerCase()));
+    Storage.setDeletedSheetIds(filtered);
+    return filtered;
+  },
+  isSheetDeleted: (idOrFileName?: string | null): boolean => {
+    if (!idOrFileName || !idOrFileName.trim()) return false;
+    const term = idOrFileName.trim().toLowerCase();
+    const base = term.replace(/\.[^/.]+$/, '');
+    const current = Storage.getDeletedSheetIds();
+    return current.some((s) => {
+      const lower = s.toLowerCase();
+      return lower === term || (base && lower === base);
+    });
   },
 
   getJournal: (): JournalEntry[] => loadFromStorage(STORAGE_KEYS.JOURNAL, INITIAL_JOURNAL),
@@ -1399,6 +1451,125 @@ export const Storage = {
 
   emptyTrash: () => {
     Storage.setTrash([]);
+  },
+
+  /**
+   * Rescues any accidentally trashed expenses for a target month (e.g. "2026-10")
+   * that were lost during sheet deletion or cache overwrites, restoring them to active expenses.
+   */
+  rescueTrashedExpensesForMonth: (monthPrefix: string): number => {
+    try {
+      const trash = Storage.getTrash();
+      const currentExpenses = Storage.getExpenses();
+      const currentIds = new Set(currentExpenses.map((e) => e.id));
+      const seenFp = new Set(
+        currentExpenses.map(
+          (e) => `${normalizeExpenseDateKey(e.date)}_${e.amount}_${(e.name || '').trim().toLowerCase()}`
+        )
+      );
+
+      const rescuedItems: ExpenseItem[] = [];
+      const remainingTrash: TrashItem[] = [];
+
+      for (const t of trash) {
+        if (t.module === 'expenses' && t.data) {
+          const item = t.data as ExpenseItem;
+          const dateKey = normalizeExpenseDateKey(item.date);
+          const fp = `${dateKey}_${item.amount}_${(item.name || '').trim().toLowerCase()}`;
+          if (dateKey.startsWith(monthPrefix)) {
+            if (!currentIds.has(item.id) && !seenFp.has(fp)) {
+              rescuedItems.push({ ...item, active: true });
+              currentIds.add(item.id);
+              seenFp.add(fp);
+              continue; // Restored, remove from trash
+            }
+          }
+        }
+        remainingTrash.push(t);
+      }
+
+      if (rescuedItems.length > 0) {
+        const updated = [...rescuedItems, ...currentExpenses];
+        Storage.setExpenses(updated);
+        Storage.setTrash(remainingTrash);
+        return rescuedItems.length;
+      }
+    } catch (err) {
+      console.warn('Failed to rescue trashed expenses:', err);
+    }
+    return 0;
+  },
+
+  /**
+   * Restores current month expenses from authoritative local backups (lifeos_last_imported_sheet_expenses
+   * or lifeos_expenses_backup) if a cloud hydration or cache wipe removed them.
+   */
+  restoreAuthoritativeMonthExpenses: (monthPrefix: string): number => {
+    try {
+      let restoredCount = 0;
+      const currentExpenses = Storage.getExpenses();
+      const currentIds = new Set(currentExpenses.map((e) => e.id));
+      const seenFp = new Set(
+        currentExpenses.map(
+          (e) => `${normalizeExpenseDateKey(e.date)}_${e.amount}_${(e.name || '').trim().toLowerCase()}`
+        )
+      );
+
+      const toAdd: ExpenseItem[] = [];
+
+      // 1. Check lifeos_last_imported_sheet_expenses backup
+      try {
+        const rawImported = localStorage.getItem('lifeos_last_imported_sheet_expenses');
+        if (rawImported) {
+          const parsed = JSON.parse(rawImported);
+          if (Array.isArray(parsed)) {
+            for (const item of parsed) {
+              if (item && item.id) {
+                const dateKey = normalizeExpenseDateKey(item.date);
+                const fp = `${dateKey}_${item.amount}_${(item.name || '').trim().toLowerCase()}`;
+                if (dateKey.startsWith(monthPrefix) && !currentIds.has(item.id) && !seenFp.has(fp)) {
+                  toAdd.push({ ...item, active: true });
+                  currentIds.add(item.id);
+                  seenFp.add(fp);
+                  restoredCount++;
+                }
+              }
+            }
+          }
+        }
+      } catch {}
+
+      // 2. Check lifeos_expenses_backup
+      try {
+        const rawBackup = localStorage.getItem('lifeos_expenses_backup');
+        if (rawBackup) {
+          const parsed = JSON.parse(rawBackup);
+          if (Array.isArray(parsed)) {
+            for (const item of parsed) {
+              if (item && item.id) {
+                const dateKey = normalizeExpenseDateKey(item.date);
+                const fp = `${dateKey}_${item.amount}_${(item.name || '').trim().toLowerCase()}`;
+                if (dateKey.startsWith(monthPrefix) && !currentIds.has(item.id) && !seenFp.has(fp)) {
+                  toAdd.push({ ...item, active: true });
+                  currentIds.add(item.id);
+                  seenFp.add(fp);
+                  restoredCount++;
+                }
+              }
+            }
+          }
+        }
+      } catch {}
+
+      if (toAdd.length > 0) {
+        const updated = [...toAdd, ...currentExpenses];
+        Storage.setExpenses(updated);
+        return restoredCount;
+      }
+    } catch (err) {
+      console.warn('Failed to restore authoritative month expenses:', err);
+    }
+    return 0;
   },
 
   getDoodles: (): DoodleItem[] => loadFromStorage(STORAGE_KEYS.DOODLES, []),
@@ -1782,6 +1953,7 @@ export const Storage = {
       vaultEncrypted: Storage.getEncryptedVaultBackup(),
       expenses: Storage.getExpenses(),
       excelImportLogs: Storage.getExcelImportLogs(),
+      deletedSheetIds: Storage.getDeletedSheetIds(),
       journal: Storage.getJournal(),
       media: Storage.getMedia(),
       achievements: Storage.getAchievements(),
@@ -1808,13 +1980,19 @@ export const Storage = {
       if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
       const knownKeys = [
         'profile', 'todos', 'habits', 'goals', 'vaultEncrypted', 'vault',
-        'expenses', 'excelImportLogs', 'journal', 'media', 'achievements', 'doodles',
+        'expenses', 'excelImportLogs', 'deletedSheetIds', 'journal', 'media', 'achievements', 'doodles',
         'timeline', 'projects', 'skills', 'settings', 'sections',
         'photos', 'resume', 'quotes', 'exams', 'schedule', 'version', 'activeAlarm', 'alarmSnoozeInterval',
         'commandMappings', 'trash'
       ];
       const hasKnownKey = knownKeys.some((k) => k in data && data[k] !== undefined);
       if (!hasKnownKey) return false;
+
+      if (Array.isArray(data.deletedSheetIds)) {
+        const currentDeleted = Storage.getDeletedSheetIds();
+        const mergedDeleted = new Set([...currentDeleted, ...data.deletedSheetIds]);
+        Storage.setDeletedSheetIds(Array.from(mergedDeleted));
+      }
 
       if (data.profile) {
         const currentProfile = Storage.getProfile();
@@ -1933,33 +2111,59 @@ export const Storage = {
         const trash = Storage.getTrash().filter((t) => t.module === 'expenses');
         const trashedIds = new Set(trash.map((t) => t.data?.id || t.id).filter(Boolean));
 
-        // Authoritative cloud expenses, strictly excluding any trashed/deleted IDs
-        const validCloudExpenses = data.expenses.filter((e: any) => e && e.id && !trashedIds.has(e.id));
-        const cloudIdSet = new Set(validCloudExpenses.map((e: any) => e.id));
-
-        // Preserve recently created local unsynced expenses (last 2 hours) that have not synced yet
-        const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
-        const unsyncedRecentLocal = currentLocal.filter((localExp) => {
-          if (!localExp || !localExp.id || trashedIds.has(localExp.id) || cloudIdSet.has(localExp.id)) {
+        // Authoritative cloud expenses, strictly excluding any trashed IDs OR deleted sheet items
+        const validCloudExpenses = data.expenses.filter((e: any) => {
+          if (!e || !e.id) return false;
+          if (trashedIds.has(e.id)) return false;
+          if (Storage.isSheetDeleted(e.importBatchId) || Storage.isSheetDeleted(e.sourceFile)) {
             return false;
           }
-          // Parse timestamp if present in ID (e.g. exp-172..., exp-sms-172...)
-          const idTimeMatch = localExp.id.match(/^exp(?:-sms)?-(\d+)/);
-          if (idTimeMatch) {
-            const createdTime = parseInt(idTimeMatch[1], 10);
-            if (!isNaN(createdTime)) {
-              return createdTime > twoHoursAgo;
-            }
-          }
-          // Preserve any non-trashed local expense
           return true;
         });
+        const cloudIdSet = new Set(validCloudExpenses.map((e: any) => e.id));
 
-        const mergedExpenses = [...unsyncedRecentLocal, ...validCloudExpenses];
+        const nowPrefix = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+
+        // Preserve ALL non-trashed local expenses that are not already in cloud,
+        // and ALWAYS preserve any local expense belonging to current month or newer
+        const unsyncedLocal = currentLocal.filter((localExp) => {
+          if (!localExp || !localExp.id) return false;
+          if (trashedIds.has(localExp.id)) return false;
+          if (Storage.isSheetDeleted(localExp.importBatchId) || Storage.isSheetDeleted(localExp.sourceFile)) {
+            return false;
+          }
+          // Always keep local expenses that are not in cloud
+          if (!cloudIdSet.has(localExp.id)) return true;
+          // For items in current month, prefer local copy to prevent older cloud snapshots from reverting edits
+          const dateKey = normalizeExpenseDateKey(localExp.date);
+          if (dateKey.startsWith(nowPrefix)) return true;
+          return false;
+        });
+
+        // Combine unsynced local (first) and cloud expenses, deduplicating by ID
+        const finalMap = new Map<string, ExpenseItem>();
+        validCloudExpenses.forEach((e) => finalMap.set(e.id, e));
+        unsyncedLocal.forEach((e) => finalMap.set(e.id, e)); // Local takes precedence!
+
+        const mergedExpenses = Array.from(finalMap.values());
         Storage.setExpenses(mergedExpenses);
       }
       if (Array.isArray(data.excelImportLogs)) {
-        Storage.setExcelImportLogs(data.excelImportLogs);
+        // Merge spreadsheet logs so local sheet uploads are not wiped by older cloud snapshots
+        // and NEVER revive sheets that have been deleted
+        const currentLogs = Storage.getExcelImportLogs();
+        const logMap = new Map<string, ExcelImportLog>();
+        currentLogs.forEach((l) => {
+          if (l && l.id && !Storage.isSheetDeleted(l.id) && !Storage.isSheetDeleted(l.fileName)) {
+            logMap.set(l.id, l);
+          }
+        });
+        data.excelImportLogs.forEach((l: any) => {
+          if (l && l.id && !logMap.has(l.id) && !Storage.isSheetDeleted(l.id) && !Storage.isSheetDeleted(l.fileName)) {
+            logMap.set(l.id, l);
+          }
+        });
+        Storage.setExcelImportLogs(Array.from(logMap.values()));
       }
 
       if (data.journal) Storage.setJournal(data.journal);

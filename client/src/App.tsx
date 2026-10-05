@@ -555,10 +555,27 @@ export default function App() {
         if (result.success && result.data && isMounted) {
           isRemoteUpdating.current = true;
           Storage.importAllDataPayload(result.data);
+
+          // Check if current month spendings were lost in trash and rescue them
+          const nowStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+          Storage.rescueTrashedExpensesForMonth(nowStr);
+          Storage.restoreAuthoritativeMonthExpenses(nowStr);
+
           handleHydrateAllFromStorage(false);
           setTimeout(() => {
             isRemoteUpdating.current = false;
           }, 300);
+
+          // Ensure cloud is immediately updated with merged state
+          void flushAutoSyncImmediately(Storage.getAllDataPayload());
+        } else if (isMounted) {
+          // If no cloud data or offline, still rescue any accidentally trashed current-month spendings
+          const nowStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+          const rescued = Storage.rescueTrashedExpensesForMonth(nowStr);
+          const restored = Storage.restoreAuthoritativeMonthExpenses(nowStr);
+          if (rescued > 0 || restored > 0) {
+            handleHydrateAllFromStorage(false);
+          }
         }
       } catch (err) {
         console.warn('Initial cloud sync check:', err);
@@ -1623,12 +1640,26 @@ export default function App() {
     setExpenses(updated);
     Storage.setExpenses(updated);
 
+    // Save authoritative local backup of imported items
+    try {
+      localStorage.setItem('lifeos_last_imported_sheet_expenses', JSON.stringify(created));
+      localStorage.setItem('lifeos_expenses_backup', JSON.stringify(updated));
+    } catch {}
+
     let updatedLogs = excelImportLogs;
     if (newLog) {
+      Storage.removeDeletedSheet(newLog.id, newLog.fileName);
       updatedLogs = [newLog, ...excelImportLogs.filter((l) => l.id !== newLog.id)];
       setExcelImportLogs(updatedLogs);
       Storage.setExcelImportLogs(updatedLogs);
     }
+
+    // Broadcast change so both mobile screens and desktop components update reactively
+    window.dispatchEvent(
+      new CustomEvent('dashboard-data-updated', {
+        detail: { module: 'expenses', updatedExpenses: updated },
+      })
+    );
 
     // Force an immediate flush to Supabase cloud and WebSocket broadcast so other devices receive spendings instantly
     flushAutoSyncImmediately({
@@ -1639,6 +1670,12 @@ export default function App() {
   };
 
   const handleDeleteImportLog = (logId: string) => {
+    const log = excelImportLogs.find((l) => l.id === logId);
+    if (log) {
+      Storage.addDeletedSheet(log.id, log.fileName);
+    } else {
+      Storage.addDeletedSheet(logId);
+    }
     const updatedLogs = excelImportLogs.filter((l) => l.id !== logId);
     setExcelImportLogs(updatedLogs);
     Storage.setExcelImportLogs(updatedLogs);

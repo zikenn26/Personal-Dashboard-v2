@@ -254,10 +254,6 @@ export const getMatchingExpensesForSheet = (
       if (baseSource && (baseSource === baseLogName || baseSource === normLogName || baseLogName === normSource)) {
         return true;
       }
-
-      if (normLogName && (normSource.includes(normLogName) || normLogName.includes(normSource))) {
-        return true;
-      }
     }
 
     return false;
@@ -383,7 +379,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     // Also check if any expenses in tracker have a sourceFile not in synthLogs
     const fileMap = new Map<string, { count: number; amount: number; batchId?: string }>();
     for (const exp of expenses) {
-      if (exp.sourceFile) {
+      if (exp.sourceFile && !Storage.isSheetDeleted(exp.sourceFile) && !Storage.isSheetDeleted(exp.importBatchId)) {
         const entry = fileMap.get(exp.sourceFile) || { count: 0, amount: 0, batchId: exp.importBatchId };
         entry.count += 1;
         entry.amount += exp.amount;
@@ -392,7 +388,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     }
 
     for (const [fName, data] of fileMap.entries()) {
-      if (!synthLogs.some((l) => l.fileName === fName)) {
+      if (!Storage.isSheetDeleted(fName) && !synthLogs.some((l) => l.fileName === fName)) {
         synthLogs.push({
           id: data.batchId || `sheet_${Date.now()}_${synthLogs.length}`,
           fileName: fName,
@@ -579,7 +575,8 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       }
     }
 
-    // Permanently remove this sheet from import logs
+    // Permanently remove this sheet from import logs and record tombstone
+    Storage.addDeletedSheet(log.id, log.fileName);
     const updatedLogs = importLogs.filter((l) => l.id !== log.id);
     setImportLogs(updatedLogs);
     Storage.setExcelImportLogs(updatedLogs);
