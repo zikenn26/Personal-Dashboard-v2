@@ -529,7 +529,7 @@ export const AndroidPortfolioScreen: React.FC<AndroidPortfolioScreenProps> = ({
   return (
     <div className="w-full max-w-md bg-[#FAF9FD] dark:bg-[#0B0F19] min-h-screen shadow-2xl relative flex flex-col pb-24 border-x border-[#EAE7F4] dark:border-[#1E2638] mx-auto select-none">
       {/* BEGIN: Top Navigation Bar */}
-      <header className="sticky top-0 z-30 bg-[#FAF9FD]/90 dark:bg-[#0B0F19]/90 backdrop-blur-md border-b border-[#EAE7F4]/80 dark:border-[#1E2638] px-4 py-3 flex items-center justify-between no-print">
+      <header className="sticky top-0 z-30 bg-[#FAF9FD]/90 dark:bg-[#0B0F19]/90 backdrop-blur-md border-b border-[#EAE7F4]/80 dark:border-[#1E2638] px-4 pt-[env(safe-area-inset-top,0px)] py-2.5 flex items-center justify-between no-print">
         <div className="flex items-center space-x-3 min-w-0">
           <button
             type="button"

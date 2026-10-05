@@ -419,9 +419,14 @@ export const CurrentWeatherWidget: React.FC<CurrentWeatherWidgetProps> = ({ soun
 
   return (
     <div
-      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] shadow-2xs hover:shadow-xs transition-all select-none relative group bg-gradient-to-r ${bgGradient}`}
+      className={`inline-flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] shadow-2xs hover:shadow-xs transition-all select-none relative group bg-gradient-to-r ${bgGradient}`}
     >
-      {/* Weather Temperature & Condition (No Sun/Moon icon, no wind speed) */}
+      {/* Weather Icon (Sun/Moon/Cloud/Rain etc.) */}
+      <div className={`p-1.5 rounded-lg bg-gray-50 dark:bg-gray-800/80 ${iconColor} shrink-0`}>
+        <WeatherIcon className="w-4 h-4" />
+      </div>
+
+      {/* Weather Temperature & Condition */}
       <div className="flex items-baseline gap-2 min-w-0">
         <button
           type="button"
@@ -438,15 +443,15 @@ export const CurrentWeatherWidget: React.FC<CurrentWeatherWidgetProps> = ({ soun
 
       <span className="text-gray-300 dark:text-gray-600">•</span>
 
-      {/* Location, Rain Prediction & Humidity */}
+      {/* Location, Wind Speed & Humidity */}
       <div className="flex items-center gap-2 text-[11px] text-[#787774] dark:text-[#9CA3AF]">
         <span className="flex items-center gap-1 truncate max-w-[110px] sm:max-w-[140px]" title={weather.cityName}>
           <MapPin className="w-3 h-3 shrink-0 text-violet-500" />
           <span className="truncate">{weather.cityName}</span>
         </span>
-        <span className="inline-flex items-center gap-0.5 text-[10px] text-sky-600 dark:text-sky-400 font-semibold" title={`Rain Prediction: ${weather.rainChance ?? (weather.weatherCode >= 51 ? 75 : 10)}% chance of rain`}>
-          <CloudRain className="w-3 h-3 text-sky-500 fill-sky-400/20" />
-          <span>{weather.rainChance ?? (weather.weatherCode >= 51 ? 75 : 10)}%</span>
+        <span className="hidden sm:inline-flex items-center gap-0.5 text-[10px]" title={`Wind Speed ${weather.windSpeed} km/h`}>
+          <Wind className="w-2.5 h-2.5 text-teal-400" />
+          <span>{weather.windSpeed} km/h</span>
         </span>
         <span className="hidden sm:inline-flex items-center gap-0.5 text-[10px]" title={`Humidity ${weather.humidity}%`}>
           <Droplets className="w-2.5 h-2.5 text-sky-400" />

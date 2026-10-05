@@ -475,15 +475,30 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
   return (
     <div className="space-y-3.5 pb-8">
       {/* ========================================================================= */}
-      {/* 1. COMPACT WEATHER BAR (TOPMOST) */}
+      {/* 1. GREETING & WEATHER BAR (TOPMOST) */}
       {/* ========================================================================= */}
       <div className="space-y-2.5 pb-0">
         <motion.div
           initial={{ opacity: 0, y: -4 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-          className="flex items-center justify-between"
+          className="flex items-center justify-between gap-4 flex-wrap"
         >
+          {/* Greeting: Good morning / afternoon / evening, [User Name]! */}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="text-2xl sm:text-3xl shrink-0" role="img" aria-label="greeting">
+              {greetingEmoji}
+            </span>
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold text-[#37352F] dark:text-white tracking-tight leading-tight truncate">
+                {greeting}, {profile.name ? profile.name.split(' ')[0] : 'there'}!
+              </h1>
+              <p className="text-xs text-[#787774] dark:text-[#9CA3AF] mt-0.5 font-medium">
+                {formattedTimeStr} • {timezoneStr}
+              </p>
+            </div>
+          </div>
+
           <CurrentWeatherWidget soundEnabled={soundEnabled} />
         </motion.div>
 

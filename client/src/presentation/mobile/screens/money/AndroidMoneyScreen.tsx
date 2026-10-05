@@ -565,7 +565,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   return (
     <div className="w-full max-w-md mx-auto min-h-screen flex flex-col bg-slate-50 dark:bg-[#0b111e] text-slate-850 dark:text-slate-100 antialiased pb-24 relative select-none">
       {/* BEGIN: TopStickyHeader */}
-      <header className="sticky top-0 z-30 bg-white/95 dark:bg-[#111827]/95 backdrop-blur-md border-b border-slate-100 dark:border-slate-800 px-3.5 pt-3 pb-2.5">
+      <header className="sticky top-0 z-30 bg-white/95 dark:bg-[#111827]/95 backdrop-blur-md border-b border-slate-100 dark:border-slate-800 px-3.5 pt-[env(safe-area-inset-top,0px)] py-2.5">
         {/* Topmost Row: Back, Breadcrumb Title & Profile Avatar */}
         <div className="flex items-center justify-between gap-2 mb-2">
           <div className="flex items-center gap-2 min-w-0">
