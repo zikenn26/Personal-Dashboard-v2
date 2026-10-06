@@ -43,6 +43,7 @@ import {
   CalendarRange,
   Smartphone,
   Download,
+  Eye,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -70,7 +71,11 @@ import { ExcelImportModal } from './ExcelImportModal';
 import { SmsExpenseModal } from './SmsExpenseModal';
 import { ExpenseDistributionSection } from './ExpenseDistributionSection';
 import { DateRangePicker, type DateRange } from './DateRangePicker';
-import { isCreditTransaction } from '../utils/expenseUtils';
+import {
+  isCreditTransaction,
+  getTransactionDisplayTitle,
+  compareExpensesByDateTimeDesc,
+} from '../utils/expenseUtils';
 import { downloadExpenseExcel, downloadExpenseCSV } from '../utils/expenseExport';
 
 interface ExpenseTrackerProps {
@@ -708,6 +713,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   const [modalSortBy, setModalSortBy] = useState<'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc' | 'name-asc'>('date-desc');
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [editingExpense, setEditingExpense] = useState<ExpenseItem | null>(null);
+  const [inspectingExpense, setInspectingExpense] = useState<ExpenseItem | null>(null);
 
   // Automatically reset pagination to page 1 whenever any filter or search changes
   useEffect(() => {
@@ -927,6 +933,11 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
         return sum + e.amount;
       }, 0);
 
+    // All-time debits total
+    const allTimeDebits = currentExpenses
+      .filter(isDebit)
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
     // Invariant: todayDisplay can ONLY contain debit records whose normalized
     // calendar date equals today's local YYYY-MM-DD key. Yesterday's records
     // therefore cannot leak into the Today card.
@@ -938,6 +949,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       monthDiffPercent,
       weekDisplay: weekTotal,
       todayDisplay: todayTotal,
+      allTimeDisplay: allTimeDebits,
       recurringDisplay: recurringTotal,
       hasRealData: currentExpenses.length > 0,
     };
@@ -1206,14 +1218,36 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       return `${d.getDate()} ${MONTH_ABBR[d.getMonth()]} ${d.getFullYear()}`;
     };
 
-    const dateGroups: { key: string; label: string; items: ExpenseItem[] }[] = [];
+    const dateGroups: {
+      key: string;
+      label: string;
+      items: ExpenseItem[];
+      totalDebits: number;
+      totalCredits: number;
+      netTotal: number;
+    }[] = [];
     visibleSlice.forEach((item) => {
       const dateKey = normalizeExpenseDateKey(item.date) || 'unknown';
+      const isCredit = isCreditTransaction(item);
+      const amt = Number(item.amount) || 0;
       const lastGroup = dateGroups[dateGroups.length - 1];
       if (lastGroup && lastGroup.key === dateKey) {
         lastGroup.items.push(item);
+        if (isCredit) {
+          lastGroup.totalCredits += amt;
+        } else {
+          lastGroup.totalDebits += amt;
+        }
+        lastGroup.netTotal = lastGroup.totalCredits - lastGroup.totalDebits;
       } else {
-        dateGroups.push({ key: dateKey, label: formatGroupDateLabel(dateKey), items: [item] });
+        dateGroups.push({
+          key: dateKey,
+          label: formatGroupDateLabel(dateKey),
+          items: [item],
+          totalDebits: isCredit ? 0 : amt,
+          totalCredits: isCredit ? amt : 0,
+          netTotal: isCredit ? amt : -amt,
+        });
       }
     });
 
@@ -1719,27 +1753,24 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* 2. TOP SUMMARY ROW (4 Compact Cards) */}
+      {/* 2. TOP SUMMARY ROW (4 Metric Cards - Android Parity) */}
       {/* ========================================================================= */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {/* Card 1: SELECTED MONTH */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-xs flex items-start justify-between relative overflow-hidden group hover:border-purple-300 dark:hover:border-purple-800 transition-all">
+        {/* Card 1: TODAY'S SPENDING */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-xs flex items-start justify-between relative overflow-hidden group hover:border-amber-300 dark:hover:border-amber-800 transition-all">
           <div className="space-y-1">
             <span className="text-[11px] font-bold tracking-wider uppercase text-[#787774] dark:text-[#9CA3AF]">
-              {selectedMonthLabel}
+              Today's Spending
             </span>
             <div className="text-lg sm:text-xl font-black text-[#37352F] dark:text-white tracking-tight">
-              {formatCurrency(stats.monthDisplay)}
+              {formatCurrency(stats.todayDisplay)}
             </div>
-            <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 pt-0.5">
-              <ArrowUpRight className="w-3 h-3" />
-              <span>
-                {stats.monthCount} items • {stats.monthDiffPercent >= 0 ? `+${stats.monthDiffPercent}%` : `${stats.monthDiffPercent}%`} vs prev mo
-              </span>
+            <div className="flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400 pt-0.5">
+              <span>Debit only • {getLocalDateKey()}</span>
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 flex items-center justify-center text-lg shrink-0">
-            <Wallet className="w-5 h-5" />
+          <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-300 flex items-center justify-center text-lg shrink-0">
+            <Coins className="w-5 h-5" />
           </div>
         </div>
 
@@ -1753,8 +1784,8 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
               {formatCurrency(stats.weekDisplay)}
             </div>
             <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 pt-0.5">
-              <ArrowUpRight className="w-3 h-3" />
-              <span>8% vs last week</span>
+              <CreditCard className="w-3 h-3" />
+              <span>Current week debits</span>
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-300 flex items-center justify-center text-lg shrink-0">
@@ -1762,36 +1793,38 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
           </div>
         </div>
 
-        {/* Card 3: TODAY */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-xs flex items-start justify-between relative overflow-hidden group hover:border-amber-300 dark:hover:border-amber-800 transition-all">
+        {/* Card 3: SELECTED MONTH */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-xs flex items-start justify-between relative overflow-hidden group hover:border-purple-300 dark:hover:border-purple-800 transition-all">
           <div className="space-y-1">
             <span className="text-[11px] font-bold tracking-wider uppercase text-[#787774] dark:text-[#9CA3AF]">
-              Today
+              {selectedMonthLabel}
             </span>
             <div className="text-lg sm:text-xl font-black text-[#37352F] dark:text-white tracking-tight">
-              {formatCurrency(stats.todayDisplay)}
+              {formatCurrency(stats.monthDisplay)}
             </div>
-            <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 pt-0.5">
+            <div className="flex items-center gap-1 text-[11px] font-semibold text-purple-600 dark:text-purple-400 pt-0.5">
               <ArrowUpRight className="w-3 h-3" />
-              <span>15% vs yesterday</span>
+              <span>
+                {stats.monthCount} items • {stats.monthDiffPercent >= 0 ? `+${stats.monthDiffPercent}%` : `${stats.monthDiffPercent}%`} vs prev mo
+              </span>
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-300 flex items-center justify-center text-lg shrink-0">
-            <Coins className="w-5 h-5" />
+          <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 flex items-center justify-center text-lg shrink-0">
+            <Wallet className="w-5 h-5" />
           </div>
         </div>
 
-        {/* Card 4: RECURRING */}
+        {/* Card 4: ALL-TIME SPENDING */}
         <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-xs flex items-start justify-between relative overflow-hidden group hover:border-blue-300 dark:hover:border-blue-800 transition-all">
           <div className="space-y-1">
             <span className="text-[11px] font-bold tracking-wider uppercase text-[#787774] dark:text-[#9CA3AF]">
-              Recurring
+              All-Time Spending
             </span>
             <div className="text-lg sm:text-xl font-black text-[#37352F] dark:text-white tracking-tight">
-              {formatCurrency(stats.recurringDisplay)}
+              {formatCurrency(stats.allTimeDisplay)}
             </div>
             <div className="text-[11px] font-medium text-[#787774] dark:text-[#9CA3AF] pt-0.5">
-              / month active
+              Recurring: {formatCurrency(stats.recurringDisplay)} / mo
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 flex items-center justify-center text-lg shrink-0">
@@ -1832,7 +1865,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
             {/* Quick Filters Pill Bar */}
             <div className="flex flex-wrap items-center justify-between gap-2 pb-1 pt-1">
               <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-                {(['all', 'today', 'week', 'month'] as const).map((filterKey) => (
+                {(['today', 'week', 'month', 'all'] as const).map((filterKey) => (
                   <button
                     key={filterKey}
                     type="button"
@@ -1843,19 +1876,19 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                         setCustomDateRange({ startDate: '', endDate: '' });
                       }
                     }}
-                    className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer shrink-0 ${
                       activeFilter === filterKey
-                        ? 'bg-purple-600 text-white shadow-2xs'
+                        ? 'bg-purple-600 text-white shadow-xs'
                         : 'bg-white dark:bg-[#1A202C] text-[#787774] dark:text-[#9CA3AF] hover:text-[#37352F] dark:hover:text-white border border-[#E5E7EB] dark:border-[#2D3748]'
                     }`}
                   >
-                    {filterKey === 'all'
-                      ? 'All'
-                      : filterKey === 'today'
+                    {filterKey === 'today'
                       ? 'Today'
                       : filterKey === 'week'
                       ? 'This Week'
-                      : `${MONTH_NAMES[selectedMonthIndex]}`}
+                      : filterKey === 'month'
+                      ? `This Month (${MONTH_NAMES[selectedMonthIndex].substring(0, 3)})`
+                      : 'All Time'}
                   </button>
                 ))}
 
@@ -2086,95 +2119,144 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
               ) : (
                 <>
                   {groupedTransactions.dateGroups.map((group) => (
-                    <div key={group.key} className="space-y-2 pt-1 first:pt-0">
-                      <div className="text-[11px] font-bold uppercase tracking-wider text-[#787774] dark:text-[#9CA3AF]">
-                        {group.label}
+                    <div key={group.key} className="space-y-2 pt-2 first:pt-0">
+                      <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-[#787774] dark:text-[#9CA3AF] pb-1 border-b border-gray-100 dark:border-gray-800">
+                        <div className="flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                          <span>{group.label}</span>
+                        </div>
+                        <div className="flex items-center gap-2 font-mono text-xs">
+                          {group.totalDebits > 0 && (
+                            <span className="text-[#37352F] dark:text-white font-semibold">
+                              Spent: {formatCurrency(group.totalDebits)}
+                            </span>
+                          )}
+                          {group.totalCredits > 0 && (
+                            <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                              +{formatCurrency(group.totalCredits)}
+                            </span>
+                          )}
+                        </div>
                       </div>
+
                       <div className="divide-y divide-gray-100 dark:divide-gray-800">
                         <AnimatePresence mode="popLayout" initial={false}>
                           {group.items.map((tx: any) => {
                             const isCredit = isCreditTransaction(tx);
+                            const displayTitle = getTransactionDisplayTitle(tx);
                             return (
-                            <motion.div
-                              layout
-                              initial={{ opacity: 0, y: 8, scale: 0.98 }}
-                              animate={{ opacity: 1, y: 0, scale: 1 }}
-                              exit={{ opacity: 0, scale: 0.95, y: -4, transition: { duration: 0.15 } }}
-                              transition={{
-                                layout: { type: "spring", stiffness: 350, damping: 30 },
-                                opacity: { duration: 0.2 },
-                              }}
-                              key={tx.id}
-                              className="py-2.5 flex items-center justify-between group hover:bg-gray-50/70 dark:hover:bg-gray-800/40 px-2 rounded-xl transition-colors"
-                            >
-                              <div className="flex items-center gap-3 min-w-0">
-                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0 ${
-                                  isCredit
-                                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-300'
-                                    : 'bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300'
-                                }`}>
-                                  {getCategoryIcon(tx.category, tx.icon)}
+                              <motion.div
+                                layout
+                                initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.95, y: -4, transition: { duration: 0.15 } }}
+                                transition={{
+                                  layout: { type: 'spring', stiffness: 350, damping: 30 },
+                                  opacity: { duration: 0.2 },
+                                }}
+                                key={tx.id}
+                                onClick={() => setInspectingExpense(tx)}
+                                className="py-2.5 flex items-center justify-between group hover:bg-purple-50/40 dark:hover:bg-purple-950/20 px-2 sm:px-3 rounded-2xl transition-all cursor-pointer border border-transparent hover:border-purple-200 dark:hover:border-purple-800/60"
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div
+                                    className={`w-10 h-10 rounded-2xl flex items-center justify-center text-base shrink-0 border ${
+                                      isCredit
+                                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                                        : 'bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 border-purple-200 dark:border-purple-800'
+                                    }`}
+                                  >
+                                    {getCategoryIcon(tx.category, tx.icon)}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <span
+                                        className={`px-1.5 py-0.2 rounded text-[10px] font-black shrink-0 tracking-wider ${
+                                          isCredit
+                                            ? 'bg-emerald-100 dark:bg-emerald-900/80 text-emerald-800 dark:text-emerald-200'
+                                            : 'bg-rose-100 dark:bg-rose-900/80 text-rose-800 dark:text-rose-200'
+                                        }`}
+                                      >
+                                        {isCredit ? 'CREDIT' : 'DEBIT'}
+                                      </span>
+                                      <span className="text-xs sm:text-sm font-extrabold text-[#37352F] dark:text-white truncate">
+                                        {displayTitle}
+                                      </span>
+                                    </div>
+                                    <div className="text-[11px] text-[#787774] dark:text-[#9CA3AF] flex items-center gap-1.5 flex-wrap truncate mt-0.5">
+                                      {tx.time && <span className="font-mono text-gray-500">{tx.time}</span>}
+                                      {(tx.bankOrAccount || tx.bankName) && (
+                                        <>
+                                          <span>•</span>
+                                          <span className="text-gray-700 dark:text-gray-300 font-medium">
+                                            {tx.bankOrAccount || tx.bankName}
+                                          </span>
+                                        </>
+                                      )}
+                                      {tx.paymentMethod && (
+                                        <>
+                                          <span>•</span>
+                                          <span className="px-1.5 py-0.2 rounded bg-gray-100 dark:bg-gray-800 text-[10px] font-semibold text-gray-700 dark:text-gray-300">
+                                            {tx.paymentMethod}
+                                          </span>
+                                        </>
+                                      )}
+                                      {tx.notes && tx.notes !== displayTitle && (
+                                        <>
+                                          <span>•</span>
+                                          <span className="truncate italic text-gray-500">{tx.notes}</span>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
                                 </div>
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5 min-w-0">
-                                    <span
-                                      className={`w-2 h-2 rounded-full shrink-0 ${
-                                        isCredit ? 'bg-emerald-500' : 'bg-rose-500'
+
+                                <div className="flex items-center gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                  <div className="text-right">
+                                    <div
+                                      className={`text-xs sm:text-sm font-black ${
+                                        isCredit
+                                          ? 'text-emerald-600 dark:text-emerald-400'
+                                          : 'text-[#37352F] dark:text-white'
                                       }`}
-                                      title={isCredit ? 'Credit' : 'Debit'}
-                                    />
-                                    <span className="text-xs sm:text-sm font-bold text-[#37352F] dark:text-white truncate">
-                                      {tx.name}
-                                    </span>
+                                    >
+                                      {isCredit ? '+' : '-'}{formatCurrency(tx.amount)}
+                                    </div>
+                                    <div className="text-[10px] text-[#787774] dark:text-[#9CA3AF]">
+                                      {tx.category || 'General'}
+                                    </div>
                                   </div>
-                                  <div className="text-[11px] text-[#787774] dark:text-[#9CA3AF] truncate">
-                                    <span className={isCredit ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-rose-600 dark:text-rose-400 font-medium'}>
-                                      {isCredit ? 'Credit • ' : 'Debit • '}
-                                    </span>
-                                    {tx.notes || tx.category}
+
+                                  <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => setInspectingExpense(tx)}
+                                      className="p-1 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors cursor-pointer"
+                                      title="Inspect Details"
+                                    >
+                                      <Eye className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditModal(tx)}
+                                      className="p-1 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors cursor-pointer"
+                                      title="Edit"
+                                    >
+                                      <Edit2 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenDeleteExpenseModal(tx)}
+                                      className="p-1 text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer"
+                                      title="Delete"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
                                   </div>
                                 </div>
-                              </div>
-
-                              <div className="flex items-center gap-3 shrink-0">
-                                <div className="text-right">
-                                  <div className={`text-xs sm:text-sm font-extrabold ${isCredit ? 'text-emerald-600 dark:text-emerald-400' : 'text-[#37352F] dark:text-white'}`}>
-                                    {isCredit ? '+' : ''}{formatCurrency(tx.amount)}
-                                  </div>
-                                  <div className="text-[10px] text-[#787774] dark:text-[#9CA3AF]">
-                                    {tx.time || '—'}
-                                  </div>
-                                </div>
-
-                                <span
-                                  className={`hidden sm:inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getCategoryBadge(
-                                    tx.category
-                                  )}`}
-                                >
-                                  {tx.category}
-                                </span>
-
-                                <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => openEditModal(tx)}
-                                    className="p-1 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
-                                    title="Edit"
-                                  >
-                                    <Edit2 className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenDeleteExpenseModal(tx)}
-                                    className="p-1 text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer"
-                                    title="Delete"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </div>
-                            </motion.div>
-                          );})}
+                              </motion.div>
+                            );
+                          })}
                         </AnimatePresence>
                       </div>
                     </div>
@@ -3373,6 +3455,190 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                 >
                   Cancel
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Transaction Inspector / Detail Sheet */}
+      {inspectingExpense && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div
+            className="w-full max-w-lg bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="p-6 space-y-5">
+              {/* Header */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shrink-0 border ${
+                      isCreditTransaction(inspectingExpense)
+                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                        : 'bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 border-purple-200 dark:border-purple-800'
+                    }`}
+                  >
+                    {getCategoryIcon(inspectingExpense.category, inspectingExpense.icon)}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-black tracking-wider ${
+                          isCreditTransaction(inspectingExpense)
+                            ? 'bg-emerald-100 dark:bg-emerald-900/80 text-emerald-800 dark:text-emerald-200'
+                            : 'bg-rose-100 dark:bg-rose-900/80 text-rose-800 dark:text-rose-200'
+                        }`}
+                      >
+                        {isCreditTransaction(inspectingExpense) ? 'CREDIT / DEPOSIT' : 'DEBIT / EXPENSE'}
+                      </span>
+                      <span className="text-xs text-gray-500 font-mono">{inspectingExpense.date}</span>
+                    </div>
+                    <h3 className="text-lg font-black text-gray-900 dark:text-white mt-0.5">
+                      {getTransactionDisplayTitle(inspectingExpense)}
+                    </h3>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setInspectingExpense(null)}
+                  className="p-1.5 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Amount Banner */}
+              <div
+                className={`p-4 rounded-2xl border text-center ${
+                  isCreditTransaction(inspectingExpense)
+                    ? 'bg-emerald-50/60 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-gray-50 dark:bg-gray-800/60 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white'
+                }`}
+              >
+                <div className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                  Transaction Amount
+                </div>
+                <div className="text-3xl font-black mt-1">
+                  {isCreditTransaction(inspectingExpense) ? '+' : '-'}₹
+                  {Number(inspectingExpense.amount || 0).toLocaleString('en-IN', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </div>
+              </div>
+
+              {/* Details Key-Value Grid */}
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-3 rounded-xl bg-gray-50 dark:bg-[#111827] border border-gray-100 dark:border-gray-800">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                    Category
+                  </span>
+                  <span className="font-bold text-gray-800 dark:text-gray-200 mt-0.5 block">
+                    {inspectingExpense.category || 'General'}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-gray-50 dark:bg-[#111827] border border-gray-100 dark:border-gray-800">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                    Time
+                  </span>
+                  <span className="font-bold font-mono text-gray-800 dark:text-gray-200 mt-0.5 block">
+                    {inspectingExpense.time || 'Not specified'}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-gray-50 dark:bg-[#111827] border border-gray-100 dark:border-gray-800">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                    Payment Method
+                  </span>
+                  <span className="font-bold text-gray-800 dark:text-gray-200 mt-0.5 block">
+                    {inspectingExpense.paymentMethod || 'UPI / Bank'}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-gray-50 dark:bg-[#111827] border border-gray-100 dark:border-gray-800">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                    Bank / Account
+                  </span>
+                  <span className="font-bold text-gray-800 dark:text-gray-200 mt-0.5 block truncate">
+                    {inspectingExpense.bankOrAccount || inspectingExpense.bankName || 'Direct'}
+                  </span>
+                </div>
+
+                {inspectingExpense.referenceId && (
+                  <div className="col-span-2 p-3 rounded-xl bg-gray-50 dark:bg-[#111827] border border-gray-100 dark:border-gray-800">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                      Reference / UTR ID
+                    </span>
+                    <span className="font-mono font-bold text-purple-600 dark:text-purple-400 mt-0.5 block select-all">
+                      {inspectingExpense.referenceId}
+                    </span>
+                  </div>
+                )}
+
+                {inspectingExpense.notes && (
+                  <div className="col-span-2 p-3 rounded-xl bg-gray-50 dark:bg-[#111827] border border-gray-100 dark:border-gray-800">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                      Notes &amp; Description
+                    </span>
+                    <span className="text-gray-700 dark:text-gray-300 mt-0.5 block leading-relaxed">
+                      {inspectingExpense.notes}
+                    </span>
+                  </div>
+                )}
+
+                {inspectingExpense.rawSmsText && (
+                  <div className="col-span-2 p-3 rounded-xl bg-gray-50 dark:bg-[#111827] border border-gray-100 dark:border-gray-800">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                      Original SMS Text
+                    </span>
+                    <p className="font-mono text-[11px] text-gray-600 dark:text-gray-400 mt-0.5 select-all leading-normal">
+                      {inspectingExpense.rawSmsText}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-between gap-3 pt-2 border-t border-gray-100 dark:border-gray-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const toDelete = inspectingExpense;
+                    setInspectingExpense(null);
+                    handleOpenDeleteExpenseModal(toDelete);
+                  }}
+                  className="px-4 py-2 rounded-xl text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const toEdit = inspectingExpense;
+                      setInspectingExpense(null);
+                      openEditModal(toEdit);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 hover:bg-purple-100 border border-purple-200 dark:border-purple-800 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                    <span>Edit Transaction</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setInspectingExpense(null)}
+                    className="px-4 py-2 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             </div>
           </div>

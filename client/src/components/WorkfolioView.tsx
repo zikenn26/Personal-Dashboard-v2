@@ -10,6 +10,7 @@ import {
 } from '../types';
 import { ResumeView, ResumeFormatStyle } from './ResumeView';
 import { WebPortfolioView } from './WebPortfolioView';
+import { ExecutiveDossierView } from './ExecutiveDossierView';
 import { EditProfileModal } from './EditProfileModal';
 import { ResumePreviewModal } from './ResumePreviewModal';
 import { PrintableResumePreviewModal } from './PrintableResumePreviewModal';
@@ -45,7 +46,7 @@ interface WorkfolioViewProps {
   soundEnabled: boolean;
 }
 
-export type PortfolioTab = 'resume' | 'portfolio';
+export type PortfolioTab = 'dossier' | 'portfolio' | 'resume';
 
 export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
   profile,
@@ -61,8 +62,8 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
   onNavigate,
   soundEnabled,
 }) => {
-  // Navigation tab state: 'resume' or 'portfolio'
-  const [activeTab, setActiveTab] = useState<PortfolioTab>('portfolio');
+  // Navigation tab state: 'dossier' (Android parity CV), 'portfolio' (interactive), or 'resume' (printable sheet)
+  const [activeTab, setActiveTab] = useState<PortfolioTab>('dossier');
 
   // Resume visible sections state for toggles
   const [visibleSections, setVisibleSections] = useState<Record<string, boolean>>({
@@ -312,20 +313,20 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
 
         {/* Center: Clean Toggle Tab & Italic Note */}
         <div className="flex items-center gap-3">
-          <div className="bg-[#EBE7DF] p-1 rounded-full flex items-center shadow-inner">
+          <div className="bg-[#EBE7DF] dark:bg-[#1E293B] p-1 rounded-full flex items-center shadow-inner">
             <button
               type="button"
               onClick={() => {
                 Sound.click(soundEnabled);
-                setActiveTab('resume');
+                setActiveTab('dossier');
               }}
-              className={`px-5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
-                activeTab === 'resume'
-                  ? 'bg-[#18181B] text-white shadow-sm'
-                  : 'text-gray-600 hover:text-gray-950'
+              className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'dossier'
+                  ? 'bg-[#18181B] dark:bg-[#7C3AED] text-white shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-950 dark:hover:text-white'
               }`}
             >
-              Resume
+              Curriculum Vitae
             </button>
 
             <button
@@ -334,31 +335,44 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
                 Sound.click(soundEnabled);
                 setActiveTab('portfolio');
               }}
-              className={`px-5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+              className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === 'portfolio'
-                  ? 'bg-[#18181B] text-white shadow-sm'
-                  : 'text-gray-600 hover:text-gray-950'
+                  ? 'bg-[#18181B] dark:bg-[#7C3AED] text-white shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-950 dark:hover:text-white'
               }`}
             >
               Web Portfolio
             </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                Sound.click(soundEnabled);
+                setActiveTab('resume');
+              }}
+              className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'resume'
+                  ? 'bg-[#18181B] dark:bg-[#7C3AED] text-white shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-950 dark:hover:text-white'
+              }`}
+            >
+              Printable Sheet
+            </button>
           </div>
 
           {/* Script note next to toggle */}
-          {activeTab === 'resume' && (
-            <span className="font-serif italic text-xs text-gray-400 select-none hidden sm:inline-block -rotate-6 transform">
-              Same story. Different views.
-            </span>
-          )}
+          <span className="font-serif italic text-xs text-gray-400 select-none hidden lg:inline-block -rotate-6 transform">
+            Same story. Different views.
+          </span>
         </div>
 
         {/* Right: Actions */}
         <div className="flex items-center gap-3 w-full md:w-auto justify-end">
-          {activeTab === 'resume' ? (
+          {activeTab === 'dossier' || activeTab === 'resume' ? (
             <>
               <div className="text-right hidden sm:block">
                 <p className="text-[10px] text-gray-400 font-medium">Last updated</p>
-                <p className="text-xs text-gray-700 font-semibold">17 Sep 2026, 01:24 PM</p>
+                <p className="text-xs text-gray-700 dark:text-gray-300 font-semibold">17 Sep 2026, 01:24 PM</p>
               </div>
 
               <button
@@ -401,7 +415,22 @@ export const WorkfolioView: React.FC<WorkfolioViewProps> = ({
 
       {/* 2. MAIN ACTIVE VIEW CONTENT */}
       <main className="max-w-7xl mx-auto">
-        {activeTab === 'resume' ? (
+        {activeTab === 'dossier' ? (
+          /* EXECUTIVE DOSSIER VIEW (Android Parity CV) */
+          <ExecutiveDossierView
+            profile={profile}
+            projects={projects}
+            skills={skills}
+            resume={resume}
+            onUpdateProfile={onUpdateProfile}
+            onUpdateProjects={onUpdateProjects}
+            onUpdateSkills={onUpdateSkills}
+            onUpdateResume={onUpdateResume}
+            onAddProject={onAddProject}
+            onDeleteProject={onDeleteProject}
+            soundEnabled={soundEnabled}
+          />
+        ) : activeTab === 'resume' ? (
           /* RESUME VIEW: 2-COLUMN LAYOUT (Document Sheet + Resume Controls) */
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
             {/* Left: Printable Resume Sheet (Span 8) */}
