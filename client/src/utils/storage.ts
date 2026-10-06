@@ -42,7 +42,7 @@ import { STOCK_IMAGES } from '../assets/stockImages';
 import { decryptJson, encryptJson, isEncryptedPayload, EncryptedPayload } from './crypto';
 import { INITIAL_USER_EXAMS } from '../data/defaultExams';
 import { getMondayOfWeek, getWeekId, formatWeekRange } from './habitWeekManager';
-import { normalizeExpenseDateKey } from './expenseUtils';
+import { normalizeExpenseDateKey, getLocalDateKey } from './expenseUtils';
 
 export const STORAGE_KEYS = {
   TODOS: 'notion_os_v4_todos',
@@ -1317,17 +1317,88 @@ export const Storage = {
     }
   },
 
-  getExpenses: (): ExpenseItem[] => loadFromStorage(STORAGE_KEYS.EXPENSES, INITIAL_EXPENSES),
-  setExpenses: (items: ExpenseItem[]) => saveToStorage(STORAGE_KEYS.EXPENSES, items),
+  getExpenses: (): ExpenseItem[] => {
+    const raw = loadFromStorage<ExpenseItem[]>(STORAGE_KEYS.EXPENSES, INITIAL_EXPENSES);
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((e) => e && typeof e === 'object' && e.id);
+  },
+  setExpenses: (items: ExpenseItem[]): ExpenseItem[] => {
+    if (!Array.isArray(items)) {
+      items = [];
+    }
+    const nowMs = Date.now();
+    const seenIds = new Set<string>();
+    const sanitized: ExpenseItem[] = [];
+
+    for (const raw of items) {
+      if (!raw || typeof raw !== 'object') continue;
+      const id = String(raw.id || `exp-${nowMs}-${Math.random().toString(36).slice(2, 7)}`).trim();
+      if (!id || seenIds.has(id)) continue;
+      seenIds.add(id);
+
+      const isCredit =
+        raw.direction === 'CREDIT' ||
+        raw.transactionType === 'CREDIT' ||
+        raw.transactionType === 'income' ||
+        (raw as any).type === 'income' ||
+        (raw as any).type === 'CREDIT' ||
+        (raw as any).type === 'credit';
+      const direction: 'DEBIT' | 'CREDIT' = isCredit ? 'CREDIT' : 'DEBIT';
+
+      const rawAmount = Number(raw.amount);
+      const safeAmount = Number.isFinite(rawAmount) ? Math.round(Math.abs(rawAmount) * 100) / 100 : 0;
+
+      const dateStr = normalizeExpenseDateKey(raw.date) || getLocalDateKey();
+
+      sanitized.push({
+        ...raw,
+        id,
+        amount: safeAmount,
+        name: (raw.name || 'Expense').trim() || 'Expense',
+        category: (raw.category || 'Other').trim() || 'Other',
+        date: dateStr,
+        direction,
+        transactionType: direction,
+        active: raw.active !== false,
+        createdAt: raw.createdAt || nowMs,
+        updatedAt: raw.updatedAt || nowMs,
+      });
+    }
+
+    saveToStorage(STORAGE_KEYS.EXPENSES, sanitized);
+    try {
+      localStorage.setItem('lifeos_expenses_backup', JSON.stringify(sanitized));
+    } catch {}
+    return sanitized;
+  },
   addExpense: (expense: ExpenseItem): ExpenseItem[] => {
     const current = Storage.getExpenses();
     const nowMs = Date.now();
+    const isCredit =
+      expense.direction === 'CREDIT' ||
+      expense.transactionType === 'CREDIT' ||
+      expense.transactionType === 'income' ||
+      (expense as any).type === 'income' ||
+      (expense as any).type === 'CREDIT' ||
+      (expense as any).type === 'credit';
+    const direction: 'DEBIT' | 'CREDIT' = isCredit ? 'CREDIT' : 'DEBIT';
+    const rawAmount = Number(expense.amount);
+    const safeAmount = Number.isFinite(rawAmount) ? Math.round(Math.abs(rawAmount) * 100) / 100 : 0;
+
     const expenseWithTimestamps: ExpenseItem = {
       ...expense,
+      id: String(expense.id || `exp-${nowMs}-${Math.random().toString(36).slice(2, 7)}`).trim(),
+      amount: safeAmount,
+      name: (expense.name || 'Expense').trim() || 'Expense',
+      category: (expense.category || 'Other').trim() || 'Other',
+      date: normalizeExpenseDateKey(expense.date) || getLocalDateKey(),
+      direction,
+      transactionType: direction,
+      active: expense.active !== false,
       createdAt: expense.createdAt || nowMs,
       updatedAt: expense.updatedAt || nowMs,
     };
-    const existingIndex = current.findIndex((e) => e.id === expense.id);
+    const existingIndex = current.findIndex((e) => e.id === expenseWithTimestamps.id);
     let updated: ExpenseItem[];
     if (existingIndex >= 0) {
       updated = [...current];
@@ -1339,11 +1410,44 @@ export const Storage = {
 
     // Immediate persistence verification
     const verified = Storage.getExpenses();
-    const isSaved = verified.some((e) => e.id === expense.id);
+    const isSaved = verified.some((e) => e.id === expenseWithTimestamps.id);
     if (!isSaved) {
-      console.error('[STORAGE_ERROR] Storage.addExpense: Expense failed to verify in storage after write!', expense);
+      console.error('[STORAGE_ERROR] Storage.addExpense: Expense failed to verify in storage after write!', expenseWithTimestamps);
     }
     return updated;
+  },
+  deleteExpense: (id: string): ExpenseItem[] => {
+    const current = Storage.getExpenses();
+    const target = current.find((e) => e.id === id);
+    if (target) {
+      Storage.moveToTrash('expenses', target, `${target.name} (₹${Number(target.amount).toLocaleString()})`);
+    }
+    const updated = current.filter((e) => e.id !== id);
+    Storage.setExpenses(updated);
+    return updated;
+  },
+  deleteExpenses: (ids: string[]): ExpenseItem[] => {
+    const idSet = new Set(ids.map((id) => String(id).trim()));
+    const current = Storage.getExpenses();
+    const toDelete = current.filter((e) => idSet.has(String(e.id).trim()));
+    toDelete.forEach((target) => {
+      Storage.moveToTrash('expenses', target, `${target.name} (₹${Number(target.amount).toLocaleString()})`);
+    });
+    const updated = current.filter((e) => !idSet.has(String(e.id).trim()));
+    Storage.setExpenses(updated);
+    return updated;
+  },
+  clearAllExpenses: (): void => {
+    const current = Storage.getExpenses();
+    current.forEach((target) => {
+      Storage.moveToTrash('expenses', target, `${target.name} (₹${Number(target.amount).toLocaleString()})`);
+    });
+    Storage.setExpenses([]);
+    Storage.setExcelImportLogs([]);
+    try {
+      localStorage.removeItem('lifeos_last_imported_sheet_expenses');
+      localStorage.removeItem('lifeos_expenses_backup');
+    } catch {}
   },
 
   getExcelImportLogs: (): ExcelImportLog[] => {
@@ -2066,23 +2170,24 @@ export const Storage = {
         const currentLocalHabits = Storage.getHabits();
         const trash = Storage.getTrash().filter((t) => t.module === 'habits');
         const trashedIds = new Set(trash.map((t) => t.data?.id || t.id).filter(Boolean));
+        const remoteMeta = data._meta || {};
+        const remoteTimestamp = Number(remoteMeta.syncVersion || remoteMeta.clientTimestamp || 0);
 
         if (data.habits.length === 0 && currentLocalHabits.length > 0) {
           // Keep existing local habits when incoming cloud payload has an empty array
         } else {
           const habitMap = new Map<string, HabitItem>();
-          
-          // 1. Add current local habits (excluding trashed)
+          const localMap = new Map<string, HabitItem>();
           currentLocalHabits.forEach((h) => {
             if (h && h.id && !trashedIds.has(h.id)) {
-              habitMap.set(h.id, h);
+              localMap.set(h.id, h);
             }
           });
 
-          // 2. Merge cloud habits
+          // 1. Cloud habits are authoritative
           data.habits.forEach((cloudH: any) => {
             if (cloudH && cloudH.id && !trashedIds.has(cloudH.id)) {
-              const localH = habitMap.get(cloudH.id);
+              const localH = localMap.get(cloudH.id);
               if (localH) {
                 const mergedCompletedDays = [0, 1, 2, 3, 4, 5, 6].map((i) => {
                   return Boolean(localH.completedDays?.[i] || cloudH.completedDays?.[i]);
@@ -2100,6 +2205,16 @@ export const Storage = {
                 });
               } else {
                 habitMap.set(cloudH.id, cloudH);
+              }
+            }
+          });
+
+          // 2. Preserve local habits when remote timestamp is absent or locally created after remote snapshot
+          localMap.forEach((localH, id) => {
+            if (!habitMap.has(id)) {
+              const localCreated = Number((localH as any).createdAt || 0);
+              if (remoteTimestamp === 0 || localCreated > remoteTimestamp) {
+                habitMap.set(id, localH);
               }
             }
           });
@@ -2161,51 +2276,75 @@ export const Storage = {
       if (Array.isArray(data.expenses)) {
         const currentLocal = Storage.getExpenses();
         const trash = Storage.getTrash().filter((t) => t.module === 'expenses');
-        const trashedIds = new Set(trash.map((t) => t.data?.id || t.id).filter(Boolean));
+        const trashedIds = new Set(
+          trash
+            .map((t) => (t.data?.id ? String(t.data.id).trim() : String(t.id).trim()))
+            .filter(Boolean)
+        );
 
-        // Authoritative cloud expenses, strictly excluding any trashed IDs OR deleted sheet items
-        const validCloudExpenses = data.expenses.filter((e: any) => {
-          if (!e || !e.id) return false;
-          if (trashedIds.has(e.id)) return false;
-          if (Storage.isSheetDeleted(e.importBatchId) || Storage.isSheetDeleted(e.sourceFile)) {
-            return false;
-          }
-          return true;
-        });
+        const remoteMeta = data._meta || {};
+        const remoteTimestamp = Number(remoteMeta.syncVersion || remoteMeta.clientTimestamp || 0);
+        const isRemoteClearAll = Boolean(remoteMeta.clearedAllExpenses);
 
-        // Filter valid local expenses
-        const validLocalExpenses = currentLocal.filter((localExp) => {
-          if (!localExp || !localExp.id) return false;
-          if (trashedIds.has(localExp.id)) return false;
-          if (Storage.isSheetDeleted(localExp.importBatchId) || Storage.isSheetDeleted(localExp.sourceFile)) {
-            return false;
-          }
-          return true;
-        });
-
-        // Combine cloud and local expenses using Last-Write-Wins (LWW) conflict resolution
-        const finalMap = new Map<string, ExpenseItem>();
-        validCloudExpenses.forEach((cloudExp) => finalMap.set(cloudExp.id, cloudExp));
-
-        validLocalExpenses.forEach((localExp) => {
-          const existingCloud = finalMap.get(localExp.id);
-          if (!existingCloud) {
-            // Unsynced local item (created locally while offline or not yet in cloud) -> preserve!
-            finalMap.set(localExp.id, localExp);
-          } else {
-            // Item exists in both: compare updatedAt timestamps
-            const localUpdated = Number(localExp.updatedAt || localExp.createdAt || 0);
-            const cloudUpdated = Number(existingCloud.updatedAt || existingCloud.createdAt || 0);
-            if (localUpdated > cloudUpdated) {
-              finalMap.set(localExp.id, localExp);
-            } else {
-              finalMap.set(localExp.id, existingCloud);
+        if (isRemoteClearAll) {
+          // Authoritative remote clear-all: only preserve items created locally AFTER clear-all
+          const preservedLocal = currentLocal.filter((localExp) => {
+            if (!localExp || !localExp.id) return false;
+            if (trashedIds.has(String(localExp.id).trim())) return false;
+            const localCreated = Number(localExp.createdAt || 0);
+            return localCreated > remoteTimestamp;
+          });
+          Storage.setExpenses(preservedLocal);
+        } else {
+          // Authoritative cloud expenses, strictly excluding any trashed IDs OR deleted sheet items
+          const validCloudExpenses = data.expenses.filter((e: any) => {
+            if (!e || !e.id) return false;
+            if (trashedIds.has(String(e.id).trim())) return false;
+            if (Storage.isSheetDeleted(e.importBatchId) || Storage.isSheetDeleted(e.sourceFile)) {
+              return false;
             }
-          }
-        });
+            return true;
+          });
 
-        const mergedExpenses = Array.from(finalMap.values());
-        Storage.setExpenses(mergedExpenses);
+          // Filter valid local expenses:
+          // Local expenses are never discarded merely by sheet tombstone if actively retained by the user!
+          const validLocalExpenses = currentLocal.filter((localExp) => {
+            if (!localExp || !localExp.id) return false;
+            if (trashedIds.has(String(localExp.id).trim())) return false;
+            return true;
+          });
+
+          // Combine cloud and local expenses using Last-Write-Wins (LWW) conflict resolution
+          const finalMap = new Map<string, ExpenseItem>();
+          validCloudExpenses.forEach((cloudExp) => finalMap.set(String(cloudExp.id).trim(), cloudExp));
+
+          validLocalExpenses.forEach((localExp) => {
+            const expId = String(localExp.id).trim();
+            const existingCloud = finalMap.get(expId);
+            if (!existingCloud) {
+              // Item is present locally but absent in incoming cloud snapshot:
+              // If remote snapshot has a timestamp and local item was created/updated BEFORE that timestamp,
+              // it means the item was deleted on remote! Do NOT resurrect it unless created locally while offline.
+              const localUpdated = Number(localExp.updatedAt || localExp.createdAt || 0);
+              const wasCreatedOfflineAfterRemote = remoteTimestamp > 0 ? localUpdated > remoteTimestamp : true;
+              if (wasCreatedOfflineAfterRemote) {
+                finalMap.set(expId, localExp);
+              }
+            } else {
+              // Item exists in both: compare updatedAt timestamps
+              const localUpdated = Number(localExp.updatedAt || localExp.createdAt || 0);
+              const cloudUpdated = Number(existingCloud.updatedAt || existingCloud.createdAt || 0);
+              if (localUpdated > cloudUpdated) {
+                finalMap.set(expId, localExp);
+              } else {
+                finalMap.set(expId, existingCloud);
+              }
+            }
+          });
+
+          const mergedExpenses = Array.from(finalMap.values());
+          Storage.setExpenses(mergedExpenses);
+        }
       }
       if (Array.isArray(data.excelImportLogs)) {
         // Merge spreadsheet logs so local sheet uploads are not wiped by older cloud snapshots

@@ -1903,6 +1903,9 @@ export async function executeSecretaryTool(
         }
 
         const deleteIds = new Set(toDelete.map((e) => e.id));
+        toDelete.forEach((item) => {
+          Storage.moveToTrash('expenses', item, `${item.name} (₹${Number(item.amount).toLocaleString()})`);
+        });
         const updated = current.filter((e) => !deleteIds.has(e.id));
         Storage.setExpenses(updated);
         clearPendingCommandDecision();
@@ -1988,6 +1991,7 @@ export async function executeSecretaryTool(
           amount: args.newAmount ? Number(args.newAmount) : args.amount ? Number(args.amount) : existing.amount,
           category: args.newCategory || args.category || existing.category,
           date: args.newDate || args.date || existing.date,
+          updatedAt: Date.now(),
         };
 
         const updatedList = [...current];
@@ -2002,7 +2006,11 @@ export async function executeSecretaryTool(
       }
 
       case 'clear_all_expenses': {
-        const count = Storage.getExpenses().length;
+        const current = Storage.getExpenses();
+        const count = current.length;
+        current.forEach((item) => {
+          Storage.moveToTrash('expenses', item, `${item.name} (₹${Number(item.amount).toLocaleString()})`);
+        });
         Storage.setExpenses([]);
         Storage.setExcelImportLogs([]);
         notifyDataChanged('expenses');

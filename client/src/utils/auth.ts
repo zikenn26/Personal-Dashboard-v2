@@ -165,6 +165,44 @@ const syncCloudAccountRecord = async (
   }
 };
 
+/**
+ * Helper to check whether an account or username is already registered in Supabase Cloud or locally.
+ */
+export const isAccountAlreadyRegistered = async (identifier: string): Promise<boolean> => {
+  const clean = identifier.trim().toLowerCase();
+  if (!clean) return false;
+  const cleanId = clean.replace(/[^a-z0-9]/g, '_');
+
+  // gknayak / gknayak@gmail.com is permanently reserved as the primary dashboard account
+  if (
+    clean === 'gknayak@gmail.com' ||
+    clean === 'gknayak' ||
+    cleanId === 'gknayak_gmail_com' ||
+    cleanId === 'gknayak'
+  ) {
+    return true;
+  }
+
+  const client = getSupabaseClient();
+  if (client && isSupabaseConfigured()) {
+    try {
+      const emailVariant = clean.includes('@') ? clean : `${cleanId}@workspace.local`;
+      const { data: cloudRow } = await client
+        .from('user_workspaces')
+        .select('id')
+        .or(`user_identifier.eq.account_auth_${cleanId},user_identifier.eq.user_${cleanId},user_email.eq.${clean},user_email.eq.${emailVariant}`)
+        .maybeSingle();
+
+      if (cloudRow) return true;
+    } catch {
+      // ignore
+    }
+  }
+
+  const localMap = getLocalCredentialsMap();
+  return Boolean(localMap[clean] || localMap[cleanId]);
+};
+
 export const Auth = {
   /**
    * Get currently logged-in user from LocalStorage
@@ -249,15 +287,16 @@ export const Auth = {
   },
 
   /**
-   * Sign In with Email & Password
+   * Sign In with Username or Email & Password
    * Strict password verification across devices via Supabase Cloud and local cache
    */
   signIn: async (
-    email: string,
+    emailOrUsername: string,
     pass: string
   ): Promise<{ success: boolean; user?: AuthUser; message?: string }> => {
-    const cleanEmail = email.trim().toLowerCase();
-    const throttle = checkLoginThrottle(cleanEmail);
+    const raw = emailOrUsername.trim().toLowerCase();
+    const cleanId = raw.replace(/[^a-z0-9]/g, '_');
+    const throttle = checkLoginThrottle(raw);
     if (!throttle.allowed) {
       return {
         success: false,
@@ -266,69 +305,72 @@ export const Auth = {
     }
     const cleanPass = pass.trim();
 
-    if (!cleanEmail) {
-      return { success: false, message: 'Please enter your email address.' };
+    if (!raw) {
+      return { success: false, message: 'Please enter your username or email address.' };
     }
     if (!cleanPass) {
       return { success: false, message: 'Please enter your password.' };
     }
 
     // 0. Primary Account Fast Path & Offline Guarantee:
-    // Ensures Gulshan Kumar Nayak (gknayak@gmail.com) can always sign in smoothly
+    // Ensures Gulshan Kumar Nayak (gknayak@gmail.com / gknayak) can always sign in smoothly
     // on a fresh Android APK install or offline environment without getting blocked.
     if (
-      cleanEmail === 'gknayak@gmail.com' &&
-      (cleanPass === 'Gulshan@12345!' || pass === 'Gulshan@12345!')
+      raw === 'gknayak@gmail.com' ||
+      raw === 'gknayak' ||
+      cleanId === 'gknayak_gmail_com' ||
+      cleanId === 'gknayak'
     ) {
-      const gknUser: AuthUser = {
-        ...DEFAULT_GKN_USER,
-        lastLoginAt: Date.now(),
-      };
-      await saveLocalCredential(cleanEmail, cleanPass, gknUser);
-      Auth.setCurrentUser(gknUser);
-      recordLoginSuccess(cleanEmail);
-      return { success: true, user: gknUser, message: 'Signed in successfully!' };
-    }
+      let isGknValid = false;
+      if (cleanPass === 'Gulshan@12345!' || pass === 'Gulshan@12345!') {
+        isGknValid = true;
+      } else {
+        isGknValid = await verifyPasswordHash(DEFAULT_GKN_PASS_HASH, cleanPass);
+      }
 
-    // 1. If Supabase is configured, try Supabase Auth
-    const client = getSupabaseClient();
-    if (client && isSupabaseConfigured()) {
-      try {
-        const { data, error } = await client.auth.signInWithPassword({
-          email: cleanEmail,
-          password: cleanPass,
-        });
+      const client = getSupabaseClient();
+      if (!isGknValid && client && isSupabaseConfigured()) {
+        try {
+          const { data: cloudRow } = await client
+            .from('user_workspaces')
+            .select('workspace_data')
+            .eq('user_identifier', 'account_auth_gknayak_gmail_com')
+            .maybeSingle();
 
-        if (!error && data.user) {
-          const user: AuthUser = {
-            id: data.user.id,
-            email: data.user.email || cleanEmail,
-            name: data.user.user_metadata?.name || cleanEmail.split('@')[0],
-            avatarUrl: data.user.user_metadata?.avatar_url,
-            createdAt: new Date(data.user.created_at).getTime(),
-            lastLoginAt: Date.now(),
-            provider: 'supabase',
-          };
-          await saveLocalCredential(cleanEmail, cleanPass, user);
-          Auth.setCurrentUser(user);
-          recordLoginSuccess(cleanEmail);
-          return { success: true, user, message: 'Signed in via Supabase Cloud' };
+          if (cloudRow?.workspace_data?.account?.passHash) {
+            isGknValid = await verifyPasswordHash(cloudRow.workspace_data.account.passHash, cleanPass);
+          }
+        } catch {
+          // ignore
         }
-        // If Supabase rejects the credentials (e.g. unconfirmed email, project settings),
-        // fall through to check the cloud database account store and local-device account store.
-      } catch (err: any) {
-        console.warn('Supabase Auth attempt:', err);
+      }
+
+      if (isGknValid) {
+        const gknUser: AuthUser = {
+          ...DEFAULT_GKN_USER,
+          lastLoginAt: Date.now(),
+        };
+        await saveLocalCredential('gknayak@gmail.com', cleanPass, gknUser);
+        Auth.setCurrentUser(gknUser);
+        setCustomWorkspaceIdentifier('user_gknayak_gmail_com');
+        setCustomWorkspaceEmail('gknayak@gmail.com');
+        recordLoginSuccess('gknayak@gmail.com');
+        return { success: true, user: gknUser, message: 'Signed in successfully as Gulshan Kumar Nayak!' };
+      } else {
+        recordLoginFailure(raw);
+        return { success: false, message: 'Invalid password for username gknayak@gmail.com.' };
       }
     }
 
-    // 2. Cloud-database Account check (verifies accounts persisted in user_workspaces table across web & android APK)
+    // 1. Cloud-database Account check across web & android APK
+    const client = getSupabaseClient();
     if (client && isSupabaseConfigured()) {
       try {
-        const cloudAccountKey = `account_auth_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
+        const emailVariant = raw.includes('@') ? raw : `${cleanId}@workspace.local`;
         const { data: cloudRow, error: cloudErr } = await client
           .from('user_workspaces')
-          .select('workspace_data')
-          .eq('user_identifier', cloudAccountKey)
+          .select('workspace_data, user_email, user_identifier')
+          .or(`user_identifier.eq.account_auth_${cleanId},user_email.eq.${raw},user_email.eq.${emailVariant}`)
           .maybeSingle();
 
         if (!cloudErr && cloudRow?.workspace_data?.account) {
@@ -338,9 +380,9 @@ export const Auth = {
             const valid = await verifyPasswordHash(passHash, cleanPass);
             if (valid) {
               const cloudUser: AuthUser = {
-                id: cloudAccount.user?.id || `usr_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`,
-                email: cloudAccount.user?.email || cleanEmail,
-                name: cloudAccount.user?.name || cleanEmail.split('@')[0],
+                id: cloudAccount.user?.id || `usr_${cleanId}`,
+                email: cloudRow.user_email || emailVariant,
+                name: cloudAccount.user?.name || raw.split('@')[0],
                 avatarUrl: cloudAccount.user?.avatarUrl,
                 createdAt: cloudAccount.user?.createdAt || Date.now(),
                 lastLoginAt: Date.now(),
@@ -348,38 +390,15 @@ export const Auth = {
               };
 
               // Cache credentials locally so subsequent offline/instant logins succeed
-              await saveLocalCredential(cleanEmail, cleanPass, cloudUser);
-
-              // Upgrade hash to Version 2 PBKDF2 in the cloud if it was Version 1
-              try {
-                const parsed = typeof passHash === 'string' ? JSON.parse(passHash) : passHash;
-                if (parsed?.version !== 2) {
-                  const upgradedHash = await hashPassword(cleanPass);
-                  await client
-                    .from('user_workspaces')
-                    .update({
-                      workspace_data: {
-                        ...cloudRow.workspace_data,
-                        account: {
-                          ...cloudAccount,
-                          user: cloudUser,
-                          passHash: upgradedHash,
-                          updatedAt: Date.now(),
-                        },
-                      },
-                      updated_at: new Date().toISOString(),
-                    })
-                    .eq('user_identifier', cloudAccountKey);
-                }
-              } catch (upgradeErr) {
-                // Non-fatal
-              }
+              await saveLocalCredential(cloudUser.email, cleanPass, cloudUser);
 
               Auth.setCurrentUser(cloudUser);
-              recordLoginSuccess(cleanEmail);
+              setCustomWorkspaceIdentifier(`user_${cleanId}`);
+              setCustomWorkspaceEmail(cloudUser.email);
+              recordLoginSuccess(raw);
               return { success: true, user: cloudUser, message: 'Signed in successfully via Cloud Account' };
             } else {
-              recordLoginFailure(cleanEmail);
+              recordLoginFailure(raw);
               return { success: false, message: 'Invalid email or password.' };
             }
           }
@@ -389,29 +408,31 @@ export const Auth = {
       }
     }
 
-    // 3. Local-device account fallback (covers accounts never registered in Supabase Auth or offline)
+    // 2. Local-device account fallback (covers accounts in offline environment, test runners, or local storage)
     const credentialsMap = getLocalCredentialsMap();
-    const storedRecord = credentialsMap[cleanEmail];
+    const storedRecord = credentialsMap[raw] || credentialsMap[cleanId];
 
     if (storedRecord) {
       const valid = await verifyPasswordHash(storedRecord.pass, cleanPass);
       if (valid) {
         let user = { ...storedRecord.user, lastLoginAt: Date.now() };
         if (user.id.includes('mock')) {
-          user.id = `usr_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
+          user.id = `usr_${cleanId}`;
         }
-        await saveLocalCredential(cleanEmail, cleanPass, user);
+        await saveLocalCredential(user.email, cleanPass, user);
         Auth.setCurrentUser(user);
-        recordLoginSuccess(cleanEmail);
+        setCustomWorkspaceIdentifier(getUserWorkspaceKey(user));
+        setCustomWorkspaceEmail(user.email);
+        recordLoginSuccess(raw);
         return { success: true, user, message: 'Signed in successfully' };
       } else {
-        recordLoginFailure(cleanEmail);
+        recordLoginFailure(raw);
         return { success: false, message: 'Invalid email or password.' };
       }
     }
 
-    // 4. Account not registered anywhere
-    recordLoginFailure(cleanEmail);
+    // 3. Account not registered anywhere
+    recordLoginFailure(raw);
     return {
       success: false,
       message: 'Invalid email or password.',
@@ -474,88 +495,148 @@ export const Auth = {
   },
 
   /**
-   * Sign Up / Create a new personalized account
+   * Sign Up / Create a new personalized account with a unique username or email
    */
   signUp: async (
-    email: string,
+    usernameOrEmail: string,
     pass: string,
     name?: string
   ): Promise<{ success: boolean; user?: AuthUser; message?: string }> => {
-    const cleanEmail = email.trim().toLowerCase();
+    const raw = usernameOrEmail.trim().toLowerCase();
     const cleanPass = pass.trim();
 
-    if (!cleanEmail || !cleanEmail.includes('@')) {
-      return { success: false, message: 'Please enter a valid email address.' };
+    if (!raw || raw.length < 3) {
+      return { success: false, message: 'Username or email must be at least 3 characters long.' };
     }
-    if (!cleanPass || cleanPass.length < 8) {
-      return { success: false, message: 'Password must be at least 8 characters.' };
+    if (cleanPass.length < 8) {
+      return { success: false, message: 'Password must be at least 8 characters long.' };
     }
 
+    const cleanId = raw.replace(/[^a-z0-9]/g, '_');
+
+    // Strict duplicate protection: ensure no user can take gknayak or existing username
+    if (
+      raw === 'gknayak' ||
+      raw === 'gknayak@gmail.com' ||
+      cleanId === 'gknayak' ||
+      cleanId === 'gknayak_gmail_com'
+    ) {
+      return {
+        success: false,
+        message: 'The username "gknayak" is already registered and in use. Please choose a different unique username.',
+      };
+    }
+
+    const alreadyRegistered = await isAccountAlreadyRegistered(raw);
+    if (alreadyRegistered) {
+      return {
+        success: false,
+        message: `The username or email "${usernameOrEmail.trim()}" is already in use. Please choose a different username or sign in.`,
+      };
+    }
+
+    const cleanEmail = raw.includes('@') ? raw : `${cleanId}@workspace.local`;
     const displayName =
       name?.trim() ||
-      cleanEmail
+      raw
         .split('@')[0]
         .replace(/[\._]/g, ' ')
         .replace(/\b\w/g, (c) => c.toUpperCase());
 
-    // 1. Attempt Supabase Sign Up if available
     const client = getSupabaseClient();
+    const nowMs = Date.now();
+    const nowIso = new Date().toISOString();
+    const passHash = await hashPassword(cleanPass);
+
+    const user: AuthUser = {
+      id: `usr_${cleanId}_${nowMs}`,
+      email: cleanEmail,
+      name: displayName,
+      createdAt: nowMs,
+      lastLoginAt: nowMs,
+      provider: 'supabase',
+    };
+
+    // 1. Persist isolated user account & workspace to Supabase Cloud
     if (client && isSupabaseConfigured()) {
       try {
-        const { data, error } = await client.auth.signUp({
-          email: cleanEmail,
-          password: cleanPass,
-          options: {
-            data: {
-              name: displayName,
+        // A. Create account_auth credentials record
+        await client.from('user_workspaces').upsert(
+          {
+            user_identifier: `account_auth_${cleanId}`,
+            user_email: cleanEmail,
+            workspace_data: {
+              account: {
+                user,
+                passHash,
+                createdAt: nowMs,
+                updatedAt: nowMs,
+              },
             },
+            updated_at: nowIso,
           },
-        });
+          { onConflict: 'user_identifier' }
+        );
 
-        if (!error && data.user) {
-          const user: AuthUser = {
-            id: data.user.id,
-            email: data.user.email || cleanEmail,
-            name: displayName,
-            createdAt: Date.now(),
-            lastLoginAt: Date.now(),
-            provider: 'supabase',
-          };
-          await saveLocalCredential(cleanEmail, cleanPass, user);
-          await syncCloudAccountRecord(client, cleanEmail, cleanPass, user);
-          Auth.setCurrentUser(user);
-          return { success: true, user, message: 'Account created successfully in Supabase Cloud!' };
-        }
-        if (error) {
-          // Only hard-fail when the account genuinely already exists in Supabase; for any other
-          // failure (email confirmation required, send-rate-limited, offline, etc.) fall through
-          // to the local-device account below so temp/offline accounts keep working.
-          const alreadyExists = /already registered|already exists/i.test(error.message || '');
-          if (alreadyExists) {
-            return { success: false, message: error.message };
-          }
-          console.warn('Supabase sign up rejected, falling back to local account:', error.message);
-        }
-      } catch (err) {
-        console.warn('Supabase sign up error:', err);
+        // B. Create isolated private workspace partition
+        await client.from('user_workspaces').upsert(
+          {
+            user_identifier: `user_${cleanId}`,
+            user_email: cleanEmail,
+            workspace_data: {
+              profile: {
+                name: displayName,
+                contactEmail: cleanEmail,
+              },
+              todos: [],
+              habits: [],
+              habitHistory: [],
+              habitActivities: [],
+              goals: [],
+              expenses: [],
+              journal: [],
+              _meta: {
+                clientTimestamp: nowMs,
+                syncVersion: nowMs,
+              },
+            },
+            updated_at: nowIso,
+          },
+          { onConflict: 'user_identifier' }
+        );
+
+        // C. Create initial devices partition
+        await client.from('user_workspaces').upsert(
+          {
+            user_identifier: `account_devices_${cleanId}`,
+            user_email: cleanEmail,
+            workspace_data: {
+              devices: [],
+              updatedAt: nowMs,
+            },
+            updated_at: nowIso,
+          },
+          { onConflict: 'user_identifier' }
+        );
+      } catch (err: any) {
+        console.warn('Supabase sign up creation notice:', err?.message || err);
       }
     }
 
-    // 2. Local-device account fallback (used when Supabase is unset, or unavailable/unconfirmed)
-    const user: AuthUser = {
-      id: `usr_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`,
-      email: cleanEmail,
-      name: displayName,
-      createdAt: Date.now(),
-      lastLoginAt: Date.now(),
-      provider: 'local',
-    };
+    // 2. Cache credentials locally and set active session
     await saveLocalCredential(cleanEmail, cleanPass, user);
-    if (client && isSupabaseConfigured()) {
-      await syncCloudAccountRecord(client, cleanEmail, cleanPass, user);
+    if (!raw.includes('@')) {
+      await saveLocalCredential(raw, cleanPass, user);
     }
     Auth.setCurrentUser(user);
-    return { success: true, user, message: 'Account created successfully!' };
+    setCustomWorkspaceIdentifier(`user_${cleanId}`);
+    setCustomWorkspaceEmail(cleanEmail);
+
+    return {
+      success: true,
+      user,
+      message: `Account created successfully! Welcome to your private workspace, ${displayName}.`,
+    };
   },
 
   /**
@@ -754,5 +835,49 @@ export const Auth = {
       }
     }
     Auth.setCurrentUser(null);
+  },
+
+  /**
+   * Automatically verify active session against Supabase Cloud:
+   * If current session belongs to an account that was deleted or doesn't exist in Supabase, log it out automatically.
+   */
+  verifyCurrentSession: async (): Promise<boolean> => {
+    const user = Auth.getCurrentUser();
+    if (!user) return true;
+    const cleanEmail = user.email.trim().toLowerCase();
+    const cleanId = cleanEmail.replace(/[^a-z0-9]/g, '_');
+
+    // gknayak@gmail.com is the authoritative permanent primary dashboard owner
+    if (
+      cleanEmail === 'gknayak@gmail.com' ||
+      cleanId === 'gknayak_gmail_com' ||
+      user.id === DEFAULT_GKN_USER.id
+    ) {
+      setCustomWorkspaceIdentifier('user_gknayak_gmail_com');
+      setCustomWorkspaceEmail('gknayak@gmail.com');
+      return true;
+    }
+
+    // For any OTHER account: verify it still exists in Supabase Cloud
+    const client = getSupabaseClient();
+    if (client && isSupabaseConfigured()) {
+      try {
+        const emailVariant = cleanEmail.includes('@') ? cleanEmail : `${cleanId}@workspace.local`;
+        const { data: cloudRow } = await client
+          .from('user_workspaces')
+          .select('id')
+          .or(`user_identifier.eq.account_auth_${cleanId},user_identifier.eq.user_${cleanId},user_email.eq.${cleanEmail},user_email.eq.${emailVariant}`)
+          .maybeSingle();
+
+        if (!cloudRow) {
+          console.warn(`[AUTH] Account ${cleanEmail} was deleted or does not exist in Supabase Cloud. Logging out automatically.`);
+          await Auth.signOut();
+          return false;
+        }
+      } catch (e) {
+        // network error, retain session
+      }
+    }
+    return true;
   },
 };

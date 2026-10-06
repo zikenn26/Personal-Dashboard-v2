@@ -790,7 +790,12 @@ export const subscribeToRealtimeWorkspace = (
         (res: any) => {
           try {
             const payload = res?.payload;
-            if (payload && payload.targetDeviceId === DEVICE_SESSION_ID) {
+            if (
+              payload &&
+              (payload.targetDeviceId === DEVICE_SESSION_ID ||
+                payload.targetDeviceId === '*' ||
+                payload.forceAllDevices === true)
+            ) {
               if (onDeviceRevoked) {
                 onDeviceRevoked();
               }
@@ -932,19 +937,10 @@ export const fetchWorkspaceFromSupabase = async (): Promise<CloudSyncResult> => 
       latestKnownRemoteTimestamp,
       remoteVersion
     );
-
-    // Never hydrate a local device with an older cloud snapshot after that
-    // device has already made a newer local mutation.
-    if (
-      remoteVersion > 0 &&
-      remoteVersion < latestLocalMutationTimestamp
-    ) {
-      return {
-        success: false,
-        message: 'Cloud snapshot is older than the latest local mutation; preserving local state.',
-        timestamp: data.updated_at,
-      };
-    }
+    latestLocalMutationTimestamp = Math.max(
+      latestLocalMutationTimestamp,
+      remoteVersion
+    );
 
     return {
       success: true,

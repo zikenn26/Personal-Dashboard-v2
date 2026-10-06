@@ -548,6 +548,13 @@ export default function App() {
       }
     }, 1500);
 
+    // Verify active session validity against Supabase Cloud on mount
+    void Auth.verifyCurrentSession().then((isValid) => {
+      if (!isValid && isMounted && currentUser) {
+        handleSignOut();
+      }
+    });
+
     // Fetch initial snapshot from cloud for current user session
     const autoSyncFromCloud = async () => {
       try {
@@ -580,6 +587,16 @@ export default function App() {
       registerCurrentDevice(currentUser.email);
     }
 
+    // Periodic check to auto-logout deleted or revoked sessions
+    const sessionPollInterval = setInterval(async () => {
+      if (isMounted && currentUser) {
+        const isValid = await Auth.verifyCurrentSession();
+        if (!isValid) {
+          handleSignOut();
+        }
+      }
+    }, 25000);
+
     // 2. Realtime WebSocket channel for instant cross-device updates (<30ms delivery, no lag, no refresh)
     const unsubRealtime = subscribeToRealtimeWorkspace(
       (remoteData) => {
@@ -603,10 +620,16 @@ export default function App() {
     );
 
     // On window focus / visibility change for background wakeups:
-    // 1. Process any pending background SMS messages received while app was inactive
-    // 2. Fetch authoritative state from Supabase Cloud (never overwrite newer cloud data with stale local data)
+    // 1. Verify session validity against Supabase Cloud
+    // 2. Process any pending background SMS messages received while app was inactive
+    // 3. Fetch authoritative state from Supabase Cloud (never overwrite newer cloud data with stale local data)
     const handleFocus = async () => {
       if (document.visibilityState === 'visible') {
+        const isValid = await Auth.verifyCurrentSession();
+        if (!isValid) {
+          handleSignOut();
+          return;
+        }
         try {
           if (smsExpenseService.isAutoTrackingEnabled()) {
             await smsExpenseService.syncPendingBackgroundMessages();
@@ -623,6 +646,7 @@ export default function App() {
     return () => {
       isMounted = false;
       clearTimeout(readyTimer);
+      clearInterval(sessionPollInterval);
       unsubRealtime();
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleFocus);
@@ -1663,12 +1687,6 @@ export default function App() {
   };
 
   const handleDeleteImportLog = (logId: string) => {
-    const log = excelImportLogs.find((l) => l.id === logId);
-    if (log) {
-      Storage.addDeletedSheet(log.id, log.fileName);
-    } else {
-      Storage.addDeletedSheet(logId);
-    }
     const updatedLogs = excelImportLogs.filter((l) => l.id !== logId);
     setExcelImportLogs(updatedLogs);
     Storage.setExcelImportLogs(updatedLogs);
@@ -1977,6 +1995,10 @@ export default function App() {
       ...Storage.getAllDataPayload(),
       expenses: [],
       excelImportLogs: [],
+      _meta: {
+        clearedAllExpenses: true,
+        clearedAt: Date.now(),
+      },
     });
   };
 
@@ -2203,16 +2225,33 @@ export default function App() {
         break;
       }
       case 'expenses': {
-        const updated = [item.data, ...expenses.filter((e) => e.id !== item.data.id)];
+        const restoredData: ExpenseItem = {
+          ...item.data,
+          active: true,
+          updatedAt: Date.now(),
+        };
+        // If attached to a deleted sheet, disassociate so it can never be suppressed
+        if (Storage.isSheetDeleted(restoredData.importBatchId) || Storage.isSheetDeleted(restoredData.sourceFile)) {
+          restoredData.importBatchId = undefined;
+          restoredData.sourceFile = undefined;
+        }
+        const updated = [restoredData, ...expenses.filter((e) => e.id !== item.data.id)];
         setExpenses(updated);
         Storage.setExpenses(updated);
+        Storage.removeFromTrash(trashId);
+        const nextTrash = Storage.getTrash();
+        setTrash(nextTrash);
         window.dispatchEvent(
           new CustomEvent('dashboard-data-updated', {
             detail: { module: 'expenses', updatedExpenses: updated },
           })
         );
-        flushAutoSyncImmediately({ ...Storage.getAllDataPayload(), expenses: updated });
-        break;
+        flushAutoSyncImmediately({
+          ...Storage.getAllDataPayload(),
+          expenses: updated,
+          trash: nextTrash,
+        });
+        return;
       }
       case 'media': {
         const updated = [item.data, ...media.filter((m) => m.id !== item.data.id)];

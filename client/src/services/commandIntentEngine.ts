@@ -1757,6 +1757,9 @@ export async function executeCommandDecision(
           }
 
           if (toRemove.length > 0) {
+            toRemove.forEach((item) => {
+              Storage.moveToTrash('expenses', item, `${item.name} (₹${Number(item.amount).toLocaleString()})`);
+            });
             const removeIds = new Set(toRemove.map((e) => e.id));
             const updated = current.filter((e) => !removeIds.has(e.id));
             Storage.setExpenses(updated);
@@ -1788,6 +1791,9 @@ export async function executeCommandDecision(
         case 'clear_all_expenses': {
           const current = Storage.getExpenses();
           const count = current.length;
+          current.forEach((item) => {
+            Storage.moveToTrash('expenses', item, `${item.name} (₹${Number(item.amount).toLocaleString()})`);
+          });
           Storage.setExpenses([]);
           broadcastDataChanged('expenses');
           executedActions.push(action);

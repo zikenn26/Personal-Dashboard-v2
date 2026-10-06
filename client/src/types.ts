@@ -22,6 +22,7 @@ export interface HabitItem {
   completedDays: boolean[]; // 7 days (Mon-Sun)
   streak: number;
   color: string;
+  createdAt?: number;
 }
 
 export interface HabitActivityLog {

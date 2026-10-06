@@ -313,6 +313,7 @@ export class MoneyAdapter implements ModuleAdapter {
         if (targetExpense) {
           const oldAmount = targetExpense.amount;
           targetExpense.amount = newAmount;
+          targetExpense.updatedAt = Date.now();
           Storage.setExpenses(expenses);
           broadcastDataChanged('expenses');
 

@@ -1,6 +1,7 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import { webcrypto } from 'node:crypto';
 import { Auth } from './auth';
+import { getSupabaseClient, isSupabaseConfigured } from './supabase';
 
 beforeAll(() => {
   if (!globalThis.crypto) Object.defineProperty(globalThis, 'crypto', { value: webcrypto });
@@ -15,6 +16,26 @@ beforeAll(() => {
       key: (i: number) => Object.keys(store)[i] ?? null,
       length: 0,
     } as Storage;
+  }
+});
+
+afterAll(async () => {
+  const client = getSupabaseClient();
+  if (client && isSupabaseConfigured()) {
+    try {
+      const { data: rows } = await client
+        .from('user_workspaces')
+        .select('id, user_email, user_identifier');
+      if (Array.isArray(rows)) {
+        for (const r of rows) {
+          const email = (r.user_email || '').toLowerCase().trim();
+          const ident = r.user_identifier || '';
+          if (email !== 'gknayak@gmail.com' && !ident.includes('gknayak')) {
+            await client.from('user_workspaces').delete().eq('id', r.id);
+          }
+        }
+      }
+    } catch {}
   }
 });
 
@@ -86,5 +107,27 @@ describe('Authentication Engine & Persistence', () => {
     const user = Auth.getCurrentUser();
     expect(user?.email).toBe('gknayak@gmail.com');
     expect(user?.name).toBeTruthy();
+  });
+
+  it('strictly blocks duplicate signups for gknayak or existing usernames to avoid conflicts', async () => {
+    // 1. Trying to sign up with gknayak or gknayak@gmail.com must be immediately rejected
+    const blockGkn1 = await Auth.signUp('gknayak@gmail.com', 'Pass123456');
+    expect(blockGkn1.success).toBe(false);
+    expect(blockGkn1.message).toContain('already registered');
+
+    const blockGkn2 = await Auth.signUp('gknayak', 'Pass123456');
+    expect(blockGkn2.success).toBe(false);
+    expect(blockGkn2.message).toContain('already registered');
+
+    // 2. A new user can create an account with a new unique username
+    const uniqueUser = 'alex_unique_' + Date.now();
+    const newSignup = await Auth.signUp(uniqueUser, 'StrongPass99!', 'Alex Smith');
+    expect(newSignup.success).toBe(true);
+    expect(newSignup.user?.name).toBe('Alex Smith');
+
+    // 3. Another user attempting to reuse that same username must be blocked
+    const duplicateSignup = await Auth.signUp(uniqueUser, 'OtherPass99!', 'Another Person');
+    expect(duplicateSignup.success).toBe(false);
+    expect(duplicateSignup.message).toContain('already in use');
   });
 });

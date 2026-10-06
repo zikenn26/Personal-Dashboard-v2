@@ -575,10 +575,22 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       } else if (matchingIds.length > 0) {
         matchingIds.forEach((id) => onDeleteExpense(id));
       }
+
+      // Record tombstone only when spendings are actually deleted
+      Storage.addDeletedSheet(log.id, log.fileName);
+    } else {
+      // User explicitly chooses: Keep spendings in money tracker!
+      // Disassociate retained spendings from the deleted sheet so they become permanent, standalone transactions
+      const matching = getMatchingExpensesForSheet(log, expenses);
+      if (matching.length > 0) {
+        matching.forEach((e) => {
+          onUpdateExpense(e.id, { importBatchId: undefined, sourceFile: undefined });
+        });
+      }
+      Storage.removeDeletedSheet(log.id, log.fileName);
     }
 
-    // Permanently remove this sheet from import logs and record tombstone
-    Storage.addDeletedSheet(log.id, log.fileName);
+    // Permanently remove this sheet from import logs
     const updatedLogs = importLogs.filter((l) => l.id !== log.id);
     setImportLogs(updatedLogs);
     Storage.setExcelImportLogs(updatedLogs);

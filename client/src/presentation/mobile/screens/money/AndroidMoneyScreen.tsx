@@ -502,8 +502,6 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
     if (!log) return;
     void nativeService.triggerHaptic('warning');
 
-    Storage.addDeletedSheet(log.id, log.fileName);
-
     if (deleteSpendings) {
       const matching = getMatchingExpensesForSheet(log, activeExpenses);
       const matchingIds = matching.map((e) => e.id);
@@ -513,6 +511,16 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
       } else if (matchingIds.length > 0 && onDeleteExpense) {
         matchingIds.forEach((id) => onDeleteExpense(id));
       }
+      Storage.addDeletedSheet(log.id, log.fileName);
+    } else {
+      // Disassociate retained spendings from the deleted sheet so they remain permanent independent records
+      const matching = getMatchingExpensesForSheet(log, activeExpenses);
+      if (matching.length > 0 && onUpdateExpense) {
+        matching.forEach((e) => {
+          onUpdateExpense(e.id, { importBatchId: undefined, sourceFile: undefined });
+        });
+      }
+      Storage.removeDeletedSheet(log.id, log.fileName);
     }
 
     if (onDeleteImportLog) {
@@ -520,7 +528,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
     }
 
     setDeleteSheetModal({ isOpen: false, log: null, matchingCount: 0, matchingAmount: 0 });
-    toast.success(`Deleted sheet "${log.fileName}"`);
+    toast.success(deleteSpendings ? `Deleted sheet "${log.fileName}" and removed transactions` : `Removed "${log.fileName}" from upload history (spendings kept)`);
   };
 
   const handleConfirmClearAll = () => {
