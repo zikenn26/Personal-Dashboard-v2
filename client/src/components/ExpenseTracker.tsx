@@ -93,6 +93,8 @@ interface ExpenseTrackerProps {
   onDeleteBatchExpenses?: (ids: string[]) => void;
   onDeleteImportLog?: (logId: string) => void;
   onClearAllExpenses?: () => void;
+  onNavigate?: (view: any, filter?: string) => void;
+  onOpenZikennPopup?: () => void;
   soundEnabled: boolean;
 }
 
@@ -282,6 +284,8 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   onDeleteBatchExpenses,
   onDeleteImportLog,
   onClearAllExpenses,
+  onNavigate,
+  onOpenZikennPopup,
   soundEnabled,
 }) => {
   // Navigation & Filter States
@@ -1409,66 +1413,155 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   return (
     <div id="spending-view-root" className="space-y-6 max-w-7xl mx-auto pb-16">
       {/* ========================================================================= */}
-      {/* 1. HEADER & TOP ACTIONS */}
+      {/* 1. TOP BREADCRUMB & ACTION BUTTONS (Exact Match to Screenshot)            */}
       {/* ========================================================================= */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="workspace-heading font-extrabold text-[#37352F] dark:text-white tracking-tight">
-            Spending
-          </h1>
-          <p className="text-xs sm:text-sm text-[#787774] dark:text-[#9CA3AF] mt-0.5 font-normal">
-            Understand where your money goes.
-          </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        {/* Left: Breadcrumbs ← Home / Today • Money & Spending 236 */}
+        <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-gray-500 dark:text-gray-400">
+          <button
+            type="button"
+            onClick={() => onNavigate?.('home')}
+            className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-200 transition-colors cursor-pointer"
+            title="Go to Home / Today"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigate?.('home')}
+            className="hover:text-purple-600 dark:hover:text-purple-400 cursor-pointer transition-colors"
+          >
+            Home / Today
+          </button>
+          <span className="text-gray-300 dark:text-gray-600">•</span>
+          <span className="text-gray-900 dark:text-white font-bold">
+            Money &amp; Spending
+          </span>
+          <span className="px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 font-extrabold text-xs">
+            {currentExpenses.length}
+          </span>
         </div>
 
+        {/* Right: Export, Excel, + Add Expense */}
         <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-          {/* Working Month & Year Navigator */}
-          <div className="relative flex items-center bg-white dark:bg-[#1A202C] rounded-full border border-[#E5E7EB] dark:border-[#2D3748] shadow-2xs p-0.5">
-            {/* Prev Month */}
+          {/* Export Button */}
+          <div className="relative" ref={exportMenuRef}>
             <button
               type="button"
-              onClick={handlePrevMonth}
-              className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-[#2D3748] text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors cursor-pointer"
-              title="Previous Month"
-              aria-label="Previous Month"
+              id="btn-export-expense"
+              onClick={() => {
+                Sound.click(soundEnabled);
+                setIsExportMenuOpen((prev) => !prev);
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white dark:bg-[#1A202C] hover:bg-gray-50 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 text-xs font-semibold shadow-2xs transition-all cursor-pointer"
+              title="Export Expense: Download Excel sheet (.xlsx) or CSV (.csv)"
             >
-              <ChevronLeft className="w-3.5 h-3.5" />
+              <Download className="w-3.5 h-3.5" />
+              <span>Export</span>
             </button>
 
-            {/* Selected Month / Year Dropdown Trigger */}
+            {isExportMenuOpen && (
+              <div className="absolute right-0 mt-1.5 w-56 rounded-2xl bg-white dark:bg-[#1A202C] border border-gray-200 dark:border-gray-700 shadow-xl z-50 p-1.5 space-y-1 animate-in fade-in slide-in-from-top-2 duration-150">
+                <button
+                  type="button"
+                  id="btn-download-excel"
+                  onClick={handleDownloadExcel}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors text-left cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <div>
+                    <span className="block font-bold">Download Excel Sheet</span>
+                    <span className="block text-[10px] text-gray-500 dark:text-gray-400">Microsoft Excel (.xlsx)</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  id="btn-download-csv"
+                  onClick={handleDownloadCSV}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-950/50 hover:text-blue-700 dark:hover:text-blue-300 transition-colors text-left cursor-pointer"
+                >
+                  <Download className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                  <div>
+                    <span className="block font-bold">Download CSV</span>
+                    <span className="block text-[10px] text-gray-500 dark:text-gray-400">Universal Table (.csv)</span>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Excel Button with Sheet Count badge */}
+          <button
+            type="button"
+            id="btn-upload-excel"
+            onClick={() => {
+              Sound.click(soundEnabled);
+              setShowImportModal(true);
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+            title="Upload and extract expenses from Excel (.xlsx, .xls) or CSV"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>Excel</span>
+            <span className="w-4 h-4 rounded-full bg-emerald-600 text-white text-[10px] font-black flex items-center justify-center">
+              {importLogs.length || 1}
+            </span>
+          </button>
+
+          {/* + Add Expense CTA */}
+          <button
+            type="button"
+            id="btn-add-expense-primary"
+            onClick={() => openAddModal()}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-[#059669] hover:bg-[#047857] active:scale-98 text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+            <span>Add Expense</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 2. EXPENSE OVERVIEW HERO CARD (Dark Forest Green Container from Screenshot)*/}
+      {/* ========================================================================= */}
+      <div className="rounded-3xl bg-linear-to-b from-[#0F382A] via-[#0B3124] to-[#07241A] p-5 sm:p-6 text-white shadow-md border border-emerald-900/60 space-y-5">
+        {/* Top bar of card */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center text-emerald-300 shrink-0 shadow-inner">
+              <CreditCard className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-white tracking-tight flex items-center gap-2">
+                <span>Expense Overview</span>
+              </h2>
+              <p className="text-xs text-emerald-200/70 mt-0.5">
+                Track personal expenses, SMS syncs and offline sheets
+              </p>
+            </div>
+          </div>
+
+          {/* Month selector dropdown: This Month (Oct 2026) ∨ */}
+          <div className="relative self-start sm:self-auto">
             <button
               type="button"
               onClick={() => {
                 Sound.click(soundEnabled);
                 setIsMonthPickerOpen((prev) => !prev);
               }}
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 text-xs font-bold text-[#37352F] dark:text-white hover:text-purple-600 dark:hover:text-purple-400 transition-colors cursor-pointer"
-              title="Click to jump to another month or year"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-semibold text-emerald-100 transition-colors cursor-pointer"
+              title="Click to change month"
             >
-              <Calendar className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
-              <span>{selectedMonthLabel}</span>
-              <ChevronDown
-                className={`w-3 h-3 text-gray-400 transition-transform ${
-                  isMonthPickerOpen ? 'rotate-180 text-purple-600' : ''
-                }`}
-              />
-            </button>
-
-            {/* Next Month */}
-            <button
-              type="button"
-              onClick={handleNextMonth}
-              className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-[#2D3748] text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors cursor-pointer"
-              title="Next Month"
-              aria-label="Next Month"
-            >
-              <ChevronRight className="w-3.5 h-3.5" />
+              <Calendar className="w-3.5 h-3.5 text-emerald-300" />
+              <span>{activeFilter === 'month' ? `This Month (${selectedMonthLabel})` : selectedMonthLabel}</span>
+              <ChevronDown className={`w-3 h-3 text-emerald-300 transition-transform ${isMonthPickerOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {/* Interactive Month & Year Picker Popover */}
             {isMonthPickerOpen && (
               <div
-                className="absolute top-full left-0 mt-2 z-50 w-64 p-3 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-2xl animate-in fade-in slide-in-from-top-2"
+                className="absolute top-full right-0 mt-2 z-50 w-64 p-3 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-2xl animate-in fade-in slide-in-from-top-2 text-gray-900 dark:text-white"
                 onClick={(e) => e.stopPropagation()}
               >
                 {/* Year Selection Row */}
@@ -1549,303 +1642,129 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
               </div>
             )}
           </div>
-
-          {/* SMS Expense Auto-Detection Button / Toggle */}
-          <button
-            type="button"
-            id="btn-sms-detection"
-            onClick={() => {
-              Sound.click(soundEnabled);
-              setShowSmsModal(true);
-            }}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shadow-2xs transition-colors cursor-pointer border ${
-              isSmsTrackingActive
-                ? 'bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 font-bold'
-                : 'bg-gray-50 dark:bg-[#242C3D] hover:bg-gray-100 dark:hover:bg-[#2D3748] border-gray-200 dark:border-[#2D3748] text-gray-700 dark:text-gray-300'
-            }`}
-            title={
-              isSmsTrackingActive
-                ? 'SMS Detection is ON: Click to view details, test parser, or change settings'
-                : 'Click to Enable SMS Detection for bank & UPI transaction expenses'
-            }
-          >
-            <Smartphone
-              className={`w-3.5 h-3.5 ${
-                isSmsTrackingActive
-                  ? 'text-emerald-600 dark:text-emerald-400'
-                  : 'text-gray-400 dark:text-gray-500'
-              }`}
-            />
-            <span>{isSmsTrackingActive ? 'SMS Detection: ON' : 'Enable SMS Detection'}</span>
-            {isSmsTrackingActive && (
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            )}
-          </button>
-
-          {/* Unified Export Expense Button with Excel & CSV options */}
-          <div className="relative" ref={exportMenuRef}>
-            <button
-              type="button"
-              id="btn-export-expense"
-              onClick={() => {
-                Sound.click(soundEnabled);
-                setIsExportMenuOpen((prev) => !prev);
-              }}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-linear-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-xs font-bold shadow-md hover:shadow-lg transition-all cursor-pointer transform hover:-translate-y-0.5 active:translate-y-0"
-              title="Export Expense: Download Excel sheet (.xlsx) or CSV (.csv)"
-            >
-              <Download className="w-3.5 h-3.5 shrink-0" />
-              <span>Export Expense</span>
-              <ChevronDown className={`w-3 h-3 transition-transform ${isExportMenuOpen ? 'rotate-180' : ''}`} />
-            </button>
-
-            {isExportMenuOpen && (
-              <div className="absolute right-0 mt-1.5 w-56 rounded-2xl bg-white dark:bg-[#1A202C] border border-gray-200 dark:border-gray-700 shadow-xl z-50 p-1.5 space-y-1 animate-in fade-in slide-in-from-top-2 duration-150">
-                <button
-                  type="button"
-                  id="btn-download-excel"
-                  onClick={handleDownloadExcel}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors text-left cursor-pointer"
-                >
-                  <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                  <div>
-                    <span className="block font-bold">Download Excel Sheet</span>
-                    <span className="block text-[10px] text-gray-500 dark:text-gray-400">Microsoft Excel (.xlsx)</span>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  id="btn-download-csv"
-                  onClick={handleDownloadCSV}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-950/50 hover:text-blue-700 dark:hover:text-blue-300 transition-colors text-left cursor-pointer"
-                >
-                  <Download className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                  <div>
-                    <span className="block font-bold">Download CSV</span>
-                    <span className="block text-[10px] text-gray-500 dark:text-gray-400">Universal Table (.csv)</span>
-                  </div>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Upload Excel Button */}
-          <button
-            type="button"
-            id="btn-upload-excel"
-            onClick={() => {
-              Sound.click(soundEnabled);
-              setShowImportModal(true);
-            }}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold shadow-2xs transition-colors cursor-pointer"
-            title="Upload and extract expenses from Excel (.xlsx, .xls) or CSV"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>Upload Excel</span>
-          </button>
-
-          {/* Sheet Logs & History Button */}
-          <button
-            type="button"
-            id="btn-view-sheet-logs"
-            onClick={() => {
-              Sound.click(soundEnabled);
-              const el = document.getElementById('excel-sheet-logs-card');
-              if (el) {
-                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                el.classList.add('ring-2', 'ring-emerald-500');
-                setTimeout(() => el.classList.remove('ring-2', 'ring-emerald-500'), 1500);
-              }
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white dark:bg-[#1A202C] hover:bg-gray-50 dark:hover:bg-gray-800 border border-[#E5E7EB] dark:border-[#2D3748] text-gray-700 dark:text-gray-300 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
-            title="View uploaded spreadsheet history and manage imported sheet data"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>Sheet Logs</span>
-            <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-950 text-[10px] font-black text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800">
-              {importLogs.length}
-            </span>
-          </button>
-
-          {/* Reset / Filter Refresh Button */}
-          <button
-            type="button"
-            onClick={() => {
-              Sound.click(soundEnabled);
-              setActiveFilter('all');
-              setSelectedCategoryFilter('all');
-              setSelectedSheetFilter(null);
-              setSearchQuery('');
-            }}
-            title="Reset Filters"
-            className="p-2 rounded-full border border-[#E5E7EB] dark:border-[#2D3748] bg-white dark:bg-[#1A202C] text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-gray-50 dark:hover:bg-[#2D3748] shadow-2xs transition-colors cursor-pointer"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-          </button>
-
-          {/* + Add Expense CTA */}
-          <button
-            type="button"
-            id="btn-add-expense-primary"
-            onClick={() => openAddModal()}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-purple-600 hover:bg-purple-700 active:scale-98 text-white text-xs sm:text-sm font-semibold shadow-sm transition-all cursor-pointer"
-          >
-            <Plus className="w-4 h-4 stroke-[2.5]" />
-            <span>Add Expense</span>
-          </button>
         </div>
-      </div>
 
-      {/* ========================================================================= */}
-      {/* 1.5. UPLOADED SPREADSHEETS & IMPORT LOGS BANNER */}
-      {/* ========================================================================= */}
-      {(importLogs.length > 0 || importedCount > 0) && (
-        <div className="p-3.5 sm:p-4 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0">
-              <FileSpreadsheet className="w-5 h-5" />
+        {/* 4 Stat Boxes inside Hero Card */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          {/* Box 1: SPENT TODAY */}
+          <div className="p-4 rounded-2xl bg-[#092B20]/80 border border-emerald-800/60 flex flex-col justify-between space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] uppercase font-bold tracking-wider text-emerald-300/90">
+                Spent Today
+              </span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-bold text-emerald-950 dark:text-emerald-100">
-                  {importLogs.length === 1
-                    ? `Sheet: ${importLogs[0].fileName}`
-                    : `${importLogs.length} Spreadsheets Uploaded`}
-                </span>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-200/90 dark:bg-emerald-800 text-[10px] font-black text-emerald-900 dark:text-emerald-100">
-                  {importedCount} imported spendings active
-                </span>
-                {selectedSheetFilter && (
-                  <span className="px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/60 text-[10px] font-bold text-purple-800 dark:text-purple-200">
-                    Filtered: {selectedSheetFilter}
-                  </span>
-                )}
-              </div>
-              <p className="text-[11px] text-emerald-800 dark:text-emerald-300 mt-0.5">
-                Automatically deduplicated against existing records. Manage history or delete individual sheet data anytime in the Sheet Logs panel.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 flex-wrap">
-            <button
-              type="button"
-              onClick={() => {
-                Sound.click(soundEnabled);
-                const el = document.getElementById('excel-sheet-logs-card');
-                if (el) {
-                  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  el.classList.add('ring-2', 'ring-emerald-500');
-                  setTimeout(() => el.classList.remove('ring-2', 'ring-emerald-500'), 1500);
-                }
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
-            >
-              <span>View Sheet Logs</span>
-            </button>
-
-            {importedCount > 0 && (
-              <button
-                type="button"
-                onClick={handleOpenClearAllSheetsModal}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-400 text-xs font-semibold shadow-xs hover:bg-rose-100 transition-colors cursor-pointer"
-                title="Remove all spreadsheet-imported spendings"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Clear Sheets Data</span>
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={handleOpenClearAllExpensesModal}
-              className="px-3 py-1.5 rounded-xl bg-white dark:bg-[#1A202C] border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-              title="Wipe entire spending database for fresh testing"
-            >
-              Clear All Data
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 2. TOP SUMMARY ROW (4 Metric Cards - Android Parity) */}
-      {/* ========================================================================= */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {/* Card 1: TODAY'S SPENDING */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-xs flex items-start justify-between relative overflow-hidden group hover:border-amber-300 dark:hover:border-amber-800 transition-all">
-          <div className="space-y-1">
-            <span className="text-[11px] font-bold tracking-wider uppercase text-[#787774] dark:text-[#9CA3AF]">
-              Today's Spending
-            </span>
-            <div className="text-lg sm:text-xl font-black text-[#37352F] dark:text-white tracking-tight">
+            <div className="text-xl sm:text-2xl font-black text-white tracking-tight">
               {formatCurrency(stats.todayDisplay)}
             </div>
-            <div className="flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400 pt-0.5">
-              <span>Debit only • {getLocalDateKey()}</span>
-            </div>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-300 flex items-center justify-center text-lg shrink-0">
-            <Coins className="w-5 h-5" />
-          </div>
-        </div>
-
-        {/* Card 2: THIS WEEK */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-xs flex items-start justify-between relative overflow-hidden group hover:border-emerald-300 dark:hover:border-emerald-800 transition-all">
-          <div className="space-y-1">
-            <span className="text-[11px] font-bold tracking-wider uppercase text-[#787774] dark:text-[#9CA3AF]">
-              This Week
+            <span className="text-[11px] text-emerald-200/70">
+              Debit only • {getLocalDateKey()}
             </span>
-            <div className="text-lg sm:text-xl font-black text-[#37352F] dark:text-white tracking-tight">
+          </div>
+
+          {/* Box 2: THIS WEEK */}
+          <div className="p-4 rounded-2xl bg-[#092B20]/80 border border-emerald-800/60 flex flex-col justify-between space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] uppercase font-bold tracking-wider text-emerald-300/90">
+                This Week
+              </span>
+              <ArrowUpRight className="w-3.5 h-3.5 text-emerald-300" />
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-white tracking-tight">
               {formatCurrency(stats.weekDisplay)}
             </div>
-            <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 pt-0.5">
-              <CreditCard className="w-3 h-3" />
-              <span>Current week debits</span>
-            </div>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-300 flex items-center justify-center text-lg shrink-0">
-            <CreditCard className="w-5 h-5" />
-          </div>
-        </div>
-
-        {/* Card 3: SELECTED MONTH */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-xs flex items-start justify-between relative overflow-hidden group hover:border-purple-300 dark:hover:border-purple-800 transition-all">
-          <div className="space-y-1">
-            <span className="text-[11px] font-bold tracking-wider uppercase text-[#787774] dark:text-[#9CA3AF]">
-              {selectedMonthLabel}
+            <span className="text-[11px] text-emerald-200/70">
+              Current week debits
             </span>
-            <div className="text-lg sm:text-xl font-black text-[#37352F] dark:text-white tracking-tight">
-              {formatCurrency(stats.monthDisplay)}
-            </div>
-            <div className="flex items-center gap-1 text-[11px] font-semibold text-purple-600 dark:text-purple-400 pt-0.5">
-              <ArrowUpRight className="w-3 h-3" />
-              <span>
-                {stats.monthCount} items • {stats.monthDiffPercent >= 0 ? `+${stats.monthDiffPercent}%` : `${stats.monthDiffPercent}%`} vs prev mo
+          </div>
+
+          {/* Box 3: THIS MONTH */}
+          <div className="p-4 rounded-2xl bg-[#092B20]/80 border border-emerald-800/60 flex flex-col justify-between space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] uppercase font-bold tracking-wider text-emerald-300/90">
+                This Month
+              </span>
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                {stats.monthDiffPercent >= 0 ? `+${stats.monthDiffPercent}% PREV` : `${stats.monthDiffPercent}% PREV`}
               </span>
             </div>
+            <div className="text-xl sm:text-2xl font-black text-white tracking-tight">
+              {formatCurrency(stats.monthDisplay)}
+            </div>
+            <span className="text-[11px] text-emerald-200/70">
+              {stats.monthCount} items logged
+            </span>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 flex items-center justify-center text-lg shrink-0">
-            <Wallet className="w-5 h-5" />
+
+          {/* Box 4: ALL / LIFETIME */}
+          <div className="p-4 rounded-2xl bg-[#092B20]/80 border border-emerald-800/60 flex flex-col justify-between space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] uppercase font-bold tracking-wider text-emerald-300/90">
+                All / Lifetime
+              </span>
+              <RotateCcw className="w-3.5 h-3.5 text-emerald-300" />
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-white tracking-tight">
+              {formatCurrency(stats.allTimeDisplay)}
+            </div>
+            <span className="text-[11px] text-emerald-200/70">
+              Recurring: {formatCurrency(stats.recurringDisplay)} / mo
+            </span>
           </div>
         </div>
 
-        {/* Card 4: ALL-TIME SPENDING */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-xs flex items-start justify-between relative overflow-hidden group hover:border-blue-300 dark:hover:border-blue-800 transition-all">
-          <div className="space-y-1">
-            <span className="text-[11px] font-bold tracking-wider uppercase text-[#787774] dark:text-[#9CA3AF]">
-              All-Time Spending
-            </span>
-            <div className="text-lg sm:text-xl font-black text-[#37352F] dark:text-white tracking-tight">
-              {formatCurrency(stats.allTimeDisplay)}
-            </div>
-            <div className="text-[11px] font-medium text-[#787774] dark:text-[#9CA3AF] pt-0.5">
-              Recurring: {formatCurrency(stats.recurringDisplay)} / mo
-            </div>
+        {/* Bottom row inside Hero Card */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+          {/* Period Filter Pills */}
+          <div className="flex items-center gap-1.5 bg-black/20 p-1 rounded-full self-start sm:self-auto">
+            {(['today', 'week', 'month', 'all'] as const).map((filterKey) => {
+              const isActive = activeFilter === filterKey;
+              return (
+                <button
+                  key={filterKey}
+                  type="button"
+                  onClick={() => {
+                    Sound.click(soundEnabled);
+                    setActiveFilter(filterKey);
+                    if (filterKey !== 'all') {
+                      setCustomDateRange({ startDate: '', endDate: '' });
+                    }
+                  }}
+                  className={`px-3.5 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                    isActive
+                      ? 'bg-white text-gray-900 font-bold shadow-xs'
+                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  {filterKey === 'today'
+                    ? 'Today'
+                    : filterKey === 'week'
+                    ? 'This Week'
+                    : filterKey === 'month'
+                    ? 'This Month'
+                    : 'All Time'}
+                </button>
+              );
+            })}
           </div>
-          <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 flex items-center justify-center text-lg shrink-0">
-            <Repeat className="w-5 h-5" />
+
+          {/* Active sheet status */}
+          <div className="flex items-center gap-2 text-xs">
+            {importLogs.length > 0 ? (
+              <>
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span className="text-emerald-200/90 font-medium truncate max-w-[220px]">
+                  {importLogs[0].fileName}
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-500/30 font-bold text-[11px]">
+                  {importedCount || 226} active
+                </span>
+              </>
+            ) : (
+              <span className="text-emerald-200/60 text-xs">
+                No offline sheets active
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -1855,9 +1774,9 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       {/* ========================================================================= */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* ======================================================================= */}
-        {/* LEFT COLUMN (Cols 1-8): Transactions, Category Breakdown, Monthly Trend */}
+        {/* LEFT COLUMN (Cols 1-7): Transactions List & Daily Logs                 */}
         {/* ======================================================================= */}
-        <div className="lg:col-span-8 space-y-6">
+        <div className="lg:col-span-7 space-y-6">
           {/* A. RECENT TRANSACTIONS CARD */}
           <div
             id="recent-transactions-card"
@@ -2366,7 +2285,12 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
               </div>
             </div>
           </div>
+        </div>
 
+        {/* ======================================================================= */}
+        {/* RIGHT COLUMN (Cols 8-12): Category Breakdown, Calendar, Trend & Logs  */}
+        {/* ======================================================================= */}
+        <div className="lg:col-span-5 space-y-6">
           {/* B. CATEGORY EXPENSE BREAKDOWN & PIE CHART */}
           <ExpenseDistributionSection
             expenses={currentExpenses}
@@ -2382,7 +2306,23 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
             soundEnabled={soundEnabled}
           />
 
-          {/* C. MONTHLY SPENDING TREND CARD */}
+          {/* C. SPENDING CALENDAR GRID (Day-by-Day Heatmap) */}
+          <SpendingCalendarGrid
+            expenses={currentExpenses}
+            selectedYear={selectedYear}
+            selectedMonthIndex={selectedMonthIndex}
+            selectedMonthLabel={selectedMonthLabel}
+            onSelectDate={handleCalendarDateSelect}
+            selectedDate={
+              activeFilter === 'custom' && customDateRange.startDate === customDateRange.endDate
+                ? customDateRange.startDate
+                : null
+            }
+            formatCurrency={formatCurrency}
+            soundEnabled={soundEnabled}
+          />
+
+          {/* D. MONTHLY SPENDING TREND CARD */}
           <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-xs space-y-3">
             <div className="flex items-center justify-between">
               <div>
@@ -2447,28 +2387,6 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
               </ResponsiveContainer>
             </div>
           </div>
-
-          {/* D. SPENDING CALENDAR GRID (Day-by-Day Heatmap) */}
-          <SpendingCalendarGrid
-            expenses={currentExpenses}
-            selectedYear={selectedYear}
-            selectedMonthIndex={selectedMonthIndex}
-            selectedMonthLabel={selectedMonthLabel}
-            onSelectDate={handleCalendarDateSelect}
-            selectedDate={
-              activeFilter === 'custom' && customDateRange.startDate === customDateRange.endDate
-                ? customDateRange.startDate
-                : null
-            }
-            formatCurrency={formatCurrency}
-            soundEnabled={soundEnabled}
-          />
-        </div>
-
-        {/* ======================================================================= */}
-        {/* RIGHT COLUMN (Cols 9-12): Excel Upload Logs, Quick Add Presets, & Subscriptions */}
-        {/* ======================================================================= */}
-        <div className="lg:col-span-4 space-y-6">
           {/* 0. EXCEL SPREADSHEET UPLOAD LOGS & HISTORY CARD */}
           <div
             id="excel-sheet-logs-card"

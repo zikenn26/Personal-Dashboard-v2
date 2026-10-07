@@ -332,17 +332,18 @@ export const DEFAULT_COMMAND_MAPPINGS: CommandMapping[] = [
 
 export const DEFAULT_HOME_GRID_ORDER: string[] = [
   'calendar',
-  'ai_secretary',
-  'schedule',
-  'expenses',
   'habits',
   'tasks',
+  'expenses',
+  'focus_sprint',
+  'schedule',
+  'ai_secretary',
 ];
 
 export const DEFAULT_HOME_COLUMNS: [string[], string[], string[]] = [
   ['calendar', 'habits'],
-  ['ai_secretary', 'tasks', 'expenses'],
-  ['schedule'],
+  ['tasks', 'expenses', 'focus_sprint'],
+  ['schedule', 'ai_secretary'],
 ];
 
 export const DEFAULT_SCHEDULE_ACTIVITIES: ScheduleActivity[] = [
@@ -1944,7 +1945,7 @@ export const Storage = {
 
   getHomeGridColumns: (): [string[], string[], string[]] => {
     const raw = loadFromStorage<any>(STORAGE_KEYS.HOME_GRID_ORDER, null);
-    const validWidgets = new Set(['calendar', 'schedule', 'expenses', 'habits', 'tasks', 'ai_secretary']);
+    const validWidgets = new Set(['calendar', 'schedule', 'expenses', 'habits', 'tasks', 'ai_secretary', 'focus_sprint']);
 
     if (Array.isArray(raw) && raw.length === 3 && Array.isArray(raw[0]) && Array.isArray(raw[1]) && Array.isArray(raw[2])) {
       const col0 = raw[0].filter((w: string) => validWidgets.has(w));

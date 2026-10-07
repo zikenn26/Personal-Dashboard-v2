@@ -24,6 +24,10 @@ import {
   RotateCcw,
   LayoutGrid,
   ArrowRight,
+  Timer,
+  Play,
+  Pause,
+  Droplets,
 } from 'lucide-react';
 
 export interface DropIndicator {
@@ -76,6 +80,178 @@ export interface CommandCenterGridProps {
   soundEnabled: boolean;
 }
 
+export interface FocusSprintWidgetProps {
+  dragHandle: React.ReactNode;
+  soundEnabled: boolean;
+}
+
+export const FocusSprintWidget: React.FC<FocusSprintWidgetProps> = ({ dragHandle, soundEnabled }) => {
+  const [mode, setMode] = useState<'focus' | 'short' | 'long'>('focus');
+  const [timeLeft, setTimeLeft] = useState<number>(25 * 60);
+  const [isRunning, setIsRunning] = useState<boolean>(false);
+  const [sessionsCompleted, setSessionsCompleted] = useState<number>(() => {
+    const today = new Date().toISOString().split('T')[0];
+    return Number(localStorage.getItem(`lifeos_focus_sessions_${today}`) || 2);
+  });
+
+  const durations = {
+    focus: 25 * 60,
+    short: 5 * 60,
+    long: 15 * 60,
+  };
+
+  useEffect(() => {
+    let timer: any = null;
+    if (isRunning && timeLeft > 0) {
+      timer = setInterval(() => {
+        setTimeLeft((prev) => prev - 1);
+      }, 1000);
+    } else if (timeLeft === 0) {
+      setIsRunning(false);
+      Sound.success(soundEnabled);
+      if (mode === 'focus') {
+        const today = new Date().toISOString().split('T')[0];
+        const next = sessionsCompleted + 1;
+        setSessionsCompleted(next);
+        localStorage.setItem(`lifeos_focus_sessions_${today}`, String(next));
+      }
+    }
+    return () => clearInterval(timer);
+  }, [isRunning, timeLeft, mode, sessionsCompleted, soundEnabled]);
+
+  const handleToggle = () => {
+    Sound.click(soundEnabled);
+    setIsRunning(!isRunning);
+  };
+
+  const handleReset = () => {
+    Sound.click(soundEnabled);
+    setIsRunning(false);
+    setTimeLeft(durations[mode]);
+  };
+
+  const handleModeChange = (m: 'focus' | 'short' | 'long') => {
+    Sound.click(soundEnabled);
+    setMode(m);
+    setIsRunning(false);
+    setTimeLeft(durations[m]);
+  };
+
+  const mins = Math.floor(timeLeft / 60);
+  const secs = timeLeft % 60;
+  const timeFormatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  const totalSecs = durations[mode];
+  const progressPct = Math.round(((totalSecs - timeLeft) / totalSecs) * 100);
+
+  return (
+    <div className="grid-tile p-3.5 sm:p-4 rounded-2xl bg-[#F7F7F5] dark:bg-[#23324C] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col space-y-3 w-full">
+      {/* Header */}
+      <div className="flex items-center justify-between pb-2 border-b border-[#EDECE9] dark:border-[#334155]/60">
+        <div className="flex items-center gap-2">
+          {dragHandle}
+          <div className="w-7 h-7 rounded-xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200/60 dark:border-purple-900/40 flex items-center justify-center text-[#8B5CF6] dark:text-[#A78BFA] shrink-0">
+            <Timer className="w-3.5 h-3.5" />
+          </div>
+          <div>
+            <h2 className="text-xs uppercase font-bold text-[#37352F] dark:text-white tracking-wider">
+              Focus Sprint
+            </h2>
+          </div>
+        </div>
+        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+          Deep Work
+        </span>
+      </div>
+
+      {/* Mode Selector */}
+      <div className="grid grid-cols-3 gap-1 bg-white dark:bg-[#0F172A] p-1 rounded-xl border border-[#E2E8F0] dark:border-[#334155]">
+        <button
+          type="button"
+          onClick={() => handleModeChange('focus')}
+          className={`py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+            mode === 'focus'
+              ? 'bg-[#8B5CF6] text-white shadow-xs'
+              : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
+          }`}
+        >
+          25m Focus
+        </button>
+        <button
+          type="button"
+          onClick={() => handleModeChange('short')}
+          className={`py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+            mode === 'short'
+              ? 'bg-[#8B5CF6] text-white shadow-xs'
+              : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
+          }`}
+        >
+          5m Break
+        </button>
+        <button
+          type="button"
+          onClick={() => handleModeChange('long')}
+          className={`py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+            mode === 'long'
+              ? 'bg-[#8B5CF6] text-white shadow-xs'
+              : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
+          }`}
+        >
+          15m Break
+        </button>
+      </div>
+
+      {/* Digital Timer & Actions */}
+      <div className="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#334155]">
+        <div>
+          <span className="text-3xl font-black font-mono text-[#37352F] dark:text-white tracking-tight">
+            {timeFormatted}
+          </span>
+          <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
+            {isRunning ? 'Sprint in progress...' : 'Ready for deep focus'}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleToggle}
+            className={`p-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center cursor-pointer shadow-xs ${
+              isRunning
+                ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                : 'bg-[#8B5CF6] hover:bg-purple-700 text-white'
+            }`}
+            title={isRunning ? 'Pause' : 'Start'}
+          >
+            {isRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-white" />}
+          </button>
+          <button
+            type="button"
+            onClick={handleReset}
+            className="p-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 transition-colors cursor-pointer"
+            title="Reset timer"
+          >
+            <RotateCcw className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Progress Bar & Stats */}
+      <div className="space-y-1.5 pt-0.5">
+        <div className="w-full bg-gray-200 dark:bg-gray-800 h-1.5 rounded-full overflow-hidden">
+          <div
+            className="bg-[#8B5CF6] h-full rounded-full transition-all duration-300"
+            style={{ width: `${progressPct}%` }}
+          />
+        </div>
+        <div className="flex items-center justify-between text-[10px] text-gray-500 dark:text-gray-400 font-medium">
+          <span>{sessionsCompleted} sprints logged today</span>
+          <span>{sessionsCompleted * 25}m deep work</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
   columns: propColumns,
   onColumnsChange,
@@ -122,25 +298,44 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
   }, []);
 
   // Standard 3-column data model
-  // Default matches screenshot: Col 0: Calendar + Habits, Col 1: Tasks + Expenses, Col 2: Schedule
+  // Default matches screenshot: Col 0: Calendar + Habits, Col 1: Tasks + Expenses + Focus, Col 2: Schedule + AI Brief
   const columns: [string[], string[], string[]] = useMemo(() => {
-    const valid = new Set(['calendar', 'schedule', 'expenses', 'habits', 'tasks']);
+    const valid = new Set(['calendar', 'schedule', 'expenses', 'habits', 'tasks', 'ai_secretary', 'secretary', 'focus_sprint']);
     if (propColumns && propColumns.length === 3) {
       const col0 = propColumns[0].filter((w) => valid.has(w));
       const col1 = propColumns[1].filter((w) => valid.has(w));
       const col2 = propColumns[2].filter((w) => valid.has(w));
       const present = new Set([...col0, ...col1, ...col2]);
       valid.forEach((w) => {
-        if (!present.has(w)) col1.push(w);
+        if (!present.has(w)) {
+          if (w === 'focus_sprint') col1.push(w);
+          else if (w === 'ai_secretary' || w === 'secretary') col2.push(w);
+          else col1.push(w);
+        }
       });
       return [col0, col1, col2];
     }
     return [
       ['calendar', 'habits'],
-      ['tasks', 'expenses'],
-      ['schedule'],
+      ['tasks', 'expenses', 'focus_sprint'],
+      ['schedule', 'ai_secretary'],
     ];
   }, [propColumns]);
+
+  // Daily Hydration Tracking (glasses: 0-8)
+  const [hydrationGlasses, setHydrationGlasses] = useState<number>(() => {
+    const today = new Date().toISOString().split('T')[0];
+    const saved = localStorage.getItem(`lifeos_hydration_${today}`);
+    return saved !== null ? Number(saved) : 5;
+  });
+
+  const handleToggleHydrationGlass = (index: number) => {
+    Sound.click(soundEnabled);
+    const today = new Date().toISOString().split('T')[0];
+    const next = hydrationGlasses === index + 1 ? index : index + 1;
+    setHydrationGlasses(next);
+    localStorage.setItem(`lifeos_hydration_${today}`, String(next));
+  };
 
   // Robust Drag and Drop State
   const [draggedWidgetId, setDraggedWidgetId] = useState<string | null>(null);
@@ -629,6 +824,39 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
             )}
           </div>
 
+          {/* Hydration Tracker */}
+          <div className="p-2.5 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200/70 dark:border-blue-900/50 space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
+                <Droplets className="w-3.5 h-3.5 text-blue-500" />
+                <span>Hydration</span>
+              </span>
+              <span className="text-[11px] font-mono font-bold text-blue-700 dark:text-blue-300">
+                {hydrationGlasses} / 8 glasses ({Math.round(hydrationGlasses * 0.25 * 10) / 10}L)
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-1 pt-0.5">
+              {Array.from({ length: 8 }).map((_, gIdx) => {
+                const isDrank = gIdx < hydrationGlasses;
+                return (
+                  <button
+                    key={gIdx}
+                    type="button"
+                    onClick={() => handleToggleHydrationGlass(gIdx)}
+                    className={`flex-1 h-6 rounded-lg flex items-center justify-center text-[10px] transition-all cursor-pointer ${
+                      isDrank
+                        ? 'bg-blue-500 text-white shadow-2xs font-bold scale-102'
+                        : 'bg-white dark:bg-gray-800 border border-blue-200 dark:border-blue-800 text-gray-400 hover:border-blue-400'
+                    }`}
+                    title={`Glass ${gIdx + 1} (250ml)`}
+                  >
+                    💧
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Quick Add Habit Field */}
           <div className="pt-2 border-t border-[#EDECE9]/70 dark:border-[#334155]/60">
             {showQuickHabitInput ? (
@@ -820,6 +1048,15 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
             )}
           </div>
         </div>
+      );
+    }
+
+    if (widgetId === 'focus_sprint' || widgetId === 'focus') {
+      return (
+        <FocusSprintWidget
+          dragHandle={dragHandle}
+          soundEnabled={soundEnabled}
+        />
       );
     }
 
