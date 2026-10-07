@@ -44,6 +44,7 @@ import {
   Smartphone,
   Download,
   Eye,
+  ArrowLeft,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -70,6 +71,7 @@ import { triggerConfetti } from '../utils/confetti';
 import { ExcelImportModal } from './ExcelImportModal';
 import { SmsExpenseModal } from './SmsExpenseModal';
 import { ExpenseDistributionSection } from './ExpenseDistributionSection';
+import { SpendingCalendarGrid } from './SpendingCalendarGrid';
 import { DateRangePicker, type DateRange } from './DateRangePicker';
 import {
   isCreditTransaction,
@@ -741,6 +743,21 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     setCustomDateRange({ startDate: '', endDate: '' });
     setSelectedSheetFilter(null);
     setTxCurrentPage(1);
+  };
+
+  const handleCalendarDateSelect = (dateKey: string) => {
+    Sound.click(soundEnabled);
+    if (activeFilter === 'custom' && customDateRange.startDate === dateKey && customDateRange.endDate === dateKey) {
+      setActiveFilter('all');
+      setCustomDateRange({ startDate: '', endDate: '' });
+    } else {
+      setActiveFilter('custom');
+      setCustomDateRange({ startDate: dateKey, endDate: dateKey });
+      const el = document.getElementById('recent-transactions-card');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
   };
 
   // Quick Preset Custom Modal
@@ -1842,7 +1859,10 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
         {/* ======================================================================= */}
         <div className="lg:col-span-8 space-y-6">
           {/* A. RECENT TRANSACTIONS CARD */}
-          <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-xs space-y-4">
+          <div
+            id="recent-transactions-card"
+            className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-xs space-y-4 scroll-mt-6"
+          >
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-base sm:text-lg font-bold text-[#37352F] dark:text-white">
@@ -2427,6 +2447,22 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
               </ResponsiveContainer>
             </div>
           </div>
+
+          {/* D. SPENDING CALENDAR GRID (Day-by-Day Heatmap) */}
+          <SpendingCalendarGrid
+            expenses={currentExpenses}
+            selectedYear={selectedYear}
+            selectedMonthIndex={selectedMonthIndex}
+            selectedMonthLabel={selectedMonthLabel}
+            onSelectDate={handleCalendarDateSelect}
+            selectedDate={
+              activeFilter === 'custom' && customDateRange.startDate === customDateRange.endDate
+                ? customDateRange.startDate
+                : null
+            }
+            formatCurrency={formatCurrency}
+            soundEnabled={soundEnabled}
+          />
         </div>
 
         {/* ======================================================================= */}

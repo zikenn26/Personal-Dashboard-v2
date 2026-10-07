@@ -277,21 +277,21 @@ export const ExpenseDistributionSection: React.FC<ExpenseDistributionSectionProp
   }, [hoveredIndex, activeSelectedCat, categoryData]);
 
   return (
-    <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-xs space-y-5">
-      {/* Header & Scope Toggle */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#F3F4F6] dark:border-[#2D3748]">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="p-1.5 rounded-lg bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400">
-              <PieChartIcon className="w-4 h-4" />
-            </span>
-            <h2 className="text-base sm:text-lg font-bold text-[#37352F] dark:text-white">
-              Category Expense &amp; Percentage Breakdown
-            </h2>
+    <section className="bg-white dark:bg-[#1A202C] border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs space-y-4">
+      {/* Header & Filter Pills */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+        <div className="flex items-start space-x-3">
+          <div className="w-9 h-9 rounded-xl bg-violet-50 dark:bg-violet-950/60 border border-violet-200/70 dark:border-violet-800 flex items-center justify-center text-violet-600 dark:text-violet-400 shrink-0 mt-0.5">
+            <PieChartIcon className="w-5 h-5" />
           </div>
-          <p className="text-xs text-[#787774] dark:text-[#9CA3AF] mt-0.5">
-            Click any pie slice to filter transactions and inspect category spending results
-          </p>
+          <div>
+            <h2 className="text-sm md:text-base font-bold text-slate-900 dark:text-white tracking-tight flex items-center space-x-2">
+              <span>Category Expense &amp; Percentage Breakdown</span>
+            </h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Click any pie slice or category to filter transactions and inspect spending results
+            </p>
+          </div>
         </div>
 
         {/* Month vs All Time Filter */}
@@ -670,7 +670,7 @@ export const ExpenseDistributionSection: React.FC<ExpenseDistributionSectionProp
           </div>
         </div>
       )}
-    </div>
+    </section>
   );
 };
 
