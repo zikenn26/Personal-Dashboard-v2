@@ -502,92 +502,88 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
           <CurrentWeatherWidget soundEnabled={soundEnabled} />
         </motion.div>
 
-        {/* Side-by-Side: 2x Quote Tile + 3/4th Size Date & Clock Tile */}
+        {/* Side-by-Side: Compact Quote Tile + Date & Clock Tile */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
-          {/* Quote Tile (expanded horizontal span: 8 cols on lg, 9 on xl) */}
+          {/* Quote Tile (Compact & Streamlined) */}
           <motion.div
             initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.45, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
             onMouseEnter={() => setIsQuoteAutoPlay(false)}
             onMouseLeave={() => setIsQuoteAutoPlay(true)}
-            className="grid-tile lg:col-span-8 xl:col-span-9 relative px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-2xl bg-[#F8FAFC] dark:bg-[#23324C] border border-[#EDECE9] dark:border-[#334155] shadow-xs flex flex-col justify-between gap-2 transition-all group"
+            className="grid-tile lg:col-span-5 xl:col-span-5 relative px-3 py-1.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#23324C] border border-[#EDECE9] dark:border-[#334155] shadow-xs flex flex-col justify-between gap-1 transition-all group"
           >
             {activeQuote ? (
-              <div className="flex items-start gap-3 min-w-0 flex-1">
-                <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200/70 dark:border-amber-900/50 flex items-center justify-center shrink-0 text-amber-600 dark:text-amber-400 shadow-2xs mt-0.5">
-                  <Quote className="w-4 h-4" />
+              <div className="flex items-start gap-2 min-w-0 flex-1">
+                <div className="w-4.5 h-4.5 rounded-md bg-amber-50 dark:bg-amber-950/60 border border-amber-200/70 dark:border-amber-900/50 flex items-center justify-center shrink-0 text-amber-600 dark:text-amber-400 shadow-2xs mt-0.5">
+                  <Quote className="w-2.5 h-2.5" />
                 </div>
-                <div className="min-w-0 space-y-1 flex-1">
-                  {/* Readable & Soothing Book-Quality Quote Typography */}
-                  <p className="font-quote text-base sm:text-lg md:text-xl lg:text-[22px] font-normal sm:font-medium text-[#2D3748] dark:text-[#E2E8F0] leading-relaxed tracking-wide line-clamp-2 sm:line-clamp-3">
+                <div className="min-w-0 space-y-0.5 flex-1">
+                  {/* Compact & Soothing Book-Quality Quote Typography */}
+                  <p className="font-quote text-[11.5px] sm:text-xs font-normal sm:font-medium text-[#2D3748] dark:text-[#E2E8F0] leading-snug tracking-normal line-clamp-2">
                     &ldquo;{activeQuote.text}&rdquo;
                   </p>
                 </div>
               </div>
             ) : (
-              <div className="flex items-center gap-3 min-w-0 flex-1 py-1">
-                <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200/70 dark:border-amber-900/50 flex items-center justify-center shrink-0 text-amber-600 dark:text-amber-400 shadow-2xs">
-                  <Quote className="w-4 h-4" />
+              <div className="flex items-center gap-2 min-w-0 flex-1 py-0.5">
+                <div className="w-4.5 h-4.5 rounded-md bg-amber-50 dark:bg-amber-950/60 border border-amber-200/70 dark:border-amber-900/50 flex items-center justify-center shrink-0 text-amber-600 dark:text-amber-400 shadow-2xs">
+                  <Quote className="w-2.5 h-2.5" />
                 </div>
-                <div className="min-w-0 space-y-0.5 flex-1">
-                  <p className="text-sm font-semibold text-[#2D3748] dark:text-[#E2E8F0]">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-[#2D3748] dark:text-[#E2E8F0]">
                     No Quotes in Collection
-                  </p>
-                  <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
-                    Click &ldquo;+ Add Quote&rdquo; on the right to add daily inspiration.
                   </p>
                 </div>
               </div>
             )}
 
-            {/* Quote Controls Bar (<> button in right bottom corner previous to Add quote button) */}
-            <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-[#EDECE9]/70 dark:border-[#334155]/60 flex-wrap">
+            {/* Quote Controls Bar */}
+            <div className="flex items-center justify-between gap-1.5 pt-1 border-t border-[#EDECE9]/70 dark:border-[#334155]/60 flex-wrap">
               {/* Author & counter badge */}
-              <div className="flex items-center gap-2 text-xs text-[#64748B] dark:text-[#94A3B8] truncate">
+              <div className="flex items-center gap-1.5 text-[9.5px] text-[#64748B] dark:text-[#94A3B8] truncate">
                 {activeQuote && (
                   <span className="font-semibold text-[#475569] dark:text-[#CBD5E1] truncate">
                     — {activeQuote.author}
                   </span>
                 )}
                 {allQuotesList.length > 1 && (
-                  <span className="font-mono text-[10px] px-1.5 py-0.5 rounded-md bg-[#EDECE9]/80 dark:bg-[#0F172A] text-[#64748B] dark:text-[#94A3B8] border border-[#E2E8F0] dark:border-[#334155]">
-                    {currentQuoteIdx + 1} of {allQuotesList.length}
+                  <span className="font-mono text-[9px] px-1 py-0.2 rounded bg-[#EDECE9]/80 dark:bg-[#0F172A] text-[#64748B] dark:text-[#94A3B8] border border-[#E2E8F0] dark:border-[#334155]">
+                    {currentQuoteIdx + 1}/{allQuotesList.length}
                   </span>
                 )}
               </div>
 
-              {/* Right bottom corner: <> button immediately previous to Add quote button */}
-              <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+              {/* Right bottom corner */}
+              <div className="flex items-center gap-1 shrink-0 ml-auto">
                 {allQuotesList.length > 1 && (
-                  <div className="flex items-center gap-0.5 bg-white dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#334155] rounded-xl p-0.5 shadow-2xs">
+                  <div className="flex items-center gap-0.5 bg-white dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#334155] rounded-lg p-0.5 shadow-2xs">
                     <button
                       type="button"
                       onClick={handlePrevQuote}
                       title="Previous quote"
-                      className="p-1 rounded-lg text-[#64748B] hover:text-[#6366F1] dark:hover:text-white hover:bg-[#F1F5F9] dark:hover:bg-[#1E293B] transition-colors cursor-pointer"
+                      className="p-0.5 rounded text-[#64748B] hover:text-[#6366F1] dark:hover:white hover:bg-[#F1F5F9] dark:hover:bg-[#1E293B] transition-colors cursor-pointer"
                     >
-                      <ChevronLeft className="w-3.5 h-3.5" />
+                      <ChevronLeft className="w-3 h-3" />
                     </button>
                     <button
                       type="button"
                       onClick={handleNextQuote}
                       title="Next quote"
-                      className="p-1 rounded-lg text-[#64748B] hover:text-[#6366F1] dark:hover:text-white hover:bg-[#F1F5F9] dark:hover:bg-[#1E293B] transition-colors cursor-pointer"
+                      className="p-0.5 rounded text-[#64748B] hover:text-[#6366F1] dark:hover:white hover:bg-[#F1F5F9] dark:hover:bg-[#1E293B] transition-colors cursor-pointer"
                     >
-                      <ChevronRight className="w-3.5 h-3.5" />
+                      <ChevronRight className="w-3 h-3" />
                     </button>
                   </div>
                 )}
 
-                {/* Add Quote Button */}
                 <button
                   type="button"
                   onClick={() => handleItemNavigate('quotes')}
                   title="Open Quotes Lounge"
-                  className="p-1 sm:px-2 sm:py-1 rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-[#64748B] hover:text-[#6366F1] dark:hover:text-white hover:border-[#6366F1]/40 transition-all cursor-pointer flex items-center gap-1 text-[11px] font-semibold shadow-2xs"
+                  className="px-1.5 py-0.5 rounded-lg border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-[#64748B] hover:text-[#6366F1] dark:hover:white transition-all cursor-pointer flex items-center gap-1 text-[9.5px] font-semibold shadow-2xs"
                 >
-                  <Quote className="w-3.5 h-3.5" />
+                  <Quote className="w-2.5 h-2.5" />
                   <span className="hidden sm:inline">Lounge</span>
                 </button>
 
@@ -599,14 +595,14 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
                     setShowAddQuotePopover((prev) => !prev);
                   }}
                   title="Add quote to collection"
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs ${
+                  className={`flex items-center gap-1 px-1.5 py-0.5 rounded-lg text-[9.5px] font-bold transition-all cursor-pointer shadow-2xs ${
                     showAddQuotePopover
                       ? 'bg-[#6366F1] text-white'
                       : 'bg-[#6366F1] text-white hover:bg-[#4F46E5]'
                   }`}
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Add Quote</span>
+                  <Plus className="w-2.5 h-2.5" />
+                  <span>Add</span>
                 </button>
               </div>
             </div>
@@ -701,12 +697,12 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
             )}
           </motion.div>
 
-          {/* Date & Clock Tile (3/4th size: 4 cols on lg, 3 on xl) */}
+          {/* Date & Clock Tile (Compact) */}
           <motion.div
             initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.45, delay: 0.14, ease: [0.16, 1, 0.3, 1] }}
-            className={`grid-tile lg:col-span-4 xl:col-span-3 px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#23324C] border border-[#EDECE9] dark:border-[#334155] shadow-xs flex flex-col justify-between transition-all duration-300 ${
+            className={`grid-tile lg:col-span-7 xl:col-span-7 px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#23324C] border border-[#EDECE9] dark:border-[#334155] shadow-xs flex flex-col justify-between transition-all duration-300 ${
               isAlarmRinging ? 'alarm-tile-pulse' : ''
             }`}
           >

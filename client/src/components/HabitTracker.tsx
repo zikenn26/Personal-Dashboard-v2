@@ -426,18 +426,27 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
   return (
     <div className="space-y-6">
       {/* ========================================================================= */}
-      {/* 0. TOP BANNER & ACTION HEADER (Android Parity)                            */}
+      {/* 0. TOP BANNER & ACTION HEADER (Calm Editorial Life OS)                     */}
       {/* ========================================================================= */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="workspace-heading font-extrabold text-[#37352F] dark:text-white flex items-center gap-2.5">
-            <span className="p-1.5 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400">
-              <Flame className="w-5 h-5 fill-amber-500" />
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#630ed4] dark:text-[#d2bbff]">
+              Calm Editorial Life OS
+            </span>
+            <span className="text-gray-300 dark:text-gray-600">·</span>
+            <span className="text-[11px] font-semibold text-[#4a4455] dark:text-[#ccc3d8]">
+              Tactile Precision
+            </span>
+          </div>
+          <h1 className="font-sans font-extrabold text-[28px] sm:text-[32px] leading-[34px] sm:leading-[38px] tracking-[-0.02em] text-[#1a1b23] dark:text-[#f1effa] flex items-center gap-2.5">
+            <span className="p-2 rounded-2xl bg-[#EDE9FE] dark:bg-[#630ed4]/20 text-[#630ed4] dark:text-[#d2bbff] border border-[#d2bbff]/40 dark:border-[#630ed4]/40">
+              <Flame className="w-5 h-5 fill-[#630ed4] dark:fill-[#d2bbff]" />
             </span>
             <span>Daily Routines &amp; Habits</span>
           </h1>
-          <p className="text-xs text-[#787774] dark:text-[#9CA3AF] mt-0.5">
-            {habits.length} habits tracked this week • Track daily momentum, streaks, and accountability
+          <p className="text-xs sm:text-sm text-[#4a4455] dark:text-[#ccc3d8] mt-1 font-normal tracking-[-0.01em]">
+            {habits.length} habits tracked this week • Diminish cognitive friction, cultivate atomic consistency, and track compounding momentum.
           </p>
         </div>
 
@@ -447,7 +456,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
             Sound.click(soundEnabled);
             setShowAddModal(true);
           }}
-          className="px-4 py-2 rounded-full bg-amber-500 hover:bg-amber-600 active:scale-98 text-white font-bold text-xs sm:text-sm flex items-center gap-2 shadow-xs transition-all cursor-pointer self-start sm:self-auto"
+          className="px-4 py-2.5 rounded-xl bg-[#630ed4] hover:bg-[#732ee4] active:scale-98 text-white font-bold text-xs sm:text-sm flex items-center gap-2 shadow-[0_2px_12px_rgba(99,14,212,0.25)] transition-all cursor-pointer self-start sm:self-auto"
         >
           <Plus className="w-4 h-4 stroke-[2.5]" />
           <span>Add Habit</span>
@@ -455,63 +464,65 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
       </div>
 
       {/* ========================================================================= */}
-      {/* 1. WEEKLY MOMENTUM PROGRESS CARD (Android Parity)                         */}
+      {/* 1. WEEKLY MOMENTUM PROGRESS CARD (Editorial Hero)                         */}
       {/* ========================================================================= */}
-      <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-amber-500 via-orange-500 to-amber-600 text-white shadow-lg shadow-amber-500/20 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-72 h-72 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#fbf8ff] via-[#f4f2fd] to-[#EDE9FE] dark:from-[#121826] dark:via-[#1A2234] dark:to-[#0B0F19] text-[#1a1b23] dark:text-[#f1effa] border border-[#E8E5F3] dark:border-[#242D40] p-5 sm:p-6 shadow-[0_2px_12px_rgba(99,14,212,0.06)]">
+        <div className="absolute top-0 right-0 w-80 h-80 bg-[#732ee4]/10 dark:bg-[#630ed4]/15 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <span className="px-2.5 py-0.5 rounded-full bg-white/20 text-[10px] font-black uppercase tracking-wider text-amber-100">
+              <span className="px-2.5 py-0.5 rounded-full bg-[#EDE9FE] dark:bg-[#630ed4]/30 text-[10px] font-bold uppercase tracking-[0.08em] text-[#4C1D95] dark:text-[#d2bbff] border border-[#d2bbff]/50 dark:border-[#630ed4]/40">
                 Weekly Momentum
               </span>
-              <div className="p-1 rounded-full bg-white/20">
-                <Flame className="w-3.5 h-3.5 text-white fill-white" />
+              <div className="p-1 rounded-full bg-white dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40]">
+                <Flame className="w-3.5 h-3.5 text-[#F59E0B] fill-[#F59E0B]" />
               </div>
             </div>
             <div className="flex items-baseline gap-2.5">
-              <span className="text-3xl sm:text-4xl font-black">{weeklyCompletionRate}%</span>
-              <span className="text-xs sm:text-sm text-amber-100 font-semibold">
+              <span className="font-extrabold text-[32px] sm:text-[36px] leading-[40px] tracking-[-0.03em] font-sans text-[#1a1b23] dark:text-white">
+                {weeklyCompletionRate}%
+              </span>
+              <span className="text-xs sm:text-sm text-[#4a4455] dark:text-[#ccc3d8] font-medium tracking-[-0.01em]">
                 ({totalWeeklyChecks} of {maxWeeklyChecks} completions this week)
               </span>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-amber-100 bg-white/15 px-3 py-1.5 rounded-full">
+            <span className="text-xs font-semibold text-[#4C1D95] dark:text-[#d2bbff] bg-white dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] px-3 py-1.5 rounded-xl shadow-2xs">
               {activeHabits.length} active routines
             </span>
           </div>
         </div>
 
-        {/* Progress Bar */}
-        <div className="w-full h-3 bg-black/20 rounded-full mt-4 overflow-hidden relative">
+        {/* Progress Bar with Spring-Damper styling */}
+        <div className="w-full h-2.5 bg-[#efecf8] dark:bg-[#1A2234] rounded-full mt-4 overflow-hidden relative border border-[#E8E5F3]/60 dark:border-[#242D40]">
           <div
-            className="h-full bg-white rounded-full transition-all duration-500 shadow-sm"
+            className="h-full bg-gradient-to-r from-[#630ed4] via-[#732ee4] to-[#4648d4] rounded-full transition-all duration-500 shadow-sm"
             style={{ width: `${weeklyCompletionRate}%` }}
           />
         </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* 2. SEARCH & VIEW CONTROLS (Android Search Parity)                         */}
+      {/* 2. SEARCH & VIEW CONTROLS (Tactile Filter Controls)                       */}
       {/* ========================================================================= */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         {/* Search Input */}
         <div className="relative flex-1 max-w-md">
-          <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <Search className="w-3.5 h-3.5 text-[#7b7487] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search habits & routines..."
-            className="w-full pl-9 pr-8 py-2 rounded-2xl bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] text-xs text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:border-amber-500 shadow-2xs"
+            className="w-full pl-9 pr-8 py-2 rounded-xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] text-xs text-[#1a1b23] dark:text-[#f1effa] placeholder-[#7b7487] focus:outline-none focus:border-[#630ed4] shadow-2xs"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => setSearchQuery('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-[#7b7487] hover:text-[#1a1b23] dark:hover:text-white cursor-pointer"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -520,7 +531,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
 
         {/* View Switcher: Cards vs Matrix */}
         <div className="flex items-center gap-2 self-end sm:self-auto">
-          <div className="flex items-center bg-gray-100 dark:bg-gray-800 p-0.5 rounded-xl border border-gray-200 dark:border-gray-700">
+          <div className="flex items-center bg-[#efecf8] dark:bg-[#1A2234] p-0.5 rounded-xl border border-[#E8E5F3] dark:border-[#242D40]">
             <button
               type="button"
               onClick={() => {
@@ -529,8 +540,8 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
               }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 viewMode === 'cards'
-                  ? 'bg-white dark:bg-[#1E293B] text-gray-900 dark:text-white shadow-2xs'
-                  : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
+                  ? 'bg-white dark:bg-[#121826] text-[#630ed4] dark:text-[#d2bbff] shadow-xs'
+                  : 'text-[#4a4455] dark:text-[#ccc3d8] hover:text-[#1a1b23] dark:hover:text-white'
               }`}
             >
               <LayoutGrid className="w-3.5 h-3.5" />
@@ -544,8 +555,8 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
               }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 viewMode === 'matrix'
-                  ? 'bg-white dark:bg-[#1E293B] text-gray-900 dark:text-white shadow-2xs'
-                  : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
+                  ? 'bg-white dark:bg-[#121826] text-[#630ed4] dark:text-[#d2bbff] shadow-xs'
+                  : 'text-[#4a4455] dark:text-[#ccc3d8] hover:text-[#1a1b23] dark:hover:text-white'
               }`}
             >
               <List className="w-3.5 h-3.5" />
@@ -558,31 +569,27 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
       {/* ========================================================================= */}
       {/* 3. HERO TILE: STREAKS & STATS OF THE ENTIRE JOURNEY                       */}
       {/* ========================================================================= */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#1E1B4B] via-[#0F172A] to-[#090D16] border border-indigo-900/50 p-6 sm:p-7 shadow-xl text-white">
-        {/* Subtle Ambient Glow */}
-        <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-10 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-
+      <div className="relative overflow-hidden rounded-3xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] p-6 sm:p-7 shadow-[0_2px_12px_rgba(99,14,212,0.04)] text-[#1a1b23] dark:text-[#f1effa]">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           {/* Left: Journey Brand & Streak Showcase */}
           <div className="flex items-center gap-4 sm:gap-5">
-            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center shadow-lg shadow-orange-500/25 shrink-0">
-              <Flame className="w-8 h-8 sm:w-9 sm:h-9 text-white fill-white animate-pulse" />
+            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-[#EDE9FE] dark:bg-[#630ed4]/20 border border-[#d2bbff]/60 dark:border-[#630ed4]/40 flex items-center justify-center shadow-xs shrink-0 text-[#630ed4] dark:text-[#d2bbff]">
+              <Flame className="w-8 h-8 sm:w-9 sm:h-9 fill-[#F59E0B] text-[#F59E0B] animate-pulse" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xs uppercase font-bold tracking-widest text-amber-400">
+                <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#630ed4] dark:text-[#d2bbff]">
                   Lifetime Journey Streaks
                 </span>
-                <span className="px-2 py-0.5 text-[10px] font-extrabold rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                <span className="px-2 py-0.5 text-[10px] font-extrabold rounded-full bg-[#f4f2fd] dark:bg-[#1A2234] text-[#4a4455] dark:text-[#ccc3d8] border border-[#E8E5F3] dark:border-[#242D40]">
                   All-Time
                 </span>
               </div>
-              <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-2.5 mt-0.5">
+              <h2 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.03em] text-[#1a1b23] dark:text-white flex items-center gap-2.5 mt-0.5 font-sans">
                 <span>{journeyStats.currentStreak} Days</span>
-                <span className="text-base sm:text-lg font-medium text-slate-300">Active Streak</span>
+                <span className="text-base sm:text-lg font-medium text-[#4a4455] dark:text-[#ccc3d8]">Active Streak</span>
               </h2>
-              <p className="text-xs text-slate-400 mt-1">
+              <p className="text-xs text-[#4a4455] dark:text-[#ccc3d8] mt-1 tracking-[-0.01em]">
                 Consistent habit building across all recorded weeks and daily check-ins
               </p>
             </div>
@@ -591,34 +598,34 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
           {/* Right: Key Streak & Journey Tiles Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 shrink-0">
             {/* Longest / Best Streak */}
-            <div className="p-3.5 rounded-2xl bg-white/5 backdrop-blur-md border border-white/10 hover:border-white/20 transition-all">
-              <div className="flex items-center gap-1.5 text-slate-400 text-xs font-semibold mb-1">
-                <Trophy className="w-3.5 h-3.5 text-amber-400" />
+            <div className="p-3.5 rounded-2xl bg-[#fbf8ff] dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] hover:border-[#ccc3d8] dark:hover:border-[#334155] transition-all">
+              <div className="flex items-center gap-1.5 text-[#4a4455] dark:text-[#ccc3d8] text-xs font-semibold mb-1">
+                <Trophy className="w-3.5 h-3.5 text-[#F59E0B]" />
                 <span>Best Streak</span>
               </div>
-              <div className="text-xl sm:text-2xl font-black text-white">
-                {journeyStats.bestStreak} <span className="text-xs font-normal text-slate-400">Days</span>
+              <div className="text-xl sm:text-2xl font-extrabold text-[#1a1b23] dark:text-white font-sans tracking-[-0.02em]">
+                {journeyStats.bestStreak} <span className="text-xs font-normal text-[#4a4455] dark:text-[#ccc3d8]">Days</span>
               </div>
             </div>
 
             {/* Total Check-ins of Entire Journey */}
-            <div className="p-3.5 rounded-2xl bg-white/5 backdrop-blur-md border border-white/10 hover:border-white/20 transition-all">
-              <div className="flex items-center gap-1.5 text-slate-400 text-xs font-semibold mb-1">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+            <div className="p-3.5 rounded-2xl bg-[#fbf8ff] dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] hover:border-[#ccc3d8] dark:hover:border-[#334155] transition-all">
+              <div className="flex items-center gap-1.5 text-[#4a4455] dark:text-[#ccc3d8] text-xs font-semibold mb-1">
+                <CheckCircle2 className="w-3.5 h-3.5 text-[#10B981]" />
                 <span>Total Check-ins</span>
               </div>
-              <div className="text-xl sm:text-2xl font-black text-white">
-                {journeyStats.totalChecks} <span className="text-xs font-normal text-slate-400">Done</span>
+              <div className="text-xl sm:text-2xl font-extrabold text-[#1a1b23] dark:text-white font-sans tracking-[-0.02em]">
+                {journeyStats.totalChecks} <span className="text-xs font-normal text-[#4a4455] dark:text-[#ccc3d8]">Done</span>
               </div>
             </div>
 
             {/* Consistency Rate */}
-            <div className="col-span-2 sm:col-span-1 p-3.5 rounded-2xl bg-white/5 backdrop-blur-md border border-white/10 hover:border-white/20 transition-all">
-              <div className="flex items-center gap-1.5 text-slate-400 text-xs font-semibold mb-1">
-                <TrendingUp className="w-3.5 h-3.5 text-indigo-400" />
+            <div className="col-span-2 sm:col-span-1 p-3.5 rounded-2xl bg-[#fbf8ff] dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] hover:border-[#ccc3d8] dark:hover:border-[#334155] transition-all">
+              <div className="flex items-center gap-1.5 text-[#4a4455] dark:text-[#ccc3d8] text-xs font-semibold mb-1">
+                <TrendingUp className="w-3.5 h-3.5 text-[#630ed4] dark:text-[#d2bbff]" />
                 <span>Consistency</span>
               </div>
-              <div className="text-xl sm:text-2xl font-black text-white">
+              <div className="text-xl sm:text-2xl font-extrabold text-[#1a1b23] dark:text-white font-sans tracking-[-0.02em]">
                 {journeyStats.consistency}%
               </div>
             </div>
@@ -629,16 +636,16 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
       {/* ========================================================================= */}
       {/* 4. WEEK SELECTOR & MODIFICATION CONTROLS                                  */}
       {/* ========================================================================= */}
-      <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] shadow-xs space-y-4">
+      <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           {/* Week Navigation Buttons & Dropdown Selector */}
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center rounded-xl border border-[#E5E7EB] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0F172A] p-1">
+            <div className="flex items-center rounded-xl border border-[#E8E5F3] dark:border-[#242D40] bg-[#fbf8ff] dark:bg-[#1A2234] p-1">
               <button
                 type="button"
                 onClick={handlePrevWeek}
                 disabled={currentWeekIdx >= availableWeeks.length - 1}
-                className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-[#1E293B] text-[#4B5563] dark:text-[#9CA3AF] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-[#121826] text-[#4a4455] dark:text-[#ccc3d8] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
                 title="View previous week"
               >
                 <ChevronLeft className="w-4 h-4" />
@@ -651,7 +658,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                   Sound.click(soundEnabled);
                   setSelectedWeekId(e.target.value);
                 }}
-                className="bg-transparent text-xs sm:text-sm font-bold text-[#111827] dark:text-white px-2 py-1 outline-none cursor-pointer"
+                className="bg-transparent text-xs sm:text-sm font-bold text-[#1a1b23] dark:text-white px-2 py-1 outline-none cursor-pointer"
               >
                 <option value="current">⚡ Current Week ({currentWeekLabel})</option>
                 {validPastWeeks.map((past) => (
@@ -665,7 +672,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                 type="button"
                 onClick={handleNextWeek}
                 disabled={currentWeekIdx <= 0}
-                className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-[#1E293B] text-[#4B5563] dark:text-[#9CA3AF] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-[#121826] text-[#4a4455] dark:text-[#ccc3d8] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
                 title="View next week"
               >
                 <ChevronRight className="w-4 h-4" />
@@ -680,7 +687,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                   Sound.click(soundEnabled);
                   setSelectedWeekId('current');
                 }}
-                className="px-3 py-1.5 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-xs font-bold border border-amber-300 dark:border-amber-700 hover:bg-amber-200 transition-colors flex items-center gap-1.5 cursor-pointer"
+                className="px-3 py-1.5 rounded-xl bg-[#EDE9FE] dark:bg-[#630ed4]/25 text-[#4C1D95] dark:text-[#d2bbff] text-xs font-bold border border-[#d2bbff]/60 dark:border-[#630ed4]/40 hover:bg-[#d2bbff]/50 transition-colors flex items-center gap-1.5 cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>Return to Current Week</span>
@@ -695,7 +702,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
               Sound.click(soundEnabled);
               setShowAddModal(true);
             }}
-            className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer transition-all shadow-sm shrink-0"
+            className="px-4 py-2 rounded-xl bg-[#630ed4] hover:bg-[#732ee4] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer transition-all shadow-xs shrink-0"
           >
             <Plus className="w-4 h-4" />
             <span>Add Habit {isViewingPastWeek ? 'to Past Week' : ''}</span>
@@ -704,14 +711,14 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
 
         {/* Informative Banner when editing previous week */}
         {isViewingPastWeek && (
-          <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 flex items-center justify-between gap-3">
+          <div className="p-3 rounded-xl bg-[#EDE9FE]/50 dark:bg-[#630ed4]/20 border border-[#d2bbff]/60 dark:border-[#630ed4]/40 text-xs text-[#4C1D95] dark:text-[#d2bbff] flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <Calendar className="w-4 h-4 text-[#630ed4] dark:text-[#d2bbff] shrink-0" />
               <span>
                 <strong>Modifying Past Week:</strong> You can retroactively check, uncheck, add, or delete habits for {activeWeekLabel}. All streak records and stats update instantly.
               </span>
             </div>
-            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-200/80 dark:bg-amber-800/80 text-amber-900 dark:text-amber-100 shrink-0">
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-white dark:bg-[#1A2234] border border-[#d2bbff]/60 dark:border-[#630ed4]/40 text-[#4C1D95] dark:text-[#d2bbff] shrink-0">
               Past Archive Active
             </span>
           </div>
@@ -720,25 +727,25 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
         {/* ========================================================================= */}
         {/* 5. WEEKLY TREND BAR & DAILY BREAKDOWN                                     */}
         {/* ========================================================================= */}
-        <div className="pt-2 border-t border-[#F3F4F6] dark:border-[#334155] space-y-3">
+        <div className="pt-2 border-t border-[#E8E5F3] dark:border-[#242D40] space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-amber-500" />
-              <span className="text-xs font-bold text-[#111827] dark:text-white uppercase tracking-wider">
+              <TrendingUp className="w-4 h-4 text-[#630ed4] dark:text-[#d2bbff]" />
+              <span className="text-[11px] font-bold text-[#1a1b23] dark:text-white uppercase tracking-[0.08em]">
                 Weekly Trend: {activeWeekLabel}
               </span>
             </div>
-            <div className="flex items-center gap-2 text-xs font-bold text-[#4B5563] dark:text-[#9CA3AF]">
-              <span className="text-amber-600 dark:text-amber-400 font-black">{weeklyCompletionRate}%</span>
+            <div className="flex items-center gap-2 text-xs font-bold text-[#4a4455] dark:text-[#ccc3d8]">
+              <span className="text-[#630ed4] dark:text-[#d2bbff] font-extrabold">{weeklyCompletionRate}%</span>
               <span>Routine Achieved</span>
               <span>({totalWeeklyChecks} of {maxWeeklyChecks} checks)</span>
             </div>
           </div>
 
           {/* Full-width completion progress bar */}
-          <div className="w-full h-3 rounded-full bg-[#F3F4F6] dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#334155] overflow-hidden p-0.5">
+          <div className="w-full h-2.5 rounded-full bg-[#efecf8] dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] overflow-hidden p-0.5">
             <div
-              className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full transition-all duration-500"
+              className="h-full bg-gradient-to-r from-[#630ed4] via-[#732ee4] to-[#10B981] rounded-full transition-all duration-500"
               style={{ width: `${weeklyCompletionRate}%` }}
             />
           </div>
@@ -752,17 +759,17 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                   key={d.dayIdx}
                   className={`p-2 rounded-xl text-center border transition-all ${
                     isToday
-                      ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700'
-                      : 'bg-[#F9FAFB] dark:bg-[#0F172A]/50 border-[#E5E7EB] dark:border-[#334155]'
+                      ? 'bg-[#EDE9FE] dark:bg-[#630ed4]/20 border-[#630ed4] text-[#4C1D95] dark:text-[#d2bbff]'
+                      : 'bg-[#fbf8ff] dark:bg-[#1A2234] border-[#E8E5F3] dark:border-[#242D40]'
                   }`}
                 >
-                  <div className="text-[10px] sm:text-xs font-bold text-[#6B7280] dark:text-[#9CA3AF]">
+                  <div className="text-[10px] sm:text-xs font-bold text-[#4a4455] dark:text-[#ccc3d8]">
                     {d.dayName}
                   </div>
-                  <div className="text-xs sm:text-sm font-black text-[#111827] dark:text-white mt-0.5">
+                  <div className="text-xs sm:text-sm font-extrabold text-[#1a1b23] dark:text-white mt-0.5 font-mono">
                     {d.doneCount}/{d.totalCount}
                   </div>
-                  <div className="text-[9px] font-semibold text-[#9CA3AF] mt-0.5">
+                  <div className="text-[9px] font-semibold text-[#7b7487] mt-0.5 font-mono">
                     {d.rate}%
                   </div>
                 </div>
@@ -774,21 +781,21 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
         {/* ========================================================================= */}
         {/* 6. HABITS CONTENT: CARDS VIEW OR MATRIX VIEW                             */}
         {/* ========================================================================= */}
-        <div className="pt-3 border-t border-[#F3F4F6] dark:border-[#334155]">
+        <div className="pt-3 border-t border-[#E8E5F3] dark:border-[#242D40]">
           {filteredActiveHabits.length === 0 ? (
-            <div className="py-12 text-center text-xs text-[#9CA3AF] space-y-3">
-              <Flame className="w-10 h-10 text-amber-400 mx-auto mb-2 opacity-60" />
-              <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
+            <div className="py-12 text-center text-xs text-[#7b7487] space-y-3">
+              <Flame className="w-10 h-10 text-[#630ed4] dark:text-[#d2bbff] mx-auto mb-2 opacity-60" />
+              <p className="text-sm font-bold text-[#1a1b23] dark:text-gray-200">
                 {searchQuery ? 'No habits match your search' : 'No habits logged for this week.'}
               </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
+              <p className="text-xs text-[#4a4455] dark:text-[#ccc3d8]">
                 {searchQuery ? 'Try searching for a different keyword or category.' : 'Build lasting daily routines. Tap “Add Habit” above!'}
               </p>
               {!searchQuery && (
                 <button
                   type="button"
                   onClick={() => setShowAddModal(true)}
-                  className="px-4 py-2 rounded-xl bg-amber-500 text-white text-xs font-bold cursor-pointer hover:bg-amber-600 inline-flex items-center gap-1.5 shadow-xs"
+                  className="px-4 py-2 rounded-xl bg-[#630ed4] text-white text-xs font-bold cursor-pointer hover:bg-[#732ee4] inline-flex items-center gap-1.5 shadow-xs"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Create First Habit</span>
@@ -797,7 +804,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
             </div>
           ) : viewMode === 'cards' ? (
             /* =================================================================== */
-            /* VIEW MODE A: ANDROID-STYLE HABIT CARDS GRID                         */
+            /* VIEW MODE A: CALM EDITORIAL HABIT CARDS GRID                        */
             /* =================================================================== */
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filteredActiveHabits.map((habit) => {
@@ -806,30 +813,30 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                 return (
                   <div
                     key={habit.id}
-                    className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] shadow-xs hover:shadow-md transition-all space-y-4 group"
+                    className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-xs hover:border-[#ccc3d8] dark:hover:border-[#4a4455] hover:shadow-[0_4px_20px_rgba(99,14,212,0.06)] transition-all space-y-4 group"
                   >
                     {/* Top Header of Card */}
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
                         <div
-                          className="w-11 h-11 rounded-2xl flex items-center justify-center text-xl shrink-0 shadow-xs"
+                          className="w-11 h-11 rounded-2xl flex items-center justify-center text-xl shrink-0 shadow-xs border border-[#E8E5F3] dark:border-[#242D40]"
                           style={{
-                            backgroundColor: `${habit.color || '#6366F1'}20`,
-                            color: habit.color || '#6366F1',
+                            backgroundColor: `${habit.color || '#630ed4'}18`,
+                            color: habit.color || '#630ed4',
                           }}
                         >
                           <span>{habit.icon || '⚡'}</span>
                         </div>
                         <div className="min-w-0">
-                          <h3 className="text-sm sm:text-base font-bold text-gray-900 dark:text-white truncate">
+                          <h3 className="text-sm sm:text-base font-bold text-[#1a1b23] dark:text-[#f1effa] truncate tracking-[-0.01em]">
                             {habit.title}
                           </h3>
                           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#fbf8ff] dark:bg-[#1A2234] text-[#4a4455] dark:text-[#ccc3d8] border border-[#E8E5F3] dark:border-[#242D40]">
                               {habit.category || 'General'}
                             </span>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 flex items-center gap-1">
-                              <Flame className="w-3 h-3 text-amber-500 fill-amber-500" />
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-[#FEF3C7] dark:bg-[#78350F]/40 text-[#78350F] dark:text-[#FEF3C7] border border-[#F59E0B]/30 flex items-center gap-1 font-mono">
+                              <Flame className="w-3 h-3 text-[#F59E0B] fill-[#F59E0B]" />
                               <span>{habit.streak || 0}d streak</span>
                             </span>
                           </div>
@@ -840,7 +847,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                         <button
                           type="button"
                           onClick={() => handleStartEditHabit(habit)}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                          className="p-1.5 rounded-lg text-[#7b7487] hover:text-[#630ed4] dark:hover:text-[#d2bbff] hover:bg-[#EDE9FE] dark:hover:bg-[#1A2234] transition-colors cursor-pointer"
                           title="Edit habit"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
@@ -848,7 +855,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                         <button
                           type="button"
                           onClick={() => handleDeleteHabitItem(habit.id)}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                          className="p-1.5 rounded-lg text-[#7b7487] hover:text-[#EF4444] dark:hover:text-rose-400 hover:bg-[#FEE2E2] dark:hover:bg-[#1A2234] transition-colors cursor-pointer"
                           title="Delete habit"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -856,7 +863,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                       </div>
                     </div>
 
-                    {/* 7-Day Completion Bubbles (Android Parity) */}
+                    {/* 7-Day Completion Bubbles (Tactile Modernist precision) */}
                     <div className="grid grid-cols-7 gap-1 sm:gap-2 pt-1">
                       {activeDaysInfo.map((day, dayIdx) => {
                         const isDone = habit.completedDays[dayIdx];
@@ -868,14 +875,14 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                             onClick={() => handleToggle(habit.id, dayIdx, isDone)}
                             className={`py-2 px-1 rounded-2xl flex flex-col items-center justify-center transition-all cursor-pointer border ${
                               isDone
-                                ? 'bg-amber-500 text-white border-amber-500 shadow-xs'
+                                ? 'bg-[#10B981] text-white border-[#10B981] shadow-xs'
                                 : isToday
-                                ? 'border-2 border-amber-500 bg-amber-50/50 dark:bg-amber-950/20 text-amber-900 dark:text-amber-200'
-                                : 'border-[#E5E7EB] dark:border-[#334155] bg-gray-50/50 dark:bg-gray-800/40 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+                                ? 'border-2 border-[#630ed4] bg-[#EDE9FE]/50 dark:bg-[#630ed4]/20 text-[#630ed4] dark:text-[#d2bbff]'
+                                : 'border-[#E8E5F3] dark:border-[#242D40] bg-[#fbf8ff] dark:bg-[#1A2234] text-[#4a4455] dark:text-[#ccc3d8] hover:bg-[#efecf8] dark:hover:bg-[#242D40]'
                             }`}
                             title={`${day.name} (${day.dateStr}): ${isDone ? 'Completed' : 'Pending'}`}
                           >
-                            <span className="text-[10px] font-bold uppercase">{DAY_LABELS[dayIdx]}</span>
+                            <span className="text-[10px] font-bold uppercase tracking-wider">{DAY_LABELS[dayIdx]}</span>
                             <span className="text-xs font-mono font-bold mt-0.5">
                               {day.dateStr ? day.dateStr.slice(-2) : dayIdx + 1}
                             </span>
@@ -883,7 +890,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                               {isDone ? (
                                 <Check className="w-3 h-3 stroke-[3]" />
                               ) : (
-                                <div className="w-1.5 h-1.5 rounded-full bg-gray-300 dark:bg-gray-600" />
+                                <div className="w-1.5 h-1.5 rounded-full bg-[#ccc3d8] dark:bg-gray-600" />
                               )}
                             </div>
                           </button>
@@ -892,14 +899,14 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                     </div>
 
                     {/* Weekly Completion Progress Bar */}
-                    <div className="pt-2 border-t border-gray-100 dark:border-gray-800/80 space-y-1.5">
-                      <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                    <div className="pt-2 border-t border-[#E8E5F3] dark:border-[#242D40] space-y-1.5">
+                      <div className="flex items-center justify-between text-xs text-[#4a4455] dark:text-[#ccc3d8]">
                         <span>{habitDoneCount}/7 days completed</span>
-                        <span className="font-bold text-gray-900 dark:text-white font-mono">{habitPercent}%</span>
+                        <span className="font-bold text-[#1a1b23] dark:text-white font-mono">{habitPercent}%</span>
                       </div>
-                      <div className="w-full h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                      <div className="w-full h-1.5 bg-[#efecf8] dark:bg-[#1A2234] rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-amber-500 rounded-full transition-all duration-300"
+                          className="h-full bg-[#10B981] rounded-full transition-all duration-300"
                           style={{ width: `${habitPercent}%` }}
                         />
                       </div>
@@ -910,12 +917,12 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
             </div>
           ) : (
             /* =================================================================== */
-            /* VIEW MODE B: FULL MATRIX TABLE                                     */
+            /* VIEW MODE B: FULL MATRIX TABLE (Calm Editorial Precision)           */
             /* =================================================================== */
             <div className="overflow-x-auto">
               <div className="min-w-[650px] space-y-2">
                 {/* Table Header */}
-                <div className="grid grid-cols-12 gap-2 pb-2 border-b border-[#F3F4F6] dark:border-[#334155] text-xs font-bold text-[#6B7280] dark:text-[#9CA3AF]">
+                <div className="grid grid-cols-12 gap-2 pb-2 border-b border-[#E8E5F3] dark:border-[#242D40] text-xs font-bold text-[#4a4455] dark:text-[#ccc3d8]">
                   <div className="col-span-5 pl-2">Habit Routine</div>
                   <div className="col-span-7 grid grid-cols-7 gap-1 text-center">
                     {activeDaysInfo.map((day, idx) => {
@@ -925,12 +932,12 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                           key={idx}
                           className={`p-1 rounded-lg ${
                             isToday
-                              ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-600 font-black'
+                              ? 'bg-[#EDE9FE] dark:bg-[#630ed4]/20 text-[#630ed4] dark:text-[#d2bbff] font-black'
                               : ''
                           }`}
                         >
-                          <div className="text-[11px]">{day.name}</div>
-                          <div className="text-[10px] text-[#9CA3AF] font-mono">{day.dateStr.slice(-2)}</div>
+                          <div className="text-[11px] font-bold">{day.name}</div>
+                          <div className="text-[10px] text-[#7b7487] font-mono">{day.dateStr.slice(-2)}</div>
                         </div>
                       );
                     })}
@@ -943,20 +950,20 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                   return (
                     <div
                       key={habit.id}
-                      className="grid grid-cols-12 gap-2 items-center p-2.5 rounded-xl hover:bg-[#F9FAFB] dark:hover:bg-[#0F172A] transition-colors border border-transparent hover:border-[#E5E7EB] dark:border-[#334155]"
+                      className="grid grid-cols-12 gap-2 items-center p-2.5 rounded-xl hover:bg-[#fbf8ff] dark:hover:bg-[#1A2234] transition-colors border border-transparent hover:border-[#E8E5F3] dark:hover:border-[#242D40]"
                     >
                       {/* Left: Habit Info */}
                       <div className="col-span-5 flex items-center justify-between pr-3">
                         <div className="flex items-center gap-2.5 min-w-0">
                           <span className="text-xl shrink-0">{habit.icon || '⚡'}</span>
                           <div className="min-w-0">
-                            <h4 className="text-xs sm:text-sm font-bold text-[#111827] dark:text-white truncate">
+                            <h4 className="text-xs sm:text-sm font-bold text-[#1a1b23] dark:text-white truncate">
                               {habit.title}
                             </h4>
-                            <div className="flex items-center gap-2 text-[10px] text-[#6B7280] dark:text-[#9CA3AF]">
+                            <div className="flex items-center gap-2 text-[10px] text-[#4a4455] dark:text-[#ccc3d8]">
                               <span>{habit.category}</span>
                               <span>•</span>
-                              <span className="font-semibold text-amber-600 dark:text-amber-400">
+                              <span className="font-semibold text-[#10B981] font-mono">
                                 {habitDoneCount}/7 this week
                               </span>
                             </div>
@@ -968,7 +975,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                           <button
                             type="button"
                             onClick={() => handleStartEditHabit(habit)}
-                            className="text-[#9CA3AF] hover:text-amber-600 dark:hover:text-amber-400 p-1 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors cursor-pointer"
+                            className="text-[#7b7487] hover:text-[#630ed4] dark:hover:text-[#d2bbff] p-1 rounded-lg hover:bg-[#EDE9FE] dark:hover:bg-[#1A2234] transition-colors cursor-pointer"
                             title="Edit habit details"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
@@ -976,7 +983,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                           <button
                             type="button"
                             onClick={() => handleDeleteHabitItem(habit.id)}
-                            className="text-[#9CA3AF] hover:text-rose-500 p-1 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
+                            className="text-[#7b7487] hover:text-[#EF4444] p-1 rounded-lg hover:bg-[#FEE2E2] dark:hover:bg-[#1A2234] transition-colors cursor-pointer"
                             title="Delete habit"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -996,10 +1003,10 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                                 onClick={() => handleToggle(habit.id, dayIdx, isDone)}
                                 className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
                                   isDone
-                                    ? 'bg-amber-500 text-white shadow-xs scale-100'
+                                    ? 'bg-[#10B981] text-white shadow-xs scale-100'
                                     : isToday
-                                    ? 'border-2 border-amber-400 dark:border-amber-500 bg-amber-50/50 dark:bg-amber-950/30 hover:bg-amber-100'
-                                    : 'border border-[#E5E7EB] dark:border-[#374151] bg-white dark:bg-[#111827] hover:bg-[#F3F4F6] dark:hover:bg-[#1F2937]'
+                                    ? 'border-2 border-[#630ed4] dark:border-[#732ee4] bg-[#EDE9FE]/50 dark:bg-[#630ed4]/30 hover:bg-[#EDE9FE]'
+                                    : 'border border-[#E8E5F3] dark:border-[#242D40] bg-white dark:bg-[#121826] hover:bg-[#efecf8] dark:hover:bg-[#1A2234]'
                                 }`}
                                 title={`${habit.title} - ${day?.formattedDate || DAYS_OF_WEEK[dayIdx]}`}
                               >

@@ -335,15 +335,13 @@ export const DEFAULT_HOME_GRID_ORDER: string[] = [
   'habits',
   'tasks',
   'expenses',
-  'focus_sprint',
   'schedule',
-  'ai_secretary',
 ];
 
 export const DEFAULT_HOME_COLUMNS: [string[], string[], string[]] = [
   ['calendar', 'habits'],
-  ['tasks', 'expenses', 'focus_sprint'],
-  ['schedule', 'ai_secretary'],
+  ['tasks', 'expenses'],
+  ['schedule'],
 ];
 
 export const DEFAULT_SCHEDULE_ACTIVITIES: ScheduleActivity[] = [
@@ -1945,7 +1943,7 @@ export const Storage = {
 
   getHomeGridColumns: (): [string[], string[], string[]] => {
     const raw = loadFromStorage<any>(STORAGE_KEYS.HOME_GRID_ORDER, null);
-    const validWidgets = new Set(['calendar', 'schedule', 'expenses', 'habits', 'tasks', 'ai_secretary', 'focus_sprint']);
+    const validWidgets = new Set(['calendar', 'schedule', 'expenses', 'habits', 'tasks']);
 
     if (Array.isArray(raw) && raw.length === 3 && Array.isArray(raw[0]) && Array.isArray(raw[1]) && Array.isArray(raw[2])) {
       const col0 = raw[0].filter((w: string) => validWidgets.has(w));
@@ -1953,14 +1951,11 @@ export const Storage = {
       const col2 = raw[2].filter((w: string) => validWidgets.has(w));
 
       const present = new Set([...col0, ...col1, ...col2]);
-      if (!present.has('ai_secretary')) {
-        // Place next to calendar at top of col 1
-        col1.unshift('ai_secretary');
-        present.add('ai_secretary');
-      }
       validWidgets.forEach((w) => {
         if (!present.has(w)) {
-          col2.push(w);
+          if (w === 'tasks' || w === 'expenses') col1.push(w);
+          else if (w === 'schedule') col2.push(w);
+          else col0.push(w);
         }
       });
       return [col0, col1, col2];
@@ -1972,9 +1967,9 @@ export const Storage = {
       validWidgets.forEach((w) => {
         if (!flatItems.includes(w)) flatItems.push(w);
       });
-      const col0: string[] = flatItems.includes('calendar') ? ['calendar'] : [];
-      const col1: string[] = flatItems.includes('schedule') ? ['schedule'] : [];
-      const col2: string[] = flatItems.filter((w) => w !== 'calendar' && w !== 'schedule');
+      const col0: string[] = ['calendar', 'habits'].filter((w) => flatItems.includes(w));
+      const col1: string[] = ['tasks', 'expenses'].filter((w) => flatItems.includes(w));
+      const col2: string[] = ['schedule'].filter((w) => flatItems.includes(w));
       return [col0, col1, col2];
     }
 

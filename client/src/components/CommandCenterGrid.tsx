@@ -11,7 +11,6 @@ import {
 import { Sound } from '../utils/audio';
 import { IndianCalendarWidget } from './IndianCalendarWidget';
 import { DynamicScheduleCard } from './DynamicScheduleCard';
-import { AISecretaryWidget } from './AISecretaryWidget';
 import {
   CheckCircle2,
   Circle,
@@ -27,7 +26,6 @@ import {
   Timer,
   Play,
   Pause,
-  Droplets,
 } from 'lucide-react';
 
 export interface DropIndicator {
@@ -298,9 +296,9 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
   }, []);
 
   // Standard 3-column data model
-  // Default matches screenshot: Col 0: Calendar + Habits, Col 1: Tasks + Expenses + Focus, Col 2: Schedule + AI Brief
+  // Default matches clean 3-column layout: Col 0: Calendar + Habits, Col 1: Tasks + Expenses, Col 2: Schedule
   const columns: [string[], string[], string[]] = useMemo(() => {
-    const valid = new Set(['calendar', 'schedule', 'expenses', 'habits', 'tasks', 'ai_secretary', 'secretary', 'focus_sprint']);
+    const valid = new Set(['calendar', 'schedule', 'expenses', 'habits', 'tasks']);
     if (propColumns && propColumns.length === 3) {
       const col0 = propColumns[0].filter((w) => valid.has(w));
       const col1 = propColumns[1].filter((w) => valid.has(w));
@@ -308,34 +306,19 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
       const present = new Set([...col0, ...col1, ...col2]);
       valid.forEach((w) => {
         if (!present.has(w)) {
-          if (w === 'focus_sprint') col1.push(w);
-          else if (w === 'ai_secretary' || w === 'secretary') col2.push(w);
-          else col1.push(w);
+          if (w === 'tasks' || w === 'expenses') col1.push(w);
+          else if (w === 'schedule') col2.push(w);
+          else col0.push(w);
         }
       });
       return [col0, col1, col2];
     }
     return [
       ['calendar', 'habits'],
-      ['tasks', 'expenses', 'focus_sprint'],
-      ['schedule', 'ai_secretary'],
+      ['tasks', 'expenses'],
+      ['schedule'],
     ];
   }, [propColumns]);
-
-  // Daily Hydration Tracking (glasses: 0-8)
-  const [hydrationGlasses, setHydrationGlasses] = useState<number>(() => {
-    const today = new Date().toISOString().split('T')[0];
-    const saved = localStorage.getItem(`lifeos_hydration_${today}`);
-    return saved !== null ? Number(saved) : 5;
-  });
-
-  const handleToggleHydrationGlass = (index: number) => {
-    Sound.click(soundEnabled);
-    const today = new Date().toISOString().split('T')[0];
-    const next = hydrationGlasses === index + 1 ? index : index + 1;
-    setHydrationGlasses(next);
-    localStorage.setItem(`lifeos_hydration_${today}`, String(next));
-  };
 
   // Robust Drag and Drop State
   const [draggedWidgetId, setDraggedWidgetId] = useState<string | null>(null);
@@ -553,16 +536,6 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
   ) => {
     const dragHandle = renderDragHandle(widgetId, colIdx, rowIdx, colLength);
 
-    if (widgetId === 'ai_secretary' || widgetId === 'secretary') {
-      return (
-        <AISecretaryWidget
-          dragHandle={dragHandle}
-          onNavigate={onNavigate}
-          className="w-full"
-        />
-      );
-    }
-
     if (widgetId === 'calendar') {
       return (
         <IndianCalendarWidget
@@ -771,7 +744,7 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
           </div>
 
           <div className="space-y-2 max-h-[300px] overflow-y-auto pr-0.5">
-            {habits.length === 0 ? (
+            {habits.filter((h) => !h.title.toLowerCase().includes('hydrat') && !h.title.toLowerCase().includes('water') && !h.title.toLowerCase().includes('drink')).length === 0 ? (
               <div className="p-5 text-center bg-white dark:bg-[#0F172A] rounded-xl border border-dashed border-[#E2E8F0] dark:border-[#334155]">
                 <Flame className="w-5 h-5 text-amber-500 mx-auto mb-1 opacity-80" />
                 <p className="text-xs font-semibold text-[#37352F] dark:text-white">Build daily momentum</p>
@@ -780,7 +753,10 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
                 </p>
               </div>
             ) : (
-              habits.slice(0, 6).map((habit) => {
+              habits
+                .filter((h) => !h.title.toLowerCase().includes('hydrat') && !h.title.toLowerCase().includes('water') && !h.title.toLowerCase().includes('drink'))
+                .slice(0, 6)
+                .map((habit) => {
                 const isCompleted = habit.completedDays[todayIndex];
                 return (
                   <div
@@ -822,39 +798,6 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
                 );
               })
             )}
-          </div>
-
-          {/* Hydration Tracker */}
-          <div className="p-2.5 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200/70 dark:border-blue-900/50 space-y-1.5">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-bold text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
-                <Droplets className="w-3.5 h-3.5 text-blue-500" />
-                <span>Hydration</span>
-              </span>
-              <span className="text-[11px] font-mono font-bold text-blue-700 dark:text-blue-300">
-                {hydrationGlasses} / 8 glasses ({Math.round(hydrationGlasses * 0.25 * 10) / 10}L)
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-1 pt-0.5">
-              {Array.from({ length: 8 }).map((_, gIdx) => {
-                const isDrank = gIdx < hydrationGlasses;
-                return (
-                  <button
-                    key={gIdx}
-                    type="button"
-                    onClick={() => handleToggleHydrationGlass(gIdx)}
-                    className={`flex-1 h-6 rounded-lg flex items-center justify-center text-[10px] transition-all cursor-pointer ${
-                      isDrank
-                        ? 'bg-blue-500 text-white shadow-2xs font-bold scale-102'
-                        : 'bg-white dark:bg-gray-800 border border-blue-200 dark:border-blue-800 text-gray-400 hover:border-blue-400'
-                    }`}
-                    title={`Glass ${gIdx + 1} (250ml)`}
-                  >
-                    💧
-                  </button>
-                );
-              })}
-            </div>
           </div>
 
           {/* Quick Add Habit Field */}
