@@ -82,9 +82,6 @@ export const AndroidProfileSheet: React.FC<AndroidProfileSheetProps> = ({
                 Profile
               </span>
             </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
-              {profile.handle || '@lifeos'}
-            </p>
           </div>
           <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-violet-600 group-hover:translate-x-0.5 transition-all shrink-0" />
         </button>

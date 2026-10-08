@@ -1,23 +1,45 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BottomSheet } from '../gestures/BottomSheet';
 import { nativeService } from '../../../services/nativeService';
-import { Plus, Flame } from 'lucide-react';
+import { Plus, Flame, Edit2, Trash2, Check } from 'lucide-react';
+import { HabitItem } from '../../../types';
 
 export interface QuickHabitSheetProps {
   isOpen: boolean;
   onClose: () => void;
+  initialHabit?: HabitItem | null;
   onAddHabit?: (title: string, category: string, icon: string, color: string) => void;
+  onUpdateHabit?: (habit: HabitItem) => void;
+  onDeleteHabit?: (habitId: string) => void;
 }
 
 export const QuickHabitSheet: React.FC<QuickHabitSheetProps> = ({
   isOpen,
   onClose,
+  initialHabit,
   onAddHabit,
+  onUpdateHabit,
+  onDeleteHabit,
 }) => {
+  const isEditing = Boolean(initialHabit);
   const [title, setTitle] = useState('');
-  const [category, setCategory] = useState('Wellness');
+  const [category, setCategory] = useState('Health');
   const [selectedIcon, setSelectedIcon] = useState('⚡');
   const [selectedColor, setSelectedColor] = useState('#7C3AED');
+
+  useEffect(() => {
+    if (initialHabit) {
+      setTitle(initialHabit.title || '');
+      setCategory(initialHabit.category || 'Health');
+      setSelectedIcon(initialHabit.icon || '⚡');
+      setSelectedColor(initialHabit.color || '#7C3AED');
+    } else {
+      setTitle('');
+      setCategory('Health');
+      setSelectedIcon('⚡');
+      setSelectedColor('#7C3AED');
+    }
+  }, [initialHabit, isOpen]);
 
   const icons = ['⚡', '💧', '🏃', '📚', '🧘', '🥗', '💻', '🌅', '💤', '🎯', '✨', '💪'];
   const colors = [
@@ -28,21 +50,45 @@ export const QuickHabitSheet: React.FC<QuickHabitSheetProps> = ({
     { name: 'Blue', hex: '#3B82F6' },
     { name: 'Pink', hex: '#EC4899' },
   ];
-  const categories = ['Wellness', 'Health', 'Learning', 'Productivity', 'Mindset', 'Fitness'];
+  const categories = ['Health', 'Wellness', 'Learning', 'Productivity', 'Mindset', 'Fitness', 'Finance', 'Daily'];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const clean = title.trim();
-    if (!clean || !onAddHabit) return;
+    if (!clean) return;
 
-    void nativeService.triggerHaptic('success');
-    onAddHabit(clean, category, selectedIcon, selectedColor);
-    setTitle('');
+    if (isEditing && initialHabit && onUpdateHabit) {
+      void nativeService.triggerHaptic('success');
+      onUpdateHabit({
+        ...initialHabit,
+        title: clean,
+        category,
+        icon: selectedIcon,
+        color: selectedColor,
+      });
+      onClose();
+    } else if (onAddHabit) {
+      void nativeService.triggerHaptic('success');
+      onAddHabit(clean, category, selectedIcon, selectedColor);
+      setTitle('');
+      onClose();
+    }
+  };
+
+  const handleDelete = () => {
+    if (!initialHabit || !onDeleteHabit) return;
+    void nativeService.triggerHaptic('warning');
+    onDeleteHabit(initialHabit.id);
     onClose();
   };
 
   return (
-    <BottomSheet isOpen={isOpen} onClose={onClose} title="Add New Habit" subtitle="Build a daily routine & streak">
+    <BottomSheet
+      isOpen={isOpen}
+      onClose={onClose}
+      title={isEditing ? 'Edit Habit' : 'Add New Habit'}
+      subtitle={isEditing ? 'Modify routine details or delete' : 'Build a daily routine & streak'}
+    >
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Title */}
         <div>
@@ -131,15 +177,34 @@ export const QuickHabitSheet: React.FC<QuickHabitSheetProps> = ({
           </select>
         </div>
 
-        {/* Submit */}
-        <div className="pt-2">
+        {/* Submit / Action Buttons */}
+        <div className="pt-2 flex items-center gap-2.5">
+          {isEditing && onDeleteHabit && (
+            <button
+              type="button"
+              onClick={handleDelete}
+              className="py-3 px-4 rounded-full bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-400 font-bold text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Delete</span>
+            </button>
+          )}
           <button
             type="submit"
             disabled={!title.trim()}
-            className="w-full py-3 px-4 rounded-full bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-bold text-sm shadow-md shadow-violet-500/25 flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer"
+            className="flex-1 py-3 px-4 rounded-full bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-bold text-sm shadow-md shadow-violet-500/25 flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer"
           >
-            <Plus className="w-4 h-4" />
-            <span>Create Habit</span>
+            {isEditing ? (
+              <>
+                <Check className="w-4 h-4" />
+                <span>Save Changes</span>
+              </>
+            ) : (
+              <>
+                <Plus className="w-4 h-4" />
+                <span>Create Habit</span>
+              </>
+            )}
           </button>
         </div>
       </form>

@@ -3739,15 +3739,6 @@ export default function App() {
               {/* VIEW: Habits Tracker */}
               {activeView === 'habits' && (
                 <div className="space-y-6">
-                  <div className="space-y-2 pb-4 border-b border-[#E5E7EB] dark:border-[#1F2937]">
-                    <h1 className="workspace-heading font-extrabold text-[#37352F] dark:text-white flex items-center gap-2.5">
-                      <span>⚡</span>
-                      <span>Daily Routines & Habits</span>
-                    </h1>
-                    <p className="text-xs text-[#787774] dark:text-[#9CA3AF]">
-                      Track daily momentum, streaks, and accountability routines
-                    </p>
-                  </div>
                   <HabitTracker
                     habits={habits}
                     habitHistory={habitHistory}

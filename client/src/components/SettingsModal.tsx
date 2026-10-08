@@ -1,11 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Settings,
-  Download,
-  Upload,
   RotateCcw,
   KeyRound,
-  Shield,
   Check,
   AlertTriangle,
   User,
@@ -17,12 +14,9 @@ import {
   Camera,
   Eye,
   EyeOff,
-  Bot,
   Sparkle,
   Sparkles,
   ExternalLink,
-  Zap,
-  Sliders,
 } from 'lucide-react';
 import { AppSettings, AuthUser, DeviceSession } from '../types';
 import { Sound } from '../utils/audio';
@@ -103,10 +97,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [confirmRevokeId, setConfirmRevokeId] = useState<string | null>(null);
   const [deviceNotice, setDeviceNotice] = useState<string | null>(null);
-
-  // Import / Export state
-  const [importStatus, setImportStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Keep displayName in sync when modal opens or userName updates
   useEffect(() => {
@@ -310,30 +300,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target?.result as string;
-      if (content) {
-        const success = onImportData(content);
-        if (success) {
-          Sound.success(settings.soundEnabled);
-          setImportStatus('success');
-          setTimeout(() => {
-            setImportStatus('idle');
-            onClose();
-          }, 1500);
-        } else {
-          setImportStatus('error');
-        }
-      }
-    };
-    reader.readAsText(file);
-  };
-
   const formatLastActive = (timestamp: number, isCurrent?: boolean) => {
     if (isCurrent) return 'Active now';
     const diff = Date.now() - timestamp;
@@ -365,7 +331,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </span>
             <div>
               <h3 className="text-base font-bold text-[#111827] dark:text-white leading-none">
-                Workspace Settings &amp; Security
+                Settings &amp; Profile
               </h3>
             </div>
           </div>
@@ -805,103 +771,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </button>
               </div>
             </form>
-          </div>
-
-          {/* SECTION: VOICE TRIGGERS & COMMAND MAPPING */}
-          <div className="space-y-3 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold flex items-center gap-1.5">
-                <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500/20" />
-                <span>Voice Command Triggers &amp; Mapping</span>
-              </span>
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800/40">
-                {Storage.getCommandMappings().filter((m) => m.enabled).length} Active Triggers
-              </span>
-            </div>
-
-            <div className="p-3.5 rounded-xl border border-[#E5E7EB] dark:border-[#1F2937] bg-[#F9FAFB] dark:bg-[#1F2937]/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <div className="text-xs font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
-                  <Sliders className="w-3.5 h-3.5 text-indigo-500" />
-                  <span>Custom Voice Triggers</span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  if (onOpenCommandMappings) onOpenCommandMappings();
-                }}
-                className="px-3.5 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0 justify-center"
-              >
-                <Zap className="w-3.5 h-3.5" />
-                <span>Configure Triggers</span>
-              </button>
-            </div>
-          </div>
-
-          {/* SECTION 5: BACKUP & DATA EXPORT */}
-          <div className="space-y-3 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold block">
-                Storage Engine &amp; Backup
-              </span>
-              <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-semibold">
-                <Shield className="w-3 h-3" />
-                Cloud Realtime Sync
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  Sound.success(settings.soundEnabled);
-                  onExportData();
-                }}
-                className="p-3 rounded-xl border border-[#E5E7EB] dark:border-[#1F2937] bg-[#F9FAFB] hover:bg-[#F3F4F6] dark:bg-[#1F2937]/50 dark:hover:bg-[#1F2937] flex items-center gap-2.5 text-left transition-colors cursor-pointer"
-              >
-                <Download className="w-4 h-4 text-emerald-500 shrink-0" />
-                <div>
-                  <p className="text-xs font-bold text-[#111827] dark:text-white">Export Full JSON</p>
-                </div>
-              </button>
-
-              <div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".json"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full p-3 rounded-xl border border-[#E5E7EB] dark:border-[#1F2937] bg-[#F9FAFB] hover:bg-[#F3F4F6] dark:bg-[#1F2937]/50 dark:hover:bg-[#1F2937] flex items-center gap-2.5 text-left transition-colors cursor-pointer"
-                >
-                  <Upload className="w-4 h-4 text-[#6366F1] dark:text-[#818CF8] shrink-0" />
-                  <div>
-                    <p className="text-xs font-bold text-[#111827] dark:text-white">Import Backup JSON</p>
-                  </div>
-                </button>
-              </div>
-            </div>
-
-            {importStatus === 'success' && (
-              <p className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
-                <Check className="w-3.5 h-3.5" />
-                Backup successfully imported! Reloading state...
-              </p>
-            )}
-
-            {importStatus === 'error' && (
-              <p className="text-xs text-rose-500 font-semibold flex items-center gap-1">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                Invalid JSON format. Please verify the backup file.
-              </p>
-            )}
           </div>
         </div>
 

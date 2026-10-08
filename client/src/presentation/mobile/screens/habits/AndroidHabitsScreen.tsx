@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Flame, Plus, Trash2, RotateCcw, Check, Sparkles, Award, Search, X } from 'lucide-react';
+import { Flame, Plus, Trash2, RotateCcw, Check, Sparkles, Award, Search, X, Edit2 } from 'lucide-react';
 import { HabitItem, HabitWeekRecord } from '../../../../types';
 import { nativeService } from '../../../../services/nativeService';
 import { useLongPress } from '../../gestures/useLongPress';
@@ -28,6 +28,7 @@ export const AndroidHabitsScreen: React.FC<AndroidHabitsScreenProps> = ({
   onResetWeek,
 }) => {
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
+  const [editingHabit, setEditingHabit] = useState<HabitItem | null>(null);
   const [activeActionHabit, setActiveActionHabit] = useState<HabitItem | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -74,25 +75,11 @@ export const AndroidHabitsScreen: React.FC<AndroidHabitsScreenProps> = ({
 
   return (
     <div className="w-full max-w-lg mx-auto px-3.5 pb-24 pt-2 space-y-3.5">
-      {/* Subtitle & Quick Action Bar */}
-      <div className="flex items-center justify-between px-1 pt-0.5 pb-0.5">
+      {/* Subtitle Header */}
+      <div className="px-1 pt-0.5 pb-0.5">
         <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
           {habits.length} habits tracked this week
         </p>
-
-        {onAddHabit && (
-          <button
-            type="button"
-            onClick={() => {
-              void nativeService.triggerHaptic('selection');
-              setIsAddSheetOpen(true);
-            }}
-            className="px-3.5 py-1.5 rounded-full bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Add Habit</span>
-          </button>
-        )}
       </div>
 
       {/* Momentum Progress Card */}
@@ -169,9 +156,28 @@ export const AndroidHabitsScreen: React.FC<AndroidHabitsScreenProps> = ({
               habit={habit}
               onToggleDay={(dayIdx) => handleToggleDay(habit.id, dayIdx)}
               onLongPress={() => setActiveActionHabit(habit)}
+              onEdit={() => {
+                void nativeService.triggerHaptic('selection');
+                setEditingHabit(habit);
+              }}
             />
           ))}
         </div>
+      )}
+
+      {/* Floating Plus Button - Bottom Right Corner */}
+      {onAddHabit && (
+        <button
+          type="button"
+          aria-label="Add Habit"
+          onClick={() => {
+            void nativeService.triggerHaptic('selection');
+            setIsAddSheetOpen(true);
+          }}
+          className="fixed bottom-20 right-4 z-40 w-13 h-13 rounded-full bg-amber-500 hover:bg-amber-600 active:scale-95 text-white shadow-xl flex items-center justify-center transition-all cursor-pointer border-2 border-white dark:border-[#0b111e]"
+        >
+          <Plus className="w-6 h-6 stroke-[2.5]" />
+        </button>
       )}
 
       {/* Add Habit Sheet */}
@@ -182,6 +188,15 @@ export const AndroidHabitsScreen: React.FC<AndroidHabitsScreenProps> = ({
           onAddHabit={onAddHabit}
         />
       )}
+
+      {/* Edit Habit Sheet */}
+      <QuickHabitSheet
+        isOpen={Boolean(editingHabit)}
+        initialHabit={editingHabit}
+        onClose={() => setEditingHabit(null)}
+        onUpdateHabit={onUpdateHabit}
+        onDeleteHabit={onDeleteHabit}
+      />
 
       {/* Long-press Contextual Action Sheet */}
       <AndroidActionSheet
@@ -197,14 +212,16 @@ export const AndroidHabitsScreen: React.FC<AndroidHabitsScreenProps> = ({
 
 interface HabitItemCardProps {
   habit: HabitItem;
-  onToggleDay: (dayIdx: number) => void;
+  onToggleDay: (dayIdx) => void;
   onLongPress: () => void;
+  onEdit: () => void;
 }
 
 const HabitItemCard: React.FC<HabitItemCardProps> = ({
   habit,
   onToggleDay,
   onLongPress,
+  onEdit,
 }) => {
   const longPressProps = useLongPress(() => {
     onLongPress();
@@ -231,10 +248,26 @@ const HabitItemCard: React.FC<HabitItemCardProps> = ({
           </div>
         </div>
 
-        {/* Streak Badge */}
-        <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400 text-xs font-bold shrink-0">
-          <Flame className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
-          <span>{habit.streak}d</span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* Streak Badge */}
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400 text-xs font-bold">
+            <Flame className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+            <span>{habit.streak}d</span>
+          </div>
+
+          {/* Small Edit Button */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit();
+            }}
+            className="p-1 rounded-lg text-gray-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 active:scale-95 transition-all cursor-pointer"
+            title="Edit or delete habit"
+            aria-label={`Edit ${habit.title}`}
+          >
+            <Edit2 className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
 
