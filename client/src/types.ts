@@ -22,6 +22,7 @@ export interface HabitItem {
   completedDays: boolean[]; // 7 days (Mon-Sun)
   streak: number;
   color: string;
+  completedDates?: string[]; // 'YYYY-MM-DD' discrete completed dates for calendar tracking
   createdAt?: number;
   updatedAt?: number;
 }

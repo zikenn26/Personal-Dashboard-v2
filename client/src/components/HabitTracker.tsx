@@ -8,15 +8,28 @@ import {
   Sparkles,
   RotateCcw,
   X,
+  ChevronLeft,
+  ChevronRight,
+  Calendar as CalendarIcon,
+  Maximize2,
+  TrendingUp,
 } from 'lucide-react';
 import { HabitItem, HabitWeekRecord, HabitActivityLog } from '../types';
 import { Sound } from '../utils/audio';
+import {
+  getMonthCalendarData,
+  isHabitDateCompleted,
+  toggleHabitDate,
+  formatDateIso,
+  getMondayOfWeek,
+} from '../utils/habitWeekManager';
 
 export interface HabitTrackerProps {
   habits: HabitItem[];
   habitHistory?: HabitWeekRecord[];
   habitActivities?: HabitActivityLog[];
   onToggleHabitDay: (habitId: string, dayIndex: number) => void;
+  onToggleHabitDate?: (habitId: string, dateStr: string) => void;
   onAddHabit: (title: string, category: string, icon: string, color: string) => void;
   onUpdateHabit: (habit: HabitItem) => void;
   onDeleteHabit: (habitId: string) => void;
@@ -29,6 +42,7 @@ export interface HabitTrackerProps {
 }
 
 const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+const WEEKDAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const EMOJI_OPTIONS = ['⚡', '💧', '🏃', '📚', '🧘', '🥗', '💻', '🌅', '💤', '🎯', '✨', '💪', '🍎', '🏋️', '💊', '🚶'];
 const COLOR_OPTIONS = [
   { name: 'Purple', hex: '#7b2cbf' },
@@ -43,6 +57,7 @@ const COLOR_OPTIONS = [
 export const HabitTracker: React.FC<HabitTrackerProps> = ({
   habits,
   onToggleHabitDay,
+  onToggleHabitDate,
   onAddHabit,
   onUpdateHabit,
   onDeleteHabit,
@@ -52,6 +67,14 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
   const [timeframe, setTimeframe] = useState<'today' | 'week' | 'month'>('today');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingHabit, setEditingHabit] = useState<HabitItem | null>(null);
+
+  // Month navigation state
+  const today = useMemo(() => new Date(), []);
+  const [selectedYear, setSelectedYear] = useState<number>(today.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState<number>(today.getMonth());
+
+  // Individual habit detailed calendar modal state
+  const [expandedHabitId, setExpandedHabitId] = useState<string | null>(null);
 
   // Form states for Add Habit modal
   const [newTitle, setNewTitle] = useState('');
@@ -67,9 +90,22 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
 
   // Today's day index: Monday is 0, Sunday is 6
   const todayDayIdx = useMemo(() => {
-    const day = new Date().getDay();
+    const day = today.getDay();
     return (day + 6) % 7;
-  }, []);
+  }, [today]);
+
+  const currentMonday = useMemo(() => getMondayOfWeek(today), [today]);
+  const todayDateStr = useMemo(() => formatDateIso(today), [today]);
+
+  // Calendar info for the selected month
+  const monthData = useMemo(() => {
+    return getMonthCalendarData(selectedYear, selectedMonth);
+  }, [selectedYear, selectedMonth]);
+
+  const activeExpandedHabit = useMemo(() => {
+    if (!expandedHabitId) return null;
+    return habits.find((h) => h.id === expandedHabitId) || null;
+  }, [expandedHabitId, habits]);
 
   // Progress metrics for today and the week
   const todayCompletedCount = useMemo(() => {
@@ -93,6 +129,21 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
     return Math.max(...habits.map((h) => h.streak || 0));
   }, [habits]);
 
+  // Total month stats across all habits
+  const monthOverallStats = useMemo(() => {
+    let completed = 0;
+    const possible = habits.length * monthData.daysInMonth;
+    habits.forEach((h) => {
+      monthData.days.forEach((d) => {
+        if (isHabitDateCompleted(h, d.dateStr, currentMonday)) {
+          completed++;
+        }
+      });
+    });
+    const rate = possible > 0 ? Math.round((completed / possible) * 100) : 0;
+    return { completed, possible, rate };
+  }, [habits, monthData, currentMonday]);
+
   const handleToggleToday = (habitId: string) => {
     Sound.click(soundEnabled);
     onToggleHabitDay(habitId, todayDayIdx);
@@ -101,6 +152,45 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
   const handleToggleDay = (habitId: string, dayIdx: number) => {
     Sound.click(soundEnabled);
     onToggleHabitDay(habitId, dayIdx);
+  };
+
+  const handleToggleDate = (habitId: string, dateStr: string) => {
+    Sound.click(soundEnabled);
+    if (onToggleHabitDate) {
+      onToggleHabitDate(habitId, dateStr);
+    } else if (onUpdateHabit) {
+      const target = habits.find((h) => h.id === habitId);
+      if (target) {
+        const updated = toggleHabitDate(target, dateStr, currentMonday);
+        onUpdateHabit(updated);
+      }
+    }
+  };
+
+  const handlePrevMonth = () => {
+    Sound.click(soundEnabled);
+    if (selectedMonth === 0) {
+      setSelectedMonth(11);
+      setSelectedYear((y) => y - 1);
+    } else {
+      setSelectedMonth((m) => m - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    Sound.click(soundEnabled);
+    if (selectedMonth === 11) {
+      setSelectedMonth(0);
+      setSelectedYear((y) => y + 1);
+    } else {
+      setSelectedMonth((m) => m + 1);
+    }
+  };
+
+  const handleResetToCurrentMonth = () => {
+    Sound.click(soundEnabled);
+    setSelectedYear(today.getFullYear());
+    setSelectedMonth(today.getMonth());
   };
 
   const openEditModal = (habit: HabitItem) => {
@@ -143,6 +233,9 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
     onDeleteHabit(editingHabit.id);
     setEditingHabit(null);
   };
+
+  const isCurrentViewingMonth =
+    selectedYear === today.getFullYear() && selectedMonth === today.getMonth();
 
   return (
     <div className="space-y-4 animate-in fade-in duration-200">
@@ -240,68 +333,106 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
           </button>
         </div>
 
-        {/* Section title & Streak count */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-[#111827] dark:text-white">
-            {timeframe === 'today'
-              ? "Today's Habits"
-              : timeframe === 'week'
-              ? "This Week's Habits"
-              : 'Monthly Overview'}
-          </span>
-          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#efebff] dark:bg-[#252045] text-[#6100a4] dark:text-[#deb7ff] text-[11px] font-semibold border border-[#cfc2d5]/40 dark:border-[#383060]">
-            <Flame className="w-3 h-3 fill-[#7b2cbf] text-[#7b2cbf] dark:fill-[#deb7ff] dark:text-[#deb7ff]" />
-            <span>
+        {/* Section title & Month Navigator or Streak Badge */}
+        {timeframe === 'month' ? (
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 bg-[#efebff] dark:bg-[#1a1738] px-2.5 py-1 rounded-lg border border-[#cfc2d5]/30 dark:border-[#2f2956]">
+              <button
+                type="button"
+                onClick={handlePrevMonth}
+                aria-label="Previous month"
+                className="p-1 rounded text-[#6100a4] dark:text-[#deb7ff] hover:bg-white/60 dark:hover:bg-[#28224d] cursor-pointer"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <span className="text-xs font-bold text-[#181445] dark:text-white px-1">
+                {monthData.monthName} {monthData.year}
+              </span>
+              {!isCurrentViewingMonth && (
+                <button
+                  type="button"
+                  onClick={handleResetToCurrentMonth}
+                  className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#7b2cbf] text-white cursor-pointer"
+                >
+                  Today
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleNextMonth}
+                aria-label="Next month"
+                className="p-1 rounded text-[#6100a4] dark:text-[#deb7ff] hover:bg-white/60 dark:hover:bg-[#28224d] cursor-pointer"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <div className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#efebff] dark:bg-[#252045] text-[#6100a4] dark:text-[#deb7ff] text-xs font-semibold border border-[#cfc2d5]/40 dark:border-[#383060]">
+              <TrendingUp className="w-3.5 h-3.5" />
+              <span>{monthOverallStats.rate}% overall</span>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-[#111827] dark:text-white">
+              {timeframe === 'today' ? "Today's Habits" : "This Week's Habits"}
+            </span>
+            <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#efebff] dark:bg-[#252045] text-[#6100a4] dark:text-[#deb7ff] text-[11px] font-semibold border border-[#cfc2d5]/40 dark:border-[#383060]">
+              <Flame className="w-3 h-3 fill-[#7b2cbf] text-[#7b2cbf] dark:fill-[#deb7ff] dark:text-[#deb7ff]" />
+              <span>
+                {timeframe === 'today'
+                  ? `${todayCompletedCount} of ${habits.length} done`
+                  : `${maxStreak}d Streak`}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 3. Momentum Progress Card (Shown on Today/Week) */}
+      {timeframe !== 'month' && (
+        <div className="p-3.5 rounded-xl bg-gradient-to-r from-[#7b2cbf] to-[#6100a4] text-white shadow-xs relative overflow-hidden">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] font-bold text-[#e4c2ff] uppercase tracking-wider">
+              {timeframe === 'today' ? "Today's Progress" : 'Weekly Momentum'}
+            </span>
+            <div className="p-0.5 rounded-full bg-white/20">
+              <Sparkles className="w-3 h-3 text-white" />
+            </div>
+          </div>
+
+          <div className="flex items-baseline gap-2">
+            <span className="text-xl font-extrabold">
               {timeframe === 'today'
-                ? `${todayCompletedCount} of ${habits.length} done`
-                : `${maxStreak}d Streak`}
+                ? `${habits.length > 0 ? Math.round((todayCompletedCount / habits.length) * 100) : 0}%`
+                : `${completionRate}%`}
+            </span>
+            <span className="text-[11px] text-[#e4c2ff]">
+              {timeframe === 'today'
+                ? `(${todayCompletedCount} of ${habits.length} completed)`
+                : `(${totalCompleted} of ${totalPossible} total)`}
             </span>
           </div>
-        </div>
-      </div>
 
-      {/* 3. Momentum Progress Card */}
-      <div className="p-3.5 rounded-xl bg-gradient-to-r from-[#7b2cbf] to-[#6100a4] text-white shadow-xs relative overflow-hidden">
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[10px] font-bold text-[#e4c2ff] uppercase tracking-wider">
-            {timeframe === 'today' ? "Today's Progress" : 'Weekly Momentum'}
-          </span>
-          <div className="p-0.5 rounded-full bg-white/20">
-            <Sparkles className="w-3 h-3 text-white" />
+          {/* Progress bar */}
+          <div className="w-full h-1.5 bg-black/25 rounded-full mt-2.5 overflow-hidden">
+            <div
+              className="h-full bg-[#6dfad2] rounded-full transition-all duration-500"
+              style={{
+                width: `${
+                  timeframe === 'today'
+                    ? habits.length > 0
+                      ? Math.round((todayCompletedCount / habits.length) * 100)
+                      : 0
+                    : completionRate
+                }%`,
+              }}
+            />
           </div>
         </div>
+      )}
 
-        <div className="flex items-baseline gap-2">
-          <span className="text-xl font-extrabold">
-            {timeframe === 'today'
-              ? `${habits.length > 0 ? Math.round((todayCompletedCount / habits.length) * 100) : 0}%`
-              : `${completionRate}%`}
-          </span>
-          <span className="text-[11px] text-[#e4c2ff]">
-            {timeframe === 'today'
-              ? `(${todayCompletedCount} of ${habits.length} completed)`
-              : `(${totalCompleted} of ${totalPossible} total)`}
-          </span>
-        </div>
-
-        {/* Progress bar */}
-        <div className="w-full h-1.5 bg-black/25 rounded-full mt-2.5 overflow-hidden">
-          <div
-            className="h-full bg-[#6dfad2] rounded-full transition-all duration-500"
-            style={{
-              width: `${
-                timeframe === 'today'
-                  ? habits.length > 0
-                    ? Math.round((todayCompletedCount / habits.length) * 100)
-                    : 0
-                  : completionRate
-              }%`,
-            }}
-          />
-        </div>
-      </div>
-
-      {/* 4. Habit Items List / Grid */}
+      {/* 4. Habit Items List / Calendar Grid */}
       {habits.length === 0 ? (
         <div className="p-8 text-center rounded-xl bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155]">
           <Flame className="w-8 h-8 text-[#7b2cbf] mx-auto mb-2 opacity-60" />
@@ -323,7 +454,137 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
             <span>Add Habit</span>
           </button>
         </div>
+      ) : timeframe === 'month' ? (
+        /* MONTH VIEW (WEB): Interactive Calendar Cards for each Habit */
+        <div className="space-y-3">
+          <div className="flex items-center justify-between text-xs text-[#6B7280] dark:text-[#9CA3AF] px-1">
+            <span>
+              Click any date cell to mark or unmark completion directly.
+            </span>
+            <span>
+              {habits.length} habits in {monthData.monthName}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {habits.map((habit) => {
+              const completedDatesInMonth = monthData.days.filter((d) =>
+                isHabitDateCompleted(habit, d.dateStr, currentMonday)
+              ).length;
+              const monthRate = Math.round(
+                (completedDatesInMonth / monthData.daysInMonth) * 100
+              );
+
+              return (
+                <div
+                  key={habit.id}
+                  className="p-3.5 rounded-xl bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] shadow-2xs space-y-3 hover:border-[#7b2cbf] dark:hover:border-[#deb7ff] transition-all"
+                >
+                  {/* Card Header */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-sm shrink-0 shadow-2xs"
+                        style={{
+                          backgroundColor: habit.color ? `${habit.color}20` : '#f1dbff',
+                          color: habit.color || '#6100a4',
+                        }}
+                      >
+                        <span>{habit.icon || '⚡'}</span>
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="font-bold text-xs sm:text-sm text-[#111827] dark:text-white truncate">
+                          {habit.title}
+                        </h3>
+                        <p className="text-[10px] text-[#6B7280] dark:text-[#9CA3AF]">
+                          {completedDatesInMonth}/{monthData.daysInMonth} days ({monthRate}%)
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          Sound.click(soundEnabled);
+                          setExpandedHabitId(habit.id);
+                        }}
+                        className="p-1 rounded text-gray-400 hover:text-[#7b2cbf] hover:bg-[#efebff] dark:hover:bg-[#28224d] transition-colors cursor-pointer"
+                        title="Open full interactive calendar"
+                        aria-label={`Open calendar for ${habit.title}`}
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openEditModal(habit)}
+                        className="p-1 rounded text-gray-400 hover:text-[#7b2cbf] hover:bg-[#efebff] dark:hover:bg-[#28224d] transition-colors cursor-pointer"
+                        title="Edit habit"
+                        aria-label={`Edit ${habit.title}`}
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Interactive Calendar Grid inside Card */}
+                  <div className="bg-gray-50/70 dark:bg-[#111827]/70 p-2 rounded-lg border border-[#E5E7EB]/80 dark:border-[#28224d]">
+                    {/* Weekday headers */}
+                    <div className="grid grid-cols-7 gap-1 text-center mb-1">
+                      {DAY_LABELS.map((d, i) => (
+                        <span key={i} className="text-[9px] font-bold text-gray-400 dark:text-gray-500">
+                          {d}
+                        </span>
+                      ))}
+                    </div>
+
+                    {/* Day cells */}
+                    <div className="grid grid-cols-7 gap-1 text-center">
+                      {/* Leading blanks */}
+                      {Array.from({ length: monthData.leadingBlankCount }).map((_, i) => (
+                        <div key={`blank-${i}`} className="h-5 sm:h-6" />
+                      ))}
+
+                      {/* Days */}
+                      {monthData.days.map((d) => {
+                        const isDone = isHabitDateCompleted(habit, d.dateStr, currentMonday);
+                        return (
+                          <button
+                            key={d.dateStr}
+                            type="button"
+                            onClick={() => handleToggleDate(habit.id, d.dateStr)}
+                            className={`h-5 sm:h-6 rounded-md flex items-center justify-center text-[10px] font-semibold transition-all cursor-pointer relative active:scale-90 ${
+                              isDone
+                                ? 'bg-[#7b2cbf] text-white shadow-2xs font-bold'
+                                : d.isToday
+                                ? 'bg-[#efebff] dark:bg-[#28224d] text-[#7b2cbf] dark:text-[#deb7ff] font-bold border border-[#7b2cbf]'
+                                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                            }`}
+                            title={`${d.dateStr}: ${isDone ? 'Marked completed (click to unmark)' : 'Not completed (click to mark)'}`}
+                          >
+                            <span>{d.dayNum}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Card Footer Progress Bar */}
+                  <div>
+                    <div className="w-full h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[#7b2cbf] rounded-full transition-all duration-300"
+                        style={{ width: `${monthRate}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       ) : (
+        /* TODAY & WEEK VIEWS: Standard compact habit list */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
           {habits.map((habit) => {
             const isDoneToday = Boolean(habit.completedDays && habit.completedDays[todayDayIdx]);
@@ -430,35 +691,212 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                     </div>
                   </div>
                 )}
-
-                {/* Month view: 30-day dot matrix */}
-                {timeframe === 'month' && (
-                  <div className="pt-0.5">
-                    <div className="flex items-center justify-between text-[11px] mb-1">
-                      <span className="text-[#6B7280] dark:text-[#9CA3AF]">Monthly Consistency</span>
-                      <span className="font-bold text-[#7b2cbf] dark:text-[#deb7ff]">
-                        {Math.min(100, Math.round((habit.streak / 30) * 100))}%
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-10 gap-0.5">
-                      {Array.from({ length: 30 }).map((_, i) => {
-                        const isActive = i < Math.min(30, habit.streak);
-                        return (
-                          <div
-                            key={i}
-                            className={`h-1.5 rounded-xs transition-colors ${
-                              isActive ? 'bg-[#7b2cbf]' : 'bg-[#F3F4F6] dark:bg-[#111827]'
-                            }`}
-                            title={`Day ${i + 1}`}
-                          />
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* 5. Expanded Individual Habit Calendar Modal (Desktop Web) */}
+      {activeExpandedHabit && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] shadow-2xl p-5 space-y-4 animate-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-[#E5E7EB] dark:border-[#334155]">
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-9 h-9 rounded-xl flex items-center justify-center text-lg shrink-0 shadow-xs"
+                  style={{
+                    backgroundColor: activeExpandedHabit.color
+                      ? `${activeExpandedHabit.color}25`
+                      : '#f1dbff',
+                    color: activeExpandedHabit.color || '#6100a4',
+                  }}
+                >
+                  <span>{activeExpandedHabit.icon || '⚡'}</span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm sm:text-base text-[#111827] dark:text-white">
+                    {activeExpandedHabit.title}
+                  </h3>
+                  <p className="text-xs text-[#6B7280] dark:text-[#9CA3AF] flex items-center gap-1.5">
+                    <span>{activeExpandedHabit.category || 'Daily'}</span>
+                    <span>•</span>
+                    <span className="text-[#7b2cbf] dark:text-[#deb7ff] font-semibold">
+                      {activeExpandedHabit.streak}d streak
+                    </span>
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setExpandedHabitId(null)}
+                className="p-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Habit fast switcher tab strip (if multiple habits) */}
+            {habits.length > 1 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                {habits.map((h) => (
+                  <button
+                    key={h.id}
+                    type="button"
+                    onClick={() => {
+                      Sound.click(soundEnabled);
+                      setExpandedHabitId(h.id);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1 ${
+                      h.id === activeExpandedHabit.id
+                        ? 'bg-[#7b2cbf] text-white shadow-2xs'
+                        : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200'
+                    }`}
+                  >
+                    <span>{h.icon || '⚡'}</span>
+                    <span>{h.title}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Month Navigator */}
+            <div className="flex items-center justify-between bg-gray-50 dark:bg-[#111827] px-3.5 py-2 rounded-xl border border-gray-200 dark:border-gray-700">
+              <button
+                type="button"
+                onClick={handlePrevMonth}
+                aria-label="Previous month"
+                className="p-1 rounded-md text-[#7b2cbf] hover:bg-white dark:hover:bg-gray-800 cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              <div className="text-center">
+                <span className="text-xs sm:text-sm font-bold text-[#111827] dark:text-white">
+                  {monthData.monthName} {monthData.year}
+                </span>
+                <p className="text-[10px] text-[#6B7280] dark:text-[#9CA3AF]">
+                  Click any day to mark or unmark
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleNextMonth}
+                aria-label="Next month"
+                className="p-1 rounded-md text-[#7b2cbf] hover:bg-white dark:hover:bg-gray-800 cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Large Interactive Calendar Grid */}
+            <div className="bg-gray-50/50 dark:bg-[#111827]/50 p-3 rounded-xl border border-gray-200 dark:border-gray-700">
+              {/* Day of week headers */}
+              <div className="grid grid-cols-7 gap-1.5 text-center mb-1.5">
+                {WEEKDAY_NAMES.map((d, i) => (
+                  <span
+                    key={i}
+                    className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase"
+                  >
+                    {d}
+                  </span>
+                ))}
+              </div>
+
+              {/* Day cells */}
+              <div className="grid grid-cols-7 gap-1.5 text-center">
+                {/* Leading blanks */}
+                {Array.from({ length: monthData.leadingBlankCount }).map((_, i) => (
+                  <div key={`blank-${i}`} className="h-9 sm:h-10" />
+                ))}
+
+                {/* Month days */}
+                {monthData.days.map((d) => {
+                  const isDone = isHabitDateCompleted(
+                    activeExpandedHabit,
+                    d.dateStr,
+                    currentMonday
+                  );
+
+                  return (
+                    <button
+                      key={d.dateStr}
+                      type="button"
+                      onClick={() => handleToggleDate(activeExpandedHabit.id, d.dateStr)}
+                      className={`h-9 sm:h-10 rounded-lg flex flex-col items-center justify-center text-xs font-semibold transition-all cursor-pointer relative active:scale-95 ${
+                        isDone
+                          ? 'bg-[#7b2cbf] text-white font-bold shadow-xs'
+                          : d.isToday
+                          ? 'bg-[#efebff] dark:bg-[#201c40] text-[#7b2cbf] dark:text-[#deb7ff] font-bold border-2 border-[#7b2cbf]'
+                          : 'bg-white dark:bg-[#1E293B] text-gray-800 dark:text-gray-200 hover:bg-[#e9e5ff] dark:hover:bg-[#28224d] border border-gray-200/60 dark:border-gray-700'
+                      }`}
+                      title={`${d.dateStr}: ${isDone ? 'Completed' : 'Not completed'}`}
+                    >
+                      <span>{d.dayNum}</span>
+                      {isDone && (
+                        <Check className="w-3 h-3 text-[#6dfad2] stroke-[3]" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Monthly stats breakdown */}
+            {(() => {
+              const completedCountInMonth = monthData.days.filter((d) =>
+                isHabitDateCompleted(activeExpandedHabit, d.dateStr, currentMonday)
+              ).length;
+              const rate = Math.round(
+                (completedCountInMonth / monthData.daysInMonth) * 100
+              );
+
+              return (
+                <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#111827] text-xs">
+                  <div>
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400 block">
+                      Month Completion
+                    </span>
+                    <span className="font-extrabold text-sm text-[#7b2cbf] dark:text-[#deb7ff]">
+                      {rate}%
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400 block">
+                      Days Logged
+                    </span>
+                    <span className="font-bold text-xs text-gray-900 dark:text-white">
+                      {completedCountInMonth} / {monthData.daysInMonth} days
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Action buttons */}
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => handleToggleDate(activeExpandedHabit.id, todayDateStr)}
+                className="py-2 px-3 text-xs rounded-lg bg-[#efebff] dark:bg-[#201c40] text-[#7b2cbf] dark:text-[#deb7ff] font-semibold hover:bg-[#e3dfff] dark:hover:bg-[#28224d] transition-colors cursor-pointer"
+              >
+                {isHabitDateCompleted(activeExpandedHabit, todayDateStr, currentMonday)
+                  ? 'Unmark Today'
+                  : 'Mark Today Done'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setExpandedHabitId(null)}
+                className="py-2 px-4 text-xs rounded-lg bg-[#7b2cbf] hover:bg-[#6100a4] text-white font-semibold shadow-xs cursor-pointer"
+              >
+                Done
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

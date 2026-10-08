@@ -91,6 +91,7 @@ export interface AndroidShellProps {
   onClearAllExpenses?: () => void;
 
   onToggleHabitDay: (habitId: string, dayIndex: number) => void;
+  onToggleHabitDate?: (habitId: string, dateStr: string) => void;
   onAddHabit?: (title: string, category: string, icon: string, color: string) => void;
   onUpdateHabit?: (habit: HabitItem) => void;
   onDeleteHabit?: (habitId: string) => void;
@@ -180,6 +181,7 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
   onDeleteBatchExpenses,
   onDeleteImportLog,
   onToggleHabitDay,
+  onToggleHabitDate,
   onAddHabit,
   onUpdateHabit,
   onDeleteHabit,
@@ -449,6 +451,7 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
               habits={habits}
               habitHistory={habitHistory}
               onToggleHabitDay={onToggleHabitDay}
+              onToggleHabitDate={onToggleHabitDate}
               onAddHabit={onAddHabit}
               onUpdateHabit={onUpdateHabit}
               onDeleteHabit={onDeleteHabit}

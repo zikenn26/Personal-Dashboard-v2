@@ -376,3 +376,125 @@ export function archiveCurrentWeekRecord(
   };
 }
 
+/**
+ * Returns month calendar info for given year and 0-indexed month
+ */
+export interface MonthDayInfo {
+  dayNum: number;
+  dateStr: string; // YYYY-MM-DD
+  isToday: boolean;
+  isCurrentMonth: boolean;
+  dayOfWeekIndex: number; // 0=Mon, 6=Sun
+}
+
+export function getMonthCalendarData(year: number, month: number): {
+  year: number;
+  month: number;
+  monthName: string;
+  daysInMonth: number;
+  leadingBlankCount: number; // 0 to 6 based on Monday start
+  days: MonthDayInfo[];
+} {
+  const d = new Date(year, month, 1);
+  const monthName = d.toLocaleString('en-US', { month: 'long' });
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const todayStr = formatDateIso(new Date());
+
+  // In JS: getDay() gives 0 for Sunday, 1 for Monday
+  // We want Monday = 0, Sunday = 6
+  const firstDay = new Date(year, month, 1).getDay();
+  const leadingBlankCount = (firstDay + 6) % 7;
+
+  const days: MonthDayInfo[] = [];
+  for (let i = 1; i <= daysInMonth; i++) {
+    const dayDate = new Date(year, month, i);
+    const dateStr = formatDateIso(dayDate);
+    const dayOfWeek = (dayDate.getDay() + 6) % 7;
+    days.push({
+      dayNum: i,
+      dateStr,
+      isToday: dateStr === todayStr,
+      isCurrentMonth: true,
+      dayOfWeekIndex: dayOfWeek,
+    });
+  }
+
+  return {
+    year,
+    month,
+    monthName,
+    daysInMonth,
+    leadingBlankCount,
+    days,
+  };
+}
+
+/**
+ * Checks if a habit was completed on a specific ISO date (YYYY-MM-DD)
+ */
+export function isHabitDateCompleted(
+  habit: HabitItem,
+  dateStr: string,
+  monday: Date = getMondayOfWeek()
+): boolean {
+  if (habit.completedDates && habit.completedDates.includes(dateStr)) {
+    return true;
+  }
+  // Check if date falls in current week
+  const weekDays = getWeekDaysInfo(monday);
+  const match = weekDays.find((w) => w.dateStr === dateStr);
+  if (match && habit.completedDays && habit.completedDays[match.dayIndex]) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Toggles a habit's completion on a specific ISO date (YYYY-MM-DD)
+ */
+export function toggleHabitDate(
+  habit: HabitItem,
+  dateStr: string,
+  monday: Date = getMondayOfWeek()
+): HabitItem {
+  const currentlyCompleted = isHabitDateCompleted(habit, dateStr, monday);
+  let dates = new Set(habit.completedDates || []);
+
+  // Also import any current-week completions into dates set if missing
+  const weekDays = getWeekDaysInfo(monday);
+  weekDays.forEach((w) => {
+    if (habit.completedDays && habit.completedDays[w.dayIndex]) {
+      dates.add(w.dateStr);
+    }
+  });
+
+  const updatedCompletedDays = [...(habit.completedDays || [false, false, false, false, false, false, false])];
+  const weekMatch = weekDays.find((w) => w.dateStr === dateStr);
+
+  if (currentlyCompleted) {
+    dates.delete(dateStr);
+    if (weekMatch) {
+      updatedCompletedDays[weekMatch.dayIndex] = false;
+    }
+  } else {
+    dates.add(dateStr);
+    if (weekMatch) {
+      updatedCompletedDays[weekMatch.dayIndex] = true;
+    }
+  }
+
+  const newCompletedDates = Array.from(dates).sort();
+  const completedCount = updatedCompletedDays.filter(Boolean).length;
+  const newStreak = currentlyCompleted
+    ? Math.max(0, habit.streak - 1)
+    : habit.streak + 1;
+
+  return {
+    ...habit,
+    completedDates: newCompletedDates,
+    completedDays: updatedCompletedDays,
+    streak: Math.max(completedCount, newStreak),
+    updatedAt: Date.now(),
+  };
+}
+

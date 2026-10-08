@@ -80,6 +80,8 @@ import {
   archiveCurrentWeekRecord,
   DAYS_OF_WEEK,
   parseIsoDate,
+  toggleHabitDate,
+  isHabitDateCompleted,
 } from './utils/habitWeekManager';
 import { Auth, getUserWorkspaceKey } from './utils/auth';
 import { registerCurrentDevice } from './utils/devices';
@@ -1232,9 +1234,20 @@ export default function App() {
     newDays[dayIndex] = !newDays[dayIndex];
     const isNowCompleted = Boolean(newDays[dayIndex]);
     const completedCount = newDays.filter(Boolean).length;
+
+    let dates = new Set(target.completedDates || []);
+    if (dayInfo?.dateStr) {
+      if (isNowCompleted) {
+        dates.add(dayInfo.dateStr);
+      } else {
+        dates.delete(dayInfo.dateStr);
+      }
+    }
+
     const toggledHabit: HabitItem = {
       ...target,
       completedDays: newDays,
+      completedDates: Array.from(dates).sort(),
       streak: completedCount > 0 ? Math.max(0, target.streak + (isNowCompleted ? 1 : -1)) : 0,
       updatedAt: Date.now(),
     };
@@ -1274,6 +1287,56 @@ export default function App() {
         setHabitActivities(nextActs);
         Storage.setHabitActivities(nextActs);
       }
+    }
+
+    isCloudReady.current = true;
+    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
+  };
+
+  const handleToggleHabitDate = (habitId: string, dateStr: string) => {
+    Sound.click(settings.soundEnabled);
+    const currentStored = Storage.getHabits();
+    const base = habits.length > 0 ? habits : currentStored;
+    const target = base.find((h) => h.id === habitId);
+    if (!target) return;
+
+    const currentMonday = getMondayOfWeek();
+    const toggled = toggleHabitDate(target, dateStr, currentMonday);
+    const updatedHabits = base.map((h) => (h.id === habitId ? toggled : h));
+    setHabits(updatedHabits);
+    Storage.setHabits(updatedHabits);
+
+    // Record or update discrete activity log
+    const isNowCompleted = isHabitDateCompleted(toggled, dateStr, currentMonday);
+    const currentActs = Storage.getHabitActivities();
+    if (isNowCompleted) {
+      const d = parseIsoDate(dateStr);
+      const dayIdx = (d.getDay() + 6) % 7;
+      const newActivity: HabitActivityLog = {
+        id: `act-${habitId}-${dateStr}-${Date.now()}`,
+        habitId,
+        habitTitle: toggled.title,
+        category: toggled.category,
+        icon: toggled.icon,
+        color: toggled.color,
+        dayIndex: dayIdx,
+        dayName: DAYS_OF_WEEK[dayIdx],
+        date: dateStr,
+        completed: true,
+        timestamp: Date.now(),
+      };
+      const nextActs = [
+        newActivity,
+        ...currentActs.filter((a) => !(a.habitId === habitId && a.date === dateStr)),
+      ];
+      setHabitActivities(nextActs);
+      Storage.setHabitActivities(nextActs);
+    } else {
+      const nextActs = currentActs.filter(
+        (a) => !(a.habitId === habitId && a.date === dateStr)
+      );
+      setHabitActivities(nextActs);
+      Storage.setHabitActivities(nextActs);
     }
 
     isCloudReady.current = true;
@@ -2561,6 +2624,7 @@ export default function App() {
           onDeleteBatchExpenses={handleDeleteBatchExpenses}
           onDeleteImportLog={handleDeleteImportLog}
           onToggleHabitDay={handleToggleHabitDay}
+          onToggleHabitDate={handleToggleHabitDate}
           onAddHabit={handleAddHabit}
           onUpdateHabit={handleUpdateHabit}
           onDeleteHabit={handleDeleteHabit}
@@ -3744,6 +3808,7 @@ export default function App() {
                     habitHistory={habitHistory}
                     habitActivities={habitActivities}
                     onToggleHabitDay={handleToggleHabitDay}
+                    onToggleHabitDate={handleToggleHabitDate}
                     onAddHabit={handleAddHabit}
                     onUpdateHabit={handleUpdateHabit}
                     onDeleteHabit={handleDeleteHabit}
