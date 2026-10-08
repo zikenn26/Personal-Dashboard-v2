@@ -985,7 +985,7 @@ export const CommandMappingModal: React.FC<CommandMappingModalProps> = ({
                     className="w-full px-3 py-2 rounded-lg text-xs bg-white dark:bg-[#111827] border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white"
                   >
                     <option value="expenses">Expenses Tracker</option>
-                    <option value="todos">Tasks & Todos</option>
+                    <option value="todos">Tasks</option>
                     <option value="habits">Habits & Streaks</option>
                     <option value="schedule">Daily Schedule</option>
                     <option value="analytics">Analytics & Deep Insights</option>

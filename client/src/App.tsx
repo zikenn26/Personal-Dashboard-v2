@@ -2485,7 +2485,7 @@ export default function App() {
     { id: 'media', label: 'Library', icon: Film, count: media.length, group: 'life' },
 
     // MONEY
-    { id: 'expenses', label: 'Spending', icon: CreditCard, count: expenses.length, group: 'money' },
+    { id: 'expenses', label: 'Expense', icon: CreditCard, count: expenses.length, group: 'money' },
 
     // PRIVATE
     { id: 'vault', label: 'Vault', icon: Shield, count: vault.length, group: 'private' },

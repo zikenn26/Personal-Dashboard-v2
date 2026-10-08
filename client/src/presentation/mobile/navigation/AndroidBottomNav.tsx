@@ -48,7 +48,7 @@ export const AndroidBottomNav: React.FC<AndroidBottomNavProps> = ({
     },
     {
       id: 'money',
-      label: 'Money',
+      label: 'Expense',
       icon: CreditCard,
       viewTarget: 'expenses',
     },

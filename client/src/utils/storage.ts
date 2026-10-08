@@ -183,7 +183,7 @@ export const DEFAULT_COMMAND_MAPPINGS: CommandMapping[] = [
     },
     matchType: 'contains',
     enabled: true,
-    description: 'Navigates directly to the Tasks & Todo view',
+    description: 'Navigates directly to the Tasks view',
     createdAt: 1710000000000,
     executionCount: 0,
   },

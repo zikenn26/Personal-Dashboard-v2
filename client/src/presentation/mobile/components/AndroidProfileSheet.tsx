@@ -53,8 +53,7 @@ export const AndroidProfileSheet: React.FC<AndroidProfileSheetProps> = ({
     <BottomSheet
       isOpen={isOpen}
       onClose={onClose}
-      title="User Account & Preferences"
-      subtitle="Android Quick Settings"
+      title="Settings"
     >
       <div className="p-4 space-y-3.5 pb-8">
         {/* 1. Profile Section Button */}
@@ -84,7 +83,7 @@ export const AndroidProfileSheet: React.FC<AndroidProfileSheetProps> = ({
               </span>
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
-              {profile.handle || '@lifeos'} · View &amp; Edit Details
+              {profile.handle || '@lifeos'}
             </p>
           </div>
           <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-violet-600 group-hover:translate-x-0.5 transition-all shrink-0" />
@@ -168,12 +167,9 @@ export const AndroidProfileSheet: React.FC<AndroidProfileSheetProps> = ({
         </div>
 
         {/* App Info Footer */}
-        <div className="p-3 rounded-2xl bg-gray-50 dark:bg-[#1A2234] text-center text-xs text-gray-500 dark:text-gray-400 space-y-1">
+        <div className="p-2.5 rounded-2xl bg-gray-50 dark:bg-[#1A2234] text-center text-xs text-gray-500 dark:text-gray-400">
           <p className="font-bold text-gray-700 dark:text-gray-300">
-            Personal Dashboard (Material You)
-          </p>
-          <p className="text-[10px]">
-            Capacitor Android Native Runtime · All data synchronized
+            Personal Dashboard
           </p>
         </div>
       </div>

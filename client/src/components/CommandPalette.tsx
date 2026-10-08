@@ -211,7 +211,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       case 'expenses':
       case 'subscriptions':
         return {
-          label: 'Spending',
+          label: 'Expense',
           placeholder: 'Search spending, transactions, merchants, category, amount...',
           emptyHint: 'transactions',
         };

@@ -272,10 +272,10 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
   const getViewHeaderTitle = (): string => {
     switch (activeView) {
       case 'tasks':
-        return 'Tasks & To-Dos';
+        return 'Tasks';
       case 'expenses':
       case 'subscriptions':
-        return 'Money & Spending';
+        return 'Expense';
       case 'habits':
         return 'Habits';
       case 'journal':

@@ -99,7 +99,7 @@ export const AndroidSpendingCard: React.FC<AndroidSpendingCardProps> = ({
           }}
           className="text-xs font-semibold text-violet-600 dark:text-violet-400 flex items-center gap-1 hover:underline cursor-pointer"
         >
-          <span>Money Hub</span>
+          <span>Expense Hub</span>
           <ArrowRight className="w-3.5 h-3.5" />
         </button>
       </div>

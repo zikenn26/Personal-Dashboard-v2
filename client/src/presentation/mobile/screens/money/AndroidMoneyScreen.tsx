@@ -604,7 +604,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
             </button>
             <div className="flex items-center gap-2 min-w-0">
               <span className="text-[15px] font-semibold text-slate-900 dark:text-white tracking-tight font-sans whitespace-nowrap leading-none m-0 p-0">
-                Money &amp; Spending
+                Expense
               </span>
               <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-violet-50 dark:bg-violet-950/60 text-violet-600 dark:text-violet-400 border border-violet-100/70 dark:border-violet-900/60 shrink-0">
                 {activeExpenses.length}
@@ -775,26 +775,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
       {/* END: TopStickyHeader */}
 
       {/* BEGIN: MainContent */}
-      <main className="flex-1 px-3.5 pt-2 pb-6 space-y-3">
-        {/* Stats & Quick Action Bar */}
-        <div className="flex items-center justify-between px-1 pt-0.5 pb-0.5">
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-            {filteredExpenses.length} transactions · ₹{Number(weekSpending).toLocaleString('en-IN', { maximumFractionDigits: 0 })} this week
-          </p>
-
-          <button
-            type="button"
-            onClick={() => {
-              void nativeService.triggerHaptic('selection');
-              setIsAddSheetOpen(true);
-            }}
-            className="px-3.5 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer shrink-0"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Add Expense</span>
-          </button>
-        </div>
-
+      <main className="flex-1 px-3.5 pt-1.5 pb-6 space-y-3">
         {/* Space-Efficient KPI Card */}
         <section
           className="rounded-xl p-3.5 text-white shadow-sm border border-emerald-700/60 bg-gradient-to-br from-[#064e3b] via-[#065f46] to-[#047857]"

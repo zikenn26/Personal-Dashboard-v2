@@ -1435,7 +1435,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
           </button>
           <span className="text-gray-300 dark:text-gray-600">•</span>
           <span className="text-gray-900 dark:text-white font-bold">
-            Money &amp; Spending
+            Expense
           </span>
           <span className="px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 font-extrabold text-xs">
             {currentExpenses.length}

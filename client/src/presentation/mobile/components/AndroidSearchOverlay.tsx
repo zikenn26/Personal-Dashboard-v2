@@ -76,7 +76,7 @@ const DASHBOARD_PAGES: PageSuggestion[] = [
   },
   {
     id: 'page-expenses',
-    title: 'Money & Expenses',
+    title: 'Expense',
     subtitle: 'Bank SMS Tracker, Budgets & Excel Upload',
     view: 'expenses',
     icon: <CreditCard className="w-4 h-4 text-emerald-500" />,
@@ -102,7 +102,7 @@ const DASHBOARD_PAGES: PageSuggestion[] = [
   },
   {
     id: 'page-tasks',
-    title: 'Tasks & Kanban',
+    title: 'Tasks',
     subtitle: 'To-Do Lists, Priorities & Project Workflows',
     view: 'tasks',
     icon: <CheckSquare className="w-4 h-4 text-violet-500" />,
@@ -226,7 +226,7 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
       case 'subscriptions':
         return {
           id: 'expenses',
-          label: 'Spending',
+          label: 'Expense',
           placeholder: 'Search spending, merchants, categories, amount...',
           count: expenses.length,
           unit: 'transactions',
@@ -731,7 +731,7 @@ export const AndroidSearchOverlay: React.FC<AndroidSearchOverlayProps> = ({
                   )}
                   {item.type === 'expense' && (
                     <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/40">
-                      Money
+                      Expense
                     </span>
                   )}
                   {item.type === 'task' && (
