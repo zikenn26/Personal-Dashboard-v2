@@ -2,16 +2,16 @@ import React, { useState, useEffect, useRef } from 'react';
 import { StickyNote, Copy, Undo2, Plus, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { nativeService } from '../../../../services/nativeService';
-
-const STORAGE_KEY = 'lifeos_scratchpad_notes';
+import { Storage } from '../../../../utils/storage';
+import { scheduleAutoSyncToSupabase } from '../../../../utils/supabase';
 
 const DEFAULT_CONTENT = `- Jot down quick ideas, daily thoughts, or links\n- Auto-indented sticky note for your flow\n- `;
 
 export const AndroidScratchPad: React.FC = () => {
   const [content, setContent] = useState<string>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      return saved !== null ? saved : DEFAULT_CONTENT;
+      const saved = Storage.getScratchpad();
+      return saved !== '' ? saved : DEFAULT_CONTENT;
     } catch {
       return DEFAULT_CONTENT;
     }
@@ -21,12 +21,25 @@ export const AndroidScratchPad: React.FC = () => {
   const [copied, setCopied] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
+  // Sync state when remote updates arrive from Supabase or peer devices
+  useEffect(() => {
+    const handleRemoteSync = (e: any) => {
+      const updated = e?.detail?.content ?? Storage.getScratchpad();
+      if (typeof updated === 'string' && updated !== content) {
+        setContent(updated);
+      }
+    };
+    window.addEventListener('scratchpad-updated', handleRemoteSync);
+    window.addEventListener('dashboard-data-updated', handleRemoteSync);
+    return () => {
+      window.removeEventListener('scratchpad-updated', handleRemoteSync);
+      window.removeEventListener('dashboard-data-updated', handleRemoteSync);
+    };
+  }, [content]);
+
   const saveContent = (val: string) => {
-    try {
-      localStorage.setItem(STORAGE_KEY, val);
-    } catch {
-      // Ignore storage errors
-    }
+    Storage.setScratchpad(val);
+    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 500);
   };
 
   const updateContentWithHistory = (newVal: string) => {

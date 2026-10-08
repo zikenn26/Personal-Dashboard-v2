@@ -80,6 +80,7 @@ export const STORAGE_KEYS = {
   SMS_TRANSACTION_LOGS: 'notion_os_v4_sms_transaction_logs',
   DELETED_SHEET_IDS: 'notion_os_v4_deleted_sheet_ids',
   TRASH: 'notion_os_v4_trash',
+  SCRATCHPAD: 'lifeos_scratchpad_notes',
 };
 
 export const DEFAULT_COMMAND_MAPPINGS: CommandMapping[] = [
@@ -336,12 +337,13 @@ export const DEFAULT_HOME_GRID_ORDER: string[] = [
   'tasks',
   'expenses',
   'schedule',
+  'scratchpad',
 ];
 
 export const DEFAULT_HOME_COLUMNS: [string[], string[], string[]] = [
   ['calendar', 'habits'],
   ['tasks', 'expenses'],
-  ['schedule'],
+  ['schedule', 'scratchpad'],
 ];
 
 export const DEFAULT_SCHEDULE_ACTIVITIES: ScheduleActivity[] = [
@@ -2056,6 +2058,26 @@ export const Storage = {
     }
   },
 
+  getScratchpad: (): string => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.SCRATCHPAD);
+      return saved !== null ? saved : '';
+    } catch {
+      return '';
+    }
+  },
+  setScratchpad: (content: string) => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.SCRATCHPAD, content);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('scratchpad-updated', { detail: { content } }));
+        window.dispatchEvent(new CustomEvent('dashboard-data-updated', { detail: { module: 'scratchpad' } }));
+      }
+    } catch (e) {
+      console.error('Failed to persist scratchpad:', e);
+    }
+  },
+
   getAllDataPayload: () => {
     return {
       version: '4.0.0',
@@ -2066,6 +2088,7 @@ export const Storage = {
       habitHistory: Storage.getHabitHistory(),
       habitActiveWeek: Storage.getHabitActiveWeek(),
       habitActivities: Storage.getHabitActivities(),
+      scratchpad: Storage.getScratchpad(),
       goals: Storage.getGoals(),
       vaultEncrypted: Storage.getEncryptedVaultBackup(),
       expenses: Storage.getExpenses(),
@@ -2100,10 +2123,13 @@ export const Storage = {
         'expenses', 'excelImportLogs', 'deletedSheetIds', 'journal', 'media', 'achievements', 'doodles',
         'timeline', 'projects', 'skills', 'settings', 'sections',
         'photos', 'resume', 'quotes', 'exams', 'schedule', 'version', 'activeAlarm', 'alarmSnoozeInterval',
-        'commandMappings', 'trash'
+        'commandMappings', 'trash', 'scratchpad'
       ];
       const hasKnownKey = knownKeys.some((k) => k in data && data[k] !== undefined);
       if (!hasKnownKey) return false;
+
+      const remoteMeta = data._meta || {};
+      const remoteTimestamp = Number(remoteMeta.syncVersion || remoteMeta.clientTimestamp || 0);
 
       if (Array.isArray(data.deletedSheetIds)) {
         const currentDeleted = Storage.getDeletedSheetIds();
@@ -2166,8 +2192,6 @@ export const Storage = {
         const currentLocalHabits = Storage.getHabits();
         const trash = Storage.getTrash().filter((t) => t.module === 'habits');
         const trashedIds = new Set(trash.map((t) => t.data?.id || t.id).filter(Boolean));
-        const remoteMeta = data._meta || {};
-        const remoteTimestamp = Number(remoteMeta.syncVersion || remoteMeta.clientTimestamp || 0);
 
         if (data.habits.length === 0 && currentLocalHabits.length > 0) {
           // Keep existing local habits when incoming cloud payload has an empty array
@@ -2180,25 +2204,39 @@ export const Storage = {
             }
           });
 
-          // 1. Cloud habits are authoritative
+          // 1. Cloud habits are authoritative; when timestamps are available, newer updates win
           data.habits.forEach((cloudH: any) => {
             if (cloudH && cloudH.id && !trashedIds.has(cloudH.id)) {
               const localH = localMap.get(cloudH.id);
               if (localH) {
-                const mergedCompletedDays = [0, 1, 2, 3, 4, 5, 6].map((i) => {
-                  return Boolean(localH.completedDays?.[i] || cloudH.completedDays?.[i]);
-                });
-                const mergedStreak = Math.max(localH.streak || 0, cloudH.streak || 0);
-                habitMap.set(cloudH.id, {
-                  ...cloudH,
-                  ...localH,
-                  title: localH.title || cloudH.title,
-                  category: localH.category || cloudH.category,
-                  icon: localH.icon || cloudH.icon,
-                  color: localH.color || cloudH.color,
-                  completedDays: mergedCompletedDays,
-                  streak: mergedStreak,
-                });
+                const localUpdated = Number(localH.updatedAt || 0);
+                const cloudUpdated = Number(cloudH.updatedAt || 0);
+
+                if (localUpdated > 0 || cloudUpdated > 0 || remoteTimestamp > 0) {
+                  // Monotonic timestamp synchronization: newer habit state wins completely,
+                  // ensuring that de-clicking / untoggling days is preserved across devices
+                  if (localUpdated > cloudUpdated && localUpdated > remoteTimestamp) {
+                    habitMap.set(cloudH.id, localH);
+                  } else {
+                    habitMap.set(cloudH.id, cloudH);
+                  }
+                } else {
+                  // Legacy payload fallback when no timestamps are available
+                  const mergedCompletedDays = [0, 1, 2, 3, 4, 5, 6].map((i) => {
+                    return Boolean(localH.completedDays?.[i] || cloudH.completedDays?.[i]);
+                  });
+                  const mergedStreak = Math.max(localH.streak || 0, cloudH.streak || 0);
+                  habitMap.set(cloudH.id, {
+                    ...cloudH,
+                    ...localH,
+                    title: localH.title || cloudH.title,
+                    category: localH.category || cloudH.category,
+                    icon: localH.icon || cloudH.icon,
+                    color: localH.color || cloudH.color,
+                    completedDays: mergedCompletedDays,
+                    streak: mergedStreak,
+                  });
+                }
               } else {
                 habitMap.set(cloudH.id, cloudH);
               }
@@ -2247,15 +2285,29 @@ export const Storage = {
         }
       }
       if (Array.isArray(data.habitActivities)) {
-        const localActs = Storage.getHabitActivities();
-        const actMap = new Map<string, HabitActivityLog>();
-        localActs.forEach((a) => { if (a && a.id) actMap.set(a.id, a); });
-        data.habitActivities.forEach((a: any) => {
-          if (a && a.id && !actMap.has(a.id)) {
-            actMap.set(a.id, a);
-          }
-        });
-        Storage.setHabitActivities(Array.from(actMap.values()).slice(0, 500));
+        if (remoteTimestamp > 0) {
+          const cloudActIds = new Set(data.habitActivities.map((a: any) => a?.id).filter(Boolean));
+          const localActs = Storage.getHabitActivities();
+          // Keep only newly recorded local activities created strictly after remote snapshot
+          const newLocalActs = localActs.filter((a) => {
+            return !cloudActIds.has(a.id) && (a.timestamp || 0) > remoteTimestamp;
+          });
+          const merged = [...data.habitActivities, ...newLocalActs];
+          Storage.setHabitActivities(merged.slice(0, 500));
+        } else {
+          const localActs = Storage.getHabitActivities();
+          const actMap = new Map<string, HabitActivityLog>();
+          localActs.forEach((a) => { if (a && a.id) actMap.set(a.id, a); });
+          data.habitActivities.forEach((a: any) => {
+            if (a && a.id && !actMap.has(a.id)) {
+              actMap.set(a.id, a);
+            }
+          });
+          Storage.setHabitActivities(Array.from(actMap.values()).slice(0, 500));
+        }
+      }
+      if (typeof data.scratchpad === 'string') {
+        Storage.setScratchpad(data.scratchpad);
       }
       if (data.goals) Storage.setGoals(data.goals);
       if (data.vaultEncrypted) Storage.restoreEncryptedVault(data.vaultEncrypted);

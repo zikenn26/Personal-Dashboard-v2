@@ -23,6 +23,7 @@ export interface HabitItem {
   streak: number;
   color: string;
   createdAt?: number;
+  updatedAt?: number;
 }
 
 export interface HabitActivityLog {

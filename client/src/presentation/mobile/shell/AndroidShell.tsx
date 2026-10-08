@@ -557,6 +557,7 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
                 onDeleteForever={onPermanentlyDeleteTrashItem || (() => {})}
                 onEmptyTrash={onEmptyTrash || (() => {})}
                 soundEnabled={settings.soundEnabled}
+                hideHeading={true}
               />
             </div>
           )}

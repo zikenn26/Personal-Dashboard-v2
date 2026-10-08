@@ -9,6 +9,8 @@ import {
   TaskStatus,
 } from '../types';
 import { Sound } from '../utils/audio';
+import { Storage } from '../utils/storage';
+import { scheduleAutoSyncToSupabase } from '../utils/supabase';
 import { IndianCalendarWidget } from './IndianCalendarWidget';
 import { DynamicScheduleCard } from './DynamicScheduleCard';
 import {
@@ -26,6 +28,9 @@ import {
   Timer,
   Play,
   Pause,
+  StickyNote,
+  Copy,
+  Check,
 } from 'lucide-react';
 
 export interface DropIndicator {
@@ -246,6 +251,79 @@ export const FocusSprintWidget: React.FC<FocusSprintWidgetProps> = ({ dragHandle
           <span>{sessionsCompleted * 25}m deep work</span>
         </div>
       </div>
+    </div>
+  );
+};
+
+export interface ScratchPadWidgetProps {
+  dragHandle: React.ReactNode;
+  soundEnabled: boolean;
+}
+
+export const ScratchPadWidget: React.FC<ScratchPadWidgetProps> = ({ dragHandle, soundEnabled }) => {
+  const [content, setContent] = useState<string>(() => Storage.getScratchpad());
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    const handleRemoteSync = (e: any) => {
+      const updated = e?.detail?.content ?? Storage.getScratchpad();
+      if (typeof updated === 'string' && updated !== content) {
+        setContent(updated);
+      }
+    };
+    window.addEventListener('scratchpad-updated', handleRemoteSync);
+    window.addEventListener('dashboard-data-updated', handleRemoteSync);
+    return () => {
+      window.removeEventListener('scratchpad-updated', handleRemoteSync);
+      window.removeEventListener('dashboard-data-updated', handleRemoteSync);
+    };
+  }, [content]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setContent(val);
+    Storage.setScratchpad(val);
+    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 500);
+  };
+
+  const handleCopy = () => {
+    Sound.click(soundEnabled);
+    navigator.clipboard.writeText(content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="grid-tile p-3.5 sm:p-4 rounded-2xl bg-amber-50/60 dark:bg-[#1E1B16] border border-amber-200/80 dark:border-amber-900/50 shadow-xs flex flex-col space-y-2.5 w-full">
+      <div className="flex items-center justify-between pb-2 border-b border-amber-200/60 dark:border-amber-900/40">
+        <div className="flex items-center gap-2">
+          {dragHandle}
+          <div className="w-7 h-7 rounded-xl bg-amber-200/70 dark:bg-amber-900/70 text-amber-800 dark:text-amber-200 flex items-center justify-center shrink-0">
+            <StickyNote className="w-3.5 h-3.5" />
+          </div>
+          <div>
+            <h2 className="text-xs uppercase font-bold text-amber-900 dark:text-amber-200 tracking-wider">
+              Scratch Pad
+            </h2>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="p-1 rounded-lg text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 active:scale-95 transition-all cursor-pointer"
+          title="Copy notes"
+        >
+          {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+        </button>
+      </div>
+
+      <textarea
+        value={content}
+        onChange={handleChange}
+        placeholder="- Jot down ideas, quick links, or daily notes..."
+        rows={4}
+        className="w-full bg-transparent resize-y min-h-[90px] max-h-[220px] text-xs text-gray-800 dark:text-gray-100 placeholder:text-amber-700/40 dark:placeholder:text-amber-500/40 outline-none border-none p-0 focus:ring-0 font-sans leading-relaxed"
+      />
     </div>
   );
 };
@@ -997,6 +1075,15 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
     if (widgetId === 'focus_sprint' || widgetId === 'focus') {
       return (
         <FocusSprintWidget
+          dragHandle={dragHandle}
+          soundEnabled={soundEnabled}
+        />
+      );
+    }
+
+    if (widgetId === 'scratchpad') {
+      return (
+        <ScratchPadWidget
           dragHandle={dragHandle}
           soundEnabled={soundEnabled}
         />

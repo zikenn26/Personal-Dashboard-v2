@@ -10,6 +10,7 @@ interface TrashViewProps {
   onDeleteForever: (trashId: string) => void;
   onEmptyTrash: () => void;
   soundEnabled: boolean;
+  hideHeading?: boolean;
 }
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -39,6 +40,7 @@ export const TrashView: React.FC<TrashViewProps> = ({
   onDeleteForever,
   onEmptyTrash,
   soundEnabled,
+  hideHeading = false,
 }) => {
   const [confirmEmptyOpen, setConfirmEmptyOpen] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -51,11 +53,13 @@ export const TrashView: React.FC<TrashViewProps> = ({
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4 pb-4 border-b border-[#E5E7EB] dark:border-[#1F2937]">
-        <div className="space-y-2">
-          <h1 className="workspace-heading font-extrabold text-[#37352F] dark:text-white flex items-center gap-2.5">
-            <span>🗑️</span>
-            <span>Trash</span>
-          </h1>
+        <div className="space-y-1">
+          {!hideHeading && (
+            <h1 className="workspace-heading font-extrabold text-[#37352F] dark:text-white flex items-center gap-2.5">
+              <span>🗑️</span>
+              <span>Trash</span>
+            </h1>
+          )}
           <p className="text-xs text-[#787774] dark:text-[#9CA3AF]">
             Recently deleted items from every module. Restore anytime within 30 days, after which they
             are permanently and automatically removed.

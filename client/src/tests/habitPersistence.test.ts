@@ -316,4 +316,56 @@ describe('Habits & Streaks Persistence and Sync Engine', () => {
     const activeWeek = Storage.getHabitActiveWeek();
     expect(activeWeek).toBe(currentWeekMonday);
   });
+
+  it('correctly respects unchecking/de-clicking a habit day when newer cloud update arrives', () => {
+    // Device A had Monday checked previously
+    const localHabit: HabitItem = {
+      id: 'hb-untoggle-test',
+      title: 'Meditation',
+      category: 'Mindfulness',
+      icon: '🧘',
+      completedDays: [true, false, false, false, false, false, false],
+      streak: 1,
+      color: '#6366F1',
+      updatedAt: 1000,
+    };
+    Storage.setHabits([localHabit]);
+
+    // Device B unchecked Monday at a later time
+    const cloudHabit: HabitItem = {
+      id: 'hb-untoggle-test',
+      title: 'Meditation',
+      category: 'Mindfulness',
+      icon: '🧘',
+      completedDays: [false, false, false, false, false, false, false],
+      streak: 0,
+      color: '#6366F1',
+      updatedAt: 2000,
+    };
+
+    Storage.importAllDataPayload({
+      habits: [cloudHabit],
+      _meta: { syncVersion: 2000 },
+    });
+
+    const result = Storage.getHabits();
+    expect(result).toHaveLength(1);
+    expect(result[0].completedDays[0]).toBe(false);
+    expect(result[0].streak).toBe(0);
+  });
+
+  it('persists and imports scratchpad notes across devices seamlessly', () => {
+    Storage.setScratchpad('- Buy groceries\n- Finish quarterly review');
+    expect(Storage.getScratchpad()).toBe('- Buy groceries\n- Finish quarterly review');
+
+    const payload = Storage.getAllDataPayload();
+    expect(payload.scratchpad).toBe('- Buy groceries\n- Finish quarterly review');
+
+    // Simulate receiving updated scratchpad from another device
+    Storage.importAllDataPayload({
+      scratchpad: '- New synced notes from mobile\n- Call dentist',
+    });
+
+    expect(Storage.getScratchpad()).toBe('- New synced notes from mobile\n- Call dentist');
+  });
 });

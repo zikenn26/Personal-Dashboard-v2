@@ -15,12 +15,9 @@ export const AndroidLifeMapScreen: React.FC<AndroidLifeMapScreenProps> = ({
 
   return (
     <div className="w-full max-w-lg mx-auto px-3.5 pb-24 pt-2 space-y-3.5">
-      {/* Banner */}
-      <div className="px-1">
-        <h2 className="text-xl font-extrabold text-gray-900 dark:text-white tracking-tight">
-          Life Map & Milestones
-        </h2>
-        <p className="text-xs text-gray-500 dark:text-gray-400">
+      {/* Subtitle Bar */}
+      <div className="px-1 pt-0.5 pb-0.5">
+        <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
           Chronicle of life events, career highlights, and major goals
         </p>
       </div>

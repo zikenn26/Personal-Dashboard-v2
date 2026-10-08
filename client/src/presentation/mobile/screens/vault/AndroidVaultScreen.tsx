@@ -145,16 +145,11 @@ export const AndroidVaultScreen: React.FC<AndroidVaultScreenProps> = ({
 
   return (
     <div className="w-full max-w-lg mx-auto px-3.5 pb-24 pt-2 space-y-3.5">
-      {/* Top Banner */}
-      <div className="flex items-center justify-between px-1">
-        <div>
-          <h2 className="text-xl font-extrabold text-gray-900 dark:text-white tracking-tight">
-            Password Vault
-          </h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            {credentials.length} encrypted credentials
-          </p>
-        </div>
+      {/* Subtitle & Quick Action Bar */}
+      <div className="flex items-center justify-between px-1 pt-0.5 pb-0.5">
+        <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+          {credentials.length} encrypted credentials
+        </p>
 
         {onAddCredential && (
           <button

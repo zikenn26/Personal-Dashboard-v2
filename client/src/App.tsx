@@ -1236,6 +1236,7 @@ export default function App() {
       ...target,
       completedDays: newDays,
       streak: completedCount > 0 ? Math.max(0, target.streak + (isNowCompleted ? 1 : -1)) : 0,
+      updatedAt: Date.now(),
     };
 
     const updatedHabits = base.map((h) => (h.id === habitId ? toggledHabit : h));
@@ -1283,7 +1284,7 @@ export default function App() {
     Sound.click(settings.soundEnabled);
     const currentStored = Storage.getHabits();
     const base = habits.length > 0 ? habits : currentStored;
-    const updated = base.map((h) => (h.id === updatedHabit.id ? { ...h, ...updatedHabit } : h));
+    const updated = base.map((h) => (h.id === updatedHabit.id ? { ...h, ...updatedHabit, updatedAt: Date.now() } : h));
     setHabits(updated);
     Storage.setHabits(updated);
     Storage.setHabitActiveWeek(getWeekId(getMondayOfWeek()));
@@ -1304,6 +1305,8 @@ export default function App() {
       completedDays: [false, false, false, false, false, false, false],
       streak: 0,
       color: color || '#6366F1',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
     };
     const currentStored = Storage.getHabits();
     const base = habits.length > 0 ? habits : currentStored;
@@ -1334,6 +1337,7 @@ export default function App() {
     const updated = base.map((h) => ({
       ...h,
       completedDays: [false, false, false, false, false, false, false],
+      updatedAt: Date.now(),
     }));
     setHabits(updated);
     Storage.setHabits(updated);
