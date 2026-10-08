@@ -50,6 +50,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { SmsExpenseModal } from './components/SmsExpenseModal';
 import { ApiKeySettingsModal } from './components/ApiKeySettingsModal';
 import { smsExpenseService } from './services/smsExpenseService';
+import { scratchpadWidgetService } from './services/scratchpadWidgetService';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { QuickCaptureBar } from './components/QuickCaptureBar';
 import { BackupRestoreView } from './components/BackupRestoreView';
@@ -520,6 +521,35 @@ export default function App() {
     return () => {
       window.removeEventListener('dashboard-data-updated', handleDashboardDataUpdated);
       window.removeEventListener('storage', handleDashboardDataUpdated);
+    };
+  }, []);
+
+  // Sync Native Scratch Pad Android Widget & Listen for Widget Tap Actions
+  useEffect(() => {
+    // 1. Initial push to native widget SharedPreferences
+    void scratchpadWidgetService.syncToNativeWidget(Storage.getScratchpad());
+
+    const handleWidgetTrigger = (autoAdd: boolean) => {
+      setActiveView('home');
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('focus-scratchpad', { detail: { autoAdd } }));
+      }, 150);
+    };
+
+    // 2. Check if the app was launched by tapping the widget
+    void scratchpadWidgetService.checkLaunchIntent().then((res) => {
+      if (res?.openScratchpad) {
+        handleWidgetTrigger(Boolean(res.autoAdd));
+      }
+    });
+
+    // 3. Listen for runtime widget taps while app is already in memory
+    const cleanup = scratchpadWidgetService.setupWidgetListener((autoAdd) => {
+      handleWidgetTrigger(autoAdd);
+    });
+
+    return () => {
+      cleanup();
     };
   }, []);
 

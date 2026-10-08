@@ -151,7 +151,7 @@ export const AndroidScratchPad: React.FC = () => {
     }
   };
 
-  const handleAddBullet = () => {
+  const handleAddBullet = React.useCallback(() => {
     void nativeService.triggerHaptic('selection');
     const trimmed = content.trimEnd();
     const nextVal = trimmed ? `${trimmed}\n- ` : '- ';
@@ -166,10 +166,36 @@ export const AndroidScratchPad: React.FC = () => {
         }
       });
     }
-  };
+  }, [content]);
+
+  // Listen for widget clicks to focus or add note
+  useEffect(() => {
+    const handleFocusRequest = (e: any) => {
+      const autoAdd = Boolean(e?.detail?.autoAdd);
+      const card = document.getElementById('android-scratchpad-card');
+      if (card) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      setTimeout(() => {
+        if (autoAdd) {
+          handleAddBullet();
+        } else if (textareaRef.current) {
+          textareaRef.current.focus();
+        }
+      }, 350);
+    };
+
+    window.addEventListener('focus-scratchpad', handleFocusRequest);
+    return () => {
+      window.removeEventListener('focus-scratchpad', handleFocusRequest);
+    };
+  }, [handleAddBullet]);
 
   return (
-    <div className="w-full rounded-3xl bg-amber-50/70 dark:bg-[#1C1814] border border-amber-200/80 dark:border-amber-900/50 p-3 sm:p-3.5 shadow-2xs transition-all">
+    <div
+      id="android-scratchpad-card"
+      className="w-full rounded-3xl bg-amber-50/70 dark:bg-[#1C1814] border border-amber-200/80 dark:border-amber-900/50 p-3 sm:p-3.5 shadow-2xs transition-all"
+    >
       {/* Header */}
       <div className="flex items-center justify-between pb-2 mb-2 border-b border-amber-200/60 dark:border-amber-900/40">
         <div className="flex items-center gap-2 min-w-0">

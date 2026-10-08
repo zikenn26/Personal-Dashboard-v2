@@ -1,7 +1,13 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Zikenn Dashboard</string>
-    <string name="title_activity_main">Zikenn Dashboard</string>
+    <string name="app_name">Personal Dashboard</string>
+    <string name="title_activity_main">Personal Dashboard</string>
     <string name="package_name">com.zikenn.dashboard</string>
     <string name="custom_url_scheme">com.zikenn.dashboard</string>
+
+    <!-- Scratch Pad Widget Strings -->
+    <string name="scratchpad_widget_name">Scratch Pad</string>
+    <string name="scratchpad_widget_title">Scratch Pad</string>
+    <string name="scratchpad_widget_desc">Sticky notes and quick thoughts from Personal Dashboard</string>
+    <string name="scratchpad_widget_empty">No notes yet.\nTap to write a quick note.</string>
 </resources>

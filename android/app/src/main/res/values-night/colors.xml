@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#6366F1</color>
+    <color name="colorPrimaryDark">#090A0F</color>
+    <color name="colorAccent">#818CF8</color>
+    <color name="navigationBarColor">#090A0F</color>
+    <color name="statusBarColor">#090A0F</color>
+
+    <!-- Scratch Pad Widget Colors (Dark) -->
+    <color name="widget_bg">#1A171F</color>
+    <color name="widget_border">#2E2A34</color>
+    <color name="widget_header_text">#F9FAFB</color>
+    <color name="widget_sub_text">#9CA3AF</color>
+    <color name="widget_body_text">#E5E7EB</color>
+    <color name="widget_empty_text">#6B7280</color>
+    <color name="widget_divider">#2A2630</color>
+    <color name="widget_btn_bg">#2C251C</color>
+    <color name="widget_btn_tint">#F59E0B</color>
+    <color name="widget_icon_tint">#FBBF24</color>
+</resources>

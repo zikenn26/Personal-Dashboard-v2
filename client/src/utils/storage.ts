@@ -43,6 +43,7 @@ import { decryptJson, encryptJson, isEncryptedPayload, EncryptedPayload } from '
 import { INITIAL_USER_EXAMS } from '../data/defaultExams';
 import { getMondayOfWeek, getWeekId, formatWeekRange } from './habitWeekManager';
 import { normalizeExpenseDateKey, getLocalDateKey } from './expenseUtils';
+import { scratchpadWidgetService } from '../services/scratchpadWidgetService';
 
 export const STORAGE_KEYS = {
   TODOS: 'notion_os_v4_todos',
@@ -2073,6 +2074,7 @@ export const Storage = {
         window.dispatchEvent(new CustomEvent('scratchpad-updated', { detail: { content } }));
         window.dispatchEvent(new CustomEvent('dashboard-data-updated', { detail: { module: 'scratchpad' } }));
       }
+      void scratchpadWidgetService.syncToNativeWidget(content);
     } catch (e) {
       console.error('Failed to persist scratchpad:', e);
     }

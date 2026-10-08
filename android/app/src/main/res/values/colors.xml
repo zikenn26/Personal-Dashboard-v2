@@ -5,4 +5,16 @@
     <color name="colorAccent">#6366F1</color>
     <color name="navigationBarColor">#090A0F</color>
     <color name="statusBarColor">#090A0F</color>
+
+    <!-- Scratch Pad Widget Colors (Light) -->
+    <color name="widget_bg">#FFFDF8</color>
+    <color name="widget_border">#EAE5DC</color>
+    <color name="widget_header_text">#1F2937</color>
+    <color name="widget_sub_text">#78716C</color>
+    <color name="widget_body_text">#2D3748</color>
+    <color name="widget_empty_text">#9CA3AF</color>
+    <color name="widget_divider">#F3EFE6</color>
+    <color name="widget_btn_bg">#F5EEDB</color>
+    <color name="widget_btn_tint">#92400E</color>
+    <color name="widget_icon_tint">#B45309</color>
 </resources>
