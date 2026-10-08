@@ -50,7 +50,7 @@ export const QuickHabitSheet: React.FC<QuickHabitSheetProps> = ({
     { name: 'Blue', hex: '#3B82F6' },
     { name: 'Pink', hex: '#EC4899' },
   ];
-  const categories = ['Health', 'Wellness', 'Learning', 'Productivity', 'Mindset', 'Fitness', 'Finance', 'Daily'];
+  const categories = ['Health', 'Morning', 'Focus', 'Mindfulness', 'Evening', 'Learning', 'Productivity', 'Fitness', 'Daily'];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
