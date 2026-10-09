@@ -27,6 +27,7 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.io.ByteArrayOutputStream;
+import java.text.ParsePosition;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -117,165 +118,110 @@ public class ScreenTimePlugin extends Plugin {
                 return;
             }
 
-            // Calculate start and end of calendar day in local time
+            // Parse a strict local calendar date. Invalid/future dates must not be silently normalized.
             Calendar startCal = Calendar.getInstance();
-            if (targetDateStr != null && targetDateStr.matches("\\d{4}-\\d{2}-\\d{2}")) {
-                String[] parts = targetDateStr.split("-");
-                int year = Integer.parseInt(parts[0]);
-                int month = Integer.parseInt(parts[1]) - 1;
-                int day = Integer.parseInt(parts[2]);
-                startCal.set(year, month, day, 0, 0, 0);
-            } else {
-                startCal.set(Calendar.HOUR_OF_DAY, 0);
-                startCal.set(Calendar.MINUTE, 0);
-                startCal.set(Calendar.SECOND, 0);
+            if (targetDateStr != null && !targetDateStr.trim().isEmpty()) {
+                SimpleDateFormat inputFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+                inputFormat.setLenient(false);
+                inputFormat.setTimeZone(java.util.TimeZone.getDefault());
+                ParsePosition parsePosition = new ParsePosition(0);
+                Date parsedDate = inputFormat.parse(targetDateStr, parsePosition);
+                if (targetDateStr.length() != 10 || parsedDate == null
+                        || parsePosition.getIndex() != targetDateStr.length()) {
+                    JSObject invalid = new JSObject();
+                    invalid.put("granted", true);
+                    invalid.put("hasData", false);
+                    invalid.put("error", "INVALID_DATE");
+                    invalid.put("message", "Date must be a valid local date in yyyy-MM-dd format.");
+                    call.resolve(invalid);
+                    return;
+                }
+                startCal.setTime(parsedDate);
             }
+            startCal.set(Calendar.HOUR_OF_DAY, 0);
+            startCal.set(Calendar.MINUTE, 0);
+            startCal.set(Calendar.SECOND, 0);
             startCal.set(Calendar.MILLISECOND, 0);
             long startOfDay = startCal.getTimeInMillis();
 
-            Calendar endCal = (Calendar) startCal.clone();
-            endCal.set(Calendar.HOUR_OF_DAY, 23);
-            endCal.set(Calendar.MINUTE, 59);
-            endCal.set(Calendar.SECOND, 59);
-            endCal.set(Calendar.MILLISECOND, 999);
-            long endOfDay = endCal.getTimeInMillis();
+            Calendar nextDayCal = (Calendar) startCal.clone();
+            nextDayCal.add(Calendar.DAY_OF_YEAR, 1);
+            long endOfDayExclusive = nextDayCal.getTimeInMillis();
 
             long now = System.currentTimeMillis();
-            long effectiveEnd = Math.min(now, endOfDay);
+            if (startOfDay > now) {
+                JSObject invalid = new JSObject();
+                invalid.put("granted", true);
+                invalid.put("hasData", false);
+                invalid.put("error", "FUTURE_DATE");
+                invalid.put("message", "Screen time is not available for a future date.");
+                call.resolve(invalid);
+                return;
+            }
+            long effectiveEnd = Math.min(now, endOfDayExclusive);
 
-            // Compute usage sessions
+            // Use UsageStatsManager aggregates as the canonical source for app totals. This keeps
+            // the daily app list and 7-day history on the same Android reporting model.
             Map<String, AppUsageStat> appUsageMap = new HashMap<>();
+            List<UsageStats> statsList = usageStatsManager.queryUsageStats(
+                    UsageStatsManager.INTERVAL_DAILY, startOfDay, effectiveEnd);
+            if (statsList != null) {
+                for (UsageStats usage : statsList) {
+                    long totalTime = Math.max(0L, usage.getTotalTimeInForeground());
+                    if (totalTime <= 0L || usage.getPackageName() == null) continue;
+                    AppUsageStat stat = appUsageMap.get(usage.getPackageName());
+                    if (stat == null) {
+                        stat = new AppUsageStat(usage.getPackageName());
+                        appUsageMap.put(usage.getPackageName(), stat);
+                    }
+                    stat.durationMillis += totalTime;
+                    // UsageStats does not expose a reliable session count. Do not invent one.
+                    stat.sessionCount = -1;
+                }
+            }
+
+            // Hourly breakdown is reconstructed separately from UsageEvents and is explicitly
+            // marked approximate. It is never used to calculate the authoritative app totals.
             long[] hourlyBuckets = new long[24];
-
-            // 1. Primary method: Query UsageEvents for precise start/end transitions
-            // Query 12 hours prior to capture session spanning across midnight
-            long eventsQueryStart = startOfDay - (12 * 60 * 60 * 1000L);
-            UsageEvents events = usageStatsManager.queryEvents(eventsQueryStart, effectiveEnd);
-
-            String currentForegroundPkg = null;
-            long currentForegroundStart = 0;
-            boolean hasEvents = false;
-
-            if (events != null) {
-                UsageEvents.Event event = new UsageEvents.Event();
-                while (events.hasNextEvent()) {
-                    events.getNextEvent(event);
-                    hasEvents = true;
-
-                    int eventType = event.getEventType();
-                    String pkg = event.getPackageName();
-                    long time = event.getTimeStamp();
-
-                    // Activity resumed = moved to foreground
-                    if (eventType == UsageEvents.Event.ACTIVITY_RESUMED
-                            || eventType == 1 /* MOVE_TO_FOREGROUND */) {
-
-                        // If another app was running, close its session
-                        if (currentForegroundPkg != null && currentForegroundStart > 0 && time > currentForegroundStart) {
-                            addSession(currentForegroundPkg, currentForegroundStart, time, startOfDay, effectiveEnd, appUsageMap, hourlyBuckets);
-                        }
-
-                        currentForegroundPkg = pkg;
-                        currentForegroundStart = time;
-
-                    } else if (eventType == UsageEvents.Event.ACTIVITY_PAUSED
-                            || eventType == 2 /* MOVE_TO_BACKGROUND */
-                            || eventType == 16 /* SCREEN_NON_INTERACTIVE */
-                            || eventType == 17 /* KEYGUARD_SHOWN */
-                            || eventType == 26 /* DEVICE_SHUTDOWN */) {
-
-                        // If the paused/stopped app was our current foreground app, close session
-                        if (currentForegroundPkg != null) {
-                            if (eventType == UsageEvents.Event.ACTIVITY_PAUSED || eventType == 2) {
-                                if (currentForegroundPkg.equals(pkg)) {
-                                    addSession(currentForegroundPkg, currentForegroundStart, time, startOfDay, effectiveEnd, appUsageMap, hourlyBuckets);
-                                    currentForegroundPkg = null;
-                                    currentForegroundStart = 0;
-                                }
-                            } else {
-                                // Screen turned off, locked, or device shutdown: close any active foreground session
-                                addSession(currentForegroundPkg, currentForegroundStart, time, startOfDay, effectiveEnd, appUsageMap, hourlyBuckets);
-                                currentForegroundPkg = null;
-                                currentForegroundStart = 0;
-                            }
-                        }
-                    }
-                }
-
-                // If an app is still in the foreground right now, close session at effectiveEnd
-                if (currentForegroundPkg != null && currentForegroundStart > 0 && effectiveEnd > currentForegroundStart) {
-                    addSession(currentForegroundPkg, currentForegroundStart, effectiveEnd, startOfDay, effectiveEnd, appUsageMap, hourlyBuckets);
-                }
-            }
-
-            // 2. Secondary fallback if queryEvents returned no events on certain OEM devices:
-            if (!hasEvents || appUsageMap.isEmpty()) {
-                List<UsageStats> statsList = usageStatsManager.queryUsageStats(
-                        UsageStatsManager.INTERVAL_DAILY,
-                        startOfDay,
-                        effectiveEnd
-                );
-                if (statsList != null) {
-                    for (UsageStats u : statsList) {
-                        long totalTime = u.getTotalTimeInForeground();
-                        if (totalTime > 1000) { // filter out sub-second noise
-                            AppUsageStat stat = appUsageMap.get(u.getPackageName());
-                            if (stat == null) {
-                                stat = new AppUsageStat(u.getPackageName());
-                                appUsageMap.put(u.getPackageName(), stat);
-                            }
-                            stat.durationMillis += totalTime;
-                            stat.sessionCount += 1;
-                        }
-                    }
-                }
-            }
+            boolean hourlyDataAvailable = buildApproximateHourlyBuckets(
+                    usageStatsManager, startOfDay, effectiveEnd, hourlyBuckets);
+            String dataSource = "usageStatsAggregate";
 
             // Format target date label
-            SimpleDateFormat dateFmt = new SimpleDateFormat("yyyy-MM-DD", Locale.US);
             SimpleDateFormat readableFmt = new SimpleDateFormat("EEEE, MMM d", Locale.US);
             Date targetDate = new Date(startOfDay);
             String formattedDate = readableFmt.format(targetDate);
             String isoDate = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(targetDate);
 
-            // Filter and sort apps
+            // Filter, sort, total, then build app objects with percentages (no JSArray read-back).
             String ourPackage = ctx.getPackageName();
             PackageManager pm = ctx.getPackageManager();
-
             List<AppUsageStat> sortedList = new ArrayList<>(appUsageMap.values());
             Collections.sort(sortedList, (a, b) -> Long.compare(b.durationMillis, a.durationMillis));
 
             long totalDeviceMillis = 0;
-            JSArray appsArray = new JSArray();
-            JSArray topAppsArray = new JSArray();
-
-            int rank = 1;
             for (AppUsageStat item : sortedList) {
-                // Skip apps with under 5 seconds duration
                 if (item.durationMillis < 5000) continue;
-
                 boolean isCurrentApp = item.packageName.equals(ourPackage);
-                if (excludeSelf && isCurrentApp) {
-                    continue;
-                }
-
+                if (excludeSelf && isCurrentApp) continue;
                 totalDeviceMillis += item.durationMillis;
-
-                JSObject appObj = buildAppJson(ctx, pm, item, includeIcons, isCurrentApp, rank);
-                appsArray.put(appObj);
-
-                if (topAppsArray.length() < 5) {
-                    topAppsArray.put(appObj);
-                }
-                rank++;
             }
 
-            // Compute percentage for each app
-            for (int i = 0; i < appsArray.length(); i++) {
-                JSObject appObj = appsArray.getJSONObject(i);
-                long duration = appObj.getLong("durationMillis");
-                double pct = totalDeviceMillis > 0 ? (duration * 100.0 / totalDeviceMillis) : 0.0;
-                appObj.put("percentageOfTotal", Math.round(pct * 10.0) / 10.0);
+            JSArray appsArray = new JSArray();
+            JSArray topAppsArray = new JSArray();
+            int rank = 1;
+            for (AppUsageStat item : sortedList) {
+                if (item.durationMillis < 5000) continue;
+                boolean isCurrentApp = item.packageName.equals(ourPackage);
+                if (excludeSelf && isCurrentApp) continue;
+
+                JSObject appObj = buildAppJson(ctx, pm, item, includeIcons, isCurrentApp, rank);
+                double percentage = totalDeviceMillis > 0
+                        ? item.durationMillis * 100.0 / totalDeviceMillis : 0.0;
+                appObj.put("percentageOfTotal", Math.round(percentage * 10.0) / 10.0);
+                appsArray.put(appObj);
+                if (topAppsArray.length() < 5) topAppsArray.put(appObj);
+                rank++;
             }
 
             // Hourly breakdown array
@@ -292,11 +238,10 @@ public class ScreenTimePlugin extends Plugin {
             // Past 7 days summary
             JSArray past7DaysArray = getPast7DaysArray(ctx, usageStatsManager, excludeSelf);
 
-            // Compute daily average from past 7 days
-            long total7DaysMillis = 0;
-            for (int i = 0; i < past7DaysArray.length(); i++) {
-                total7DaysMillis += past7DaysArray.getJSONObject(i).getLong("totalMillis");
-            }
+            // Compute the 7-day average directly from Android aggregate statistics.
+            // Avoid reading objects back from JSArray because Capacitor versions differ
+            // in which JSArray getter methods they expose.
+            long total7DaysMillis = getPast7DaysTotalMillis(ctx, usageStatsManager, excludeSelf);
             long dailyAvgMinutes = Math.round((total7DaysMillis / 7.0) / 60000.0);
 
             JSObject response = new JSObject();
@@ -313,7 +258,11 @@ public class ScreenTimePlugin extends Plugin {
             response.put("dailyAverageMinutes", dailyAvgMinutes);
             response.put("hasData", totalDeviceMillis > 0);
             response.put("lastSyncedTimestamp", now);
-            response.put("limitationsNotice", "Native statistics reported by Android UsageStatsManager. Usage events are aggregated locally on device.");
+            response.put("dataSource", dataSource);
+            response.put("hourlyDataAvailable", hourlyDataAvailable);
+            response.put("hourlyUsageIsApproximate", true);
+            response.put("accuracyNotice", "Per-app totals and 7-day history use Android UsageStatsManager aggregate statistics. Hourly buckets are reconstructed from UsageEvents and are approximate, especially with split-screen or overlapping activities.");
+            response.put("limitationsNotice", "Android UsageStatsManager data can vary by Android version and device. Totals represent reported app foreground time, not necessarily screen-on time.");
 
             call.resolve(response);
         } catch (Exception e) {
@@ -337,6 +286,15 @@ public class ScreenTimePlugin extends Plugin {
         try {
             boolean excludeSelf = call.getBoolean("excludeSelf", true);
             UsageStatsManager usageStatsManager = (UsageStatsManager) getContext().getSystemService(Context.USAGE_STATS_SERVICE);
+            if (usageStatsManager == null) {
+                JSObject error = new JSObject();
+                error.put("granted", true);
+                error.put("hasData", false);
+                error.put("error", "SERVICE_UNAVAILABLE");
+                error.put("message", "UsageStatsManager service is not available on this device.");
+                call.resolve(error);
+                return;
+            }
             JSArray days = getPast7DaysArray(getContext(), usageStatsManager, excludeSelf);
 
             JSObject ret = new JSObject();
@@ -380,18 +338,14 @@ public class ScreenTimePlugin extends Plugin {
     ) {
         if (pkg == null || sessionEnd <= sessionStart) return;
 
-        // Clip session to bounds of the target day [dayStart, dayEnd]
+        // Clip an exclusive-end session to the requested local day [dayStart, dayEnd).
         long clampedStart = Math.max(sessionStart, dayStart);
         long clampedEnd = Math.min(sessionEnd, dayEnd);
-
         if (clampedEnd <= clampedStart) return;
 
         long duration = clampedEnd - clampedStart;
-
-        // Skip excessive outliers caused by system anomalies (> 16 hours single continuous session)
-        if (duration > 16 * 60 * 60 * 1000L) {
-            duration = 16 * 60 * 60 * 1000L;
-        }
+        // Guard against implausible single-session spans caused by missing Android events.
+        if (duration > 16L * 60L * 60L * 1000L) return;
 
         AppUsageStat stat = appUsageMap.get(pkg);
         if (stat == null) {
@@ -402,32 +356,134 @@ public class ScreenTimePlugin extends Plugin {
         stat.sessionCount += 1;
 
         // Distribute session duration into the 24 hourly buckets
-        distributeHourly(clampedStart, clampedEnd, hourlyBuckets, dayStart);
+        distributeHourly(clampedStart, clampedEnd, hourlyBuckets);
     }
 
-    private void distributeHourly(long start, long end, long[] hourlyBuckets, long dayStart) {
+    private void distributeHourly(long start, long end, long[] hourlyBuckets) {
         Calendar cal = Calendar.getInstance();
         long current = start;
-
         while (current < end) {
             cal.setTimeInMillis(current);
             int hour = cal.get(Calendar.HOUR_OF_DAY);
-
-            // End of this hour
-            cal.set(Calendar.MINUTE, 59);
-            cal.set(Calendar.SECOND, 59);
-            cal.set(Calendar.MILLISECOND, 999);
-            long hourEnd = cal.getTimeInMillis();
-
-            long sliceEnd = Math.min(end, hourEnd);
-            long sliceDuration = sliceEnd - current;
-
-            if (hour >= 0 && hour < 24 && sliceDuration > 0) {
-                hourlyBuckets[hour] += sliceDuration;
+            Calendar nextHour = (Calendar) cal.clone();
+            nextHour.set(Calendar.MINUTE, 0);
+            nextHour.set(Calendar.SECOND, 0);
+            nextHour.set(Calendar.MILLISECOND, 0);
+            nextHour.add(Calendar.HOUR_OF_DAY, 1);
+            long sliceEnd = Math.min(end, nextHour.getTimeInMillis());
+            if (hour >= 0 && hour < 24 && sliceEnd > current) {
+                hourlyBuckets[hour] += sliceEnd - current;
             }
-
-            current = sliceEnd + 1;
+            current = sliceEnd;
         }
+    }
+
+    /**
+     * Builds an approximate hourly chart from usage events. These buckets are for visualization
+     * only; per-app totals come from UsageStatsManager aggregates.
+     */
+    private boolean buildApproximateHourlyBuckets(UsageStatsManager mgr, long start, long end, long[] buckets) {
+        if (mgr == null || end <= start) return false;
+        UsageEvents events = mgr.queryEvents(start, end);
+        if (events == null) return false;
+
+        Map<String, ForegroundState> active = new HashMap<>();
+        boolean sawEvents = false;
+        UsageEvents.Event event = new UsageEvents.Event();
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event);
+            sawEvents = true;
+            int type = event.getEventType();
+            String pkg = event.getPackageName();
+            long time = event.getTimeStamp();
+            boolean resumed = type == UsageEvents.Event.ACTIVITY_RESUMED || type == 1;
+            boolean paused = type == UsageEvents.Event.ACTIVITY_PAUSED || type == 2;
+            boolean screenEnded = type == 16 || type == 17 || type == 26;
+
+            if (resumed && pkg != null) {
+                ForegroundState state = active.get(pkg);
+                if (state == null) {
+                    state = new ForegroundState();
+                    state.startTime = time;
+                    active.put(pkg, state);
+                }
+                state.activityCount++;
+            } else if (paused && pkg != null) {
+                ForegroundState state = active.get(pkg);
+                if (state != null) {
+                    state.activityCount = Math.max(0, state.activityCount - 1);
+                    if (state.activityCount == 0) {
+                        addDurationToHourlyBuckets(state.startTime, time, start, end, buckets);
+                        active.remove(pkg);
+                    }
+                }
+            } else if (screenEnded) {
+                for (ForegroundState state : active.values()) {
+                    addDurationToHourlyBuckets(state.startTime, time, start, end, buckets);
+                }
+                active.clear();
+            }
+        }
+
+        for (ForegroundState state : active.values()) {
+            addDurationToHourlyBuckets(state.startTime, end, start, end, buckets);
+        }
+        return sawEvents;
+    }
+
+    private void addDurationToHourlyBuckets(long sessionStart, long sessionEnd, long dayStart, long dayEnd, long[] buckets) {
+        if (sessionEnd <= sessionStart) return;
+        long current = Math.max(sessionStart, dayStart);
+        long clippedEnd = Math.min(sessionEnd, dayEnd);
+        Calendar cal = Calendar.getInstance();
+        while (current < clippedEnd) {
+            cal.setTimeInMillis(current);
+            int hour = cal.get(Calendar.HOUR_OF_DAY);
+            Calendar nextHour = (Calendar) cal.clone();
+            nextHour.set(Calendar.MINUTE, 0);
+            nextHour.set(Calendar.SECOND, 0);
+            nextHour.set(Calendar.MILLISECOND, 0);
+            nextHour.add(Calendar.HOUR_OF_DAY, 1);
+            long sliceEnd = Math.min(clippedEnd, nextHour.getTimeInMillis());
+            if (hour >= 0 && hour < 24 && sliceEnd > current) {
+                buckets[hour] += sliceEnd - current;
+            }
+            current = sliceEnd;
+        }
+    }
+
+    private long getPast7DaysTotalMillis(Context ctx, UsageStatsManager mgr, boolean excludeSelf) {
+        if (mgr == null) return 0L;
+
+        String ourPackage = ctx.getPackageName();
+        long totalMillis = 0L;
+        long now = System.currentTimeMillis();
+
+        for (int i = 6; i >= 0; i--) {
+            Calendar day = Calendar.getInstance();
+            day.add(Calendar.DAY_OF_YEAR, -i);
+            day.set(Calendar.HOUR_OF_DAY, 0);
+            day.set(Calendar.MINUTE, 0);
+            day.set(Calendar.SECOND, 0);
+            day.set(Calendar.MILLISECOND, 0);
+
+            long start = day.getTimeInMillis();
+            Calendar nextDay = (Calendar) day.clone();
+            nextDay.add(Calendar.DAY_OF_YEAR, 1);
+            long end = Math.min(now, nextDay.getTimeInMillis());
+            if (end <= start) continue;
+
+            List<UsageStats> stats = mgr.queryUsageStats(
+                    UsageStatsManager.INTERVAL_DAILY, start, end);
+            if (stats == null) continue;
+
+            for (UsageStats stat : stats) {
+                if (stat == null || stat.getPackageName() == null) continue;
+                if (excludeSelf && ourPackage.equals(stat.getPackageName())) continue;
+                totalMillis += Math.max(0L, stat.getTotalTimeInForeground());
+            }
+        }
+        return totalMillis;
     }
 
     private JSArray getPast7DaysArray(Context ctx, UsageStatsManager mgr, boolean excludeSelf) {
@@ -447,18 +503,16 @@ public class ScreenTimePlugin extends Plugin {
             c.set(Calendar.MILLISECOND, 0);
             long start = c.getTimeInMillis();
 
-            c.set(Calendar.HOUR_OF_DAY, 23);
-            c.set(Calendar.MINUTE, 59);
-            c.set(Calendar.SECOND, 59);
-            c.set(Calendar.MILLISECOND, 999);
-            long end = Math.min(System.currentTimeMillis(), c.getTimeInMillis());
+            Calendar nextDay = (Calendar) c.clone();
+            nextDay.add(Calendar.DAY_OF_YEAR, 1);
+            long end = Math.min(System.currentTimeMillis(), nextDay.getTimeInMillis());
 
             long totalDayMillis = 0;
             List<UsageStats> list = mgr.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, end);
             if (list != null) {
                 for (UsageStats u : list) {
                     if (excludeSelf && u.getPackageName().equals(ourPackage)) continue;
-                    totalDayMillis += u.getTotalTimeInForeground();
+                    totalDayMillis += Math.max(0L, u.getTotalTimeInForeground());
                 }
             }
 
@@ -468,6 +522,7 @@ public class ScreenTimePlugin extends Plugin {
             dayObj.put("isToday", i == 0);
             dayObj.put("totalMinutes", Math.round(totalDayMillis / 60000.0));
             dayObj.put("totalMillis", totalDayMillis);
+            dayObj.put("dataSource", "usageStatsAggregate");
             arr.put(dayObj);
         }
 
@@ -487,7 +542,12 @@ public class ScreenTimePlugin extends Plugin {
         obj.put("rank", rank);
         obj.put("durationMillis", item.durationMillis);
         obj.put("durationMinutes", Math.round(item.durationMillis / 60000.0));
-        obj.put("sessionCount", item.sessionCount);
+        if (item.sessionCount >= 0) {
+            obj.put("sessionCount", item.sessionCount);
+            obj.put("sessionCountAvailable", true);
+        } else {
+            obj.put("sessionCountAvailable", false);
+        }
         obj.put("isCurrentApp", isCurrentApp);
 
         // App Name and Category
@@ -616,33 +676,43 @@ public class ScreenTimePlugin extends Plugin {
     }
 
     private String drawableToBase64(Drawable drawable) {
+        Bitmap source = null;
+        Bitmap scaled = null;
+        boolean ownsSource = false;
         try {
             if (drawable == null) return null;
 
-            Bitmap bitmap;
             if (drawable instanceof BitmapDrawable) {
-                bitmap = ((BitmapDrawable) drawable).getBitmap();
+                source = ((BitmapDrawable) drawable).getBitmap();
             } else {
-                int width = Math.max(1, Math.min(drawable.getIntrinsicWidth(), 96));
-                int height = Math.max(1, Math.min(drawable.getIntrinsicHeight(), 96));
-                if (width <= 0) width = 72;
-                if (height <= 0) height = 72;
-
-                bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-                Canvas canvas = new Canvas(bitmap);
+                int intrinsicWidth = drawable.getIntrinsicWidth();
+                int intrinsicHeight = drawable.getIntrinsicHeight();
+                int width = intrinsicWidth > 0 ? Math.min(intrinsicWidth, 96) : 72;
+                int height = intrinsicHeight > 0 ? Math.min(intrinsicHeight, 96) : 72;
+                source = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+                ownsSource = true;
+                Canvas canvas = new Canvas(source);
                 drawable.setBounds(0, 0, canvas.getWidth(), canvas.getHeight());
                 drawable.draw(canvas);
             }
 
-            // Downscale to a compact 64x64 icon to keep JSON response fast and light
-            Bitmap scaled = Bitmap.createScaledBitmap(bitmap, 64, 64, true);
+            scaled = Bitmap.createScaledBitmap(source, 64, 64, true);
             ByteArrayOutputStream stream = new ByteArrayOutputStream();
-            scaled.compress(Bitmap.CompressFormat.PNG, 85, stream);
+            scaled.compress(Bitmap.CompressFormat.PNG, 100, stream);
             byte[] byteArray = stream.toByteArray();
             return "data:image/png;base64," + Base64.encodeToString(byteArray, Base64.NO_WRAP);
         } catch (Exception e) {
+            Log.w(TAG, "Unable to encode app icon", e);
             return null;
+        } finally {
+            if (scaled != null && scaled != source && !scaled.isRecycled()) scaled.recycle();
+            if (ownsSource && source != null && !source.isRecycled()) source.recycle();
         }
+    }
+
+    private static class ForegroundState {
+        long startTime;
+        int activityCount;
     }
 
     private static class AppUsageStat {
