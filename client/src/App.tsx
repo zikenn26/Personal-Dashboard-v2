@@ -477,10 +477,23 @@ export default function App() {
   // Sync state in real-time whenever AI Secretary or dashboard operations perform CRUD updates
   useEffect(() => {
     const handleDashboardDataUpdated = (e?: Event) => {
-      const customEvt = e as CustomEvent<{ module?: string; updatedExpenses?: ExpenseItem[] }>;
+      const customEvt = e as CustomEvent<{
+        module?: string;
+        updatedExpenses?: ExpenseItem[];
+      }>;
 
-      // If custom event provided explicit updatedExpenses array, prefer it; otherwise use direct localStorage read
-      if (customEvt?.detail?.updatedExpenses && Array.isArray(customEvt.detail.updatedExpenses)) {
+      // Scratch Pad has its own save and cloud-sync flow.
+      // Do not refresh unrelated dashboard modules when Scratch Pad is saved.
+      if (customEvt?.detail?.module === 'scratchpad') {
+        return;
+      }
+
+      // If custom event provided explicit updatedExpenses array,
+      // prefer it; otherwise read the current expenses from storage.
+      if (
+        customEvt?.detail?.updatedExpenses &&
+        Array.isArray(customEvt.detail.updatedExpenses)
+      ) {
         const fresh = [...customEvt.detail.updatedExpenses];
         setExpenses(fresh);
         Storage.setExpenses(fresh);
@@ -489,7 +502,7 @@ export default function App() {
         setExpenses([...fresh]);
       }
 
-      // Hydrate all other modules cleanly without clobbering the fresh expenses
+      // Refresh the other dashboard modules from local storage.
       setProfile(Storage.getProfile());
       setTodos(Storage.getTodos());
       setHabits(Storage.getHabits());
@@ -497,7 +510,11 @@ export default function App() {
       setHabitActiveWeek(Storage.getHabitActiveWeek());
       setHabitActivities(Storage.getHabitActivities());
       setGoals(Storage.getGoals());
-      void Storage.hydrateVault(Storage.getSettings().masterPin).then(setVault);
+
+      void Storage.hydrateVault(Storage.getSettings().masterPin).then(
+        setVault
+      );
+
       setExcelImportLogs(Storage.getExcelImportLogs());
       setJournal(Storage.getJournal());
       setMedia(Storage.getMedia());
@@ -513,15 +530,24 @@ export default function App() {
       setExams(Storage.getExams());
       setSchedule(Storage.getSchedule());
 
+      // Immediately sync normal dashboard updates to Supabase.
+      // Scratch Pad saves are handled by its own debounced sync.
       if (!isRemoteUpdating.current && isSupabaseConfigured()) {
         void flushAutoSyncImmediately(Storage.getAllDataPayload());
       }
     };
 
-    window.addEventListener('dashboard-data-updated', handleDashboardDataUpdated);
+    window.addEventListener(
+      'dashboard-data-updated',
+      handleDashboardDataUpdated
+    );
     window.addEventListener('storage', handleDashboardDataUpdated);
+
     return () => {
-      window.removeEventListener('dashboard-data-updated', handleDashboardDataUpdated);
+      window.removeEventListener(
+        'dashboard-data-updated',
+        handleDashboardDataUpdated
+      );
       window.removeEventListener('storage', handleDashboardDataUpdated);
     };
   }, []);
