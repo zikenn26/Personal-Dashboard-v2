@@ -294,35 +294,38 @@ export const ScratchPadWidget: React.FC<ScratchPadWidgetProps> = ({ dragHandle, 
   };
 
   return (
-    <div className="grid-tile p-3.5 sm:p-4 rounded-2xl bg-amber-50/60 dark:bg-[#1E1B16] border border-amber-200/80 dark:border-amber-900/50 shadow-xs flex flex-col space-y-2.5 w-full">
-      <div className="flex items-center justify-between pb-2 border-b border-amber-200/60 dark:border-amber-900/40">
+    <div className="grid-tile p-3.5 sm:p-4 rounded-2xl bg-[#F7F7F5] dark:bg-[#23324C] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col space-y-3 w-full">
+      <div className="flex items-center justify-between pb-2 border-b border-[#EDECE9] dark:border-[#334155]/60">
         <div className="flex items-center gap-2">
           {dragHandle}
-          <div className="w-7 h-7 rounded-xl bg-amber-200/70 dark:bg-amber-900/70 text-amber-800 dark:text-amber-200 flex items-center justify-center shrink-0">
+          <div className="w-7 h-7 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200/60 dark:border-amber-900/40 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
             <StickyNote className="w-3.5 h-3.5" />
           </div>
           <div>
-            <h2 className="text-xs uppercase font-bold text-amber-900 dark:text-amber-200 tracking-wider">
+            <h2 className="text-xs uppercase font-bold text-[#37352F] dark:text-white tracking-wider">
               Scratch Pad
             </h2>
+            <span className="text-[10px] text-gray-500 dark:text-gray-400 font-medium block -mt-0.5">
+              Quick Notes • Auto-saved
+            </span>
           </div>
         </div>
         <button
           type="button"
           onClick={handleCopy}
-          className="p-1 rounded-lg text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 active:scale-95 transition-all cursor-pointer"
+          className="p-1.5 rounded-lg text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white hover:bg-gray-200/70 dark:hover:bg-gray-800 transition-colors cursor-pointer"
           title="Copy notes"
         >
-          {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+          {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
         </button>
       </div>
 
       <textarea
         value={content}
         onChange={handleChange}
-        placeholder="- Jot down ideas, quick links, or daily notes..."
+        placeholder="- Start typing your notes..."
         rows={4}
-        className="w-full bg-transparent resize-y min-h-[90px] max-h-[220px] text-xs text-gray-800 dark:text-gray-100 placeholder:text-amber-700/40 dark:placeholder:text-amber-500/40 outline-none border-none p-0 focus:ring-0 font-sans leading-relaxed"
+        className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0F172A] resize-y min-h-[96px] max-h-[240px] text-xs sm:text-[13px] text-gray-900 dark:text-gray-100 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-sans leading-relaxed"
       />
     </div>
   );

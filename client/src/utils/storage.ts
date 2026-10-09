@@ -2062,7 +2062,22 @@ export const Storage = {
   getScratchpad: (): string => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.SCRATCHPAD);
-      return saved !== null ? saved : '';
+      if (!saved) return '';
+      // Cleanse legacy default sample notes if present so user never loses their clean state
+      if (
+        saved.includes('Jot down quick ideas') ||
+        saved.includes('Auto-indented sticky note')
+      ) {
+        const cleaned = saved
+          .replace(/- Jot down quick ideas, daily thoughts, or links\n?/g, '')
+          .replace(/- Auto-indented sticky note for your flow\n?/g, '')
+          .replace(/^- \n?$/g, '')
+          .trim();
+        const finalContent = (!cleaned || cleaned === '-') ? '' : cleaned;
+        localStorage.setItem(STORAGE_KEYS.SCRATCHPAD, finalContent);
+        return finalContent;
+      }
+      return saved;
     } catch {
       return '';
     }

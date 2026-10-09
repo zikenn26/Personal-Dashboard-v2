@@ -2674,6 +2674,9 @@ export default function App() {
           onUpdateGoal={handleUpdateGoal}
           onDeleteGoal={handleDeleteGoal}
           onUpdateExams={handleUpdateExams}
+          onAddMilestone={handleAddMilestone}
+          onUpdateMilestone={handleUpdateMilestone}
+          onDeleteMilestone={handleDeleteMilestone}
           onUpdateProfile={handleUpdateProfile}
           onUpdateProjects={handleUpdateProjects}
           onUpdateSkills={handleUpdateSkills}
@@ -2717,7 +2720,7 @@ export default function App() {
               id="btn-desktop-sidebar-toggle"
               onClick={handleToggleSidebar}
               whileTap={{ scale: 0.92 }}
-              className="hidden md:flex items-center justify-center p-1.5 rounded-lg text-[#787774] dark:text-[#9CA3AF] hover:bg-[#F1F1EF] dark:hover:bg-[#1F2937] hover:text-[#37352F] dark:hover:text-white cursor-pointer transition-colors shrink-0"
+              className="hidden md:flex items-center justify-center p-1.5 rounded-lg text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-[#F1EFEA] dark:hover:bg-[#1E293B] cursor-pointer transition-colors shrink-0"
               title={!isSidebarCollapsed ? 'Collapse sidebar (⌘\\)' : 'Expand sidebar (⌘\\)'}
             >
               <motion.div
@@ -2736,31 +2739,31 @@ export default function App() {
                 Sound.click(settings.soundEnabled);
                 setIsMobileSidebarOpen(true);
               }}
-              className="md:hidden p-1.5 rounded-lg text-[#787774] dark:text-[#9CA3AF] hover:bg-[#F1F1EF] dark:hover:bg-[#1F2937] hover:text-[#37352F] dark:hover:text-white cursor-pointer transition-colors shrink-0"
+              className="md:hidden p-1.5 rounded-lg text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-[#F1EFEA] dark:hover:bg-[#1E293B] cursor-pointer transition-colors shrink-0"
               title="Open Navigation Menu"
             >
               <Menu className="w-4 h-4" />
             </button>
 
             {/* Breadcrumbs: Compact on mobile (<640px), expanded on desktop */}
-            <div className="flex items-center gap-1 text-xs text-[#787774] dark:text-[#9CA3AF] min-w-0">
+            <div className="flex items-center gap-1 text-xs text-[#787774] dark:text-[#94A3B8] min-w-0">
               <button
                 type="button"
                 onClick={() => handleNavigate('home')}
-                className="hidden sm:inline font-medium hover:text-[#6366F1] dark:hover:text-white cursor-pointer truncate max-w-[140px]"
+                className="hidden sm:inline font-semibold hover:text-[#2383E2] dark:hover:text-white cursor-pointer truncate max-w-[140px]"
               >
                 {profile.name}&apos;s Personal Dashboard
               </button>
-              <span className="hidden sm:inline text-[#D1D5DB] dark:text-[#4B5563]">/</span>
-              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#F7F7F5] dark:bg-[#1F2937] border border-[#EDECE9] dark:border-[#374151] text-[#37352F] dark:text-white font-semibold text-xs min-w-0 max-w-[110px] sm:max-w-none">
-                <currentNav.icon className="w-3.5 h-3.5 shrink-0 text-[#6366F1] dark:text-[#818CF8]" />
+              <span className="hidden sm:inline text-[#D3D1CB] dark:text-[#475569]">/</span>
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#F1EFEA] dark:bg-[#1E293B] text-[#37352F] dark:text-white font-medium text-xs min-w-0 max-w-[110px] sm:max-w-none">
+                <currentNav.icon className="w-3.5 h-3.5 shrink-0 text-[#2383E2] dark:text-[#818CF8]" />
                 <span className="truncate">{currentNav.label}</span>
               </div>
             </div>
           </div>
 
           {/* Right: Quick Add (+), Search, Theme, Settings, Auth & Profile */}
-          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
             {/* Top Quick Add Dropdown Menu (+) */}
             <div className="relative">
               <button
@@ -2769,7 +2772,7 @@ export default function App() {
                   Sound.click(settings.soundEnabled);
                   setIsAddMenuOpen(!isAddMenuOpen);
                 }}
-                className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-xl bg-[#6366F1] hover:bg-[#4F46E5] text-white text-xs font-semibold shadow-xs transition-all cursor-pointer"
+                className="flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-lg bg-[#2383E2] hover:bg-[#1D70C2] text-white text-xs font-semibold shadow-xs hover:shadow-sm cursor-pointer transition-all"
                 title="Quick Add Task, Note, Expense, or Journal Entry"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -2783,7 +2786,7 @@ export default function App() {
                     className="fixed inset-0 z-40 bg-black/20 backdrop-blur-2xs"
                     onClick={() => setIsAddMenuOpen(false)}
                   />
-                  <div className="absolute right-0 top-full mt-1.5 w-48 bg-white dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] rounded-2xl shadow-xl p-1.5 z-50 animate-in fade-in zoom-in-95 space-y-1">
+                  <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-[#1E293B] rounded-xl shadow-lg border border-[#EDECE9] dark:border-[#334155] p-1.5 z-50 animate-in fade-in zoom-in-95 space-y-0.5">
                     <button
                       type="button"
                       onClick={() => {
@@ -2791,9 +2794,9 @@ export default function App() {
                         handleNavigate('tasks');
                         setShowQuickCapture(true);
                       }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-[#37352F] dark:text-white hover:bg-[#EEF2FF] dark:hover:bg-[#312E81] text-left cursor-pointer transition-colors"
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-[#334155] text-left cursor-pointer transition-colors"
                     >
-                      <CheckSquare className="w-4 h-4 text-[#6366F1]" />
+                      <CheckSquare className="w-4 h-4 text-indigo-600" />
                       <span>+ Task</span>
                     </button>
                     <button
@@ -2802,7 +2805,7 @@ export default function App() {
                         setIsAddMenuOpen(false);
                         handleNavigate('goals');
                       }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-[#37352F] dark:text-white hover:bg-emerald-50 dark:hover:bg-emerald-950/60 text-left cursor-pointer transition-colors"
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-[#334155] text-left cursor-pointer transition-colors"
                     >
                       <Target className="w-4 h-4 text-emerald-600" />
                       <span>+ Goal</span>
@@ -2813,7 +2816,7 @@ export default function App() {
                         setIsAddMenuOpen(false);
                         handleNavigate('exams');
                       }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-[#37352F] dark:text-white hover:bg-indigo-50 dark:hover:bg-indigo-950/60 text-left cursor-pointer transition-colors"
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-[#334155] text-left cursor-pointer transition-colors"
                     >
                       <GraduationCap className="w-4 h-4 text-indigo-600" />
                       <span>+ Exam Prep</span>
@@ -2825,7 +2828,7 @@ export default function App() {
                         handleNavigate('expenses');
                         setShowQuickCapture(true);
                       }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-[#37352F] dark:text-white hover:bg-amber-50 dark:hover:bg-amber-950/60 text-left cursor-pointer transition-colors"
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-[#334155] text-left cursor-pointer transition-colors"
                     >
                       <CreditCard className="w-4 h-4 text-amber-600" />
                       <span>+ Expense</span>
@@ -2837,7 +2840,7 @@ export default function App() {
                         handleNavigate('journal');
                         setShowQuickCapture(true);
                       }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-[#37352F] dark:text-white hover:bg-purple-50 dark:hover:bg-purple-950/60 text-left cursor-pointer transition-colors"
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-[#334155] text-left cursor-pointer transition-colors"
                     >
                       <BookOpen className="w-4 h-4 text-purple-600" />
                       <span>+ Journal Entry</span>
@@ -2850,8 +2853,8 @@ export default function App() {
             {/* Top Navigation Search: Live spending search when on Spending, otherwise Command Palette trigger */}
             {activeView === 'expenses' || activeView === 'subscriptions' ? (
               <div className="relative flex items-center">
-                <div className="flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-xl bg-[#F7F7F5] dark:bg-[#1F2937] border border-[#EDECE9] dark:border-[#374151] focus-within:border-purple-500 focus-within:ring-2 focus-within:ring-purple-500/20 text-xs text-[#787774] dark:text-[#9CA3AF] shadow-2xs transition-all w-36 sm:w-56 md:w-64 focus-within:w-48 sm:focus-within:w-64 md:focus-within:w-72">
-                  <Search className="w-3.5 h-3.5 text-[#9CA3AF] shrink-0 pointer-events-none" />
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-gray-800 text-xs text-gray-500 dark:text-gray-400 border border-gray-200/80 dark:border-gray-700/80 transition-all w-36 sm:w-56 md:w-64 focus-within:w-48 sm:focus-within:w-64 md:focus-within:w-72 focus-within:border-indigo-500">
+                  <Search className="w-3.5 h-3.5 text-gray-400 shrink-0 pointer-events-none" />
                   <input
                     type="text"
                     id="expense-merchant-search"
@@ -2859,7 +2862,7 @@ export default function App() {
                     value={spendingSearchQuery}
                     onChange={(e) => setSpendingSearchQuery(e.target.value)}
                     placeholder="Search spending..."
-                    className="w-full bg-transparent text-xs text-[#37352F] dark:text-white placeholder:text-[#9CA3AF] focus:outline-none"
+                    className="w-full bg-transparent text-xs text-gray-800 dark:text-gray-100 placeholder:text-gray-400 focus:outline-none"
                   />
                   {spendingSearchQuery ? (
                     <button
@@ -2879,7 +2882,7 @@ export default function App() {
                         Sound.click(settings.soundEnabled);
                         setIsCommandPaletteOpen(true);
                       }}
-                      className="hidden sm:inline px-1.5 py-0.2 rounded bg-white dark:bg-[#111827] border border-[#EDECE9] dark:border-[#374151] text-[9px] font-mono cursor-pointer shrink-0 hover:bg-gray-50 dark:hover:bg-[#1F2937]"
+                      className="hidden sm:inline px-1 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-[9px] text-gray-500 dark:text-gray-400 font-mono cursor-pointer shrink-0"
                       title="Open Command Palette (⌘K)"
                     >
                       ⌘K
@@ -2894,11 +2897,11 @@ export default function App() {
                   Sound.click(settings.soundEnabled);
                   setIsCommandPaletteOpen(true);
                 }}
-                className="flex items-center gap-1.5 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-[#F7F7F5] dark:bg-[#1F2937] border border-[#EDECE9] dark:border-[#374151] hover:border-[#D1D5DB] dark:hover:border-[#4B5563] text-xs text-[#787774] dark:text-[#9CA3AF] shadow-2xs cursor-pointer transition-all sm:w-36 md:w-44 justify-between"
+                className="flex items-center gap-1.5 p-1.5 sm:px-2.5 sm:py-1 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200/80 dark:hover:bg-gray-700/80 text-xs text-gray-500 dark:text-gray-400 border border-gray-200/80 dark:border-gray-700/80 cursor-pointer transition-all sm:w-36 md:w-44 justify-between"
                 title="Search (⌘K)"
               >
                 <div className="flex items-center gap-1.5 truncate">
-                  <Search className="w-3.5 h-3.5 text-[#9CA3AF]" />
+                  <Search className="w-3.5 h-3.5 text-gray-400" />
                   <span className="hidden sm:inline truncate">
                     {activeView === 'tasks'
                       ? 'Search tasks...'
@@ -2911,7 +2914,7 @@ export default function App() {
                       : 'Search pages...'}
                   </span>
                 </div>
-                <kbd className="hidden sm:inline px-1.5 py-0.2 rounded bg-white dark:bg-[#111827] border border-[#EDECE9] dark:border-[#374151] text-[9px] font-mono">
+                <kbd className="hidden sm:inline px-1 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-[9px] text-gray-500 dark:text-gray-400 font-mono">
                   ⌘K
                 </kbd>
               </button>
@@ -2921,7 +2924,7 @@ export default function App() {
             <button
               type="button"
               onClick={handleToggleDarkMode}
-              className="p-1.5 text-[#787774] dark:text-[#9CA3AF] hover:text-[#37352F] dark:hover:text-white hover:bg-[#F7F7F5] dark:hover:bg-[#1F2937] rounded-xl border border-[#EDECE9] dark:border-[#374151] transition-colors cursor-pointer"
+              className="p-1.5 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-[#F1EFEA] dark:hover:bg-[#1E293B] rounded-lg transition-colors cursor-pointer"
               title={`Switch to ${settings.darkMode ? 'Light' : 'Dark'} Mode`}
             >
               {settings.darkMode ? (
@@ -2935,13 +2938,13 @@ export default function App() {
             <button
               type="button"
               onClick={handleToggleSound}
-              className="hidden sm:flex p-1.5 text-[#787774] dark:text-[#9CA3AF] hover:text-[#37352F] dark:hover:text-white hover:bg-[#F7F7F5] dark:hover:bg-[#1F2937] rounded-xl border border-[#EDECE9] dark:border-[#374151] transition-colors cursor-pointer"
+              className="hidden sm:flex p-1.5 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-[#F1EFEA] dark:hover:bg-[#1E293B] rounded-lg transition-colors cursor-pointer"
               title={`Audio: ${settings.soundEnabled ? 'Enabled' : 'Muted'}`}
             >
               {settings.soundEnabled ? (
-                <Volume2 className="w-3.5 h-3.5 text-[#6366F1]" />
+                <Volume2 className="w-3.5 h-3.5 text-indigo-600" />
               ) : (
-                <VolumeX className="w-3.5 h-3.5 text-[#9CA3AF]" />
+                <VolumeX className="w-3.5 h-3.5 text-gray-400" />
               )}
             </button>
 
@@ -2950,7 +2953,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setIsAccountMenuOpen((open) => !open)}
-                className="w-7 h-7 rounded-lg overflow-hidden border border-[#EDECE9] dark:border-[#374151] cursor-pointer hover:ring-2 hover:ring-[#6366F1] transition-all shrink-0 bg-purple-50 dark:bg-purple-950/40 flex items-center justify-center text-xs font-bold text-purple-600 dark:text-purple-300"
+                className="w-7 h-7 rounded-full overflow-hidden border border-gray-200 dark:border-gray-700 cursor-pointer hover:ring-2 hover:ring-indigo-500 transition-all shrink-0 flex items-center justify-center text-xs font-medium text-gray-600 dark:text-gray-300"
                 title="Account menu"
                 aria-label="Account menu"
               >
@@ -2974,13 +2977,13 @@ export default function App() {
                     className="fixed inset-0 z-40"
                     onClick={() => setIsAccountMenuOpen(false)}
                   />
-                  <div className="absolute right-0 top-9 z-50 w-56 rounded-2xl border border-[#EDECE9] dark:border-[#374151] bg-white dark:bg-[#1F2937] p-1.5 shadow-xl animate-in fade-in zoom-in-95">
+                  <div className="absolute right-0 top-10 z-50 w-56 rounded-xl bg-white dark:bg-gray-900 p-1.5 shadow-xl border border-gray-200 dark:border-gray-700">
                     {/* User display name & email */}
-                    <div className="px-2.5 py-2 mb-1 rounded-xl bg-gray-50 dark:bg-[#111827] border border-gray-100 dark:border-gray-800">
-                      <p className="text-xs font-bold text-[#111827] dark:text-white truncate">
+                    <div className="px-3 py-2 mb-1 border-b border-gray-100 dark:border-gray-800">
+                      <p className="text-xs font-semibold text-gray-900 dark:text-white truncate">
                         {profile.name || currentUser?.name || 'Workspace User'}
                       </p>
-                      <p className="text-[10px] text-[#6B7280] dark:text-[#9CA3AF] truncate">
+                      <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
                         {currentUser?.email || profile.contactEmail || 'user@workspace.local'}
                       </p>
                     </div>
@@ -2994,7 +2997,7 @@ export default function App() {
                       }}
                       className="account-menu-item flex items-center gap-2 w-full text-left font-medium text-[#111827] dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg p-2 transition-colors cursor-pointer text-xs"
                     >
-                      <Camera className="w-3.5 h-3.5 text-[#6366F1] dark:text-[#818CF8]" />
+                      <Camera className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                       <span>Change profile picture</span>
                     </button>
 
@@ -3169,16 +3172,16 @@ export default function App() {
                         key={item.id}
                         type="button"
                         onClick={() => handleNavigate(item.id)}
-                        className={`w-full flex items-center rounded-xl text-xs font-semibold transition-colors cursor-pointer px-2.5 py-2 overflow-hidden ${
+                        className={`w-full flex items-center rounded-lg text-xs font-medium transition-colors cursor-pointer px-2.5 py-1.5 overflow-hidden ${
                           isActive
-                            ? 'bg-[#EEF2FF] dark:bg-[#1E1B4B] text-[#6366F1] dark:text-[#818CF8] font-bold shadow-2xs border border-[#C7D2FE] dark:border-[#374151]'
-                            : 'text-[#37352F] dark:text-[#D1D5DB] hover:bg-[#F1F1EF] dark:hover:bg-[#1F2937]/50'
+                            ? 'bg-[#EAE8E3] dark:bg-[#1E293B] text-[#37352F] dark:text-white font-semibold shadow-xs'
+                            : 'text-[#5F5E5B] dark:text-[#94A3B8] hover:bg-[#F1EFEA] dark:hover:bg-[#1E293B]/60 hover:text-[#37352F] dark:hover:text-white'
                         }`}
                         title={item.label}
                       >
                         <div className="w-5 h-5 flex items-center justify-center shrink-0">
                           <item.icon className={`w-4 h-4 shrink-0 transition-colors ${
-                            isActive ? 'text-[#6366F1] dark:text-[#818CF8]' : 'text-[#787774] dark:text-[#9CA3AF]'
+                            isActive ? 'text-[#37352F] dark:text-white' : 'text-[#787774] dark:text-[#9CA3AF]'
                           }`} />
                         </div>
                         <AnimatePresence initial={false}>
@@ -3225,16 +3228,16 @@ export default function App() {
                         key={item.id}
                         type="button"
                         onClick={() => handleNavigate(item.id)}
-                        className={`w-full flex items-center rounded-xl text-xs font-medium transition-colors cursor-pointer px-2.5 py-1.5 overflow-hidden ${
+                        className={`w-full flex items-center rounded-lg text-xs font-medium transition-colors cursor-pointer px-2.5 py-1.5 overflow-hidden ${
                           isActive
-                            ? 'bg-[#EEF2FF] dark:bg-[#1E1B4B] text-[#6366F1] dark:text-[#818CF8] font-semibold shadow-2xs border border-[#C7D2FE] dark:border-[#374151]'
-                            : 'text-[#37352F] dark:text-[#D1D5DB] hover:bg-[#F1F1EF] dark:hover:bg-[#1F2937]/50'
+                            ? 'bg-[#EAE8E3] dark:bg-[#1E293B] text-[#37352F] dark:text-white font-semibold shadow-xs'
+                            : 'text-[#5F5E5B] dark:text-[#94A3B8] hover:bg-[#F1EFEA] dark:hover:bg-[#1E293B]/60 hover:text-[#37352F] dark:hover:text-white'
                         }`}
                         title={item.label}
                       >
                         <div className="w-5 h-5 flex items-center justify-center shrink-0">
                           <item.icon className={`w-4 h-4 shrink-0 transition-colors ${
-                            isActive ? 'text-[#6366F1] dark:text-[#818CF8]' : 'text-[#787774] dark:text-[#9CA3AF]'
+                            isActive ? 'text-[#37352F] dark:text-white' : 'text-[#787774] dark:text-[#9CA3AF]'
                           }`} />
                         </div>
                         <AnimatePresence initial={false}>
@@ -3248,12 +3251,12 @@ export default function App() {
                             >
                               <span className="truncate">{item.label}</span>
                               {item.badge && (
-                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-[#EEF2FF] dark:bg-[#312E81] text-[#6366F1] dark:text-[#A5B4FC] shrink-0 ml-1.5">
+                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-[#6366F1]/10 text-[#4F46E5] dark:text-[#A5B4FC] shrink-0 ml-1.5">
                                   {item.badge}
                                 </span>
                               )}
                               {item.count !== undefined && !item.badge && (
-                                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-md bg-white dark:bg-[#111827] text-[#787774] dark:text-[#9CA3AF] border border-[#EDECE9] dark:border-[#374151] shrink-0 ml-1.5">
+                                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-md bg-[#E3E2DE] dark:bg-gray-800 text-[#5F5E5B] dark:text-gray-400 shrink-0 ml-1.5">
                                   {item.count}
                                 </span>
                               )}
@@ -3291,16 +3294,16 @@ export default function App() {
                         key={item.id}
                         type="button"
                         onClick={() => handleNavigate(item.id)}
-                        className={`w-full flex items-center rounded-xl text-xs font-medium transition-colors cursor-pointer px-2.5 py-1.5 overflow-hidden ${
+                        className={`w-full flex items-center rounded-lg text-xs font-medium transition-colors cursor-pointer px-2.5 py-1.5 overflow-hidden ${
                           isActive
-                            ? 'bg-[#EEF2FF] dark:bg-[#1E1B4B] text-[#6366F1] dark:text-[#818CF8] font-semibold shadow-2xs border border-[#C7D2FE] dark:border-[#374151]'
-                            : 'text-[#37352F] dark:text-[#D1D5DB] hover:bg-[#F1F1EF] dark:hover:bg-[#1F2937]/50'
+                            ? 'bg-[#EAE8E3] dark:bg-[#1E293B] text-[#37352F] dark:text-white font-semibold shadow-xs'
+                            : 'text-[#5F5E5B] dark:text-[#94A3B8] hover:bg-[#F1EFEA] dark:hover:bg-[#1E293B]/60 hover:text-[#37352F] dark:hover:text-white'
                         }`}
                         title={item.label}
                       >
                         <div className="w-5 h-5 flex items-center justify-center shrink-0">
                           <item.icon className={`w-4 h-4 shrink-0 transition-colors ${
-                            isActive ? 'text-[#6366F1] dark:text-[#818CF8]' : 'text-[#787774] dark:text-[#9CA3AF]'
+                            isActive ? 'text-[#37352F] dark:text-white' : 'text-[#787774] dark:text-[#9CA3AF]'
                           }`} />
                         </div>
                         <AnimatePresence initial={false}>
@@ -3314,7 +3317,7 @@ export default function App() {
                             >
                               <span className="truncate">{item.label}</span>
                               {item.count !== undefined && (
-                                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-md bg-white dark:bg-[#111827] text-[#787774] dark:text-[#9CA3AF] border border-[#EDECE9] dark:border-[#374151] shrink-0 ml-1.5">
+                                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-md bg-[#E3E2DE] dark:bg-gray-800 text-[#5F5E5B] dark:text-gray-400 shrink-0 ml-1.5">
                                   {item.count}
                                 </span>
                               )}
@@ -3352,16 +3355,16 @@ export default function App() {
                         key={item.id}
                         type="button"
                         onClick={() => handleNavigate(item.id)}
-                        className={`w-full flex items-center rounded-xl text-xs font-medium transition-colors cursor-pointer px-2.5 py-1.5 overflow-hidden ${
+                        className={`w-full flex items-center rounded-lg text-xs font-medium transition-colors cursor-pointer px-2.5 py-1.5 overflow-hidden ${
                           isActive
-                            ? 'bg-[#EEF2FF] dark:bg-[#1E1B4B] text-[#6366F1] dark:text-[#818CF8] font-semibold shadow-2xs border border-[#C7D2FE] dark:border-[#374151]'
-                            : 'text-[#37352F] dark:text-[#D1D5DB] hover:bg-[#F1F1EF] dark:hover:bg-[#1F2937]/50'
+                            ? 'bg-[#EAE8E3] dark:bg-[#1E293B] text-[#37352F] dark:text-white font-semibold shadow-xs'
+                            : 'text-[#5F5E5B] dark:text-[#94A3B8] hover:bg-[#F1EFEA] dark:hover:bg-[#1E293B]/60 hover:text-[#37352F] dark:hover:text-white'
                         }`}
                         title={item.label}
                       >
                         <div className="w-5 h-5 flex items-center justify-center shrink-0">
                           <item.icon className={`w-4 h-4 shrink-0 transition-colors ${
-                            isActive ? 'text-[#6366F1] dark:text-[#818CF8]' : 'text-[#787774] dark:text-[#9CA3AF]'
+                            isActive ? 'text-[#37352F] dark:text-white' : 'text-[#787774] dark:text-[#9CA3AF]'
                           }`} />
                         </div>
                         <AnimatePresence initial={false}>
@@ -3375,7 +3378,7 @@ export default function App() {
                             >
                               <span className="truncate">{item.label}</span>
                               {item.count !== undefined && (
-                                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-md bg-white dark:bg-[#111827] text-[#787774] dark:text-[#9CA3AF] border border-[#EDECE9] dark:border-[#374151] shrink-0 ml-1.5">
+                                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-md bg-[#E3E2DE] dark:bg-gray-800 text-[#5F5E5B] dark:text-gray-400 shrink-0 ml-1.5">
                                   {item.count}
                                 </span>
                               )}
@@ -3413,16 +3416,16 @@ export default function App() {
                         key={item.id}
                         type="button"
                         onClick={() => handleNavigate(item.id)}
-                        className={`w-full flex items-center rounded-xl text-xs font-medium transition-colors cursor-pointer px-2.5 py-1.5 overflow-hidden ${
+                        className={`w-full flex items-center rounded-lg text-xs font-medium transition-colors cursor-pointer px-2.5 py-1.5 overflow-hidden ${
                           isActive
-                            ? 'bg-[#EEF2FF] dark:bg-[#1E1B4B] text-[#6366F1] dark:text-[#818CF8] font-semibold shadow-2xs border border-[#C7D2FE] dark:border-[#374151]'
-                            : 'text-[#37352F] dark:text-[#D1D5DB] hover:bg-[#F1F1EF] dark:hover:bg-[#1F2937]/50'
+                            ? 'bg-[#EAE8E3] dark:bg-[#1E293B] text-[#37352F] dark:text-white font-semibold shadow-xs'
+                            : 'text-[#5F5E5B] dark:text-[#94A3B8] hover:bg-[#F1EFEA] dark:hover:bg-[#1E293B]/60 hover:text-[#37352F] dark:hover:text-white'
                         }`}
                         title={item.label}
                       >
                         <div className="w-5 h-5 flex items-center justify-center shrink-0">
                           <item.icon className={`w-4 h-4 shrink-0 transition-colors ${
-                            isActive ? 'text-[#6366F1] dark:text-[#818CF8]' : 'text-[#787774] dark:text-[#9CA3AF]'
+                            isActive ? 'text-[#37352F] dark:text-white' : 'text-[#787774] dark:text-[#9CA3AF]'
                           }`} />
                         </div>
                         <AnimatePresence initial={false}>
@@ -3436,7 +3439,7 @@ export default function App() {
                             >
                               <span className="truncate">{item.label}</span>
                               {item.count !== undefined && (
-                                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-md bg-white dark:bg-[#111827] text-[#787774] dark:text-[#9CA3AF] border border-[#EDECE9] dark:border-[#374151] shrink-0 ml-1.5">
+                                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-md bg-[#E3E2DE] dark:bg-gray-800 text-[#5F5E5B] dark:text-gray-400 shrink-0 ml-1.5">
                                   {item.count}
                                 </span>
                               )}
@@ -3474,16 +3477,16 @@ export default function App() {
                         key={item.id}
                         type="button"
                         onClick={() => handleNavigate(item.id)}
-                        className={`w-full flex items-center rounded-xl text-xs font-medium transition-colors cursor-pointer px-2.5 py-1.5 overflow-hidden ${
+                        className={`w-full flex items-center rounded-lg text-xs font-medium transition-colors cursor-pointer px-2.5 py-1.5 overflow-hidden ${
                           isActive
-                            ? 'bg-[#EEF2FF] dark:bg-[#1E1B4B] text-[#6366F1] dark:text-[#818CF8] font-semibold shadow-2xs border border-[#C7D2FE] dark:border-[#374151]'
-                            : 'text-[#37352F] dark:text-[#D1D5DB] hover:bg-[#F1F1EF] dark:hover:bg-[#1F2937]/50'
+                            ? 'bg-[#EAE8E3] dark:bg-[#1E293B] text-[#37352F] dark:text-white font-semibold shadow-xs'
+                            : 'text-[#5F5E5B] dark:text-[#94A3B8] hover:bg-[#F1EFEA] dark:hover:bg-[#1E293B]/60 hover:text-[#37352F] dark:hover:text-white'
                         }`}
                         title={item.label}
                       >
                         <div className="w-5 h-5 flex items-center justify-center shrink-0">
                           <item.icon className={`w-4 h-4 shrink-0 transition-colors ${
-                            isActive ? 'text-[#6366F1] dark:text-[#818CF8]' : 'text-[#787774] dark:text-[#9CA3AF]'
+                            isActive ? 'text-[#37352F] dark:text-white' : 'text-[#787774] dark:text-[#9CA3AF]'
                           }`} />
                         </div>
                         <AnimatePresence initial={false}>
@@ -3497,7 +3500,7 @@ export default function App() {
                             >
                               <span className="truncate">{item.label}</span>
                               {item.count !== undefined && (
-                                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-md bg-white dark:bg-[#111827] text-[#787774] dark:text-[#9CA3AF] border border-[#EDECE9] dark:border-[#374151] shrink-0 ml-1.5">
+                                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-md bg-[#E3E2DE] dark:bg-gray-800 text-[#5F5E5B] dark:text-gray-400 shrink-0 ml-1.5">
                                   {item.count}
                                 </span>
                               )}
@@ -3511,13 +3514,13 @@ export default function App() {
             </div>
 
             {/* Sidebar Footer: Dedicated Collapse Toggle Button */}
-            <div className="pt-3 border-t border-[#EDECE9] dark:border-[#1F2937] w-full">
+            <div className="pt-3 border-t border-[#EDECE9] dark:border-[#1E293B] w-full">
               <motion.button
                 type="button"
                 id="btn-sidebar-collapse-toggle"
                 onClick={handleToggleSidebar}
                 whileTap={{ scale: 0.96 }}
-                className="w-full flex items-center rounded-xl text-xs font-medium text-[#787774] dark:text-[#9CA3AF] hover:text-[#37352F] dark:hover:text-white hover:bg-[#F1F1EF] dark:hover:bg-[#1F2937]/50 transition-colors cursor-pointer px-2.5 py-2 overflow-hidden"
+                className="w-full flex items-center rounded-lg text-xs font-medium text-[#5F5E5B] dark:text-[#94A3B8] hover:bg-[#F1EFEA] dark:hover:bg-[#1E293B] hover:text-[#37352F] dark:hover:text-white transition-colors cursor-pointer px-2.5 py-1.5 overflow-hidden"
                 title={!isSidebarCollapsed ? 'Collapse sidebar (⌘\\)' : 'Expand sidebar (⌘\\)'}
               >
                 <div className="w-5 h-5 flex items-center justify-center shrink-0">

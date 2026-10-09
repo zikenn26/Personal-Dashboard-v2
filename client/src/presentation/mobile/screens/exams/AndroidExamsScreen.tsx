@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { GraduationCap, Calendar, Clock, BookOpen, CheckCircle, ChevronRight, Award, Plus, Sparkles } from 'lucide-react';
+import { GraduationCap, Calendar, Clock, BookOpen, CheckCircle, ChevronRight, Award, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { ExamItem } from '../../../../types';
 import { nativeService } from '../../../../services/nativeService';
 import { CARD_SURFACE_CLASSES } from '../../design-system/materialYou';
+import { AddExamModal } from '../../../../components/exams/AddExamModal';
 
 export interface AndroidExamsScreenProps {
   exams: ExamItem[];
@@ -16,6 +17,7 @@ export const AndroidExamsScreen: React.FC<AndroidExamsScreenProps> = ({
   const [selectedExamId, setSelectedExamId] = useState<string | null>(
     exams.length > 0 ? exams[0].id : null
   );
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
   const calculateDaysLeft = (targetDateStr: string) => {
     const target = new Date(targetDateStr);
@@ -27,17 +29,49 @@ export const AndroidExamsScreen: React.FC<AndroidExamsScreenProps> = ({
 
   const selectedExam = exams.find((e) => e.id === selectedExamId) || exams[0];
 
+  const handleAddExam = (newExam: ExamItem) => {
+    if (onUpdateExams) {
+      onUpdateExams([newExam, ...exams]);
+    }
+    setSelectedExamId(newExam.id);
+    void nativeService.triggerHaptic('success');
+  };
+
+  const handleDeleteExam = (examId: string) => {
+    if (!onUpdateExams) return;
+    void nativeService.triggerHaptic('warning');
+    const remaining = exams.filter((e) => e.id !== examId);
+    onUpdateExams(remaining);
+    if (selectedExamId === examId) {
+      setSelectedExamId(remaining.length > 0 ? remaining[0].id : null);
+    }
+  };
+
   return (
     <div className="w-full max-w-lg mx-auto px-3.5 pb-24 pt-2 space-y-3.5">
-      {/* Subtitle Bar */}
-      <div className="px-1 pt-0.5 pb-0.5">
+      {/* Subtitle & Quick Action Bar */}
+      <div className="flex items-center justify-between px-1 pt-0.5 pb-0.5">
         <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-          {exams.length} target examinations tracked
+          {exams.length} target examination{exams.length === 1 ? '' : 's'} tracked
         </p>
+
+        {onUpdateExams && (
+          <button
+            type="button"
+            onClick={() => {
+              void nativeService.triggerHaptic('selection');
+              setIsAddModalOpen(true);
+            }}
+            className="px-3.5 py-1.5 rounded-full bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Add Exam</span>
+          </button>
+        )}
       </div>
 
       {/* Horizontal Exam Selector */}
-      {exams.length > 1 && (
+      {exams.length > 0 && (
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
           {exams.map((exam) => (
             <button
@@ -57,6 +91,22 @@ export const AndroidExamsScreen: React.FC<AndroidExamsScreenProps> = ({
               <span>{exam.shortName || exam.name}</span>
             </button>
           ))}
+
+          {/* Quick Add Button in tab strip */}
+          {onUpdateExams && (
+            <button
+              type="button"
+              onClick={() => {
+                void nativeService.triggerHaptic('selection');
+                setIsAddModalOpen(true);
+              }}
+              className="px-3 py-2 rounded-2xl flex items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-950/40 border border-violet-200/60 dark:border-violet-900/40 active:scale-95 transition-all cursor-pointer"
+              title="Add another examination"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>New Exam</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -194,15 +244,53 @@ export const AndroidExamsScreen: React.FC<AndroidExamsScreenProps> = ({
               </div>
             </div>
           )}
+          {/* Delete Option for active exam */}
+          {onUpdateExams && (
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={() => handleDeleteExam(selectedExam.id)}
+                className="text-xs text-rose-500 hover:text-rose-600 dark:text-rose-400 flex items-center gap-1.5 px-3 py-1.5 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Remove this exam</span>
+              </button>
+            </div>
+          )}
         </div>
       ) : (
-        <div className="p-8 text-center rounded-3xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40]">
+        <div className="p-8 text-center rounded-3xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] space-y-3">
           <GraduationCap className="w-10 h-10 text-violet-400 mx-auto mb-2 opacity-60" />
           <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
-            No exams configured
+            No exams configured yet
           </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 max-w-xs mx-auto">
+            Track UPSC CSE, OPSC OCS, CAT, CDS, NEET, NDA, or configure a custom competitive examination with timeline &amp; syllabus.
+          </p>
+          {onUpdateExams && (
+            <button
+              type="button"
+              onClick={() => {
+                void nativeService.triggerHaptic('selection');
+                setIsAddModalOpen(true);
+              }}
+              className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold shadow-xs active:scale-95 transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Your First Exam</span>
+            </button>
+          )}
         </div>
       )}
+
+      {/* Add Exam Modal */}
+      <AddExamModal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        onAddExam={handleAddExam}
+        existingExamNames={exams.map((e) => e.name)}
+        soundEnabled={true}
+      />
     </div>
   );
 };

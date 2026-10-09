@@ -5,15 +5,19 @@ import { nativeService } from '../../../../services/nativeService';
 import { Storage } from '../../../../utils/storage';
 import { scheduleAutoSyncToSupabase } from '../../../../utils/supabase';
 
-const DEFAULT_CONTENT = `- Jot down quick ideas, daily thoughts, or links\n- Auto-indented sticky note for your flow\n- `;
-
 export const AndroidScratchPad: React.FC = () => {
   const [content, setContent] = useState<string>(() => {
     try {
       const saved = Storage.getScratchpad();
-      return saved !== '' ? saved : DEFAULT_CONTENT;
+      if (
+        saved.includes('Jot down quick ideas') ||
+        saved.includes('Auto-indented sticky note')
+      ) {
+        return '';
+      }
+      return saved || '';
     } catch {
-      return DEFAULT_CONTENT;
+      return '';
     }
   });
 
@@ -51,25 +55,7 @@ export const AndroidScratchPad: React.FC = () => {
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    let val = e.target.value;
-    if (val === '') {
-      updateContentWithHistory('');
-      return;
-    }
-    // If text is non-empty and does not start with '-', format first line
-    if (!val.startsWith('-')) {
-      val = `- ${val}`;
-    }
-    // Format any un-indented line with '- '
-    const lines = val.split('\n');
-    const formatted = lines.map((line, idx) => {
-      if (idx === 0) return line;
-      if (line.length > 0 && !line.startsWith('-')) {
-        return `- ${line}`;
-      }
-      return line;
-    });
-    val = formatted.join('\n');
+    const val = e.target.value;
     updateContentWithHistory(val);
   };
 
@@ -82,18 +68,22 @@ export const AndroidScratchPad: React.FC = () => {
     }
 
     if (e.key === 'Enter') {
-      e.preventDefault();
       const textarea = e.currentTarget;
       const { selectionStart, selectionEnd, value } = textarea;
-      const before = value.substring(0, selectionStart);
-      const after = value.substring(selectionEnd);
-      const nextVal = `${before}\n- ${after}`;
-      updateContentWithHistory(nextVal);
-      requestAnimationFrame(() => {
-        const newPos = selectionStart + 3; // '\n- ' has length 3
-        textarea.selectionStart = newPos;
-        textarea.selectionEnd = newPos;
-      });
+      const currentLine = value.substring(0, selectionStart).split('\n').pop() || '';
+      if (currentLine.startsWith('- ') || currentLine.startsWith('• ')) {
+        e.preventDefault();
+        const prefix = currentLine.startsWith('- ') ? '- ' : '• ';
+        const before = value.substring(0, selectionStart);
+        const after = value.substring(selectionEnd);
+        const nextVal = `${before}\n${prefix}${after}`;
+        updateContentWithHistory(nextVal);
+        requestAnimationFrame(() => {
+          const newPos = selectionStart + prefix.length + 1;
+          textarea.selectionStart = newPos;
+          textarea.selectionEnd = newPos;
+        });
+      }
     }
   };
 
@@ -207,7 +197,7 @@ export const AndroidScratchPad: React.FC = () => {
               Scratch Pad
             </h3>
             <span className="text-[10px] text-amber-700/90 dark:text-amber-400 font-medium block -mt-0.5">
-              Sticky Notes • Auto-indented
+              Quick Notes • Auto-saved
             </span>
           </div>
         </div>

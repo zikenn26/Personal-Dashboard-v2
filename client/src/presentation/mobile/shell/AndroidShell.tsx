@@ -115,6 +115,9 @@ export interface AndroidShellProps {
   onDeleteGoal?: (id: string) => void;
 
   onUpdateExams?: (exams: ExamItem[]) => void;
+  onAddMilestone?: (milestone: Omit<LifeMilestone, 'id'>) => void;
+  onUpdateMilestone?: (id: string, updates: Partial<LifeMilestone>) => void;
+  onDeleteMilestone?: (id: string) => void;
   onUpdateProfile?: (updates: Partial<UserProfile>) => void;
   onUpdateProjects?: (projects: PortfolioProject[]) => void;
   onUpdateSkills?: (skills: SkillCategory[]) => void;
@@ -201,6 +204,9 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
   onUpdateGoal,
   onDeleteGoal,
   onUpdateExams,
+  onAddMilestone,
+  onUpdateMilestone,
+  onDeleteMilestone,
   onUpdateProfile,
   onUpdateProjects,
   onUpdateSkills,
@@ -482,6 +488,9 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
             <AndroidLifeMapScreen
               milestones={milestones}
               profile={profile}
+              onAddMilestone={onAddMilestone}
+              onUpdateMilestone={onUpdateMilestone}
+              onDeleteMilestone={onDeleteMilestone}
             />
           )}
 

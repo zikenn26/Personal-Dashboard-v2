@@ -503,7 +503,7 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
         </motion.div>
 
         {/* Side-by-Side: Quote Tile (70%) + Date & Clock Tile (30%) */}
-        <div className="grid grid-cols-1 lg:grid-cols-10 gap-3 items-stretch">
+        <div className="grid grid-cols-1 lg:grid-cols-10 gap-3.5 items-stretch">
           {/* Quote Tile (70% ratio - increased size & synchronized font) */}
           <motion.div
             initial={{ opacity: 0, y: 14 }}
@@ -511,27 +511,27 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
             transition={{ duration: 0.45, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
             onMouseEnter={() => setIsQuoteAutoPlay(false)}
             onMouseLeave={() => setIsQuoteAutoPlay(true)}
-            className="grid-tile lg:col-span-7 relative p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFC] dark:bg-[#23324C] border border-[#EDECE9] dark:border-[#334155] shadow-xs flex flex-col justify-between gap-2.5 transition-all group min-h-[125px]"
+            className="grid-tile lg:col-span-7 relative p-4 sm:p-5 rounded-2xl bg-[#F7F7F5] dark:bg-[#23324C] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col justify-between gap-3 transition-all group min-h-[135px]"
           >
             {activeQuote ? (
-              <div className="flex items-start gap-3 min-w-0 flex-1">
-                <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200/70 dark:border-amber-900/50 flex items-center justify-center shrink-0 text-amber-600 dark:text-amber-400 shadow-2xs mt-0.5">
+              <div className="flex items-start gap-3.5 min-w-0 flex-1">
+                <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200/60 dark:border-amber-900/40 flex items-center justify-center shrink-0 text-amber-600 dark:text-amber-400 mt-0.5">
                   <Quote className="w-4 h-4" />
                 </div>
                 <div className="min-w-0 space-y-1 flex-1">
                   {/* High readability, consistent font size with main dashboard */}
-                  <p className="font-sans text-sm sm:text-base md:text-[17px] font-medium text-[#1E293B] dark:text-[#F1F5F9] leading-relaxed tracking-normal line-clamp-3 sm:line-clamp-2">
+                  <p className="font-sans text-base sm:text-lg md:text-[19px] font-semibold text-[#37352F] dark:text-[#E2E8F0] leading-relaxed tracking-normal line-clamp-3 sm:line-clamp-2">
                     &ldquo;{activeQuote.text}&rdquo;
                   </p>
                 </div>
               </div>
             ) : (
-              <div className="flex items-center gap-3 min-w-0 flex-1 py-1">
-                <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200/70 dark:border-amber-900/50 flex items-center justify-center shrink-0 text-amber-600 dark:text-amber-400 shadow-2xs">
+              <div className="flex items-center gap-3.5 min-w-0 flex-1 py-1">
+                <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200/60 dark:border-amber-900/40 flex items-center justify-center shrink-0 text-amber-600 dark:text-amber-400">
                   <Quote className="w-4 h-4" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm sm:text-base font-semibold text-[#2D3748] dark:text-[#E2E8F0]">
+                  <p className="text-base sm:text-lg font-semibold text-[#37352F] dark:text-[#E2E8F0]">
                     No Quotes in Collection
                   </p>
                 </div>
@@ -539,21 +539,21 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
             )}
 
             {/* Quote Controls Bar */}
-            <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#EDECE9]/70 dark:border-[#334155]/60 flex-wrap">
+            <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-[#EDECE9] dark:border-[#334155]/60 flex-wrap">
               {/* Author & counter badge */}
-              <div className="flex items-center gap-2 text-xs text-[#64748B] dark:text-[#94A3B8] truncate">
+              <div className="flex items-center gap-2 text-xs text-[#787774] dark:text-[#94A3B8] truncate">
                 {activeQuote && (
-                  <span className="font-semibold text-xs sm:text-sm text-[#475569] dark:text-[#CBD5E1] truncate">
+                  <span className="font-bold text-xs sm:text-sm text-[#37352F] dark:text-[#E2E8F0] truncate">
                     — {activeQuote.author}
                   </span>
                 )}
                 {activeQuote?.category && (
-                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-amber-100/70 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/50">
+                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-900/40">
                     {activeQuote.category}
                   </span>
                 )}
                 {allQuotesList.length > 1 && (
-                  <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-[#EDECE9]/80 dark:bg-[#0F172A] text-[#64748B] dark:text-[#94A3B8] border border-[#E2E8F0] dark:border-[#334155]">
+                  <span className="font-mono text-[11px] px-2 py-0.5 rounded-md bg-white dark:bg-[#0F172A] text-gray-500 dark:text-gray-400 border border-gray-200/80 dark:border-gray-700">
                     {currentQuoteIdx + 1}/{allQuotesList.length}
                   </span>
                 )}
@@ -562,12 +562,12 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
               {/* Right bottom corner */}
               <div className="flex items-center gap-1.5 shrink-0 ml-auto">
                 {allQuotesList.length > 1 && (
-                  <div className="flex items-center gap-0.5 bg-white dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#334155] rounded-lg p-0.5 shadow-2xs">
+                  <div className="flex items-center gap-1 bg-white dark:bg-[#0F172A] border border-gray-200 dark:border-gray-700 rounded-lg p-0.5">
                     <button
                       type="button"
                       onClick={handlePrevQuote}
                       title="Previous quote"
-                      className="p-1 rounded text-[#64748B] hover:text-[#6366F1] dark:hover:text-white hover:bg-[#F1F5F9] dark:hover:bg-[#1E293B] transition-colors cursor-pointer"
+                      className="p-1 rounded text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white transition-colors cursor-pointer"
                     >
                       <ChevronLeft className="w-3.5 h-3.5" />
                     </button>
@@ -575,7 +575,7 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
                       type="button"
                       onClick={handleNextQuote}
                       title="Next quote"
-                      className="p-1 rounded text-[#64748B] hover:text-[#6366F1] dark:hover:text-white hover:bg-[#F1F5F9] dark:hover:bg-[#1E293B] transition-colors cursor-pointer"
+                      className="p-1 rounded text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white transition-colors cursor-pointer"
                     >
                       <ChevronRight className="w-3.5 h-3.5" />
                     </button>
@@ -586,7 +586,7 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
                   type="button"
                   onClick={() => handleItemNavigate('quotes')}
                   title="Open Quotes Lounge"
-                  className="px-2 py-1 rounded-lg border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-[#64748B] hover:text-[#6366F1] dark:hover:text-white transition-all cursor-pointer flex items-center gap-1.5 text-xs font-semibold shadow-2xs"
+                  className="px-2.5 py-1 rounded-lg text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white hover:bg-gray-200/70 dark:hover:bg-gray-800 transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
                 >
                   <Quote className="w-3 h-3" />
                   <span className="hidden sm:inline">Lounge</span>
@@ -600,10 +600,10 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
                     setShowAddQuotePopover((prev) => !prev);
                   }}
                   title="Add quote to collection"
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-2xs ${
+                  className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                     showAddQuotePopover
-                      ? 'bg-[#6366F1] text-white'
-                      : 'bg-[#6366F1] text-white hover:bg-[#4F46E5]'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-[#6366F1] hover:bg-indigo-700 text-white shadow-xs'
                   }`}
                 >
                   <Plus className="w-3 h-3" />
@@ -616,12 +616,12 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
             {showAddQuotePopover && (
               <div
                 ref={quotePopoverRef}
-                className="absolute right-0 top-full mt-2 w-80 sm:w-96 z-50 p-4 rounded-2xl bg-white dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] shadow-xl animate-in fade-in slide-in-from-top-2"
+                className="absolute right-0 top-full mt-2 w-80 sm:w-96 z-50 p-4 rounded-2xl bg-white dark:bg-[#1E293B] border border-gray-200 dark:border-gray-700 shadow-xl animate-in fade-in slide-in-from-top-2"
               >
-                <div className="flex items-center justify-between pb-2 border-b border-[#EDECE9] dark:border-[#334155]">
+                <div className="flex items-center justify-between pb-2 border-b border-[#EDECE9] dark:border-gray-700">
                   <div className="flex items-center gap-2">
-                    <Quote className="w-3.5 h-3.5 text-[#6366F1]" />
-                    <h4 className="text-xs font-bold text-[#37352F] dark:text-white">
+                    <Quote className="w-3.5 h-3.5 text-indigo-600" />
+                    <h4 className="text-xs font-bold text-gray-900 dark:text-white">
                       Add New Inspirational Quote
                     </h4>
                   </div>
@@ -636,7 +636,7 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
 
                 <form onSubmit={handleSaveNewQuote} className="space-y-2.5 pt-3">
                   <div>
-                    <label className="block text-[10px] font-semibold text-[#787774] dark:text-[#9CA3AF] mb-1">
+                    <label className="block text-[10px] font-semibold text-gray-600 dark:text-gray-300 mb-1">
                       Quote Text
                     </label>
                     <textarea
@@ -645,14 +645,14 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
                       placeholder="e.g. The journey of a thousand miles begins with one step."
                       value={newQuoteText}
                       onChange={(e) => setNewQuoteText(e.target.value)}
-                      className="w-full px-3 py-1.5 rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0F172A] text-xs text-[#37352F] dark:text-white focus:outline-hidden focus:border-[#6366F1]"
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0F172A] text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
                       autoFocus
                     />
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-[10px] font-semibold text-[#787774] dark:text-[#9CA3AF] mb-1">
+                      <label className="block text-[10px] font-semibold text-gray-600 dark:text-gray-300 mb-1">
                         Author
                       </label>
                       <input
@@ -660,18 +660,18 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
                         placeholder="e.g. Lao Tzu"
                         value={newQuoteAuthor}
                         onChange={(e) => setNewQuoteAuthor(e.target.value)}
-                        className="w-full px-2.5 py-1.5 rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0F172A] text-xs text-[#37352F] dark:text-white focus:outline-hidden focus:border-[#6366F1]"
+                        className="w-full px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0F172A] text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-semibold text-[#787774] dark:text-[#9CA3AF] mb-1">
+                      <label className="block text-[10px] font-semibold text-gray-600 dark:text-gray-300 mb-1">
                         Category
                       </label>
                       <select
                         value={newQuoteCategory}
                         onChange={(e) => setNewQuoteCategory(e.target.value)}
-                        className="w-full px-2 py-1.5 rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0F172A] text-xs text-[#37352F] dark:text-white focus:outline-hidden"
+                        className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0F172A] text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
                       >
                         <option value="Inspiration">Inspiration</option>
                         <option value="Focus">Focus</option>
@@ -682,17 +682,17 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex justify-end gap-2 pt-1 border-t border-[#EDECE9]/60 dark:border-[#334155]/60">
+                  <div className="flex justify-end gap-2 pt-1 border-t border-[#EDECE9] dark:border-gray-700">
                     <button
                       type="button"
                       onClick={() => setShowAddQuotePopover(false)}
-                      className="px-3 py-1 text-xs font-semibold text-gray-500 hover:text-gray-700 cursor-pointer"
+                      className="px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 cursor-pointer"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
-                      className="px-3.5 py-1 bg-[#6366F1] hover:bg-[#4F46E5] text-white text-xs font-bold rounded-xl cursor-pointer"
+                      className="px-3.5 py-1.5 text-xs font-bold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer shadow-xs"
                     >
                       Save Quote
                     </button>
@@ -707,7 +707,7 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
             initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.45, delay: 0.14, ease: [0.16, 1, 0.3, 1] }}
-            className={`grid-tile lg:col-span-3 px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#23324C] border border-[#EDECE9] dark:border-[#334155] shadow-xs flex flex-col justify-between transition-all duration-300 min-h-[125px] ${
+            className={`grid-tile lg:col-span-3 px-3.5 py-3 sm:px-4 sm:py-3.5 rounded-2xl bg-[#F7F7F5] dark:bg-[#23324C] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col justify-between transition-all duration-300 min-h-[135px] ${
               isAlarmRinging ? 'alarm-tile-pulse' : ''
             }`}
           >
