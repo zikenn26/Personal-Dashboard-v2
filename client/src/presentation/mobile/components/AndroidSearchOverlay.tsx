@@ -19,6 +19,7 @@ import {
   LayoutGrid,
   StickyNote,
   CloudRain,
+  Smartphone,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -182,6 +183,14 @@ const DASHBOARD_PAGES: PageSuggestion[] = [
     view: 'exams',
     icon: <GraduationCap className="w-4 h-4 text-teal-500" />,
     keywords: ['exams', 'exam', 'academics', 'tests', 'study', 'education', 'courses'],
+  },
+  {
+    id: 'page-screentime',
+    title: 'Screen Time',
+    subtitle: 'App Usage, Daily Metrics & Digital Wellbeing',
+    view: 'screentime',
+    icon: <Smartphone className="w-4 h-4 text-violet-500" />,
+    keywords: ['screen time', 'screentime', 'app usage', 'usage stats', 'digital wellbeing', 'phone time', 'apps'],
   },
   {
     id: 'page-backup',

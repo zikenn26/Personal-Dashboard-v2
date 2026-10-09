@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(SmsTransactionPlugin.class);
         registerPlugin(ScratchPadWidgetPlugin.class);
+        registerPlugin(ScreenTimePlugin.class);
         super.onCreate(savedInstanceState);
         handleWidgetIntent(getIntent());
     }

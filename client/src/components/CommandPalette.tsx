@@ -29,6 +29,7 @@ import {
   Check,
   StickyNote,
   CloudRain,
+  Smartphone,
 } from 'lucide-react';
 import {
   TodoItem,
@@ -188,6 +189,13 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         subtitle: 'Career Milestones, Interactive Timeline & Creative Drawing',
         icon: <Award className="w-4 h-4 text-teal-500" />,
         keywords: ['roadmap', 'timeline', 'milestones', 'doodles', 'canvas', 'drawing', 'career', 'history', 'sketch'],
+      },
+      {
+        id: 'screentime' as MainNavView,
+        title: 'Screen Time & Digital Wellbeing',
+        subtitle: 'App Usage Metrics, Daily Durations & Hourly Breakdown',
+        icon: <Smartphone className="w-4 h-4 text-violet-500" />,
+        keywords: ['screentime', 'screen time', 'usage', 'app usage', 'digital wellbeing', 'phone stats', 'apps', 'limits'],
       },
     ],
     []

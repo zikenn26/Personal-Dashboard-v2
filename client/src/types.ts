@@ -508,6 +508,7 @@ export type MainNavView =
   | 'goals'
   | 'timeline'
   | 'exams'
+  | 'screentime'
   | 'projects'
   | 'workfolio'
   | 'portfolio'
@@ -895,4 +896,57 @@ export interface CommandMapping {
   lastExecutedAt?: number;
   createdAt: number;
 }
+
+// =========================================================================
+// SCREEN TIME (Android UsageStatsManager Integration)
+// =========================================================================
+
+export interface AppUsageItem {
+  packageName: string;
+  appName: string;
+  rank: number;
+  durationMinutes: number;
+  durationMillis: number;
+  sessionCount: number;
+  percentageOfTotal?: number;
+  category?: string;
+  isCurrentApp?: boolean;
+  isSystemApp?: boolean;
+  icon?: string; // Base64 data URL
+}
+
+export interface HourlyUsageBucket {
+  hour: number;
+  label: string;
+  durationMinutes: number;
+  durationMillis: number;
+}
+
+export interface DailyUsageSummary {
+  date: string; // YYYY-MM-DD
+  dayOfWeek: string; // Mon, Tue, etc.
+  totalMinutes: number;
+  totalMillis: number;
+  isToday?: boolean;
+}
+
+export interface ScreenTimeData {
+  granted: boolean;
+  isNativeAndroid: boolean;
+  hasData: boolean;
+  date: string;
+  formattedDate: string;
+  totalMinutes: number;
+  totalMillis: number;
+  apps: AppUsageItem[];
+  topApps: AppUsageItem[];
+  hourlyUsage: HourlyUsageBucket[];
+  past7Days: DailyUsageSummary[];
+  dailyAverageMinutes: number;
+  lastSyncedTimestamp: number;
+  limitationsNotice?: string;
+  error?: string;
+  message?: string;
+}
+
 

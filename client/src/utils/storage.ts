@@ -337,13 +337,14 @@ export const DEFAULT_HOME_GRID_ORDER: string[] = [
   'habits',
   'tasks',
   'expenses',
+  'screentime',
   'schedule',
   'scratchpad',
 ];
 
 export const DEFAULT_HOME_COLUMNS: [string[], string[], string[]] = [
   ['calendar', 'habits'],
-  ['tasks', 'expenses'],
+  ['tasks', 'expenses', 'screentime'],
   ['schedule', 'scratchpad'],
 ];
 
@@ -1946,7 +1947,7 @@ export const Storage = {
 
   getHomeGridColumns: (): [string[], string[], string[]] => {
     const raw = loadFromStorage<any>(STORAGE_KEYS.HOME_GRID_ORDER, null);
-    const validWidgets = new Set(['calendar', 'schedule', 'expenses', 'habits', 'tasks']);
+    const validWidgets = new Set(['calendar', 'schedule', 'expenses', 'habits', 'tasks', 'scratchpad', 'screentime']);
 
     if (Array.isArray(raw) && raw.length === 3 && Array.isArray(raw[0]) && Array.isArray(raw[1]) && Array.isArray(raw[2])) {
       const col0 = raw[0].filter((w: string) => validWidgets.has(w));
@@ -1956,8 +1957,8 @@ export const Storage = {
       const present = new Set([...col0, ...col1, ...col2]);
       validWidgets.forEach((w) => {
         if (!present.has(w)) {
-          if (w === 'tasks' || w === 'expenses') col1.push(w);
-          else if (w === 'schedule') col2.push(w);
+          if (w === 'tasks' || w === 'expenses' || w === 'screentime') col1.push(w);
+          else if (w === 'schedule' || w === 'scratchpad') col2.push(w);
           else col0.push(w);
         }
       });

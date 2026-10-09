@@ -14,6 +14,7 @@ import {
   Quote,
   Film,
   Briefcase,
+  Smartphone,
 } from 'lucide-react';
 import { BottomSheet } from '../gestures/BottomSheet';
 import { MainNavView, AppSettings } from '../../../types';
@@ -123,6 +124,13 @@ export const AndroidMoreSheet: React.FC<AndroidMoreSheetProps> = ({
       icon: Compass,
       color: 'bg-blue-100 text-blue-600 dark:bg-blue-950/80 dark:text-blue-400',
       desc: 'Career milestones & life story',
+    },
+    {
+      id: 'screentime',
+      label: 'Screen Time',
+      icon: Smartphone,
+      color: 'bg-violet-100 text-violet-600 dark:bg-violet-950/80 dark:text-violet-400',
+      desc: 'App usage & digital wellbeing',
     },
     {
       id: 'vault',

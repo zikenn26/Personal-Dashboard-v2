@@ -13,6 +13,7 @@ import { Storage } from '../utils/storage';
 import { scheduleAutoSyncToSupabase } from '../utils/supabase';
 import { IndianCalendarWidget } from './IndianCalendarWidget';
 import { DynamicScheduleCard } from './DynamicScheduleCard';
+import { ScreenTimeCard } from './screentime/ScreenTimeCard';
 import {
   CheckCircle2,
   Circle,
@@ -1088,6 +1089,16 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
       return (
         <ScratchPadWidget
           dragHandle={dragHandle}
+          soundEnabled={soundEnabled}
+        />
+      );
+    }
+
+    if (widgetId === 'screentime') {
+      return (
+        <ScreenTimeCard
+          dragHandle={dragHandle}
+          onNavigate={onNavigate}
           soundEnabled={soundEnabled}
         />
       );

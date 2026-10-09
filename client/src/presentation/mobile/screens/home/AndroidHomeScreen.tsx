@@ -21,6 +21,7 @@ import { AndroidDateStrip } from '../../components/AndroidDateStrip';
 import { AndroidTasksCard } from './AndroidTasksCard';
 import { AndroidSpendingCard } from './AndroidSpendingCard';
 import { AndroidHabitsCard } from './AndroidHabitsCard';
+import { AndroidScreenTimeCard } from './AndroidScreenTimeCard';
 import { QuickTaskSheet } from '../../components/QuickTaskSheet';
 import { QuickExpenseSheet } from '../../components/QuickExpenseSheet';
 import { QuickHabitSheet } from '../../components/QuickHabitSheet';
@@ -98,6 +99,11 @@ export const AndroidHomeScreen: React.FC<AndroidHomeScreenProps> = ({
         onToggleHabitDay={onToggleHabitDay}
         onNavigateToHabits={() => onNavigate('habits')}
         onOpenAddHabit={() => setIsHabitSheetOpen(true)}
+      />
+
+      {/* 9. SCREEN TIME CARD */}
+      <AndroidScreenTimeCard
+        onNavigateToScreenTime={() => onNavigate('screentime')}
       />
 
       {/* QUICK MODAL BOTTOM SHEETS */}

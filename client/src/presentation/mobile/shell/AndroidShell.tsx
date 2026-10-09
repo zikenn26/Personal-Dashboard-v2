@@ -42,6 +42,7 @@ import { AndroidLibraryScreen } from '../screens/library/AndroidLibraryScreen';
 import { AndroidPortfolioScreen } from '../screens/portfolio/AndroidPortfolioScreen';
 import { AndroidVaultScreen } from '../screens/vault/AndroidVaultScreen';
 import { AndroidBackupScreen } from '../screens/backup/AndroidBackupScreen';
+import { AndroidScreenTimeScreen } from '../screens/screentime/AndroidScreenTimeScreen';
 import { TrashView } from '../../../components/TrashView';
 
 // Search and Profile overlays
@@ -557,6 +558,13 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
               onExportData={onExportData}
               onImportData={onImportData}
               onResetData={onResetData}
+            />
+          )}
+
+          {/* SCREEN TIME VIEW */}
+          {activeView === 'screentime' && (
+            <AndroidScreenTimeScreen
+              onBack={() => onNavigate('home')}
             />
           )}
 

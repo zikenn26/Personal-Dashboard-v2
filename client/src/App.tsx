@@ -63,6 +63,7 @@ import { registerAppHandlers } from './services/commandMappingService';
 import { GoalsView } from './components/GoalsView';
 import { QuotesManagerView } from './components/QuotesManagerView';
 import { ExamsSection } from './components/ExamsSection';
+import { ScreenTimeView } from './components/screentime/ScreenTimeView';
 import { AuthModal } from './components/AuthModal';
 import { AvatarPickerModal } from './components/AvatarPickerModal';
 import { BrandLogo } from './components/BrandLogo';
@@ -156,6 +157,7 @@ import {
   Mic,
   Radio,
   AlertTriangle,
+  Smartphone,
 } from 'lucide-react';
 
 // Framer Motion Page Transition Variants for Main Content View Area
@@ -2568,6 +2570,7 @@ export default function App() {
     { id: 'goals', label: 'Goals', icon: Target, count: goals.filter((g) => g.status === 'active').length || undefined, group: 'plan' },
     { id: 'exams', label: 'Exams', icon: GraduationCap, count: exams.length, group: 'plan' },
     { id: 'timeline', label: 'Life Map', icon: Compass, count: milestones.length, group: 'plan' },
+    { id: 'screentime', label: 'Screen Time', icon: Smartphone, count: undefined, group: 'plan' },
 
     // WORK
     { id: 'workfolio', label: 'Portfolio', icon: Briefcase, count: projects.length, group: 'work' },
@@ -3938,6 +3941,14 @@ export default function App() {
                   onUpdateMilestone={handleUpdateMilestone}
                   onDeleteMilestone={handleDeleteMilestone}
                   soundEnabled={settings.soundEnabled}
+                />
+              )}
+
+              {/* VIEW: Screen Time & Digital Wellbeing */}
+              {activeView === 'screentime' && (
+                <ScreenTimeView
+                  soundEnabled={settings.soundEnabled}
+                  onNavigateHome={() => handleNavigate('home')}
                 />
               )}
 
