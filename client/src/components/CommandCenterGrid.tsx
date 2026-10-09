@@ -256,42 +256,90 @@ export const FocusSprintWidget: React.FC<FocusSprintWidgetProps> = ({ dragHandle
   );
 };
 
+
 export interface ScratchPadWidgetProps {
   dragHandle: React.ReactNode;
   soundEnabled: boolean;
 }
 
-export const ScratchPadWidget: React.FC<ScratchPadWidgetProps> = ({ dragHandle, soundEnabled }) => {
+export const ScratchPadWidget: React.FC<ScratchPadWidgetProps> = ({
+  dragHandle,
+  soundEnabled,
+}) => {
   const [content, setContent] = useState<string>(() => Storage.getScratchpad());
   const [copied, setCopied] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+
+  const contentRef = useRef(content);
+  const isDirtyRef = useRef(false);
 
   useEffect(() => {
-    const handleRemoteSync = (e: any) => {
-      const updated = e?.detail?.content ?? Storage.getScratchpad();
-      if (typeof updated === 'string' && updated !== content) {
+    contentRef.current = content;
+  }, [content]);
+
+  useEffect(() => {
+    const handleRemoteSync = (e: Event) => {
+      // Never replace a draft that the user is currently editing.
+      if (isDirtyRef.current) return;
+
+      const detail = (e as CustomEvent<{ content?: string }>).detail;
+      const updated =
+        typeof detail?.content === 'string'
+          ? detail.content
+          : Storage.getScratchpad();
+
+      if (typeof updated === 'string' && updated !== contentRef.current) {
+        contentRef.current = updated;
         setContent(updated);
       }
     };
+
     window.addEventListener('scratchpad-updated', handleRemoteSync);
     window.addEventListener('dashboard-data-updated', handleRemoteSync);
+
     return () => {
       window.removeEventListener('scratchpad-updated', handleRemoteSync);
       window.removeEventListener('dashboard-data-updated', handleRemoteSync);
     };
-  }, [content]);
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const val = e.target.value;
-    setContent(val);
-    Storage.setScratchpad(val);
-    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 500);
+    const value = e.target.value;
+
+    contentRef.current = value;
+    isDirtyRef.current = true;
+
+    setContent(value);
+    setIsDirty(true);
   };
 
-  const handleCopy = () => {
+  const handleSave = () => {
+    if (!isDirtyRef.current) return;
+
+    const valueToSave = contentRef.current;
+
+    // Clear the dirty flag before Storage dispatches its update events.
+    isDirtyRef.current = false;
+    setIsDirty(false);
+
+    Storage.setScratchpad(valueToSave);
+
+    scheduleAutoSyncToSupabase(
+      () => Storage.getAllDataPayload(),
+      500
+    );
+  };
+
+  const handleCopy = async () => {
     Sound.click(soundEnabled);
-    navigator.clipboard.writeText(content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+
+    try {
+      await navigator.clipboard.writeText(contentRef.current);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      console.error('Failed to copy Scratch Pad content.');
+    }
   };
 
   return (
@@ -299,26 +347,47 @@ export const ScratchPadWidget: React.FC<ScratchPadWidgetProps> = ({ dragHandle, 
       <div className="flex items-center justify-between pb-2 border-b border-[#EDECE9] dark:border-[#334155]/60">
         <div className="flex items-center gap-2">
           {dragHandle}
+
           <div className="w-7 h-7 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200/60 dark:border-amber-900/40 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
             <StickyNote className="w-3.5 h-3.5" />
           </div>
+
           <div>
             <h2 className="text-xs uppercase font-bold text-[#37352F] dark:text-white tracking-wider">
               Scratch Pad
             </h2>
             <span className="text-[10px] text-gray-500 dark:text-gray-400 font-medium block -mt-0.5">
-              Quick Notes • Auto-saved
+              {isDirty ? 'Unsaved changes' : 'Saved'}
             </span>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={handleCopy}
-          className="p-1.5 rounded-lg text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white hover:bg-gray-200/70 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-          title="Copy notes"
-        >
-          {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-        </button>
+
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => void handleCopy()}
+            className="p-1.5 rounded-lg text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white hover:bg-gray-200/70 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+            title="Copy notes"
+            aria-label="Copy notes"
+          >
+            {copied ? (
+              <Check className="w-4 h-4 text-emerald-600" />
+            ) : (
+              <Copy className="w-4 h-4" />
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={!isDirty}
+            className="p-1.5 rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Save Scratch Pad"
+            aria-label="Save Scratch Pad"
+          >
+            <Check className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       <textarea
