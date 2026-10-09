@@ -1,3 +1,4 @@
+```xml
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
@@ -54,11 +55,14 @@
             android:contentDescription="Add note" />
     </LinearLayout>
 
-    <View
+    <!-- Divider: TextView is compatible with Android RemoteViews -->
+    <TextView
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:background="@color/widget_divider"
-        android:layout_marginBottom="6dp" />
+        android:layout_marginBottom="6dp"
+        android:importantForAccessibility="no"
+        android:text="" />
 
     <!-- Content Area -->
     <FrameLayout
@@ -87,4 +91,6 @@
             android:textColor="@color/widget_empty_text"
             android:visibility="gone" />
     </FrameLayout>
+
 </LinearLayout>
+```
