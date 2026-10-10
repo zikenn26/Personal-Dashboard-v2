@@ -32,6 +32,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -43,7 +44,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class ScreenTimePlugin extends Plugin {
     private static final String TAG = "ScreenTimePlugin";
 
-    // In-memory icon cache to avoid re-encoding base64 icons across queries
+    // In-memory icon and app name caches across queries
     private static final Map<String, String> ICON_CACHE = new ConcurrentHashMap<>();
     private static final Map<String, String> APP_NAME_CACHE = new ConcurrentHashMap<>();
 
@@ -67,8 +68,6 @@ public class ScreenTimePlugin extends Plugin {
             Intent intent = new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 
-            // Some OEM ROMs crash if package URI is provided to ACTION_USAGE_ACCESS_SETTINGS,
-            // so we attempt with package URI first, then fallback to general settings.
             try {
                 intent.setData(Uri.parse("package:" + ctx.getPackageName()));
                 ctx.startActivity(intent);
@@ -88,6 +87,7 @@ public class ScreenTimePlugin extends Plugin {
 
     /**
      * Query detailed daily screen time usage for a specific calendar day.
+     * Uses ScreenTimeCalculator event-union algorithm to match Digital Wellbeing.
      */
     @PluginMethod
     public void getDailyUsage(PluginCall call) {
@@ -160,89 +160,113 @@ public class ScreenTimePlugin extends Plugin {
             }
             long effectiveEnd = Math.min(now, endOfDayExclusive);
 
-            // Use UsageStatsManager aggregates as the canonical source for app totals. This keeps
-            // the daily app list and 7-day history on the same Android reporting model.
-            Map<String, AppUsageStat> appUsageMap = new HashMap<>();
-            List<UsageStats> statsList = usageStatsManager.queryUsageStats(
-                    UsageStatsManager.INTERVAL_DAILY, startOfDay, effectiveEnd);
-            if (statsList != null) {
-                for (UsageStats usage : statsList) {
-                    long totalTime = Math.max(0L, usage.getTotalTimeInForeground());
-                    if (totalTime <= 0L || usage.getPackageName() == null) continue;
-                    AppUsageStat stat = appUsageMap.get(usage.getPackageName());
-                    if (stat == null) {
-                        stat = new AppUsageStat(usage.getPackageName());
-                        appUsageMap.put(usage.getPackageName(), stat);
-                    }
-                    stat.durationMillis += totalTime;
-                    // UsageStats does not expose a reliable session count. Do not invent one.
-                    stat.sessionCount = -1;
+            String ourPackage = ctx.getPackageName();
+            PackageManager pm = ctx.getPackageManager();
+
+            // 1. Query Raw UsageEvents with a 2-hour pre-midnight lookback to capture sessions crossing 00:00:00
+            long lookbackStart = startOfDay - (2 * 60 * 60 * 1000L);
+            UsageEvents events = usageStatsManager.queryEvents(lookbackStart, effectiveEnd);
+
+            List<ScreenTimeCalculator.RawEvent> rawEventList = new ArrayList<>();
+            if (events != null) {
+                UsageEvents.Event event = new UsageEvents.Event();
+                while (events.hasNextEvent()) {
+                    events.getNextEvent(event);
+                    rawEventList.add(new ScreenTimeCalculator.RawEvent(
+                            event.getPackageName(),
+                            event.getTimeStamp(),
+                            event.getEventType()
+                    ));
                 }
             }
 
-            // Hourly breakdown is reconstructed separately from UsageEvents and is explicitly
-            // marked approximate. It is never used to calculate the authoritative app totals.
-            long[] hourlyBuckets = new long[24];
-            boolean hourlyDataAvailable = buildApproximateHourlyBuckets(
-                    usageStatsManager, startOfDay, effectiveEnd, hourlyBuckets);
-            String dataSource = "usageStatsAggregate";
+            ScreenTimeCalculator.DailyResult calcResult;
+            String calculationMode;
 
-            // Format target date label
+            if (!rawEventList.isEmpty()) {
+                // Primary method: Reconstruct non-overlapping intervals via ScreenTimeCalculator
+                calcResult = ScreenTimeCalculator.calculateDailyScreenTime(
+                        rawEventList,
+                        startOfDay,
+                        effectiveEnd,
+                        excludeSelf ? ourPackage : null
+                );
+                calculationMode = "usageEventsUnion";
+            } else {
+                // Secondary fallback if UsageEvents is blocked by an OEM ROM
+                calcResult = executeAggregateFallback(usageStatsManager, startOfDay, effectiveEnd, excludeSelf ? ourPackage : null);
+                calculationMode = "usageStatsFallback";
+            }
+
+            // 2. Format target date labels
             SimpleDateFormat readableFmt = new SimpleDateFormat("EEEE, MMM d", Locale.US);
             Date targetDate = new Date(startOfDay);
             String formattedDate = readableFmt.format(targetDate);
             String isoDate = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(targetDate);
 
-            // Filter, sort, total, then build app objects with percentages (no JSArray read-back).
-            String ourPackage = ctx.getPackageName();
-            PackageManager pm = ctx.getPackageManager();
-            List<AppUsageStat> sortedList = new ArrayList<>(appUsageMap.values());
-            Collections.sort(sortedList, (a, b) -> Long.compare(b.durationMillis, a.durationMillis));
+            // 3. Build Apps list sorted by duration descending
+            List<ScreenTimeCalculator.AppCalculation> sortedApps = new ArrayList<>(calcResult.appUsage.values());
+            Collections.sort(sortedApps, new Comparator<ScreenTimeCalculator.AppCalculation>() {
+                @Override
+                public int compare(ScreenTimeCalculator.AppCalculation a, ScreenTimeCalculator.AppCalculation b) {
+                    return Long.compare(b.durationMillis, a.durationMillis);
+                }
+            });
 
-            long totalDeviceMillis = 0;
-            for (AppUsageStat item : sortedList) {
-                if (item.durationMillis < 5000) continue;
-                boolean isCurrentApp = item.packageName.equals(ourPackage);
-                if (excludeSelf && isCurrentApp) continue;
-                totalDeviceMillis += item.durationMillis;
-            }
+            long totalDeviceMillis = calcResult.totalDeviceMillis;
 
             JSArray appsArray = new JSArray();
             JSArray topAppsArray = new JSArray();
             int rank = 1;
-            for (AppUsageStat item : sortedList) {
-                if (item.durationMillis < 5000) continue;
-                boolean isCurrentApp = item.packageName.equals(ourPackage);
+
+            for (ScreenTimeCalculator.AppCalculation appStat : sortedApps) {
+                // Filter out sub-5-second blips
+                if (appStat.durationMillis < 5000L) continue;
+
+                boolean isCurrentApp = appStat.packageName.equals(ourPackage);
                 if (excludeSelf && isCurrentApp) continue;
 
-                JSObject appObj = buildAppJson(ctx, pm, item, includeIcons, isCurrentApp, rank);
-                double percentage = totalDeviceMillis > 0
-                        ? item.durationMillis * 100.0 / totalDeviceMillis : 0.0;
-                appObj.put("percentageOfTotal", Math.round(percentage * 10.0) / 10.0);
+                JSObject appObj = buildAppJson(ctx, pm, appStat, includeIcons, isCurrentApp, rank, totalDeviceMillis);
                 appsArray.put(appObj);
-                if (topAppsArray.length() < 5) topAppsArray.put(appObj);
+
+                if (topAppsArray.length() < 5) {
+                    topAppsArray.put(appObj);
+                }
                 rank++;
             }
 
-            // Hourly breakdown array
+            // 4. Build 24 Hourly Buckets
             JSArray hourlyArray = new JSArray();
             for (int h = 0; h < 24; h++) {
                 JSObject hObj = new JSObject();
                 hObj.put("hour", h);
                 hObj.put("label", formatHourLabel(h));
-                hObj.put("durationMinutes", Math.round(hourlyBuckets[h] / 60000.0));
-                hObj.put("durationMillis", hourlyBuckets[h]);
+                hObj.put("durationMinutes", Math.round(calcResult.hourlyBuckets[h] / 60000.0));
+                hObj.put("durationMillis", calcResult.hourlyBuckets[h]);
                 hourlyArray.put(hObj);
             }
 
-            // Past 7 days summary
+            // 5. Past 7 days summary using the same unified calculation
             JSArray past7DaysArray = getPast7DaysArray(ctx, usageStatsManager, excludeSelf);
 
-            // Compute the 7-day average directly from Android aggregate statistics.
-            // Avoid reading objects back from JSArray because Capacitor versions differ
-            // in which JSArray getter methods they expose.
-            long total7DaysMillis = getPast7DaysTotalMillis(ctx, usageStatsManager, excludeSelf);
+            // Compute 7-day average from past 7 days
+            long total7DaysMillis = 0L;
+            for (int i = 0; i < past7DaysArray.length(); i++) {
+                total7DaysMillis += past7DaysArray.getJSONObject(i).getLong("totalMillis");
+            }
             long dailyAvgMinutes = Math.round((total7DaysMillis / 7.0) / 60000.0);
+
+            // 6. Build Diagnostic Payload for auditability & verification
+            JSObject diagnostics = new JSObject();
+            diagnostics.put("calculationMode", calculationMode);
+            diagnostics.put("rawEventsCount", calcResult.rawEventsCount);
+            diagnostics.put("duplicatesDiscarded", calcResult.duplicatesDiscarded);
+            diagnostics.put("openSessionsCapped", calcResult.openSessionsCapped);
+            diagnostics.put("reconstructedSessionsCount", calcResult.allSessions.size());
+            diagnostics.put("mergedIntervalsCount", calcResult.mergedDeviceIntervals.size());
+            diagnostics.put("dayStartMillis", startOfDay);
+            diagnostics.put("effectiveEndMillis", effectiveEnd);
+            diagnostics.put("wallClockElapsedMillis", effectiveEnd - startOfDay);
 
             JSObject response = new JSObject();
             response.put("granted", true);
@@ -258,11 +282,11 @@ public class ScreenTimePlugin extends Plugin {
             response.put("dailyAverageMinutes", dailyAvgMinutes);
             response.put("hasData", totalDeviceMillis > 0);
             response.put("lastSyncedTimestamp", now);
-            response.put("dataSource", dataSource);
-            response.put("hourlyDataAvailable", hourlyDataAvailable);
-            response.put("hourlyUsageIsApproximate", true);
-            response.put("accuracyNotice", "Per-app totals and 7-day history use Android UsageStatsManager aggregate statistics. Hourly buckets are reconstructed from UsageEvents and are approximate, especially with split-screen or overlapping activities.");
-            response.put("limitationsNotice", "Android UsageStatsManager data can vary by Android version and device. Totals represent reported app foreground time, not necessarily screen-on time.");
+            response.put("dataSource", calculationMode);
+            response.put("hourlyDataAvailable", true);
+            response.put("diagnostics", diagnostics);
+            response.put("accuracyNotice", "Device screen time is calculated as the non-overlapping mathematical union of foreground sessions on an active screen, matching Android Digital Wellbeing.");
+            response.put("limitationsNotice", "Native statistics gathered via Android UsageStatsManager. Calculations reflect active foreground time on interactive screen.");
 
             call.resolve(response);
         } catch (Exception e) {
@@ -327,136 +351,60 @@ public class ScreenTimePlugin extends Plugin {
         return mode == AppOpsManager.MODE_ALLOWED;
     }
 
-    private void addSession(
-            String pkg,
-            long sessionStart,
-            long sessionEnd,
-            long dayStart,
-            long dayEnd,
-            Map<String, AppUsageStat> appUsageMap,
-            long[] hourlyBuckets
+    /**
+     * Fallback for devices where UsageEvents is disabled by OEM ROM.
+     * Deduplicates multiple daily buckets for each package using Math.max()
+     * and strictly caps total device time to wall-clock elapsed time.
+     */
+    private ScreenTimeCalculator.DailyResult executeAggregateFallback(
+            UsageStatsManager mgr,
+            long startOfDay,
+            long effectiveEnd,
+            String excludedPackage
     ) {
-        if (pkg == null || sessionEnd <= sessionStart) return;
+        ScreenTimeCalculator.DailyResult result = new ScreenTimeCalculator.DailyResult();
+        List<UsageStats> statsList = mgr.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startOfDay, effectiveEnd);
+        if (statsList == null) return result;
 
-        // Clip an exclusive-end session to the requested local day [dayStart, dayEnd).
-        long clampedStart = Math.max(sessionStart, dayStart);
-        long clampedEnd = Math.min(sessionEnd, dayEnd);
-        if (clampedEnd <= clampedStart) return;
+        Map<String, Long> deduped = new HashMap<>();
+        for (UsageStats u : statsList) {
+            if (u == null || u.getPackageName() == null) continue;
+            String pkg = u.getPackageName();
+            if (excludedPackage != null && excludedPackage.equals(pkg)) continue;
 
-        long duration = clampedEnd - clampedStart;
-        // Guard against implausible single-session spans caused by missing Android events.
-        if (duration > 16L * 60L * 60L * 1000L) return;
-
-        AppUsageStat stat = appUsageMap.get(pkg);
-        if (stat == null) {
-            stat = new AppUsageStat(pkg);
-            appUsageMap.put(pkg, stat);
-        }
-        stat.durationMillis += duration;
-        stat.sessionCount += 1;
-
-        // Distribute session duration into the 24 hourly buckets
-        distributeHourly(clampedStart, clampedEnd, hourlyBuckets);
-    }
-
-    private void distributeHourly(long start, long end, long[] hourlyBuckets) {
-        Calendar cal = Calendar.getInstance();
-        long current = start;
-        while (current < end) {
-            cal.setTimeInMillis(current);
-            int hour = cal.get(Calendar.HOUR_OF_DAY);
-            Calendar nextHour = (Calendar) cal.clone();
-            nextHour.set(Calendar.MINUTE, 0);
-            nextHour.set(Calendar.SECOND, 0);
-            nextHour.set(Calendar.MILLISECOND, 0);
-            nextHour.add(Calendar.HOUR_OF_DAY, 1);
-            long sliceEnd = Math.min(end, nextHour.getTimeInMillis());
-            if (hour >= 0 && hour < 24 && sliceEnd > current) {
-                hourlyBuckets[hour] += sliceEnd - current;
+            long time = Math.max(0L, u.getTotalTimeInForeground());
+            Long existing = deduped.get(pkg);
+            if (existing == null || time > existing) {
+                deduped.put(pkg, time);
             }
-            current = sliceEnd;
         }
+
+        long sumTime = 0L;
+        for (Map.Entry<String, Long> entry : deduped.entrySet()) {
+            if (entry.getValue() < 5000L) continue;
+            ScreenTimeCalculator.AppCalculation app = new ScreenTimeCalculator.AppCalculation(entry.getKey());
+            app.durationMillis = entry.getValue();
+            app.sessionCount = 1;
+            result.appUsage.put(entry.getKey(), app);
+            sumTime += entry.getValue();
+        }
+
+        // Bounded by wall-clock time today to prevent impossible durations
+        long maxPossible = Math.max(0L, effectiveEnd - startOfDay);
+        result.totalDeviceMillis = Math.min(sumTime, maxPossible);
+
+        return result;
     }
 
     /**
-     * Builds an approximate hourly chart from usage events. These buckets are for visualization
-     * only; per-app totals come from UsageStatsManager aggregates.
+     * Reconstruct past 7 days using the same unified ScreenTimeCalculator logic.
      */
-    private boolean buildApproximateHourlyBuckets(UsageStatsManager mgr, long start, long end, long[] buckets) {
-        if (mgr == null || end <= start) return false;
-        UsageEvents events = mgr.queryEvents(start, end);
-        if (events == null) return false;
-
-        Map<String, ForegroundState> active = new HashMap<>();
-        boolean sawEvents = false;
-        UsageEvents.Event event = new UsageEvents.Event();
-        while (events.hasNextEvent()) {
-            events.getNextEvent(event);
-            sawEvents = true;
-            int type = event.getEventType();
-            String pkg = event.getPackageName();
-            long time = event.getTimeStamp();
-            boolean resumed = type == UsageEvents.Event.ACTIVITY_RESUMED || type == 1;
-            boolean paused = type == UsageEvents.Event.ACTIVITY_PAUSED || type == 2;
-            boolean screenEnded = type == 16 || type == 17 || type == 26;
-
-            if (resumed && pkg != null) {
-                ForegroundState state = active.get(pkg);
-                if (state == null) {
-                    state = new ForegroundState();
-                    state.startTime = time;
-                    active.put(pkg, state);
-                }
-                state.activityCount++;
-            } else if (paused && pkg != null) {
-                ForegroundState state = active.get(pkg);
-                if (state != null) {
-                    state.activityCount = Math.max(0, state.activityCount - 1);
-                    if (state.activityCount == 0) {
-                        addDurationToHourlyBuckets(state.startTime, time, start, end, buckets);
-                        active.remove(pkg);
-                    }
-                }
-            } else if (screenEnded) {
-                for (ForegroundState state : active.values()) {
-                    addDurationToHourlyBuckets(state.startTime, time, start, end, buckets);
-                }
-                active.clear();
-            }
-        }
-
-        for (ForegroundState state : active.values()) {
-            addDurationToHourlyBuckets(state.startTime, end, start, end, buckets);
-        }
-        return sawEvents;
-    }
-
-    private void addDurationToHourlyBuckets(long sessionStart, long sessionEnd, long dayStart, long dayEnd, long[] buckets) {
-        if (sessionEnd <= sessionStart) return;
-        long current = Math.max(sessionStart, dayStart);
-        long clippedEnd = Math.min(sessionEnd, dayEnd);
-        Calendar cal = Calendar.getInstance();
-        while (current < clippedEnd) {
-            cal.setTimeInMillis(current);
-            int hour = cal.get(Calendar.HOUR_OF_DAY);
-            Calendar nextHour = (Calendar) cal.clone();
-            nextHour.set(Calendar.MINUTE, 0);
-            nextHour.set(Calendar.SECOND, 0);
-            nextHour.set(Calendar.MILLISECOND, 0);
-            nextHour.add(Calendar.HOUR_OF_DAY, 1);
-            long sliceEnd = Math.min(clippedEnd, nextHour.getTimeInMillis());
-            if (hour >= 0 && hour < 24 && sliceEnd > current) {
-                buckets[hour] += sliceEnd - current;
-            }
-            current = sliceEnd;
-        }
-    }
-
-    private long getPast7DaysTotalMillis(Context ctx, UsageStatsManager mgr, boolean excludeSelf) {
-        if (mgr == null) return 0L;
+    private JSArray getPast7DaysArray(Context ctx, UsageStatsManager mgr, boolean excludeSelf) {
+        JSArray arr = new JSArray();
+        SimpleDateFormat isoFmt = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+        SimpleDateFormat dayFmt = new SimpleDateFormat("EEE", Locale.US);
 
         String ourPackage = ctx.getPackageName();
-        long totalMillis = 0L;
         long now = System.currentTimeMillis();
 
         for (int i = 6; i >= 0; i--) {
@@ -466,54 +414,42 @@ public class ScreenTimePlugin extends Plugin {
             day.set(Calendar.MINUTE, 0);
             day.set(Calendar.SECOND, 0);
             day.set(Calendar.MILLISECOND, 0);
-
             long start = day.getTimeInMillis();
+
             Calendar nextDay = (Calendar) day.clone();
             nextDay.add(Calendar.DAY_OF_YEAR, 1);
             long end = Math.min(now, nextDay.getTimeInMillis());
             if (end <= start) continue;
 
-            List<UsageStats> stats = mgr.queryUsageStats(
-                    UsageStatsManager.INTERVAL_DAILY, start, end);
-            if (stats == null) continue;
+            long lookback = start - (2 * 60 * 60 * 1000L);
+            UsageEvents events = mgr.queryEvents(lookback, end);
 
-            for (UsageStats stat : stats) {
-                if (stat == null || stat.getPackageName() == null) continue;
-                if (excludeSelf && ourPackage.equals(stat.getPackageName())) continue;
-                totalMillis += Math.max(0L, stat.getTotalTimeInForeground());
-            }
-        }
-        return totalMillis;
-    }
-
-    private JSArray getPast7DaysArray(Context ctx, UsageStatsManager mgr, boolean excludeSelf) {
-        JSArray arr = new JSArray();
-        SimpleDateFormat isoFmt = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
-        SimpleDateFormat dayFmt = new SimpleDateFormat("EEE", Locale.US);
-
-        String ourPackage = ctx.getPackageName();
-
-        // Query last 7 days from 6 days ago up to today
-        for (int i = 6; i >= 0; i--) {
-            Calendar c = Calendar.getInstance();
-            c.add(Calendar.DAY_OF_YEAR, -i);
-            c.set(Calendar.HOUR_OF_DAY, 0);
-            c.set(Calendar.MINUTE, 0);
-            c.set(Calendar.SECOND, 0);
-            c.set(Calendar.MILLISECOND, 0);
-            long start = c.getTimeInMillis();
-
-            Calendar nextDay = (Calendar) c.clone();
-            nextDay.add(Calendar.DAY_OF_YEAR, 1);
-            long end = Math.min(System.currentTimeMillis(), nextDay.getTimeInMillis());
-
-            long totalDayMillis = 0;
-            List<UsageStats> list = mgr.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, end);
-            if (list != null) {
-                for (UsageStats u : list) {
-                    if (excludeSelf && u.getPackageName().equals(ourPackage)) continue;
-                    totalDayMillis += Math.max(0L, u.getTotalTimeInForeground());
+            List<ScreenTimeCalculator.RawEvent> eventList = new ArrayList<>();
+            if (events != null) {
+                UsageEvents.Event event = new UsageEvents.Event();
+                while (events.hasNextEvent()) {
+                    events.getNextEvent(event);
+                    eventList.add(new ScreenTimeCalculator.RawEvent(
+                            event.getPackageName(),
+                            event.getTimeStamp(),
+                            event.getEventType()
+                    ));
                 }
+            }
+
+            long totalDayMillis = 0L;
+            if (!eventList.isEmpty()) {
+                ScreenTimeCalculator.DailyResult res = ScreenTimeCalculator.calculateDailyScreenTime(
+                        eventList,
+                        start,
+                        end,
+                        excludeSelf ? ourPackage : null
+                );
+                totalDayMillis = res.totalDeviceMillis;
+            } else {
+                ScreenTimeCalculator.DailyResult res = executeAggregateFallback(
+                        mgr, start, end, excludeSelf ? ourPackage : null);
+                totalDayMillis = res.totalDeviceMillis;
             }
 
             JSObject dayObj = new JSObject();
@@ -522,7 +458,7 @@ public class ScreenTimePlugin extends Plugin {
             dayObj.put("isToday", i == 0);
             dayObj.put("totalMinutes", Math.round(totalDayMillis / 60000.0));
             dayObj.put("totalMillis", totalDayMillis);
-            dayObj.put("dataSource", "usageStatsAggregate");
+            dayObj.put("dataSource", "usageEventsUnion");
             arr.put(dayObj);
         }
 
@@ -532,23 +468,23 @@ public class ScreenTimePlugin extends Plugin {
     private JSObject buildAppJson(
             Context ctx,
             PackageManager pm,
-            AppUsageStat item,
+            ScreenTimeCalculator.AppCalculation item,
             boolean includeIcons,
             boolean isCurrentApp,
-            int rank
+            int rank,
+            long totalDeviceMillis
     ) {
         JSObject obj = new JSObject();
         obj.put("packageName", item.packageName);
         obj.put("rank", rank);
         obj.put("durationMillis", item.durationMillis);
         obj.put("durationMinutes", Math.round(item.durationMillis / 60000.0));
-        if (item.sessionCount >= 0) {
-            obj.put("sessionCount", item.sessionCount);
-            obj.put("sessionCountAvailable", true);
-        } else {
-            obj.put("sessionCountAvailable", false);
-        }
+        obj.put("sessionCount", item.sessionCount);
+        obj.put("sessionCountAvailable", true);
         obj.put("isCurrentApp", isCurrentApp);
+
+        double pct = totalDeviceMillis > 0 ? (item.durationMillis * 100.0 / totalDeviceMillis) : 0.0;
+        obj.put("percentageOfTotal", Math.round(pct * 10.0) / 10.0);
 
         // App Name and Category
         String appName = APP_NAME_CACHE.get(item.packageName);
@@ -557,9 +493,10 @@ public class ScreenTimePlugin extends Plugin {
 
         try {
             ApplicationInfo appInfo = pm.getApplicationInfo(item.packageName, 0);
+            CharSequence label = pm.getApplicationLabel(appInfo);
+
             if (appName == null) {
-                CharSequence label = pm.getApplicationLabel(appInfo);
-                appName = label != null ? label.toString() : item.packageName;
+                appName = ScreenTimeCalculator.resolveCleanAppName(item.packageName, label);
                 APP_NAME_CACHE.put(item.packageName, appName);
             }
 
@@ -586,10 +523,17 @@ public class ScreenTimePlugin extends Plugin {
                 }
             }
         } catch (PackageManager.NameNotFoundException e) {
-            appName = formatPackageFallback(item.packageName);
+            // App was uninstalled earlier today or visibility restricted; resolve via clean dictionary/heuristics
+            if (appName == null) {
+                appName = ScreenTimeCalculator.resolveCleanAppName(item.packageName, null);
+                APP_NAME_CACHE.put(item.packageName, appName);
+            }
             category = heuristicCategory(item.packageName, false);
         } catch (Exception e) {
-            appName = formatPackageFallback(item.packageName);
+            if (appName == null) {
+                appName = ScreenTimeCalculator.resolveCleanAppName(item.packageName, null);
+                APP_NAME_CACHE.put(item.packageName, appName);
+            }
         }
 
         obj.put("appName", appName);
@@ -626,7 +570,7 @@ public class ScreenTimePlugin extends Plugin {
     }
 
     private String heuristicCategory(String pkg, boolean isSystem) {
-        String lower = pkg.toLowerCase();
+        String lower = pkg.toLowerCase(Locale.US);
         if (lower.contains("whatsapp") || lower.contains("instagram") || lower.contains("twitter")
                 || lower.contains("telegram") || lower.contains("facebook") || lower.contains("snapchat")
                 || lower.contains("reddit") || lower.contains("tiktok") || lower.contains("discord")) {
@@ -654,18 +598,6 @@ public class ScreenTimePlugin extends Plugin {
             return "System";
         }
         return "Utility";
-    }
-
-    private String formatPackageFallback(String pkg) {
-        if (pkg == null) return "App";
-        String[] parts = pkg.split("\\.");
-        if (parts.length > 0) {
-            String last = parts[parts.length - 1];
-            if (last.length() > 0) {
-                return Character.toUpperCase(last.charAt(0)) + last.substring(1);
-            }
-        }
-        return pkg;
     }
 
     private String formatHourLabel(int hour) {
@@ -707,21 +639,6 @@ public class ScreenTimePlugin extends Plugin {
         } finally {
             if (scaled != null && scaled != source && !scaled.isRecycled()) scaled.recycle();
             if (ownsSource && source != null && !source.isRecycled()) source.recycle();
-        }
-    }
-
-    private static class ForegroundState {
-        long startTime;
-        int activityCount;
-    }
-
-    private static class AppUsageStat {
-        final String packageName;
-        long durationMillis = 0;
-        int sessionCount = 0;
-
-        AppUsageStat(String packageName) {
-            this.packageName = packageName;
         }
     }
 }

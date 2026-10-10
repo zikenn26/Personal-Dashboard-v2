@@ -1,8 +1,14 @@
-@import "tailwindcss";
-@custom-variant dark (&:is(.dark *));
-@theme inline { --radius-sm: calc(var(--radius) - 4px); --radius-md: calc(var(--radius) - 2px); --radius-lg: var(--radius); --radius-xl: calc(var(--radius) + 4px); --color-background: var(--background); --color-foreground: var(--foreground); --color-card: var(--card); --color-card-foreground: var(--card-foreground); --color-primary: var(--primary); --color-primary-foreground: var(--primary-foreground); --color-border: var(--border); --color-ring: var(--ring); }
-:root { --radius: .8rem; --background: #f8f7f2; --foreground: #24232b; --card: #fff; --card-foreground: #24232b; --primary: #6b35d9; --primary-foreground: #fff; --border: #e7e4df; --ring: #8a63df; }
-@layer base { * { @apply border-border outline-ring/50; } html { scroll-behavior: smooth; } body { @apply bg-background text-foreground; margin: 0; font-family: 'DM Sans', sans-serif; } button, a { cursor: pointer; } button:active { transform: scale(.98); } }
+.site-shell {
+  --landing-radius: .8rem;
+  --landing-background: #f8f7f2;
+  --landing-foreground: #24232b;
+  --landing-card: #fff;
+  --landing-card-foreground: #24232b;
+  --landing-primary: #6b35d9;
+  --landing-primary-foreground: #fff;
+  --landing-border: #e7e4df;
+  --landing-ring: #8a63df;
+}
 * { box-sizing: border-box; }
 .site-shell { min-height: 100vh; width: 100%; overflow-x: hidden; overflow-y: visible; background: #f8f7f2; color: #24232b; position: relative; }
 .site-header { height: 78px; display:flex; align-items:center; justify-content:space-between; max-width:1240px; margin:auto; padding:0 28px; position:relative; z-index:10; }

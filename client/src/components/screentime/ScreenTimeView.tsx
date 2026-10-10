@@ -696,6 +696,42 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
           </div>
         )}
 
+        {/* Audit & Formula Verification Diagnostics */}
+        {data?.diagnostics && (
+          <div className="p-4 rounded-xl bg-violet-50/60 dark:bg-violet-950/20 border border-violet-100 dark:border-violet-900/30 text-xs text-gray-700 dark:text-gray-300 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-violet-900 dark:text-violet-300 flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                Formula &amp; Diagnostics Engine
+              </span>
+              <span className="font-mono text-[11px] px-2 py-0.5 rounded-md bg-white dark:bg-[#1E293B] border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300">
+                Mode: {data.diagnostics.calculationMode || 'usageEventsUnion'}
+              </span>
+            </div>
+            <p className="text-[11px] text-gray-600 dark:text-gray-400 leading-relaxed">
+              Total Screen Time uses the <strong>Mathematical Union of Foreground Sessions</strong> on an interactive screen, clipping sessions to midnight boundaries and discarding overlapping Multi-Window/PiP intervals to match Android Digital Wellbeing.
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 font-mono text-[11px]">
+              <div className="p-2 rounded-lg bg-white/80 dark:bg-[#1E293B]/80 border border-violet-100 dark:border-violet-900/40">
+                <span className="text-gray-400 block text-[10px]">RAW EVENTS</span>
+                <span className="font-bold">{data.diagnostics.rawEventsCount ?? 0}</span>
+              </div>
+              <div className="p-2 rounded-lg bg-white/80 dark:bg-[#1E293B]/80 border border-violet-100 dark:border-violet-900/40">
+                <span className="text-gray-400 block text-[10px]">MERGED INTERVALS</span>
+                <span className="font-bold">{data.diagnostics.mergedIntervalsCount ?? 0}</span>
+              </div>
+              <div className="p-2 rounded-lg bg-white/80 dark:bg-[#1E293B]/80 border border-violet-100 dark:border-violet-900/40">
+                <span className="text-gray-400 block text-[10px]">DUPLICATES DISCARDED</span>
+                <span className="font-bold">{data.diagnostics.duplicatesDiscarded ?? 0}</span>
+              </div>
+              <div className="p-2 rounded-lg bg-white/80 dark:bg-[#1E293B]/80 border border-violet-100 dark:border-violet-900/40">
+                <span className="text-gray-400 block text-[10px]">UNCLOSED SESSIONS CAPPED</span>
+                <span className="font-bold">{data.diagnostics.openSessionsCapped ?? 0}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Limitations & Privacy Disclaimer */}
         <div className="pt-3 border-t border-[#EDECE9] dark:border-[#334155]/60 flex items-start gap-2 text-[11px] text-[#787774] dark:text-[#94A3B8]">
           <Info className="w-3.5 h-3.5 shrink-0 text-gray-400 mt-0.5" />

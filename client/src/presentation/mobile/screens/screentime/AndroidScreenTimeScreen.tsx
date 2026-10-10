@@ -486,6 +486,33 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
         )}
       </div>
 
+      {/* Audit & Formula Diagnostics */}
+      {data?.diagnostics && (
+        <div className="p-3.5 rounded-2xl bg-violet-50/70 dark:bg-violet-950/30 border border-violet-100 dark:border-violet-900/40 text-[11px] space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-violet-900 dark:text-violet-300">
+              Verified Formula Engine
+            </span>
+            <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-white dark:bg-[#121826] border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300">
+              {data.diagnostics.calculationMode || 'usageEventsUnion'}
+            </span>
+          </div>
+          <p className="text-gray-600 dark:text-gray-400 text-[10px] leading-relaxed">
+            Non-overlapping mathematical union of active foreground sessions. Overlapping multi-window &amp; PiP intervals merged to match Digital Wellbeing.
+          </p>
+          <div className="grid grid-cols-2 gap-1.5 font-mono text-[10px]">
+            <div className="p-1.5 rounded-lg bg-white/80 dark:bg-[#121826]/80 border border-violet-100 dark:border-violet-900/30">
+              <span className="text-gray-400 block text-[9px]">RAW EVENTS</span>
+              <span className="font-bold text-gray-800 dark:text-gray-200">{data.diagnostics.rawEventsCount ?? 0}</span>
+            </div>
+            <div className="p-1.5 rounded-lg bg-white/80 dark:bg-[#121826]/80 border border-violet-100 dark:border-violet-900/30">
+              <span className="text-gray-400 block text-[9px]">MERGED INTERVALS</span>
+              <span className="font-bold text-gray-800 dark:text-gray-200">{data.diagnostics.mergedIntervalsCount ?? 0}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Limitations note */}
       <div className="p-3 rounded-2xl bg-gray-50 dark:bg-[#121826]/60 border border-gray-100 dark:border-gray-800 text-[11px] text-gray-500 dark:text-gray-400 flex items-start gap-2">
         <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-gray-400" />

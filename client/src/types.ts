@@ -930,6 +930,18 @@ export interface DailyUsageSummary {
   isToday?: boolean;
 }
 
+export interface ScreenTimeDiagnostics {
+  calculationMode?: string;
+  rawEventsCount?: number;
+  duplicatesDiscarded?: number;
+  openSessionsCapped?: number;
+  reconstructedSessionsCount?: number;
+  mergedIntervalsCount?: number;
+  dayStartMillis?: number;
+  effectiveEndMillis?: number;
+  wallClockElapsedMillis?: number;
+}
+
 export interface ScreenTimeData {
   granted: boolean;
   isNativeAndroid: boolean;
@@ -944,7 +956,10 @@ export interface ScreenTimeData {
   past7Days: DailyUsageSummary[];
   dailyAverageMinutes: number;
   lastSyncedTimestamp: number;
+  dataSource?: string;
+  accuracyNotice?: string;
   limitationsNotice?: string;
+  diagnostics?: ScreenTimeDiagnostics;
   error?: string;
   message?: string;
 }

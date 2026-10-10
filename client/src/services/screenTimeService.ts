@@ -203,9 +203,14 @@ class ScreenTimeService {
           past7Days: Array.isArray(result?.past7Days) ? result.past7Days : [],
           dailyAverageMinutes: Number(result?.dailyAverageMinutes || 0),
           lastSyncedTimestamp: Number(result?.lastSyncedTimestamp || Date.now()),
+          dataSource: result?.dataSource || 'usageEventsUnion',
+          accuracyNotice:
+            result?.accuracyNotice ||
+            'Device screen time is calculated as the non-overlapping mathematical union of foreground sessions on an active screen, matching Android Digital Wellbeing.',
           limitationsNotice:
             result?.limitationsNotice ||
             'Native statistics reported by Android UsageStatsManager. Usage events are aggregated locally on device.',
+          diagnostics: result?.diagnostics,
           error: result?.error,
           message: result?.message,
         };
