@@ -297,6 +297,8 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
         return 'Life Map';
       case 'exams':
         return 'Competitive Exams';
+      case 'screentime':
+        return 'Screen Time';
       case 'workfolio':
       case 'portfolio':
       case 'resume':

@@ -1972,8 +1972,8 @@ export const Storage = {
         if (!flatItems.includes(w)) flatItems.push(w);
       });
       const col0: string[] = ['calendar', 'habits'].filter((w) => flatItems.includes(w));
-      const col1: string[] = ['tasks', 'expenses'].filter((w) => flatItems.includes(w));
-      const col2: string[] = ['schedule'].filter((w) => flatItems.includes(w));
+      const col1: string[] = ['tasks', 'expenses', 'screentime'].filter((w) => flatItems.includes(w));
+      const col2: string[] = ['schedule', 'scratchpad'].filter((w) => flatItems.includes(w));
       return [col0, col1, col2];
     }
 
