@@ -163,8 +163,8 @@ public class ScreenTimePlugin extends Plugin {
             String ourPackage = ctx.getPackageName();
             PackageManager pm = ctx.getPackageManager();
 
-            // 1. Query Raw UsageEvents with a 2-hour pre-midnight lookback to capture sessions crossing 00:00:00
-            long lookbackStart = startOfDay - (2 * 60 * 60 * 1000L);
+            // 1. Query Raw UsageEvents with a 24-hour pre-midnight lookback to capture sessions crossing 00:00:00
+            long lookbackStart = startOfDay - (24 * 60 * 60 * 1000L);
             UsageEvents events = usageStatsManager.queryEvents(lookbackStart, effectiveEnd);
 
             List<ScreenTimeCalculator.RawEvent> rawEventList = new ArrayList<>();
@@ -180,8 +180,36 @@ public class ScreenTimePlugin extends Plugin {
                 }
             }
 
+            // Also query Android's OS-aggregated UsageStats for cross-verification & reconciliation
+            Map<String, Long> osAggregatedAppTimes = new HashMap<>();
+            List<UsageStats> osStatsList = usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startOfDay, effectiveEnd);
+            if (osStatsList != null) {
+                for (UsageStats u : osStatsList) {
+                    if (u == null || u.getPackageName() == null) continue;
+                    String pkg = u.getPackageName();
+                    if (excludeSelf && ourPackage.equals(pkg)) continue;
+
+                    long firstTime = u.getFirstTimeStamp();
+                    long lastTime = u.getLastTimeStamp();
+                    if (firstTime > effectiveEnd || lastTime < startOfDay) {
+                        continue;
+                    }
+
+                    long fgTime = Math.max(0L, u.getTotalTimeInForeground());
+                    if (fgTime <= 0) continue;
+
+                    Long existing = osAggregatedAppTimes.get(pkg);
+                    if (existing == null || fgTime > existing) {
+                        osAggregatedAppTimes.put(pkg, fgTime);
+                    }
+                }
+            }
+
             ScreenTimeCalculator.DailyResult calcResult;
             String calculationMode;
+            long originalEventTotal = 0L;
+            long maxSingleApp = 0L;
+            int reconciledCount = 0;
 
             if (!rawEventList.isEmpty()) {
                 // Primary method: Reconstruct non-overlapping intervals via ScreenTimeCalculator
@@ -191,7 +219,47 @@ public class ScreenTimePlugin extends Plugin {
                         effectiveEnd,
                         excludeSelf ? ourPackage : null
                 );
+                originalEventTotal = calcResult.totalDeviceMillis;
                 calculationMode = "usageEventsUnion";
+
+                // Reconcile with OS-level UsageStats to ensure no app's foreground time is undercounted
+                // (e.g. if OEM drops events or circular event buffer evicted older sessions)
+                for (Map.Entry<String, Long> osEntry : osAggregatedAppTimes.entrySet()) {
+                    String pkg = osEntry.getKey();
+                    long osDuration = osEntry.getValue();
+                    if (osDuration > maxSingleApp) {
+                        maxSingleApp = osDuration;
+                    }
+
+                    ScreenTimeCalculator.AppCalculation appCalc = calcResult.appUsage.get(pkg);
+                    if (appCalc == null) {
+                        if (osDuration >= 1000L) {
+                            appCalc = new ScreenTimeCalculator.AppCalculation(pkg);
+                            appCalc.durationMillis = osDuration;
+                            appCalc.sessionCount = 1;
+                            calcResult.appUsage.put(pkg, appCalc);
+                            reconciledCount++;
+                        }
+                    } else if (osDuration > appCalc.durationMillis) {
+                        appCalc.durationMillis = osDuration;
+                        reconciledCount++;
+                    }
+                }
+
+                for (ScreenTimeCalculator.AppCalculation app : calcResult.appUsage.values()) {
+                    if (app.durationMillis > maxSingleApp) {
+                        maxSingleApp = app.durationMillis;
+                    }
+                }
+
+                // Total screen time cannot be less than the highest individual app's foreground time
+                // and cannot exceed wall-clock elapsed time
+                long wallClockElapsed = Math.max(0L, effectiveEnd - startOfDay);
+                calcResult.totalDeviceMillis = Math.min(Math.max(calcResult.totalDeviceMillis, maxSingleApp), wallClockElapsed);
+
+                if (reconciledCount > 0) {
+                    calculationMode = "hybridReconciled";
+                }
             } else {
                 // Secondary fallback if UsageEvents is blocked by an OEM ROM
                 calcResult = executeAggregateFallback(usageStatsManager, startOfDay, effectiveEnd, excludeSelf ? ourPackage : null);
@@ -235,7 +303,18 @@ public class ScreenTimePlugin extends Plugin {
                 rank++;
             }
 
-            // 4. Build 24 Hourly Buckets
+            // 4. Build 24 Hourly Buckets, scaled to match totalDeviceMillis if reconciled
+            long sumHourly = 0L;
+            for (int h = 0; h < 24; h++) {
+                sumHourly += calcResult.hourlyBuckets[h];
+            }
+            if (sumHourly > 0 && totalDeviceMillis > sumHourly) {
+                double scaleFactor = (double) totalDeviceMillis / (double) sumHourly;
+                for (int h = 0; h < 24; h++) {
+                    calcResult.hourlyBuckets[h] = Math.round(calcResult.hourlyBuckets[h] * scaleFactor);
+                }
+            }
+
             JSArray hourlyArray = new JSArray();
             for (int h = 0; h < 24; h++) {
                 JSObject hObj = new JSObject();
@@ -267,6 +346,9 @@ public class ScreenTimePlugin extends Plugin {
             diagnostics.put("dayStartMillis", startOfDay);
             diagnostics.put("effectiveEndMillis", effectiveEnd);
             diagnostics.put("wallClockElapsedMillis", effectiveEnd - startOfDay);
+            diagnostics.put("reconciledAppsCount", reconciledCount);
+            diagnostics.put("eventReconstructedTotalMillis", originalEventTotal);
+            diagnostics.put("aggregateUsageStatsMaxSingleApp", maxSingleApp);
 
             JSObject response = new JSObject();
             response.put("granted", true);
@@ -421,7 +503,7 @@ public class ScreenTimePlugin extends Plugin {
             long end = Math.min(now, nextDay.getTimeInMillis());
             if (end <= start) continue;
 
-            long lookback = start - (2 * 60 * 60 * 1000L);
+            long lookback = start - (24 * 60 * 60 * 1000L);
             UsageEvents events = mgr.queryEvents(lookback, end);
 
             List<ScreenTimeCalculator.RawEvent> eventList = new ArrayList<>();
@@ -445,7 +527,20 @@ public class ScreenTimePlugin extends Plugin {
                         end,
                         excludeSelf ? ourPackage : null
                 );
-                totalDayMillis = res.totalDeviceMillis;
+                // Also reconcile with OS UsageStats
+                long maxSingle = 0L;
+                List<UsageStats> dayStats = mgr.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, end);
+                if (dayStats != null) {
+                    for (UsageStats u : dayStats) {
+                        if (u == null || u.getPackageName() == null) continue;
+                        if (excludeSelf && ourPackage.equals(u.getPackageName())) continue;
+                        if (u.getFirstTimeStamp() <= end && u.getLastTimeStamp() >= start) {
+                            maxSingle = Math.max(maxSingle, u.getTotalTimeInForeground());
+                        }
+                    }
+                }
+                long wallClock = Math.max(0L, end - start);
+                totalDayMillis = Math.min(Math.max(res.totalDeviceMillis, maxSingle), wallClock);
             } else {
                 ScreenTimeCalculator.DailyResult res = executeAggregateFallback(
                         mgr, start, end, excludeSelf ? ourPackage : null);

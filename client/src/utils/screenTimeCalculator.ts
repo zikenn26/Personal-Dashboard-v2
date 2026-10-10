@@ -13,7 +13,34 @@
  */
 
 export const MAX_SESSION_DURATION_MS = 60 * 60 * 1000; // 1 hour cap for unclosed sessions
-export const MIN_SESSION_DURATION_MS = 1000; // 1 second threshold
+export const MIN_SESSION_DURATION_MS = 0; // Capture all valid foreground milliseconds
+
+/**
+ * Returns YYYY-MM-DD in device local time (never UTC).
+ */
+export function getLocalDateString(d: Date = new Date()): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Safely parses YYYY-MM-DD in local time without UTC offset bugs.
+ */
+export function parseLocalDateString(dateStr: string): Date {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, (m || 1) - 1, d || 1, 0, 0, 0, 0);
+}
+
+/**
+ * Safely adds or subtracts days from a local YYYY-MM-DD string.
+ */
+export function shiftLocalDateString(dateStr: string, days: number): string {
+  const date = parseLocalDateString(dateStr);
+  date.setDate(date.getDate() + days);
+  return getLocalDateString(date);
+}
 
 export const EVENT_ACTIVITY_RESUMED = 1;
 export const EVENT_ACTIVITY_PAUSED = 2;
@@ -334,11 +361,22 @@ export function calculateScreenTime(
   const resolveSessionEnd = (start: number, end: number, lastInteraction: number) => {
     if (end <= start) return start;
     const duration = end - start;
+    // If confirmed user interactions occurred during this session:
+    // As long as the silence between the last interaction and the close event is reasonable (<= MAX_SESSION_DURATION_MS),
+    // the session is legitimate. Only if the device was silent for more than MAX_SESSION_DURATION_MS
+    // after the last interaction do we cap from the last interaction.
+    if (lastInteraction > start && lastInteraction < end) {
+      const silenceAfterInteraction = end - lastInteraction;
+      if (silenceAfterInteraction > MAX_SESSION_DURATION_MS) {
+        result.openSessionsCapped++;
+        return lastInteraction + MAX_SESSION_DURATION_MS;
+      }
+      return end;
+    }
+    // If there was NO interaction during this session (e.g. phone left running untouched overnight):
+    // Cap to MAX_SESSION_DURATION_MS to prevent unclosed multi-hour leaks.
     if (duration > MAX_SESSION_DURATION_MS) {
       result.openSessionsCapped++;
-      if (lastInteraction > start && lastInteraction < end) {
-        return Math.min(end, lastInteraction + 5 * 60 * 1000);
-      }
       return start + MAX_SESSION_DURATION_MS;
     }
     return end;
@@ -368,7 +406,6 @@ export function calculateScreenTime(
         break;
 
       case EVENT_ACTIVITY_PAUSED:
-      case EVENT_ACTIVITY_STOPPED:
         if (activePkg === pkg && sessionStartTime > 0) {
           const sessionEnd = resolveSessionEnd(sessionStartTime, t, lastInteractionTime);
           rawSessions.push({ packageName: activePkg, start: sessionStartTime, end: sessionEnd });
@@ -398,6 +435,11 @@ export function calculateScreenTime(
 
       case EVENT_USER_INTERACTION:
         lastInteractionTime = t;
+        // If active package was null upon screen unlock or unhandled transition, recover it from user touch
+        if (!activePkg && isScreenInteractive && pkg) {
+          activePkg = pkg;
+          sessionStartTime = t;
+        }
         break;
     }
   }
@@ -405,11 +447,14 @@ export function calculateScreenTime(
   // 3. Handle currently open session at query time
   if (activePkg && sessionStartTime > 0 && isScreenInteractive) {
     let sessionEnd = Math.min(effectiveEnd, sessionStartTime + MAX_SESSION_DURATION_MS);
+    if (lastInteractionTime > sessionStartTime && lastInteractionTime <= effectiveEnd) {
+      const silence = effectiveEnd - lastInteractionTime;
+      if (silence <= MAX_SESSION_DURATION_MS) {
+        sessionEnd = effectiveEnd;
+      }
+    }
     if (effectiveEnd > sessionStartTime) {
-      sessionEnd = Math.min(
-        effectiveEnd,
-        Math.max(sessionStartTime + MIN_SESSION_DURATION_MS, sessionEnd)
-      );
+      sessionEnd = Math.min(effectiveEnd, sessionEnd);
       rawSessions.push({ packageName: activePkg, start: sessionStartTime, end: sessionEnd });
     }
   }
@@ -420,7 +465,7 @@ export function calculateScreenTime(
     const clampedStart = Math.max(s.start, startOfDay);
     const clampedEnd = Math.min(s.end, effectiveEnd);
 
-    if (clampedEnd > clampedStart && clampedEnd - clampedStart >= MIN_SESSION_DURATION_MS) {
+    if (clampedEnd > clampedStart) {
       validDaySessions.push({
         packageName: s.packageName,
         start: clampedStart,

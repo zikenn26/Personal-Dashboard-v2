@@ -28,7 +28,7 @@ public class ScreenTimeCalculator {
     public static final long MAX_SESSION_DURATION_MS = 60 * 60 * 1000L; // 1 hour
 
     // Minimum session threshold to filter out transient sub-second IPC blips
-    public static final long MIN_SESSION_DURATION_MS = 1000L; // 1 second
+    public static final long MIN_SESSION_DURATION_MS = 0L; // Capture all valid foreground milliseconds
 
     // Standard Android UsageEvents event types
     public static final int EVENT_ACTIVITY_RESUMED = 1;
@@ -207,7 +207,6 @@ public class ScreenTimeCalculator {
                     break;
 
                 case EVENT_ACTIVITY_PAUSED:
-                case EVENT_ACTIVITY_STOPPED:
                     if (activePkg != null && activePkg.equals(pkg)) {
                         long sessionEnd = resolveSessionEnd(sessionStartTime, t, lastInteractionTime, result);
                         rawSessions.add(new SessionInterval(activePkg, sessionStartTime, sessionEnd));
@@ -237,6 +236,11 @@ public class ScreenTimeCalculator {
 
                 case EVENT_USER_INTERACTION:
                     lastInteractionTime = t;
+                    // If active package was null upon screen unlock or unhandled transition, recover it from user touch
+                    if (activePkg == null && isScreenInteractive && pkg != null && !pkg.isEmpty()) {
+                        activePkg = pkg;
+                        sessionStartTime = t;
+                    }
                     break;
 
                 default:
@@ -247,8 +251,14 @@ public class ScreenTimeCalculator {
         // 3. Handle currently open session at query time
         if (activePkg != null && sessionStartTime > 0 && isScreenInteractive) {
             long sessionEnd = Math.min(effectiveEnd, sessionStartTime + MAX_SESSION_DURATION_MS);
+            if (lastInteractionTime > sessionStartTime && lastInteractionTime <= effectiveEnd) {
+                long silence = effectiveEnd - lastInteractionTime;
+                if (silence <= MAX_SESSION_DURATION_MS) {
+                    sessionEnd = effectiveEnd;
+                }
+            }
             if (effectiveEnd > sessionStartTime) {
-                sessionEnd = Math.min(effectiveEnd, Math.max(sessionStartTime + MIN_SESSION_DURATION_MS, sessionEnd));
+                sessionEnd = Math.min(effectiveEnd, sessionEnd);
                 rawSessions.add(new SessionInterval(activePkg, sessionStartTime, sessionEnd));
             }
         }
@@ -259,7 +269,7 @@ public class ScreenTimeCalculator {
             long clampedStart = Math.max(s.start, startOfDay);
             long clampedEnd = Math.min(s.end, effectiveEnd);
 
-            if (clampedEnd > clampedStart && (clampedEnd - clampedStart) >= MIN_SESSION_DURATION_MS) {
+            if (clampedEnd > clampedStart) {
                 validDaySessions.add(new SessionInterval(s.packageName, clampedStart, clampedEnd));
             }
         }
@@ -309,12 +319,22 @@ public class ScreenTimeCalculator {
             return start;
         }
         long duration = end - start;
+        // If confirmed user interactions occurred during this session:
+        // As long as the silence between the last interaction and the close event is reasonable (<= MAX_SESSION_DURATION_MS),
+        // the session is legitimate. Only if the device was silent for more than MAX_SESSION_DURATION_MS
+        // after the last interaction do we cap from the last interaction.
+        if (lastInteraction > start && lastInteraction < end) {
+            long silenceAfterInteraction = end - lastInteraction;
+            if (silenceAfterInteraction > MAX_SESSION_DURATION_MS) {
+                result.openSessionsCapped++;
+                return lastInteraction + MAX_SESSION_DURATION_MS;
+            }
+            return end;
+        }
+        // If there was NO interaction during this session (e.g. phone left running untouched overnight):
+        // Cap to MAX_SESSION_DURATION_MS to prevent unclosed multi-hour leaks.
         if (duration > MAX_SESSION_DURATION_MS) {
             result.openSessionsCapped++;
-            // If interaction occurred, cap to interaction + 5 mins, else cap to start + MAX_SESSION_DURATION
-            if (lastInteraction > start && lastInteraction < end) {
-                return Math.min(end, lastInteraction + (5 * 60 * 1000L));
-            }
             return start + MAX_SESSION_DURATION_MS;
         }
         return end;
