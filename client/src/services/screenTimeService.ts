@@ -1,6 +1,7 @@
 import { registerPlugin, Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { ScreenTimeData } from '../types';
+import { getLocalDateString } from '../utils/screenTimeCalculator';
 
 export interface ScreenTimePluginInterface {
   hasPermission(): Promise<{ granted: boolean }>;
@@ -120,7 +121,7 @@ class ScreenTimeService {
     excludeSelf?: boolean;
     forceRefresh?: boolean;
   }): Promise<ScreenTimeData> {
-    const todayIso = new Date().toISOString().split('T')[0];
+    const todayIso = getLocalDateString();
     const targetDate = options?.date || todayIso;
     const includeIcons = options?.includeIcons ?? true;
     const excludeSelf = options?.excludeSelf ?? true;

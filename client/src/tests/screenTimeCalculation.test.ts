@@ -6,6 +6,8 @@ import {
   distributeMergedIntervalsHourly,
   EVENT_ACTIVITY_RESUMED,
   EVENT_ACTIVITY_PAUSED,
+  EVENT_ACTIVITY_STOPPED,
+  EVENT_USER_INTERACTION,
   EVENT_SCREEN_NON_INTERACTIVE,
   EVENT_SCREEN_INTERACTIVE,
   EVENT_DEVICE_SHUTDOWN,
@@ -232,5 +234,70 @@ describe('Screen Time Calculation Engine & Digital Wellbeing Parity', () => {
 
     expect(result.totalDeviceMinutes).toBe(5);
     expect(result.apps[0]?.durationMinutes).toBe(5);
+  });
+
+  it('11. preserves legitimate long sessions (>60m video/movie with interactions) without undercounting', () => {
+    // User watches YouTube video for 90 minutes (14:00 to 15:30) with touch interaction at 14:45
+    const t14_00 = START_OF_DAY + 14 * 3600 * 1000;
+    const t14_45 = t14_00 + 45 * 60 * 1000;
+    const t15_30 = t14_00 + 90 * 60 * 1000;
+
+    const events: RawUsageEvent[] = [
+      { packageName: 'com.google.android.youtube', timestamp: t14_00, eventType: EVENT_ACTIVITY_RESUMED },
+      { packageName: 'com.google.android.youtube', timestamp: t14_45, eventType: EVENT_USER_INTERACTION },
+      { packageName: 'com.google.android.youtube', timestamp: t15_30, eventType: EVENT_ACTIVITY_PAUSED },
+    ];
+
+    const result = calculateScreenTime(events, START_OF_DAY, END_OF_DAY);
+
+    // Full 90 minutes must be preserved, not capped to 5 or 60 minutes!
+    expect(result.totalDeviceMinutes).toBe(90);
+    const yt = result.apps.find((a) => a.packageName === 'com.google.android.youtube');
+    expect(yt?.durationMinutes).toBe(90);
+  });
+
+  it('12. ensures intra-app navigation with EVENT_ACTIVITY_STOPPED does not kill active foreground tracking', () => {
+    // Navigating inside Instagram: FeedActivity -> DetailActivity
+    // 10:00:00 - Feed resumes
+    // 10:00:30 - Detail resumes
+    // 10:00:30.100 - Feed stops (ACTIVITY_STOPPED)
+    // 10:20:00 - User finishes and pauses Detail
+    const t10_00 = START_OF_DAY + 10 * 3600 * 1000;
+    const t10_00_30 = t10_00 + 30 * 1000;
+    const t10_00_30_100 = t10_00_30 + 100;
+    const t10_20 = t10_00 + 20 * 60 * 1000;
+
+    const events: RawUsageEvent[] = [
+      { packageName: 'com.instagram.android', timestamp: t10_00, eventType: EVENT_ACTIVITY_RESUMED },
+      { packageName: 'com.instagram.android', timestamp: t10_00_30, eventType: EVENT_ACTIVITY_RESUMED },
+      { packageName: 'com.instagram.android', timestamp: t10_00_30_100, eventType: EVENT_ACTIVITY_STOPPED },
+      { packageName: 'com.instagram.android', timestamp: t10_20, eventType: EVENT_ACTIVITY_PAUSED },
+    ];
+
+    const result = calculateScreenTime(events, START_OF_DAY, END_OF_DAY);
+
+    // Total time should be full 20 minutes, NOT 30 seconds!
+    expect(result.totalDeviceMinutes).toBe(20);
+    const insta = result.apps.find((a) => a.packageName === 'com.instagram.android');
+    expect(insta?.durationMinutes).toBe(20);
+  });
+
+  it('13. recovers active package from EVENT_USER_INTERACTION after screen unlock', () => {
+    // Screen unlocks without immediate ACTIVITY_RESUMED event, but user interacts with WhatsApp
+    const t1 = START_OF_DAY + 8 * 3600 * 1000;
+    const tInteract = t1 + 1000;
+    const tPause = t1 + 15 * 60 * 1000;
+
+    const events: RawUsageEvent[] = [
+      { packageName: 'android', timestamp: t1, eventType: EVENT_SCREEN_INTERACTIVE },
+      { packageName: 'com.whatsapp', timestamp: tInteract, eventType: EVENT_USER_INTERACTION },
+      { packageName: 'com.whatsapp', timestamp: tPause, eventType: EVENT_ACTIVITY_PAUSED },
+    ];
+
+    const result = calculateScreenTime(events, START_OF_DAY, END_OF_DAY);
+
+    expect(result.totalDeviceMinutes).toBe(15);
+    const wa = result.apps.find((a) => a.packageName === 'com.whatsapp');
+    expect(wa?.durationMinutes).toBe(15);
   });
 });

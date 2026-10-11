@@ -28,6 +28,7 @@ import {
 import { screenTimeService } from '../../../../services/screenTimeService';
 import { ScreenTimeData, AppUsageItem } from '../../../../types';
 import { nativeService } from '../../../../services/nativeService';
+import { getLocalDateString, shiftLocalDateString } from '../../../../utils/screenTimeCalculator';
 
 export interface AndroidScreenTimeScreenProps {
   onBack?: () => void;
@@ -39,7 +40,7 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
   const [data, setData] = useState<ScreenTimeData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [selectedDate, setSelectedDate] = useState<string>(() => {
-    return new Date().toISOString().split('T')[0];
+    return getLocalDateString();
   });
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
@@ -90,14 +91,13 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
 
   const shiftDate = (days: number) => {
     void nativeService.triggerHaptic('selection');
-    const curr = new Date(selectedDate);
-    curr.setDate(curr.getDate() + days);
-    const today = new Date();
-    if (curr > today) return;
-    setSelectedDate(curr.toISOString().split('T')[0]);
+    const nextDate = shiftLocalDateString(selectedDate, days);
+    const today = getLocalDateString();
+    if (nextDate > today) return;
+    setSelectedDate(nextDate);
   };
 
-  const isTodaySelected = selectedDate === new Date().toISOString().split('T')[0];
+  const isTodaySelected = selectedDate === getLocalDateString();
 
   const filteredApps = useMemo(() => {
     if (!data?.apps) return [];

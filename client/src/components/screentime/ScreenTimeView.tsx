@@ -34,6 +34,7 @@ import {
 import { screenTimeService } from '../../services/screenTimeService';
 import { ScreenTimeData, AppUsageItem } from '../../types';
 import { Sound } from '../../utils/audio';
+import { getLocalDateString, shiftLocalDateString } from '../../utils/screenTimeCalculator';
 
 export interface ScreenTimeViewProps {
   soundEnabled?: boolean;
@@ -47,7 +48,7 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
   const [data, setData] = useState<ScreenTimeData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [selectedDate, setSelectedDate] = useState<string>(() => {
-    return new Date().toISOString().split('T')[0];
+    return getLocalDateString();
   });
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -166,15 +167,14 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
   // Date Navigator Helpers
   const shiftDate = (days: number) => {
     Sound.click(soundEnabled);
-    const curr = new Date(selectedDate);
-    curr.setDate(curr.getDate() + days);
-    const today = new Date();
+    const nextDate = shiftLocalDateString(selectedDate, days);
+    const today = getLocalDateString();
     // Cannot shift into the future
-    if (curr > today) return;
-    setSelectedDate(curr.toISOString().split('T')[0]);
+    if (nextDate > today) return;
+    setSelectedDate(nextDate);
   };
 
-  const isTodaySelected = selectedDate === new Date().toISOString().split('T')[0];
+  const isTodaySelected = selectedDate === getLocalDateString();
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
