@@ -55,6 +55,7 @@ export const EVENT_DEVICE_STARTUP = 27;
 
 export interface RawUsageEvent {
   packageName: string;
+  className?: string;
   timestamp: number;
   eventType: number;
 }
@@ -91,8 +92,16 @@ export interface CalculationResult {
     durationMillis: number;
     durationMinutes: number;
   }[];
+  hourlyTotalMillis: number;
   allSessions: SessionInterval[];
   mergedIntervals: TimeInterval[];
+  discardedIntervals: {
+    packageName: string;
+    start: number;
+    end: number;
+    duration: number;
+    reason: string;
+  }[];
   rawEventsCount: number;
   duplicatesDiscarded: number;
   openSessionsCapped: number;
@@ -313,8 +322,10 @@ export function calculateScreenTime(
       durationMillis: 0,
       durationMinutes: 0,
     })),
+    hourlyTotalMillis: 0,
     allSessions: [],
     mergedIntervals: [],
+    discardedIntervals: [],
     rawEventsCount: events?.length || 0,
     duplicatesDiscarded: 0,
     openSessionsCapped: 0,
@@ -355,6 +366,7 @@ export function calculateScreenTime(
   let sessionStartTime = 0;
   let lastInteractionTime = 0;
   let isScreenInteractive = true;
+  const activeActivities = new Set<string>();
 
   const rawSessions: { packageName: string; start: number; end: number }[] = [];
 
@@ -386,31 +398,66 @@ export function calculateScreenTime(
     const t = event.timestamp;
     const type = event.eventType;
     const pkg = event.packageName;
+    const cls = event.className;
 
     // Discard identical duplicate events
     if (activePkg === pkg && type === EVENT_ACTIVITY_RESUMED && t === sessionStartTime) {
       result.duplicatesDiscarded++;
+      result.discardedIntervals.push({
+        packageName: pkg,
+        start: t,
+        end: t,
+        duration: 0,
+        reason: 'Duplicate ACTIVITY_RESUMED at same timestamp',
+      });
       continue;
     }
 
     switch (type) {
       case EVENT_ACTIVITY_RESUMED:
-        if (activePkg && sessionStartTime > 0) {
+        if (activePkg && activePkg !== pkg) {
+          // Different app took foreground: close previous app session at t
           const sessionEnd = resolveSessionEnd(sessionStartTime, t, lastInteractionTime);
           rawSessions.push({ packageName: activePkg, start: sessionStartTime, end: sessionEnd });
+          activePkg = pkg;
+          sessionStartTime = t;
+          lastInteractionTime = t;
+          activeActivities.clear();
+          if (cls) activeActivities.add(cls);
+        } else if (activePkg && activePkg === pkg) {
+          // Intra-app activity transition (Activity A -> Activity B):
+          // Uninterrupted continuous foreground session. Keep sessionStartTime intact.
+          lastInteractionTime = t;
+          if (cls) activeActivities.add(cls);
+        } else {
+          // New session starting
+          activePkg = pkg;
+          sessionStartTime = t;
+          lastInteractionTime = t;
+          activeActivities.clear();
+          if (cls) activeActivities.add(cls);
         }
-        activePkg = pkg;
-        sessionStartTime = t;
-        lastInteractionTime = t;
         isScreenInteractive = true;
         break;
 
       case EVENT_ACTIVITY_PAUSED:
-        if (activePkg === pkg && sessionStartTime > 0) {
-          const sessionEnd = resolveSessionEnd(sessionStartTime, t, lastInteractionTime);
-          rawSessions.push({ packageName: activePkg, start: sessionStartTime, end: sessionEnd });
-          activePkg = null;
-          sessionStartTime = 0;
+        if (activePkg === pkg) {
+          if (cls && activeActivities.size > 0) {
+            activeActivities.delete(cls);
+            // If another activity of this package is still active, app remains in foreground!
+            if (activeActivities.size === 0) {
+              const sessionEnd = resolveSessionEnd(sessionStartTime, t, lastInteractionTime);
+              rawSessions.push({ packageName: activePkg, start: sessionStartTime, end: sessionEnd });
+              activePkg = null;
+              sessionStartTime = 0;
+            }
+          } else {
+            const sessionEnd = resolveSessionEnd(sessionStartTime, t, lastInteractionTime);
+            rawSessions.push({ packageName: activePkg, start: sessionStartTime, end: sessionEnd });
+            activePkg = null;
+            sessionStartTime = 0;
+            activeActivities.clear();
+          }
         }
         break;
 
@@ -423,6 +470,7 @@ export function calculateScreenTime(
           rawSessions.push({ packageName: activePkg, start: sessionStartTime, end: sessionEnd });
           activePkg = null;
           sessionStartTime = 0;
+          activeActivities.clear();
         }
         break;
 
@@ -439,6 +487,8 @@ export function calculateScreenTime(
         if (!activePkg && isScreenInteractive && pkg) {
           activePkg = pkg;
           sessionStartTime = t;
+          activeActivities.clear();
+          if (cls) activeActivities.add(cls);
         }
         break;
     }
@@ -472,6 +522,19 @@ export function calculateScreenTime(
         end: clampedEnd,
         duration: clampedEnd - clampedStart,
       });
+    } else {
+      const reason = s.end <= startOfDay
+        ? 'Session occurred strictly before calendar day start'
+        : s.start >= effectiveEnd
+        ? 'Session occurred after query cutoff'
+        : 'Zero or negative duration';
+      result.discardedIntervals.push({
+        packageName: s.packageName,
+        start: s.start,
+        end: s.end,
+        duration: Math.max(0, s.end - s.start),
+        reason,
+      });
     }
   }
   result.allSessions = validDaySessions;
@@ -501,12 +564,15 @@ export function calculateScreenTime(
   result.totalDeviceMillis = deviceTotal;
   result.totalDeviceMinutes = Math.round(deviceTotal / 60000);
 
-  // 7. Hourly buckets
+  // 7. Hourly buckets (strictly from valid intervals, no scaling)
   const hourlyValues = distributeMergedIntervalsHourly(merged, startOfDay);
+  let sumHourly = 0;
   for (let h = 0; h < 24; h++) {
     result.hourlyBuckets[h].durationMillis = hourlyValues[h];
     result.hourlyBuckets[h].durationMinutes = Math.round(hourlyValues[h] / 60000);
+    sumHourly += hourlyValues[h];
   }
+  result.hourlyTotalMillis = sumHourly;
 
   // 8. Build sorted App list with percentages
   const apps: AppCalculation[] = [];

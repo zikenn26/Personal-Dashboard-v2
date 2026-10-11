@@ -47,11 +47,17 @@ public class ScreenTimeCalculator {
      */
     public static class RawEvent {
         public final String packageName;
+        public final String className;
         public final long timestamp;
         public final int eventType;
 
         public RawEvent(String packageName, long timestamp, int eventType) {
+            this(packageName, null, timestamp, eventType);
+        }
+
+        public RawEvent(String packageName, String className, long timestamp, int eventType) {
             this.packageName = packageName;
+            this.className = className;
             this.timestamp = timestamp;
             this.eventType = eventType;
         }
@@ -94,6 +100,23 @@ public class ScreenTimeCalculator {
     }
 
     /**
+     * Represents a discarded session interval or event with reason.
+     */
+    public static class DiscardedInterval {
+        public final String packageName;
+        public final long start;
+        public final long end;
+        public final String reason;
+
+        public DiscardedInterval(String packageName, long start, long end, String reason) {
+            this.packageName = packageName;
+            this.start = start;
+            this.end = end;
+            this.reason = reason;
+        }
+    }
+
+    /**
      * Calculated usage stats for a specific application package.
      */
     public static class AppCalculation {
@@ -115,6 +138,7 @@ public class ScreenTimeCalculator {
         public long[] hourlyBuckets = new long[24];
         public List<SessionInterval> allSessions = new ArrayList<>();
         public List<TimeInterval> mergedDeviceIntervals = new ArrayList<>();
+        public List<DiscardedInterval> discardedIntervals = new ArrayList<>();
         public int rawEventsCount = 0;
         public int duplicatesDiscarded = 0;
         public int openSessionsCapped = 0;
@@ -179,6 +203,7 @@ public class ScreenTimeCalculator {
         long sessionStartTime = 0L;
         long lastInteractionTime = 0L;
         boolean isScreenInteractive = true;
+        Set<String> activeActivities = new HashSet<>();
 
         List<SessionInterval> rawSessions = new ArrayList<>();
 
@@ -186,32 +211,67 @@ public class ScreenTimeCalculator {
             long t = event.timestamp;
             int type = event.eventType;
             String pkg = event.packageName;
+            String cls = event.className;
 
             // Discard duplicate identical events at same millisecond
             if (activePkg != null && activePkg.equals(pkg) && type == EVENT_ACTIVITY_RESUMED && t == sessionStartTime) {
                 result.duplicatesDiscarded++;
+                result.discardedIntervals.add(new DiscardedInterval(pkg, t, t, "Duplicate ACTIVITY_RESUMED at same timestamp"));
                 continue;
             }
 
             switch (type) {
                 case EVENT_ACTIVITY_RESUMED:
-                    // If another app was currently active, close its session at timestamp t
-                    if (activePkg != null && sessionStartTime > 0) {
+                    if (activePkg != null && !activePkg.equals(pkg)) {
+                        // Different app took foreground: close previous app session at t
                         long sessionEnd = resolveSessionEnd(sessionStartTime, t, lastInteractionTime, result);
                         rawSessions.add(new SessionInterval(activePkg, sessionStartTime, sessionEnd));
+                        activePkg = pkg;
+                        sessionStartTime = t;
+                        lastInteractionTime = t;
+                        activeActivities.clear();
+                        if (cls != null && !cls.isEmpty()) {
+                            activeActivities.add(cls);
+                        }
+                    } else if (activePkg != null && activePkg.equals(pkg)) {
+                        // Same package internal navigation (Activity A -> Activity B):
+                        // Continuous uninterrupted foreground session. Keep sessionStartTime intact.
+                        lastInteractionTime = t;
+                        if (cls != null && !cls.isEmpty()) {
+                            activeActivities.add(cls);
+                        }
+                    } else {
+                        // Initial session or session after screen unlock
+                        activePkg = pkg;
+                        sessionStartTime = t;
+                        lastInteractionTime = t;
+                        activeActivities.clear();
+                        if (cls != null && !cls.isEmpty()) {
+                            activeActivities.add(cls);
+                        }
                     }
-                    activePkg = pkg;
-                    sessionStartTime = t;
-                    lastInteractionTime = t;
                     isScreenInteractive = true;
                     break;
 
                 case EVENT_ACTIVITY_PAUSED:
                     if (activePkg != null && activePkg.equals(pkg)) {
-                        long sessionEnd = resolveSessionEnd(sessionStartTime, t, lastInteractionTime, result);
-                        rawSessions.add(new SessionInterval(activePkg, sessionStartTime, sessionEnd));
-                        activePkg = null;
-                        sessionStartTime = 0L;
+                        if (cls != null && !cls.isEmpty() && !activeActivities.isEmpty()) {
+                            activeActivities.remove(cls);
+                            // If another activity of this package is still active, app remains foreground!
+                            if (activeActivities.isEmpty()) {
+                                long sessionEnd = resolveSessionEnd(sessionStartTime, t, lastInteractionTime, result);
+                                rawSessions.add(new SessionInterval(activePkg, sessionStartTime, sessionEnd));
+                                activePkg = null;
+                                sessionStartTime = 0L;
+                            }
+                        } else {
+                            // No activity class name tracking available: close session at pause
+                            long sessionEnd = resolveSessionEnd(sessionStartTime, t, lastInteractionTime, result);
+                            rawSessions.add(new SessionInterval(activePkg, sessionStartTime, sessionEnd));
+                            activePkg = null;
+                            sessionStartTime = 0L;
+                            activeActivities.clear();
+                        }
                     }
                     break;
 
@@ -224,6 +284,7 @@ public class ScreenTimeCalculator {
                         rawSessions.add(new SessionInterval(activePkg, sessionStartTime, sessionEnd));
                         activePkg = null;
                         sessionStartTime = 0L;
+                        activeActivities.clear();
                     }
                     break;
 
@@ -240,6 +301,10 @@ public class ScreenTimeCalculator {
                     if (activePkg == null && isScreenInteractive && pkg != null && !pkg.isEmpty()) {
                         activePkg = pkg;
                         sessionStartTime = t;
+                        activeActivities.clear();
+                        if (cls != null && !cls.isEmpty()) {
+                            activeActivities.add(cls);
+                        }
                     }
                     break;
 
@@ -271,6 +336,13 @@ public class ScreenTimeCalculator {
 
             if (clampedEnd > clampedStart) {
                 validDaySessions.add(new SessionInterval(s.packageName, clampedStart, clampedEnd));
+            } else {
+                String reason = s.end <= startOfDay
+                        ? "Session occurred strictly before calendar day start"
+                        : (s.start >= effectiveEnd
+                            ? "Session occurred after query cutoff"
+                            : "Zero or negative duration");
+                result.discardedIntervals.add(new DiscardedInterval(s.packageName, s.start, s.end, reason));
             }
         }
         result.allSessions = validDaySessions;

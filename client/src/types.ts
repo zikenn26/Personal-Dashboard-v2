@@ -930,6 +930,27 @@ export interface DailyUsageSummary {
   isToday?: boolean;
 }
 
+export interface PackageReconciliationDiagnostic {
+  packageName: string;
+  appName: string;
+  eventDurationMillis: number;
+  osDurationMillis: number;
+  osFirstTimeStamp?: number;
+  osLastTimeStamp?: number;
+  osRecordsCount?: number;
+  reconciliationDecision: string;
+  discrepancyMillis: number;
+  explanation: string;
+}
+
+export interface DiscardedIntervalDiagnostic {
+  packageName: string;
+  start: number;
+  end: number;
+  durationMillis: number;
+  reason: string;
+}
+
 export interface ScreenTimeDiagnostics {
   calculationMode?: string;
   rawEventsCount?: number;
@@ -940,6 +961,11 @@ export interface ScreenTimeDiagnostics {
   dayStartMillis?: number;
   effectiveEndMillis?: number;
   wallClockElapsedMillis?: number;
+  hourlyTotalMillis?: number;
+  finalDailyTotalMillis?: number;
+  eventReconstructedTotalMillis?: number;
+  packageReconciliations?: PackageReconciliationDiagnostic[];
+  discardedIntervals?: DiscardedIntervalDiagnostic[];
 }
 
 export interface ScreenTimeData {

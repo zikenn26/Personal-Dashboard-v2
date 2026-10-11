@@ -300,4 +300,80 @@ describe('Screen Time Calculation Engine & Digital Wellbeing Parity', () => {
     const wa = result.apps.find((a) => a.packageName === 'com.whatsapp');
     expect(wa?.durationMinutes).toBe(15);
   });
+
+  it('14. maintains continuous foreground session when internal activity transitions interleave onResume and onPause', () => {
+    // Standard Android Activity transition:
+    // 14:00:00 - MainActivity.onResume()
+    // 14:05:00 - DetailActivity.onResume()
+    // 14:05:00.020 - MainActivity.onPause()
+    // 14:45:00 - DetailActivity.onPause()
+    const t14_00 = START_OF_DAY + 14 * 3600 * 1000;
+    const t14_05 = t14_00 + 5 * 60 * 1000;
+    const t14_05_020 = t14_05 + 20;
+    const t14_45 = t14_00 + 45 * 60 * 1000;
+
+    const events: RawUsageEvent[] = [
+      { packageName: 'com.instagram.android', className: 'com.instagram.mainactivity.MainActivity', timestamp: t14_00, eventType: EVENT_ACTIVITY_RESUMED },
+      { packageName: 'com.instagram.android', className: 'com.instagram.modal.ModalActivity', timestamp: t14_05, eventType: EVENT_ACTIVITY_RESUMED },
+      { packageName: 'com.instagram.android', className: 'com.instagram.mainactivity.MainActivity', timestamp: t14_05_020, eventType: EVENT_ACTIVITY_PAUSED },
+      { packageName: 'com.instagram.android', className: 'com.instagram.modal.ModalActivity', timestamp: t14_45, eventType: EVENT_ACTIVITY_PAUSED },
+    ];
+
+    const result = calculateScreenTime(events, START_OF_DAY, END_OF_DAY);
+
+    // Full 45 minutes must be counted (MainActivity's pause at 14:05:00.020 must NOT wipe out ModalActivity!)
+    expect(result.totalDeviceMinutes).toBe(45);
+    const insta = result.apps.find((a) => a.packageName === 'com.instagram.android');
+    expect(insta?.durationMinutes).toBe(45);
+  });
+
+  it('15. verifies exact mathematical equality between hourly bucket sums and total device screen time', () => {
+    // 01:30 to 03:15 (1h 45m = 105 min): crosses hour 1, hour 2, and hour 3
+    // With user touch interaction at 02:30
+    // Hour 1 (01:00-02:00): 30 min (01:30-02:00)
+    // Hour 2 (02:00-03:00): 60 min
+    // Hour 3 (03:00-04:00): 15 min (03:00-03:15)
+    const tStart = START_OF_DAY + 1.5 * 3600 * 1000; // 01:30
+    const tInteract = START_OF_DAY + 2.5 * 3600 * 1000; // 02:30
+    const tEnd = START_OF_DAY + 3.25 * 3600 * 1000;  // 03:15
+
+    const events: RawUsageEvent[] = [
+      { packageName: 'com.netflix.mediaclient', timestamp: tStart, eventType: EVENT_ACTIVITY_RESUMED },
+      { packageName: 'com.netflix.mediaclient', timestamp: tInteract, eventType: EVENT_USER_INTERACTION },
+      { packageName: 'com.netflix.mediaclient', timestamp: tEnd, eventType: EVENT_ACTIVITY_PAUSED },
+    ];
+
+    const result = calculateScreenTime(events, START_OF_DAY, END_OF_DAY);
+
+    expect(result.totalDeviceMillis).toBe(105 * 60 * 1000);
+    expect(result.hourlyTotalMillis).toBe(result.totalDeviceMillis);
+
+    expect(result.hourlyBuckets[1].durationMinutes).toBe(30);
+    expect(result.hourlyBuckets[2].durationMinutes).toBe(60);
+    expect(result.hourlyBuckets[3].durationMinutes).toBe(15);
+  });
+
+  it('16. audits and records discarded intervals outside reporting window', () => {
+    // Session 1: 22:00 to 23:30 yesterday (strictly before START_OF_DAY)
+    // Session 2: 10:00 to 11:00 today (valid)
+    const tYesterdayStart = START_OF_DAY - 2 * 3600 * 1000;
+    const tYesterdayEnd = START_OF_DAY - 30 * 60 * 1000;
+    const tTodayStart = START_OF_DAY + 10 * 3600 * 1000;
+    const tTodayEnd = tTodayStart + 60 * 60 * 1000;
+
+    const events: RawUsageEvent[] = [
+      { packageName: 'com.twitter.android', timestamp: tYesterdayStart, eventType: EVENT_ACTIVITY_RESUMED },
+      { packageName: 'com.twitter.android', timestamp: tYesterdayEnd, eventType: EVENT_ACTIVITY_PAUSED },
+      { packageName: 'com.twitter.android', timestamp: tTodayStart, eventType: EVENT_ACTIVITY_RESUMED },
+      { packageName: 'com.twitter.android', timestamp: tTodayEnd, eventType: EVENT_ACTIVITY_PAUSED },
+    ];
+
+    const result = calculateScreenTime(events, START_OF_DAY, END_OF_DAY);
+
+    expect(result.totalDeviceMinutes).toBe(60);
+    expect(result.discardedIntervals.length).toBeGreaterThanOrEqual(1);
+    const yesterdayDiscarded = result.discardedIntervals.find((d) => d.packageName === 'com.twitter.android');
+    expect(yesterdayDiscarded).toBeDefined();
+    expect(yesterdayDiscarded?.reason).toContain('before calendar day start');
+  });
 });

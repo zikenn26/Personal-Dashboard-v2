@@ -15,6 +15,10 @@ import {
   Info,
   TrendingUp,
   BarChart2,
+  ChevronDown,
+  ChevronUp,
+  CheckCircle,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -44,6 +48,7 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
   });
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [showDetailedDiagnostics, setShowDetailedDiagnostics] = useState<boolean>(false);
 
   const isSupported = screenTimeService.isSupported();
 
@@ -488,7 +493,7 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
 
       {/* Audit & Formula Diagnostics */}
       {data?.diagnostics && (
-        <div className="p-3.5 rounded-2xl bg-violet-50/70 dark:bg-violet-950/30 border border-violet-100 dark:border-violet-900/40 text-[11px] space-y-2">
+        <div className="p-3.5 rounded-2xl bg-violet-50/70 dark:bg-violet-950/30 border border-violet-100 dark:border-violet-900/40 text-[11px] space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="font-bold text-violet-900 dark:text-violet-300">
               Verified Formula Engine
@@ -509,7 +514,103 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
               <span className="text-gray-400 block text-[9px]">MERGED INTERVALS</span>
               <span className="font-bold text-gray-800 dark:text-gray-200">{data.diagnostics.mergedIntervalsCount ?? 0}</span>
             </div>
+            <div className="p-1.5 rounded-lg bg-white/80 dark:bg-[#121826]/80 border border-violet-100 dark:border-violet-900/30">
+              <span className="text-gray-400 block text-[9px]">HOURLY SUM</span>
+              <span className="font-bold text-gray-800 dark:text-gray-200">
+                {formatHoursAndMinutes(Math.round((data.diagnostics.hourlyTotalMillis ?? data.totalMillis) / 60000))}
+              </span>
+            </div>
+            <div className="p-1.5 rounded-lg bg-white/80 dark:bg-[#121826]/80 border border-violet-100 dark:border-violet-900/30">
+              <span className="text-gray-400 block text-[9px]">FINAL TOTAL</span>
+              <span className="font-bold text-gray-800 dark:text-gray-200">
+                {formatHoursAndMinutes(data.totalMinutes)}
+              </span>
+            </div>
           </div>
+
+          {/* Toggle for Deep Audit & Reconciliation Traceability */}
+          <button
+            type="button"
+            onClick={() => setShowDetailedDiagnostics((prev) => !prev)}
+            className="w-full flex items-center justify-between py-1.5 px-2 rounded-xl bg-violet-100/60 dark:bg-violet-900/40 text-violet-800 dark:text-violet-300 font-bold text-[10px] active:scale-98 transition-all"
+          >
+            <span>Audit Traceability &amp; OS Reconciliation</span>
+            {showDetailedDiagnostics ? (
+              <ChevronUp className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5" />
+            )}
+          </button>
+
+          {showDetailedDiagnostics && (
+            <div className="pt-2 space-y-3 border-t border-violet-200/50 dark:border-violet-800/40">
+              {/* Per-package reconciliation table */}
+              {data.diagnostics.packageReconciliations && data.diagnostics.packageReconciliations.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-bold text-violet-900 dark:text-violet-200 uppercase tracking-wider block">
+                    Per-Package OS Verification ({data.diagnostics.packageReconciliations.length})
+                  </span>
+                  <div className="max-h-56 overflow-y-auto space-y-1 pr-0.5">
+                    {data.diagnostics.packageReconciliations.map((pkg) => (
+                      <div
+                        key={pkg.packageName}
+                        className="p-2 rounded-xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] text-[10px] space-y-1"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-gray-900 dark:text-white truncate">
+                            {pkg.appName || pkg.packageName}
+                          </span>
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-bold ${
+                              pkg.reconciliationDecision === 'EXACT_MATCH'
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                : pkg.reconciliationDecision === 'EVENT_CONFIRMED'
+                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
+                                : pkg.reconciliationDecision.includes('OS_MISALIGNED')
+                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                                : 'bg-violet-100 text-violet-800 dark:bg-violet-950/60 dark:text-violet-300'
+                            }`}
+                          >
+                            {pkg.reconciliationDecision}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-gray-500 dark:text-gray-400 font-mono text-[9px]">
+                          <span>Events: {formatHoursAndMinutes(Math.round(pkg.eventDurationMillis / 60000))} ({Math.round(pkg.eventDurationMillis / 1000)}s)</span>
+                          <span>OS Aggregate: {formatHoursAndMinutes(Math.round(pkg.osDurationMillis / 60000))} ({Math.round(pkg.osDurationMillis / 1000)}s)</span>
+                        </div>
+                        <p className="text-[9px] text-gray-600 dark:text-gray-300 leading-tight">
+                          {pkg.explanation}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Discarded Intervals list */}
+              {data.diagnostics.discardedIntervals && data.diagnostics.discardedIntervals.length > 0 && (
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider block">
+                    Discarded Out-of-Bounds Intervals ({data.diagnostics.discardedIntervals.length})
+                  </span>
+                  <div className="max-h-28 overflow-y-auto space-y-1">
+                    {data.diagnostics.discardedIntervals.map((d, idx) => (
+                      <div
+                        key={`${d.packageName}-${idx}`}
+                        className="p-1.5 rounded-lg bg-gray-50 dark:bg-gray-900/60 text-[9px] text-gray-600 dark:text-gray-400 space-y-0.5"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono truncate">{d.packageName}</span>
+                          <span className="font-mono text-gray-500">{Math.round(d.durationMillis / 1000)}s</span>
+                        </div>
+                        <p className="text-[8px] text-gray-500">{d.reason}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
