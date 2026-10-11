@@ -601,6 +601,36 @@ public class ScreenTimePlugin extends Plugin {
         return arr;
     }
 
+    /**
+     * Resolves human-readable application name using PackageManager and clean heuristics.
+     * Caches results in APP_NAME_CACHE to avoid redundant IPC lookups.
+     */
+    private String resolveAppName(PackageManager pm, String packageName) {
+        if (packageName == null || packageName.trim().isEmpty()) {
+            return "Application";
+        }
+        String cached = APP_NAME_CACHE.get(packageName);
+        if (cached != null) {
+            return cached;
+        }
+
+        CharSequence label = null;
+        if (pm != null) {
+            try {
+                ApplicationInfo appInfo = pm.getApplicationInfo(packageName, 0);
+                label = pm.getApplicationLabel(appInfo);
+            } catch (PackageManager.NameNotFoundException e) {
+                // App uninstalled earlier or visibility restricted
+            } catch (Exception e) {
+                Log.w(TAG, "Error resolving label for package: " + packageName, e);
+            }
+        }
+
+        String resolved = ScreenTimeCalculator.resolveCleanAppName(packageName, label);
+        APP_NAME_CACHE.put(packageName, resolved);
+        return resolved;
+    }
+
     private JSObject buildAppJson(
             Context ctx,
             PackageManager pm,
@@ -623,19 +653,12 @@ public class ScreenTimePlugin extends Plugin {
         obj.put("percentageOfTotal", Math.round(pct * 10.0) / 10.0);
 
         // App Name and Category
-        String appName = APP_NAME_CACHE.get(item.packageName);
+        String appName = resolveAppName(pm, item.packageName);
         String category = "General";
         boolean isSystemApp = false;
 
         try {
             ApplicationInfo appInfo = pm.getApplicationInfo(item.packageName, 0);
-            CharSequence label = pm.getApplicationLabel(appInfo);
-
-            if (appName == null) {
-                appName = ScreenTimeCalculator.resolveCleanAppName(item.packageName, label);
-                APP_NAME_CACHE.put(item.packageName, appName);
-            }
-
             isSystemApp = (appInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -659,17 +682,10 @@ public class ScreenTimePlugin extends Plugin {
                 }
             }
         } catch (PackageManager.NameNotFoundException e) {
-            // App was uninstalled earlier today or visibility restricted; resolve via clean dictionary/heuristics
-            if (appName == null) {
-                appName = ScreenTimeCalculator.resolveCleanAppName(item.packageName, null);
-                APP_NAME_CACHE.put(item.packageName, appName);
-            }
+            // App was uninstalled earlier today or visibility restricted
             category = heuristicCategory(item.packageName, false);
         } catch (Exception e) {
-            if (appName == null) {
-                appName = ScreenTimeCalculator.resolveCleanAppName(item.packageName, null);
-                APP_NAME_CACHE.put(item.packageName, appName);
-            }
+            // Non-fatal error reading app metadata
         }
 
         obj.put("appName", appName);
