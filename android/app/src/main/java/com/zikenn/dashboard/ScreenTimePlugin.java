@@ -574,8 +574,9 @@ public class ScreenTimePlugin extends Plugin {
             }
 
             long totalDayMillis = 0L;
+            ScreenTimeCalculator.DailyResult res;
             if (!eventList.isEmpty()) {
-                ScreenTimeCalculator.DailyResult res = ScreenTimeCalculator.calculateDailyScreenTime(
+                res = ScreenTimeCalculator.calculateDailyScreenTime(
                         eventList,
                         start,
                         end,
@@ -583,9 +584,18 @@ public class ScreenTimePlugin extends Plugin {
                 );
                 totalDayMillis = res.totalDeviceMillis;
             } else {
-                ScreenTimeCalculator.DailyResult res = executeAggregateFallback(
+                res = executeAggregateFallback(
                         mgr, start, end, excludeSelf ? ourPackage : null);
                 totalDayMillis = res.totalDeviceMillis;
+            }
+
+            JSObject dayApps = new JSObject();
+            if (res != null && res.appUsage != null) {
+                for (Map.Entry<String, ScreenTimeCalculator.AppCalculation> entry : res.appUsage.entrySet()) {
+                    if (entry.getValue() != null && entry.getValue().durationMillis > 0) {
+                        dayApps.put(entry.getKey(), Math.round(entry.getValue().durationMillis / 60000.0));
+                    }
+                }
             }
 
             JSObject dayObj = new JSObject();
@@ -594,6 +604,7 @@ public class ScreenTimePlugin extends Plugin {
             dayObj.put("isToday", i == 0);
             dayObj.put("totalMinutes", Math.round(totalDayMillis / 60000.0));
             dayObj.put("totalMillis", totalDayMillis);
+            dayObj.put("appMinutes", dayApps);
             dayObj.put("dataSource", "usageEventsUnion");
             arr.put(dayObj);
         }

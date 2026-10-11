@@ -16,8 +16,6 @@ import {
   ChevronRight,
   Sparkles,
   Info,
-  CheckCircle2,
-  ExternalLink,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -53,6 +51,7 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [excludeSelf, setExcludeSelf] = useState<boolean>(true);
+  const [selectedAppPackage, setSelectedAppPackage] = useState<string | null>(null);
 
   const isSupported = screenTimeService.isSupported();
 
@@ -98,6 +97,11 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
     if (mins === 0) return `${hrs}h`;
     return `${hrs}h ${mins}m`;
   };
+
+  const selectedApp = useMemo(() => {
+    if (!selectedAppPackage || !data?.apps) return null;
+    return data.apps.find((a) => a.packageName === selectedAppPackage) || null;
+  }, [selectedAppPackage, data?.apps]);
 
   // Categories list derived from apps
   const categories = useMemo(() => {
@@ -151,9 +155,27 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
     }));
   }, [data?.hourlyUsage]);
 
-  // Past 7 Days Chart Data
+  // Past 7 Days Chart Data (all apps or selected app)
   const weeklyChartData = useMemo(() => {
-    if (!data?.past7Days) return [];
+    if (!data?.past7Days || data.past7Days.length === 0) return [];
+
+    if (selectedAppPackage) {
+      return data.past7Days.map((d) => {
+        let appMins = d.appMinutes?.[selectedAppPackage] ?? 0;
+        if (d.isToday && selectedApp) {
+          appMins = selectedApp.durationMinutes;
+        }
+        return {
+          day: d.dayOfWeek,
+          date: d.date,
+          minutes: appMins,
+          formattedTime: formatHoursAndMinutes(appMins),
+          isToday: d.isToday,
+          avg: 0,
+        };
+      });
+    }
+
     return data.past7Days.map((d) => ({
       day: d.dayOfWeek,
       date: d.date,
@@ -162,7 +184,13 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
       isToday: d.isToday,
       avg: data.dailyAverageMinutes,
     }));
-  }, [data?.past7Days, data?.dailyAverageMinutes]);
+  }, [data?.past7Days, data?.dailyAverageMinutes, selectedAppPackage, selectedApp]);
+
+  const weeklyAverageMinutes = useMemo(() => {
+    if (weeklyChartData.length === 0) return 0;
+    const total = weeklyChartData.reduce((acc, curr) => acc + curr.minutes, 0);
+    return Math.round(total / weeklyChartData.length);
+  }, [weeklyChartData]);
 
   // Date Navigator Helpers
   const shiftDate = (days: number) => {
@@ -190,11 +218,11 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
                 Screen Time &amp; App Activity
               </h1>
               <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 border border-violet-200/60 dark:border-violet-900/40">
-                {isSupported ? 'Android UsageStats' : 'Web Preview'}
+                {isSupported ? 'Android' : 'Preview'}
               </span>
             </div>
             <p className="text-xs text-[#787774] dark:text-[#94A3B8]">
-              Device-wide application usage tracked strictly on device with zero cloud telemetry.
+              Track your daily screen time, app activity, and weekly trends.
             </p>
           </div>
         </div>
@@ -437,20 +465,54 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
 
         {/* Chart 2: Past 7 Days Comparison */}
         <div className="p-4 sm:p-5 rounded-2xl bg-[#F7F7F5] dark:bg-[#23324C] border border-[#E5E5E2] dark:border-[#334155] shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-bold text-[#37352F] dark:text-white">
-                Last 7 Days Trend
-              </h2>
-              <p className="text-xs text-[#787774] dark:text-[#94A3B8]">
-                Daily totals compared to your weekly average
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-bold text-[#37352F] dark:text-white truncate">
+                  {selectedApp ? `${selectedApp.appName} — Last 7 Days` : 'Last 7 Days Trend'}
+                </h2>
+                {selectedApp && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300 text-xs font-bold shrink-0">
+                    {selectedApp.appName}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        Sound.click(soundEnabled);
+                        setSelectedAppPackage(null);
+                      }}
+                      className="ml-0.5 hover:opacity-75 cursor-pointer"
+                      title="Clear app filter"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-[#787774] dark:text-[#94A3B8] truncate">
+                {selectedApp
+                  ? `Showing 7-day usage for ${selectedApp.appName}. Click again or "All Apps" to reset.`
+                  : 'Daily totals compared to your weekly average'}
               </p>
             </div>
-            {data?.dailyAverageMinutes ? (
-              <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                Avg: {formatHoursAndMinutes(data.dailyAverageMinutes)}
-              </span>
-            ) : null}
+            <div className="flex items-center gap-2 shrink-0">
+              {weeklyAverageMinutes > 0 ? (
+                <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                  Avg: {formatHoursAndMinutes(weeklyAverageMinutes)}
+                </span>
+              ) : null}
+              {selectedApp && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    Sound.click(soundEnabled);
+                    setSelectedAppPackage(null);
+                  }}
+                  className="text-xs text-violet-600 dark:text-violet-400 font-bold hover:underline cursor-pointer"
+                >
+                  All Apps
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="h-64 w-full">
@@ -479,7 +541,8 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
                             {item.day} ({item.date}) {item.isToday ? '• Today' : ''}
                           </p>
                           <p className="text-violet-600 dark:text-violet-400 font-semibold">
-                            Total: {item.formattedTime}
+                            {selectedApp ? `${selectedApp.appName}: ` : 'Total: '}
+                            {item.formattedTime}
                           </p>
                         </div>
                       );
@@ -487,22 +550,24 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
                     return null;
                   }}
                 />
-                <Bar dataKey="minutes" fill="#6366F1" radius={[6, 6, 0, 0]}>
+                <Bar dataKey="minutes" fill={selectedApp ? '#8B5CF6' : '#6366F1'} radius={[6, 6, 0, 0]}>
                   {weeklyChartData.map((entry, index) => (
                     <Cell
                       key={`bar-${index}`}
-                      fill={entry.isToday ? '#7C3AED' : '#6366F1'}
+                      fill={entry.isToday ? '#7C3AED' : selectedApp ? '#8B5CF6' : '#6366F1'}
                     />
                   ))}
                 </Bar>
-                <Line
-                  type="monotone"
-                  dataKey="avg"
-                  stroke="#F59E0B"
-                  strokeDasharray="4 4"
-                  strokeWidth={2}
-                  dot={false}
-                />
+                {!selectedApp && (
+                  <Line
+                    type="monotone"
+                    dataKey="avg"
+                    stroke="#F59E0B"
+                    strokeDasharray="4 4"
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                )}
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -556,7 +621,7 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
               App-wise Usage Breakdown
             </h2>
             <p className="text-xs text-[#787774] dark:text-[#94A3B8]">
-              Detailed activity durations and session counts for {selectedDate}
+              {selectedAppPackage ? 'Tap selected app again to reset 7-day trend' : 'Tap any app to view its 7-day trend'}
             </p>
           </div>
 
@@ -604,81 +669,98 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
         {/* Apps List Table/Grid */}
         {filteredApps.length > 0 ? (
           <div className="space-y-2">
-            {filteredApps.map((app) => (
-              <div
-                key={app.packageName}
-                className="p-3 rounded-xl bg-white dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155]/60 flex items-center justify-between gap-3 hover:border-violet-300 dark:hover:border-violet-700 transition-all"
-              >
-                {/* Left: Rank, Icon, App Name, Category */}
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="w-5 text-center text-xs font-bold text-gray-400">
-                    #{app.rank}
-                  </span>
+            {filteredApps.map((app) => {
+              const isSelected = selectedAppPackage === app.packageName;
+              return (
+                <div
+                  key={app.packageName}
+                  onClick={() => {
+                    Sound.click(soundEnabled);
+                    setSelectedAppPackage((prev) => (prev === app.packageName ? null : app.packageName));
+                  }}
+                  className={`p-3 rounded-xl border flex items-center justify-between gap-3 cursor-pointer transition-all ${
+                    isSelected
+                      ? 'bg-violet-50 dark:bg-violet-950/40 border-violet-500 dark:border-violet-600 ring-2 ring-violet-500/20'
+                      : 'bg-white dark:bg-[#1E293B] border-[#EDECE9] dark:border-[#334155]/60 hover:border-violet-300 dark:hover:border-violet-700'
+                  }`}
+                  title={isSelected ? 'Click to show all apps' : `Click to view last 7 days for ${app.appName}`}
+                >
+                  {/* Left: Rank, Icon, App Name, Category */}
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="w-5 text-center text-xs font-bold text-gray-400">
+                      #{app.rank}
+                    </span>
 
-                  {app.icon ? (
-                    <img
-                      src={app.icon}
-                      alt={app.appName}
-                      className="w-9 h-9 rounded-xl object-contain shrink-0 border border-gray-100 dark:border-gray-800"
-                    />
-                  ) : (
-                    <div className="w-9 h-9 rounded-xl bg-violet-100 dark:bg-violet-950 flex items-center justify-center font-bold text-violet-700 dark:text-violet-300 text-sm shrink-0">
-                      {app.appName.charAt(0).toUpperCase()}
-                    </div>
-                  )}
-
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-bold text-[#37352F] dark:text-white truncate">
-                        {app.appName}
-                      </h3>
-                      {app.category && (
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
-                          {app.category}
-                        </span>
-                      )}
-                      {app.isSystemApp && (
-                        <span className="text-[10px] font-medium text-gray-400">
-                          System
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] font-mono text-gray-400 truncate">
-                      {app.packageName}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Right: Duration, Percentage bar, Session Count */}
-                <div className="flex items-center gap-4 shrink-0 text-right">
-                  <div className="hidden sm:block text-xs text-gray-500 dark:text-gray-400">
-                    <span className="font-semibold text-gray-700 dark:text-gray-200">
-                      {app.sessionCount}
-                    </span>{' '}
-                    sessions
-                  </div>
-
-                  <div className="w-24 sm:w-36 space-y-1">
-                    <div className="flex items-center justify-between text-xs font-bold">
-                      <span className="text-[#37352F] dark:text-white">
-                        {formatHoursAndMinutes(app.durationMinutes)}
-                      </span>
-                      <span className="text-gray-400 text-[11px]">
-                        {app.percentageOfTotal || 0}%
-                      </span>
-                    </div>
-                    <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-1.5 overflow-hidden">
-                      <div
-                        className="bg-violet-600 dark:bg-violet-400 h-1.5 rounded-full transition-all duration-300"
-                        style={{
-                          width: `${Math.min(100, Math.max(3, app.percentageOfTotal || 0))}%`,
-                        }}
+                    {app.icon ? (
+                      <img
+                        src={app.icon}
+                        alt={app.appName}
+                        className="w-9 h-9 rounded-xl object-contain shrink-0 border border-gray-100 dark:border-gray-800"
                       />
+                    ) : (
+                      <div className="w-9 h-9 rounded-xl bg-violet-100 dark:bg-violet-950 flex items-center justify-center font-bold text-violet-700 dark:text-violet-300 text-sm shrink-0">
+                        {app.appName.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h3 className={`text-sm font-bold truncate ${isSelected ? 'text-violet-700 dark:text-violet-300' : 'text-[#37352F] dark:text-white'}`}>
+                          {app.appName}
+                        </h3>
+                        {isSelected && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-violet-600 text-white shrink-0">
+                            7d active
+                          </span>
+                        )}
+                        {app.category && (
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+                            {app.category}
+                          </span>
+                        )}
+                        {app.isSystemApp && (
+                          <span className="text-[10px] font-medium text-gray-400">
+                            System
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] font-mono text-gray-400 truncate">
+                        {app.packageName}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Right: Duration, Percentage bar, Session Count */}
+                  <div className="flex items-center gap-4 shrink-0 text-right">
+                    <div className="hidden sm:block text-xs text-gray-500 dark:text-gray-400">
+                      <span className="font-semibold text-gray-700 dark:text-gray-200">
+                        {app.sessionCount}
+                      </span>{' '}
+                      sessions
+                    </div>
+
+                    <div className="w-24 sm:w-36 space-y-1">
+                      <div className="flex items-center justify-between text-xs font-bold">
+                        <span className="text-[#37352F] dark:text-white">
+                          {formatHoursAndMinutes(app.durationMinutes)}
+                        </span>
+                        <span className="text-gray-400 text-[11px]">
+                          {app.percentageOfTotal || 0}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className="bg-violet-600 dark:bg-violet-400 h-1.5 rounded-full transition-all duration-300"
+                          style={{
+                            width: `${Math.min(100, Math.max(3, app.percentageOfTotal || 0))}%`,
+                          }}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="p-8 text-center rounded-xl bg-white dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155]/60 space-y-2">
@@ -695,51 +777,6 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
             </p>
           </div>
         )}
-
-        {/* Audit & Formula Verification Diagnostics */}
-        {data?.diagnostics && (
-          <div className="p-4 rounded-xl bg-violet-50/60 dark:bg-violet-950/20 border border-violet-100 dark:border-violet-900/30 text-xs text-gray-700 dark:text-gray-300 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="font-bold text-violet-900 dark:text-violet-300 flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                Formula &amp; Diagnostics Engine
-              </span>
-              <span className="font-mono text-[11px] px-2 py-0.5 rounded-md bg-white dark:bg-[#1E293B] border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300">
-                Mode: {data.diagnostics.calculationMode || 'usageEventsUnion'}
-              </span>
-            </div>
-            <p className="text-[11px] text-gray-600 dark:text-gray-400 leading-relaxed">
-              Total Screen Time uses the <strong>Mathematical Union of Foreground Sessions</strong> on an interactive screen, clipping sessions to midnight boundaries and discarding overlapping Multi-Window/PiP intervals to match Android Digital Wellbeing.
-            </p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 font-mono text-[11px]">
-              <div className="p-2 rounded-lg bg-white/80 dark:bg-[#1E293B]/80 border border-violet-100 dark:border-violet-900/40">
-                <span className="text-gray-400 block text-[10px]">RAW EVENTS</span>
-                <span className="font-bold">{data.diagnostics.rawEventsCount ?? 0}</span>
-              </div>
-              <div className="p-2 rounded-lg bg-white/80 dark:bg-[#1E293B]/80 border border-violet-100 dark:border-violet-900/40">
-                <span className="text-gray-400 block text-[10px]">MERGED INTERVALS</span>
-                <span className="font-bold">{data.diagnostics.mergedIntervalsCount ?? 0}</span>
-              </div>
-              <div className="p-2 rounded-lg bg-white/80 dark:bg-[#1E293B]/80 border border-violet-100 dark:border-violet-900/40">
-                <span className="text-gray-400 block text-[10px]">DUPLICATES DISCARDED</span>
-                <span className="font-bold">{data.diagnostics.duplicatesDiscarded ?? 0}</span>
-              </div>
-              <div className="p-2 rounded-lg bg-white/80 dark:bg-[#1E293B]/80 border border-violet-100 dark:border-violet-900/40">
-                <span className="text-gray-400 block text-[10px]">UNCLOSED SESSIONS CAPPED</span>
-                <span className="font-bold">{data.diagnostics.openSessionsCapped ?? 0}</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Limitations & Privacy Disclaimer */}
-        <div className="pt-3 border-t border-[#EDECE9] dark:border-[#334155]/60 flex items-start gap-2 text-[11px] text-[#787774] dark:text-[#94A3B8]">
-          <Info className="w-3.5 h-3.5 shrink-0 text-gray-400 mt-0.5" />
-          <p className="leading-relaxed">
-            <strong>Privacy &amp; Data Source:</strong> All statistics are queried locally from the Android{' '}
-            <code className="font-mono text-[10px]">UsageStatsManager</code>. No application usage records, durations, or package names are synced to Supabase or any external cloud servers.
-          </p>
-        </div>
       </div>
     </div>
   );

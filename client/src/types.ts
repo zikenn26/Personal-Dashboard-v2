@@ -928,6 +928,7 @@ export interface DailyUsageSummary {
   totalMinutes: number;
   totalMillis: number;
   isToday?: boolean;
+  appMinutes?: Record<string, number>;
 }
 
 export interface PackageReconciliationDiagnostic {

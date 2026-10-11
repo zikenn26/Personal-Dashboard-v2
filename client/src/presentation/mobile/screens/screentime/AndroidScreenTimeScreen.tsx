@@ -2,23 +2,13 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Smartphone,
   Clock,
-  Calendar,
   ChevronLeft,
   ChevronRight,
   RefreshCw,
   ShieldAlert,
-  ShieldCheck,
   Search,
-  Sparkles,
-  Award,
-  Layers,
-  Info,
   TrendingUp,
   BarChart2,
-  ChevronDown,
-  ChevronUp,
-  CheckCircle,
-  AlertTriangle,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -30,7 +20,7 @@ import {
   Cell,
 } from 'recharts';
 import { screenTimeService } from '../../../../services/screenTimeService';
-import { ScreenTimeData, AppUsageItem } from '../../../../types';
+import { ScreenTimeData } from '../../../../types';
 import { nativeService } from '../../../../services/nativeService';
 import { getLocalDateString, shiftLocalDateString } from '../../../../utils/screenTimeCalculator';
 
@@ -48,7 +38,7 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
   });
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
-  const [showDetailedDiagnostics, setShowDetailedDiagnostics] = useState<boolean>(false);
+  const [selectedAppPackage, setSelectedAppPackage] = useState<string | null>(null);
 
   const isSupported = screenTimeService.isSupported();
 
@@ -104,6 +94,11 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
 
   const isTodaySelected = selectedDate === getLocalDateString();
 
+  const selectedApp = useMemo(() => {
+    if (!selectedAppPackage || !data?.apps) return null;
+    return data.apps.find((a) => a.packageName === selectedAppPackage) || null;
+  }, [selectedAppPackage, data?.apps]);
+
   const filteredApps = useMemo(() => {
     if (!data?.apps) return [];
     return data.apps.filter((app) => {
@@ -127,13 +122,34 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
   }, [data?.hourlyUsage]);
 
   const weeklyChartData = useMemo(() => {
-    if (!data?.past7Days) return [];
+    if (!data?.past7Days || data.past7Days.length === 0) return [];
+    
+    if (selectedAppPackage) {
+      return data.past7Days.map((d) => {
+        let appMins = d.appMinutes?.[selectedAppPackage] ?? 0;
+        if (d.isToday && selectedApp) {
+          appMins = selectedApp.durationMinutes;
+        }
+        return {
+          day: d.dayOfWeek,
+          minutes: appMins,
+          isToday: d.isToday,
+        };
+      });
+    }
+
     return data.past7Days.map((d) => ({
       day: d.dayOfWeek,
       minutes: d.totalMinutes,
       isToday: d.isToday,
     }));
-  }, [data?.past7Days]);
+  }, [data?.past7Days, selectedAppPackage, selectedApp]);
+
+  const weeklyAverageMinutes = useMemo(() => {
+    if (weeklyChartData.length === 0) return 0;
+    const total = weeklyChartData.reduce((acc, curr) => acc + curr.minutes, 0);
+    return Math.round(total / weeklyChartData.length);
+  }, [weeklyChartData]);
 
   const categories = useMemo(() => {
     const set = new Set<string>();
@@ -241,7 +257,7 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
           </div>
 
           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/20 text-white">
-            {isSupported ? 'Android OS Stats' : 'Web Preview'}
+            {isSupported ? 'Android' : 'Preview'}
           </span>
         </div>
 
@@ -262,7 +278,7 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
                     ? `+${Math.round(((data.totalMinutes - data.dailyAverageMinutes) / data.dailyAverageMinutes) * 100)}%`
                     : `-${Math.round(((data.dailyAverageMinutes - data.totalMinutes) / data.dailyAverageMinutes) * 100)}%`
                 })`
-              : 'Accurate foreground app activity logged on device'}
+              : 'Daily screen time'}
           </p>
         </div>
 
@@ -331,18 +347,51 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
       {/* Weekly Trend (7 Days) */}
       {weeklyChartData.length > 0 && (
         <div className="p-4 rounded-3xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-              <h3 className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider">
-                Last 7 Days
-              </h3>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <TrendingUp className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <div className="min-w-0 flex items-center gap-1.5">
+                <h3 className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider truncate">
+                  Last 7 Days
+                </h3>
+                {selectedApp && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300 text-[10px] font-bold truncate">
+                    {selectedApp.appName}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void nativeService.triggerHaptic('selection');
+                        setSelectedAppPackage(null);
+                      }}
+                      className="ml-0.5 hover:opacity-70 cursor-pointer"
+                      title="Clear app filter"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                )}
+              </div>
             </div>
-            {data?.dailyAverageMinutes ? (
-              <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400">
-                Avg: {formatHoursAndMinutes(data.dailyAverageMinutes)}
-              </span>
-            ) : null}
+            <div className="flex items-center gap-2 shrink-0">
+              {weeklyAverageMinutes > 0 ? (
+                <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400">
+                  Avg: {formatHoursAndMinutes(weeklyAverageMinutes)}
+                </span>
+              ) : null}
+              {selectedApp && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void nativeService.triggerHaptic('selection');
+                    setSelectedAppPackage(null);
+                  }}
+                  className="text-[10px] text-violet-600 dark:text-violet-400 font-bold hover:underline cursor-pointer"
+                >
+                  All Apps
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="h-32 w-full">
@@ -360,11 +409,30 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
                   axisLine={false}
                   tickLine={false}
                 />
-                <Bar dataKey="minutes" fill="#6366F1" radius={[4, 4, 0, 0]}>
+                <Tooltip
+                  content={({ active, payload }) => {
+                    if (active && payload && payload.length) {
+                      const item = payload[0].payload;
+                      return (
+                        <div className="bg-white dark:bg-[#1E293B] px-2.5 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-md text-xs space-y-0.5">
+                          <p className="font-bold text-gray-900 dark:text-white">
+                            {item.day} {item.isToday ? '• Today' : ''}
+                          </p>
+                          <p className="text-violet-600 dark:text-violet-400 font-semibold text-[11px]">
+                            {selectedApp ? `${selectedApp.appName}: ` : 'Total: '}
+                            {formatHoursAndMinutes(item.minutes)}
+                          </p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
+                <Bar dataKey="minutes" fill={selectedApp ? '#8B5CF6' : '#6366F1'} radius={[4, 4, 0, 0]}>
                   {weeklyChartData.map((entry, index) => (
                     <Cell
                       key={`w-${index}`}
-                      fill={entry.isToday ? '#7C3AED' : '#6366F1'}
+                      fill={entry.isToday ? '#7C3AED' : selectedApp ? '#8B5CF6' : '#6366F1'}
                     />
                   ))}
                 </Bar>
@@ -418,61 +486,83 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
           <h3 className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider">
             All Applications ({filteredApps.length})
           </h3>
+          <span className="text-[10px] text-gray-400">
+            {selectedAppPackage ? 'Tap again to reset' : 'Tap an app to see 7d trend'}
+          </span>
         </div>
 
         {filteredApps.length > 0 ? (
           <div className="space-y-2">
-            {filteredApps.map((app) => (
-              <div
-                key={app.packageName}
-                className="p-3 rounded-2xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs flex items-center justify-between gap-3"
-              >
-                {/* Left: Rank, Icon, App Name, Category */}
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="text-xs font-bold text-gray-400 w-4 text-center">
-                    #{app.rank}
-                  </span>
+            {filteredApps.map((app) => {
+              const isSelected = selectedAppPackage === app.packageName;
+              return (
+                <div
+                  key={app.packageName}
+                  onClick={() => {
+                    void nativeService.triggerHaptic('selection');
+                    setSelectedAppPackage((prev) => (prev === app.packageName ? null : app.packageName));
+                  }}
+                  className={`p-3 rounded-2xl border shadow-2xs flex items-center justify-between gap-3 cursor-pointer transition-all active:scale-[0.99] ${
+                    isSelected
+                      ? 'bg-violet-50 dark:bg-violet-950/40 border-violet-500 dark:border-violet-600 ring-2 ring-violet-500/20'
+                      : 'bg-white dark:bg-[#121826] border-[#E8E5F3] dark:border-[#242D40] hover:border-violet-300 dark:hover:border-violet-800'
+                  }`}
+                  title={isSelected ? 'Click to show all apps' : `Click to view 7-day trend for ${app.appName}`}
+                >
+                  {/* Left: Rank, Icon, App Name, Category */}
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="text-xs font-bold text-gray-400 w-4 text-center">
+                      #{app.rank}
+                    </span>
 
-                  {app.icon ? (
-                    <img
-                      src={app.icon}
-                      alt={app.appName}
-                      className="w-8 h-8 rounded-xl object-contain shrink-0"
-                    />
-                  ) : (
-                    <div className="w-8 h-8 rounded-xl bg-violet-100 dark:bg-violet-950 flex items-center justify-center font-bold text-violet-700 dark:text-violet-300 text-xs shrink-0">
-                      {app.appName.charAt(0).toUpperCase()}
+                    {app.icon ? (
+                      <img
+                        src={app.icon}
+                        alt={app.appName}
+                        className="w-8 h-8 rounded-xl object-contain shrink-0"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-xl bg-violet-100 dark:bg-violet-950 flex items-center justify-center font-bold text-violet-700 dark:text-violet-300 text-xs shrink-0">
+                        {app.appName.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className={`text-xs font-bold truncate ${isSelected ? 'text-violet-700 dark:text-violet-300' : 'text-gray-900 dark:text-white'}`}>
+                          {app.appName}
+                        </p>
+                        {isSelected && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-violet-600 text-white shrink-0">
+                            7d active
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400">
+                        {app.category && <span>{app.category}</span>}
+                        <span>•</span>
+                        <span>{app.sessionCount} sessions</span>
+                      </div>
                     </div>
-                  )}
+                  </div>
 
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold text-gray-900 dark:text-white truncate">
-                      {app.appName}
-                    </p>
-                    <div className="flex items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400">
-                      {app.category && <span>{app.category}</span>}
-                      <span>•</span>
-                      <span>{app.sessionCount} sessions</span>
+                  {/* Right: Duration & Percentage bar */}
+                  <div className="text-right shrink-0 w-24 space-y-1">
+                    <div className="text-xs font-bold text-gray-900 dark:text-white">
+                      {formatHoursAndMinutes(app.durationMinutes)}
+                    </div>
+                    <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className="bg-violet-600 dark:bg-violet-400 h-1.5 rounded-full"
+                        style={{
+                          width: `${Math.min(100, Math.max(4, app.percentageOfTotal || 0))}%`,
+                        }}
+                      />
                     </div>
                   </div>
                 </div>
-
-                {/* Right: Duration & Percentage bar */}
-                <div className="text-right shrink-0 w-24 space-y-1">
-                  <div className="text-xs font-bold text-gray-900 dark:text-white">
-                    {formatHoursAndMinutes(app.durationMinutes)}
-                  </div>
-                  <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-1.5 overflow-hidden">
-                    <div
-                      className="bg-violet-600 dark:bg-violet-400 h-1.5 rounded-full"
-                      style={{
-                        width: `${Math.min(100, Math.max(4, app.percentageOfTotal || 0))}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="p-6 text-center rounded-3xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] space-y-2">
@@ -482,144 +572,13 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
             </p>
             <p className="text-[11px] text-gray-500 dark:text-gray-400">
               {!isSupported
-                ? 'Usage tracking runs natively on Android via UsageStatsManager.'
+                ? 'Usage tracking runs natively on Android.'
                 : data?.granted
-                ? 'No foreground app sessions found for this day.'
+                ? 'No foreground app activity found for this day.'
                 : 'Grant Usage Access in Android Settings to activate.'}
             </p>
           </div>
         )}
-      </div>
-
-      {/* Audit & Formula Diagnostics */}
-      {data?.diagnostics && (
-        <div className="p-3.5 rounded-2xl bg-violet-50/70 dark:bg-violet-950/30 border border-violet-100 dark:border-violet-900/40 text-[11px] space-y-2.5">
-          <div className="flex items-center justify-between">
-            <span className="font-bold text-violet-900 dark:text-violet-300">
-              Verified Formula Engine
-            </span>
-            <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-white dark:bg-[#121826] border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300">
-              {data.diagnostics.calculationMode || 'usageEventsUnion'}
-            </span>
-          </div>
-          <p className="text-gray-600 dark:text-gray-400 text-[10px] leading-relaxed">
-            Non-overlapping mathematical union of active foreground sessions. Overlapping multi-window &amp; PiP intervals merged to match Digital Wellbeing.
-          </p>
-          <div className="grid grid-cols-2 gap-1.5 font-mono text-[10px]">
-            <div className="p-1.5 rounded-lg bg-white/80 dark:bg-[#121826]/80 border border-violet-100 dark:border-violet-900/30">
-              <span className="text-gray-400 block text-[9px]">RAW EVENTS</span>
-              <span className="font-bold text-gray-800 dark:text-gray-200">{data.diagnostics.rawEventsCount ?? 0}</span>
-            </div>
-            <div className="p-1.5 rounded-lg bg-white/80 dark:bg-[#121826]/80 border border-violet-100 dark:border-violet-900/30">
-              <span className="text-gray-400 block text-[9px]">MERGED INTERVALS</span>
-              <span className="font-bold text-gray-800 dark:text-gray-200">{data.diagnostics.mergedIntervalsCount ?? 0}</span>
-            </div>
-            <div className="p-1.5 rounded-lg bg-white/80 dark:bg-[#121826]/80 border border-violet-100 dark:border-violet-900/30">
-              <span className="text-gray-400 block text-[9px]">HOURLY SUM</span>
-              <span className="font-bold text-gray-800 dark:text-gray-200">
-                {formatHoursAndMinutes(Math.round((data.diagnostics.hourlyTotalMillis ?? data.totalMillis) / 60000))}
-              </span>
-            </div>
-            <div className="p-1.5 rounded-lg bg-white/80 dark:bg-[#121826]/80 border border-violet-100 dark:border-violet-900/30">
-              <span className="text-gray-400 block text-[9px]">FINAL TOTAL</span>
-              <span className="font-bold text-gray-800 dark:text-gray-200">
-                {formatHoursAndMinutes(data.totalMinutes)}
-              </span>
-            </div>
-          </div>
-
-          {/* Toggle for Deep Audit & Reconciliation Traceability */}
-          <button
-            type="button"
-            onClick={() => setShowDetailedDiagnostics((prev) => !prev)}
-            className="w-full flex items-center justify-between py-1.5 px-2 rounded-xl bg-violet-100/60 dark:bg-violet-900/40 text-violet-800 dark:text-violet-300 font-bold text-[10px] active:scale-98 transition-all"
-          >
-            <span>Audit Traceability &amp; OS Reconciliation</span>
-            {showDetailedDiagnostics ? (
-              <ChevronUp className="w-3.5 h-3.5" />
-            ) : (
-              <ChevronDown className="w-3.5 h-3.5" />
-            )}
-          </button>
-
-          {showDetailedDiagnostics && (
-            <div className="pt-2 space-y-3 border-t border-violet-200/50 dark:border-violet-800/40">
-              {/* Per-package reconciliation table */}
-              {data.diagnostics.packageReconciliations && data.diagnostics.packageReconciliations.length > 0 && (
-                <div className="space-y-1.5">
-                  <span className="text-[10px] font-bold text-violet-900 dark:text-violet-200 uppercase tracking-wider block">
-                    Per-Package OS Verification ({data.diagnostics.packageReconciliations.length})
-                  </span>
-                  <div className="max-h-56 overflow-y-auto space-y-1 pr-0.5">
-                    {data.diagnostics.packageReconciliations.map((pkg) => (
-                      <div
-                        key={pkg.packageName}
-                        className="p-2 rounded-xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] text-[10px] space-y-1"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-bold text-gray-900 dark:text-white truncate">
-                            {pkg.appName || pkg.packageName}
-                          </span>
-                          <span
-                            className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-bold ${
-                              pkg.reconciliationDecision === 'EXACT_MATCH'
-                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
-                                : pkg.reconciliationDecision === 'EVENT_CONFIRMED'
-                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
-                                : pkg.reconciliationDecision.includes('OS_MISALIGNED')
-                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                                : 'bg-violet-100 text-violet-800 dark:bg-violet-950/60 dark:text-violet-300'
-                            }`}
-                          >
-                            {pkg.reconciliationDecision}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-gray-500 dark:text-gray-400 font-mono text-[9px]">
-                          <span>Events: {formatHoursAndMinutes(Math.round(pkg.eventDurationMillis / 60000))} ({Math.round(pkg.eventDurationMillis / 1000)}s)</span>
-                          <span>OS Aggregate: {formatHoursAndMinutes(Math.round(pkg.osDurationMillis / 60000))} ({Math.round(pkg.osDurationMillis / 1000)}s)</span>
-                        </div>
-                        <p className="text-[9px] text-gray-600 dark:text-gray-300 leading-tight">
-                          {pkg.explanation}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Discarded Intervals list */}
-              {data.diagnostics.discardedIntervals && data.diagnostics.discardedIntervals.length > 0 && (
-                <div className="space-y-1">
-                  <span className="text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider block">
-                    Discarded Out-of-Bounds Intervals ({data.diagnostics.discardedIntervals.length})
-                  </span>
-                  <div className="max-h-28 overflow-y-auto space-y-1">
-                    {data.diagnostics.discardedIntervals.map((d, idx) => (
-                      <div
-                        key={`${d.packageName}-${idx}`}
-                        className="p-1.5 rounded-lg bg-gray-50 dark:bg-gray-900/60 text-[9px] text-gray-600 dark:text-gray-400 space-y-0.5"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono truncate">{d.packageName}</span>
-                          <span className="font-mono text-gray-500">{Math.round(d.durationMillis / 1000)}s</span>
-                        </div>
-                        <p className="text-[8px] text-gray-500">{d.reason}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Limitations note */}
-      <div className="p-3 rounded-2xl bg-gray-50 dark:bg-[#121826]/60 border border-gray-100 dark:border-gray-800 text-[11px] text-gray-500 dark:text-gray-400 flex items-start gap-2">
-        <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-gray-400" />
-        <p className="leading-snug">
-          Screen time is calculated using native Android UsageEvents clipped to local midnight boundaries. Data is stored solely on device and never uploaded to cloud databases.
-        </p>
       </div>
     </div>
   );
