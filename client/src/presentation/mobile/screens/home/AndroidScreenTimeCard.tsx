@@ -94,32 +94,32 @@ export const AndroidScreenTimeCard: React.FC<AndroidScreenTimeCardProps> = ({
           <div className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">
             {isLoading && !data
               ? '...'
-              : data?.granted
-              ? formatHoursAndMinutes(data.totalMinutes)
-              : isSupported
+              : (data?.totalMinutes !== undefined && data.totalMinutes > 0) || data?.granted
+              ? formatHoursAndMinutes(data?.totalMinutes || 0)
+              : screenTimeService.isNativeAndroid()
               ? 'Access Needed'
-              : 'Android Telemetry'}
+              : '0m'}
           </div>
           <p className="text-[11px] text-gray-500 dark:text-gray-400">
-            {data?.granted
+            {data && data.totalMinutes > 0
               ? data.dailyAverageMinutes > 0
                 ? `Daily avg: ${formatHoursAndMinutes(data.dailyAverageMinutes)}`
-                : 'Aggregated from UsageStats'
-              : isSupported
+                : 'Daily screen time'
+              : screenTimeService.isNativeAndroid() && !data?.granted
               ? 'Tap to grant Usage Access'
-              : 'Available in Android APK'}
+              : 'Daily screen time'}
           </p>
         </div>
 
-        {data?.granted && data.totalMinutes > 0 && (
+        {data && data.totalMinutes > 0 && (
           <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-violet-50 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 border border-violet-200/70 dark:border-violet-900/50">
-            {topApps.length} Apps Active
+            {topApps.length > 0 ? `${topApps.length} Apps Active` : data.isNativeAndroid ? 'Live' : 'Synced'}
           </span>
         )}
       </div>
 
       {/* Top Apps List or Permission Action */}
-      {data?.granted && topApps.length > 0 ? (
+      {(data?.granted || (data && data.totalMinutes > 0)) && topApps.length > 0 ? (
         <div className="pt-2 border-t border-gray-100 dark:border-gray-800 space-y-2">
           {topApps.map((app) => (
             <div key={app.packageName} className="flex items-center gap-2.5">
@@ -156,7 +156,7 @@ export const AndroidScreenTimeCard: React.FC<AndroidScreenTimeCardProps> = ({
             </div>
           ))}
         </div>
-      ) : isSupported && !data?.granted ? (
+      ) : screenTimeService.isNativeAndroid() && !data?.granted ? (
         <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-900/40 space-y-2">
           <div className="flex items-start gap-2">
             <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
@@ -180,7 +180,7 @@ export const AndroidScreenTimeCard: React.FC<AndroidScreenTimeCardProps> = ({
       ) : (
         <div className="p-3 rounded-2xl bg-gray-50 dark:bg-[#161D2C] border border-gray-100 dark:border-gray-800 text-xs text-gray-600 dark:text-gray-300">
           <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed">
-            Real screen time is queried on device using Android&apos;s UsageStatsManager.
+            No application activity recorded for today.
           </p>
         </div>
       )}

@@ -50,6 +50,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { SmsExpenseModal } from './components/SmsExpenseModal';
 import { ApiKeySettingsModal } from './components/ApiKeySettingsModal';
 import { smsExpenseService } from './services/smsExpenseService';
+import { screenTimeService } from './services/screenTimeService';
 import { scratchpadWidgetService } from './services/scratchpadWidgetService';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { QuickCaptureBar } from './components/QuickCaptureBar';
@@ -468,6 +469,10 @@ export default function App() {
     setQuotes(Storage.getQuotes());
     setExams(Storage.getExams());
     setSchedule(Storage.getSchedule());
+    const screenTime = Storage.getScreenTimeData();
+    if (screenTime) {
+      screenTimeService.notifyListeners(screenTime);
+    }
     if (playEffects) {
       Sound.success(settings.soundEnabled);
       triggerConfetti();

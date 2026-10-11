@@ -131,15 +131,15 @@ export const ScreenTimeCard: React.FC<ScreenTimeCardProps> = ({
             <span className="text-2xl sm:text-3xl font-extrabold text-[#37352F] dark:text-white tracking-tight">
               {isLoading && !data
                 ? '...'
-                : data?.granted
-                ? formatHoursAndMinutes(data.totalMinutes)
-                : isSupported
+                : (data?.totalMinutes !== undefined && data.totalMinutes > 0) || data?.granted
+                ? formatHoursAndMinutes(data?.totalMinutes || 0)
+                : screenTimeService.isNativeAndroid()
                 ? 'Permission Needed'
-                : 'Android Feature'}
+                : '0m'}
             </span>
-            {data?.granted && data.totalMinutes > 0 && (
+            {data && data.totalMinutes > 0 && (
               <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-md border border-emerald-200/60 dark:border-emerald-900/40">
-                Live Stats
+                {data.isNativeAndroid ? 'Live Stats' : 'Synced'}
               </span>
             )}
           </div>
@@ -195,22 +195,18 @@ export const ScreenTimeCard: React.FC<ScreenTimeCardProps> = ({
             ))}
           </div>
         </div>
-      ) : !isSupported ? (
-        <div className="p-2.5 rounded-xl bg-violet-50/70 dark:bg-violet-950/30 border border-violet-100 dark:border-violet-900/30 text-xs text-[#5F5E5B] dark:text-gray-300 space-y-1">
-          <div className="flex items-center gap-1.5 font-semibold text-violet-700 dark:text-violet-300 text-[11px]">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Android Native UsageStats</span>
-          </div>
-          <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed">
-            Captures device-wide screen time & app activity directly from Android OS without cloud upload.
-          </p>
-        </div>
-      ) : (
+      ) : screenTimeService.isNativeAndroid() && !data?.granted ? (
         <div className="p-2.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-900/40 text-xs text-amber-800 dark:text-amber-300 flex items-center gap-2">
           <ShieldAlert className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
           <span className="text-[11px] leading-tight">
             Tap to grant Usage Access permission in Android Settings.
           </span>
+        </div>
+      ) : (
+        <div className="p-2.5 rounded-xl bg-gray-50/70 dark:bg-gray-900/30 border border-gray-100 dark:border-gray-800 text-xs text-gray-500 dark:text-gray-400">
+          <p className="text-[11px] leading-relaxed">
+            No application usage recorded for today.
+          </p>
         </div>
       )}
     </div>

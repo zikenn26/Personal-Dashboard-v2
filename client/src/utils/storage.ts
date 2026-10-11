@@ -37,6 +37,7 @@ import {
   SmsTransactionLogItem,
   TrashItem,
   TrashModule,
+  ScreenTimeData,
 } from '../types';
 import { STOCK_IMAGES } from '../assets/stockImages';
 import { decryptJson, encryptJson, isEncryptedPayload, EncryptedPayload } from './crypto';
@@ -82,6 +83,8 @@ export const STORAGE_KEYS = {
   DELETED_SHEET_IDS: 'notion_os_v4_deleted_sheet_ids',
   TRASH: 'notion_os_v4_trash',
   SCRATCHPAD: 'lifeos_scratchpad_notes',
+  SCREEN_TIME: 'notion_os_v4_screentime',
+  SCREEN_TIME_HISTORY: 'notion_os_v4_screentime_history',
 };
 
 export const DEFAULT_COMMAND_MAPPINGS: CommandMapping[] = [
@@ -1231,6 +1234,30 @@ export function saveToStorage<T>(baseKey: string, value: T): void {
   }
 }
 
+export function sanitizeScreenTimeForStorage(data: ScreenTimeData): ScreenTimeData {
+  if (!data) return data;
+  const clone = { ...data };
+  if (Array.isArray(clone.apps)) {
+    clone.apps = clone.apps.map((app, idx) => {
+      const clean = { ...app };
+      if (idx >= 5 || (clean.icon && clean.icon.length > 2048)) {
+        delete clean.icon;
+      }
+      return clean;
+    });
+  }
+  if (Array.isArray(clone.topApps)) {
+    clone.topApps = clone.topApps.map((app, idx) => {
+      const clean = { ...app };
+      if (idx >= 5 || (clean.icon && clean.icon.length > 2048)) {
+        delete clean.icon;
+      }
+      return clean;
+    });
+  }
+  return clone;
+}
+
 // Concrete Loaders & Getters
 export const Storage = {
   getTodos: (): TodoItem[] => loadFromStorage(STORAGE_KEYS.TODOS, INITIAL_TODOS),
@@ -2096,6 +2123,84 @@ export const Storage = {
     }
   },
 
+  sanitizeScreenTime: (data: ScreenTimeData): ScreenTimeData => {
+    return sanitizeScreenTimeForStorage(data);
+  },
+
+  getScreenTimeData: (): ScreenTimeData | null => {
+    return loadFromStorage<ScreenTimeData | null>(STORAGE_KEYS.SCREEN_TIME, null);
+  },
+  setScreenTimeData: (data: ScreenTimeData): void => {
+    try {
+      const sanitized = sanitizeScreenTimeForStorage(data);
+      saveToStorage(STORAGE_KEYS.SCREEN_TIME, sanitized);
+      if (sanitized?.date) {
+        const history = Storage.getScreenTimeHistory();
+        history[sanitized.date] = sanitized;
+        saveToStorage(STORAGE_KEYS.SCREEN_TIME_HISTORY, history);
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('screentime-updated', { detail: { data: sanitized } }));
+        window.dispatchEvent(new CustomEvent('dashboard-data-updated', { detail: { module: 'screentime' } }));
+      }
+    } catch (e) {
+      console.error('Failed to persist screen time:', e);
+    }
+  },
+  getDailyScreenTime: (date: string): ScreenTimeData | null => {
+    const history = Storage.getScreenTimeHistory();
+    if (history[date]) return history[date];
+    const latest = Storage.getScreenTimeData();
+    if (latest && latest.date === date) return latest;
+    if (latest && Array.isArray(latest.past7Days)) {
+      const match = latest.past7Days.find((d) => d.date === date);
+      if (match) {
+        return {
+          ...latest,
+          date,
+          formattedDate: date,
+          totalMinutes: match.totalMinutes,
+          totalMillis: match.totalMillis,
+          hasData: true,
+          granted: true,
+        };
+      }
+    }
+    return null;
+  },
+  setDailyScreenTime: (date: string, data: ScreenTimeData): void => {
+    try {
+      const sanitized = sanitizeScreenTimeForStorage(data);
+      const history = Storage.getScreenTimeHistory();
+      history[date] = sanitized;
+      saveToStorage(STORAGE_KEYS.SCREEN_TIME_HISTORY, history);
+      saveToStorage(STORAGE_KEYS.SCREEN_TIME, sanitized);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('screentime-updated', { detail: { data: sanitized } }));
+        window.dispatchEvent(new CustomEvent('dashboard-data-updated', { detail: { module: 'screentime' } }));
+      }
+    } catch (e) {
+      console.error('Failed to persist daily screen time:', e);
+    }
+  },
+  getScreenTimeHistory: (): Record<string, ScreenTimeData> => {
+    return loadFromStorage<Record<string, ScreenTimeData>>(STORAGE_KEYS.SCREEN_TIME_HISTORY, {});
+  },
+  setScreenTimeHistory: (history: Record<string, ScreenTimeData>): void => {
+    try {
+      const sanitizedHistory: Record<string, ScreenTimeData> = {};
+      Object.entries(history || {}).forEach(([k, v]) => {
+        if (v) sanitizedHistory[k] = sanitizeScreenTimeForStorage(v);
+      });
+      saveToStorage(STORAGE_KEYS.SCREEN_TIME_HISTORY, sanitizedHistory);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('screentime-history-updated', { detail: { history: sanitizedHistory } }));
+      }
+    } catch (e) {
+      console.error('Failed to persist screen time history:', e);
+    }
+  },
+
   getAllDataPayload: () => {
     return {
       version: '4.0.0',
@@ -2107,6 +2212,8 @@ export const Storage = {
       habitActiveWeek: Storage.getHabitActiveWeek(),
       habitActivities: Storage.getHabitActivities(),
       scratchpad: Storage.getScratchpad(),
+      screenTime: Storage.getScreenTimeData(),
+      screenTimeHistory: Storage.getScreenTimeHistory(),
       goals: Storage.getGoals(),
       vaultEncrypted: Storage.getEncryptedVaultBackup(),
       expenses: Storage.getExpenses(),
@@ -2141,7 +2248,7 @@ export const Storage = {
         'expenses', 'excelImportLogs', 'deletedSheetIds', 'journal', 'media', 'achievements', 'doodles',
         'timeline', 'projects', 'skills', 'settings', 'sections',
         'photos', 'resume', 'quotes', 'exams', 'schedule', 'version', 'activeAlarm', 'alarmSnoozeInterval',
-        'commandMappings', 'trash', 'scratchpad'
+        'commandMappings', 'trash', 'scratchpad', 'screenTime', 'screenTimeHistory'
       ];
       const hasKnownKey = knownKeys.some((k) => k in data && data[k] !== undefined);
       if (!hasKnownKey) return false;
@@ -2452,6 +2559,12 @@ export const Storage = {
       }
       if (Array.isArray(data.commandMappings)) {
         Storage.setCommandMappings(data.commandMappings);
+      }
+      if (data.screenTime && typeof data.screenTime === 'object') {
+        Storage.setScreenTimeData(data.screenTime);
+      }
+      if (data.screenTimeHistory && typeof data.screenTimeHistory === 'object') {
+        Storage.setScreenTimeHistory(data.screenTimeHistory);
       }
       return true;
     } catch (err) {

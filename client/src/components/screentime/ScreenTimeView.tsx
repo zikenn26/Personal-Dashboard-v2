@@ -218,7 +218,7 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
                 Screen Time &amp; App Activity
               </h1>
               <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 border border-violet-200/60 dark:border-violet-900/40">
-                {isSupported ? 'Android' : 'Preview'}
+                {data?.isNativeAndroid ? 'Android' : 'Synced'}
               </span>
             </div>
             <p className="text-xs text-[#787774] dark:text-[#94A3B8]">
@@ -269,33 +269,8 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
         </div>
       </div>
 
-      {/* Web or Permission Banner */}
-      {!isSupported ? (
-        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-violet-50 via-indigo-50/50 to-purple-50 dark:from-violet-950/30 dark:via-indigo-950/20 dark:to-purple-950/30 border border-violet-200/80 dark:border-violet-900/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className="w-9 h-9 rounded-xl bg-violet-600 text-white flex items-center justify-center shrink-0 mt-0.5">
-              <Sparkles className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-violet-950 dark:text-violet-200">
-                Native Android Feature Available
-              </h3>
-              <p className="text-xs text-violet-800/80 dark:text-violet-300/80 mt-0.5 leading-relaxed max-w-3xl">
-                Device-wide screen time uses Android&apos;s native{' '}
-                <code className="bg-violet-200/60 dark:bg-violet-900/60 px-1 py-0.5 rounded font-mono text-[11px]">
-                  UsageStatsManager
-                </code>{' '}
-                API. In web browsers, security sandbox barriers prevent web pages from querying other installed desktop applications. Run the Android build on a device or emulator to see live app metrics.
-              </p>
-            </div>
-          </div>
-          <div className="shrink-0 flex items-center gap-2">
-            <span className="text-xs font-semibold text-violet-700 dark:text-violet-300 bg-white dark:bg-[#1E293B] px-3 py-1.5 rounded-xl border border-violet-200 dark:border-violet-800">
-              Zero Mock Data Fabricated
-            </span>
-          </div>
-        </div>
-      ) : !data?.granted ? (
+      {/* Permission Banner (Native Android only) */}
+      {screenTimeService.isNativeAndroid() && !data?.granted ? (
         <div className="p-4 sm:p-5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-start gap-3">
             <div className="w-9 h-9 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0 mt-0.5">
@@ -306,7 +281,7 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
                 Usage Access Permission Required
               </h3>
               <p className="text-xs text-amber-800 dark:text-amber-300 mt-0.5 leading-relaxed max-w-2xl">
-                Android requires explicit user approval under <strong>Settings &gt; Apps &gt; Special App Access &gt; Usage Access</strong> to allow Personal Dashboard to read foreground and background app transitions.
+                Android requires explicit user approval under <strong>Settings &gt; Apps &gt; Special App Access &gt; Usage Access</strong> to read foreground app metrics.
               </p>
             </div>
           </div>
@@ -330,7 +305,13 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
           </div>
           <div className="my-2">
             <div className="text-3xl font-extrabold text-[#37352F] dark:text-white tracking-tight">
-              {data?.granted ? formatHoursAndMinutes(data.totalMinutes) : isSupported ? 'Locked' : '0m'}
+              {isLoading && !data
+                ? '...'
+                : (data?.totalMinutes !== undefined && data.totalMinutes > 0) || data?.granted
+                ? formatHoursAndMinutes(data?.totalMinutes || 0)
+                : screenTimeService.isNativeAndroid()
+                ? 'Locked'
+                : '0m'}
             </div>
           </div>
           <div className="text-[11px] text-[#787774] dark:text-[#94A3B8] flex items-center justify-between">
@@ -769,11 +750,11 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
               No Application Usage Recorded
             </h3>
             <p className="text-xs text-gray-500 dark:text-gray-400 max-w-md mx-auto">
-              {!isSupported
-                ? 'Device-wide app usage is queried via Android OS UsageStatsManager. Run the app on an Android device to view genuine screen time.'
-                : data?.granted
+              {data?.granted
                 ? 'No foreground app activity was found for this specific date range.'
-                : 'Grant Usage Access permission to view daily statistics.'}
+                : screenTimeService.isNativeAndroid()
+                ? 'Grant Usage Access permission to view daily statistics.'
+                : 'No application usage recorded.'}
             </p>
           </div>
         )}

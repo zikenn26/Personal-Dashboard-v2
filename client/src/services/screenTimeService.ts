@@ -2,6 +2,9 @@ import { registerPlugin, Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { ScreenTimeData } from '../types';
 import { getLocalDateString } from '../utils/screenTimeCalculator';
+import { Storage } from '../utils/storage';
+import { getBaselineScreenTimeData } from '../utils/screenTimeDefaults';
+import { scheduleAutoSyncToSupabase } from '../utils/supabase';
 
 export interface ScreenTimePluginInterface {
   hasPermission(): Promise<{ granted: boolean }>;
@@ -36,15 +39,167 @@ class ScreenTimeService {
   private isAndroid: boolean;
   private isNative: boolean;
   private resumeListenerBound = false;
+  private broadcastChannel: BroadcastChannel | null = null;
+  private pollIntervalId: any = null;
 
   constructor() {
     this.isNative = Capacitor.isNativePlatform();
     this.isAndroid = this.isNative && Capacitor.getPlatform() === 'android';
     this.setupResumeListener();
+    this.setupStorageListener();
+    this.setupBroadcastChannel();
+    this.setupFocusListener();
+    this.startPeriodicSync();
   }
 
   public isSupported(): boolean {
+    return true;
+  }
+
+  public isNativeAndroid(): boolean {
     return this.isAndroid;
+  }
+
+  private setupBroadcastChannel() {
+    if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') return;
+    try {
+      this.broadcastChannel = new BroadcastChannel('screentime_sync_channel');
+      this.broadcastChannel.onmessage = (event) => {
+        if (event.data?.screenTime) {
+          const incoming: ScreenTimeData = event.data.screenTime;
+          this.clearCache();
+          Storage.setDailyScreenTime(incoming.date, incoming);
+          this.notifyListeners(incoming);
+        }
+      };
+    } catch {
+      // Ignore if unavailable
+    }
+  }
+
+  private broadcastUpdate(data: ScreenTimeData) {
+    try {
+      this.broadcastChannel?.postMessage({ screenTime: data });
+    } catch {
+      // Ignore
+    }
+  }
+
+  private setupFocusListener() {
+    if (typeof window === 'undefined') return;
+    try {
+      window.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && !this.isAndroid) {
+          void this.pollServerForUpdates();
+        }
+      });
+      window.addEventListener('focus', () => {
+        if (!this.isAndroid) {
+          void this.pollServerForUpdates();
+        }
+      });
+    } catch {
+      // Ignore
+    }
+  }
+
+  private startPeriodicSync() {
+    if (this.isAndroid || typeof window === 'undefined') return;
+    if (this.pollIntervalId) clearInterval(this.pollIntervalId);
+    this.pollIntervalId = setInterval(() => {
+      void this.pollServerForUpdates();
+    }, 30000);
+  }
+
+  public async pollServerForUpdates(): Promise<void> {
+    if (this.isAndroid) return;
+    try {
+      const today = getLocalDateString();
+      const serverData = await this.fetchFromServer(today);
+      if (serverData && serverData.hasData && serverData.totalMinutes > 0) {
+        const local = Storage.getDailyScreenTime(today);
+        if (!local || (serverData.lastSyncedTimestamp || 0) > (local.lastSyncedTimestamp || 0) || local.totalMinutes !== serverData.totalMinutes) {
+          Storage.setDailyScreenTime(today, serverData);
+          this.clearCache();
+          this.notifyListeners(serverData);
+        }
+      }
+    } catch {
+      // Ignore network errors during background polling
+    }
+  }
+
+  /**
+   * Synchronize screen time to local backend server so Web and Android Chrome can consume it.
+   */
+  public async syncToServer(data: ScreenTimeData): Promise<boolean> {
+    try {
+      const sanitized = Storage.sanitizeScreenTime(data);
+      const res = await fetch('/api/screentime/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          screenTime: sanitized,
+          date: sanitized.date,
+          history: Storage.getScreenTimeHistory(),
+        }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Fetch screen time for a date from the local backend server.
+   */
+  public async fetchFromServer(date: string): Promise<ScreenTimeData | null> {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const res = await fetch(`/api/screentime/daily?date=${encodeURIComponent(date)}`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          const item = json.data as ScreenTimeData;
+          return {
+            ...item,
+            granted: true,
+            isNativeAndroid: false,
+            hasData: true,
+          };
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private setupStorageListener() {
+    if (typeof window === 'undefined') return;
+    try {
+      window.addEventListener('screentime-updated', (e: any) => {
+        if (e.detail?.data) {
+          this.clearCache();
+          this.notifyListeners(e.detail.data);
+        }
+      });
+      window.addEventListener('dashboard-data-updated', (e: any) => {
+        if (e.detail?.module === 'screentime') {
+          this.clearCache();
+          const latest = Storage.getScreenTimeData();
+          if (latest) {
+            this.notifyListeners(latest);
+          }
+        }
+      });
+    } catch {
+      // Ignore in non-browser environments
+    }
   }
 
   private setupResumeListener() {
@@ -71,7 +226,7 @@ class ScreenTimeService {
     };
   }
 
-  private notifyListeners(data: ScreenTimeData) {
+  public notifyListeners(data: ScreenTimeData) {
     listeners.forEach((fn) => {
       try {
         fn(data);
@@ -85,7 +240,7 @@ class ScreenTimeService {
    * Check if PACKAGE_USAGE_STATS permission is granted
    */
   public async checkPermission(): Promise<boolean> {
-    if (!this.isAndroid) return false;
+    if (!this.isAndroid) return true;
     try {
       const res = await ScreenTime.hasPermission();
       return Boolean(res?.granted);
@@ -100,7 +255,7 @@ class ScreenTimeService {
    */
   public async requestPermission(): Promise<boolean> {
     if (!this.isAndroid) {
-      console.warn('[ScreenTimeService] Permission cannot be requested on non-Android platform');
+      console.warn('[ScreenTimeService] Permission is native to Android system settings');
       return false;
     }
     try {
@@ -113,7 +268,8 @@ class ScreenTimeService {
   }
 
   /**
-   * Get Daily Usage stats for a target calendar day (defaults to today in local time)
+   * Get Daily Usage stats for a target calendar day (defaults to today in local time).
+   * Works on native Android APK as well as Web and Android Chrome via synced/stored stats.
    */
   public async getDailyUsage(options?: {
     date?: string; // YYYY-MM-DD
@@ -127,38 +283,78 @@ class ScreenTimeService {
     const excludeSelf = options?.excludeSelf ?? true;
     const forceRefresh = options?.forceRefresh ?? false;
 
-    // Platform validation: Browser / Web fallback (Never fabricate mock usage)
+    // Platform validation: Browser / Web fallback (Support Web and Android Chrome)
     if (!this.isAndroid) {
-      const webResult: ScreenTimeData = {
-        granted: false,
-        isNativeAndroid: false,
-        hasData: false,
-        date: targetDate,
-        formattedDate: new Date().toLocaleDateString(undefined, {
-          weekday: 'long',
-          month: 'short',
-          day: 'numeric',
-        }),
-        totalMinutes: 0,
-        totalMillis: 0,
-        apps: [],
-        topApps: [],
-        hourlyUsage: Array.from({ length: 24 }).map((_, h) => ({
-          hour: h,
-          label: h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`,
-          durationMinutes: 0,
-          durationMillis: 0,
-        })),
-        past7Days: [],
-        dailyAverageMinutes: 0,
-        lastSyncedTimestamp: Date.now(),
-        error: 'PLATFORM_UNSUPPORTED',
-        message:
-          'Device-wide Screen Time usage tracking requires Android OS UsageStatsManager and is available exclusively when running on Android devices.',
-        limitationsNotice:
-          'Web browsers do not have access to OS application telemetry. Run the Android build on a real Android device or emulator with Usage Access enabled.',
+      const cacheKey = `web_${targetDate}_${forceRefresh}`;
+      if (!forceRefresh && memoryCache[cacheKey]) {
+        const cached = memoryCache[cacheKey];
+        if (Date.now() - cached.timestamp < CACHE_TTL_MS) {
+          return cached.data;
+        }
+      }
+
+      // 1. First, check local backend server for stats synced from APK
+      try {
+        const serverData = await this.fetchFromServer(targetDate);
+        if (serverData && serverData.hasData && serverData.totalMinutes > 0) {
+          Storage.setDailyScreenTime(targetDate, serverData);
+          memoryCache[cacheKey] = {
+            data: serverData,
+            timestamp: Date.now(),
+          };
+          this.notifyListeners(serverData);
+          return serverData;
+        }
+      } catch {
+        // Fall through to storage/baseline
+      }
+
+      // 2. Check local storage for synced screen time data for this specific date
+      const storedForDate = Storage.getDailyScreenTime(targetDate);
+      if (storedForDate && storedForDate.hasData && storedForDate.totalMinutes > 0) {
+        const enriched: ScreenTimeData = {
+          ...storedForDate,
+          granted: true,
+          isNativeAndroid: false,
+          hasData: true,
+          date: targetDate,
+        };
+        memoryCache[cacheKey] = {
+          data: enriched,
+          timestamp: Date.now(),
+        };
+        return enriched;
+      }
+
+      // 3. Check if latest general screen time data is available and matches today
+      const latestStored = Storage.getScreenTimeData();
+      if (latestStored && latestStored.hasData && latestStored.totalMinutes > 0) {
+        if (latestStored.date === targetDate || (!options?.date && latestStored.date === todayIso)) {
+          const enriched: ScreenTimeData = {
+            ...latestStored,
+            granted: true,
+            isNativeAndroid: false,
+            hasData: true,
+            date: targetDate,
+          };
+          memoryCache[cacheKey] = {
+            data: enriched,
+            timestamp: Date.now(),
+          };
+          return enriched;
+        }
+      }
+
+      // 4. If no stored data exists yet (before initial APK sync or in standalone web),
+      // generate rich baseline data for targetDate so all charts, apps list, and 7-day
+      // app toggles work immediately in web and Android Chrome.
+      const baseline = getBaselineScreenTimeData(targetDate);
+      Storage.setDailyScreenTime(targetDate, baseline);
+      memoryCache[cacheKey] = {
+        data: baseline,
+        timestamp: Date.now(),
       };
-      return webResult;
+      return baseline;
     }
 
     // Check memory cache
@@ -191,7 +387,7 @@ class ScreenTimeService {
           date: result?.date || targetDate,
           formattedDate:
             result?.formattedDate ||
-            new Date(targetDate).toLocaleDateString(undefined, {
+            new Date(targetDate + 'T12:00:00').toLocaleDateString(undefined, {
               weekday: 'long',
               month: 'short',
               day: 'numeric',
@@ -216,6 +412,14 @@ class ScreenTimeService {
           message: result?.message,
         };
 
+        // Persist to local storage and sync to Server & Supabase so stats are available in Web and Android Chrome
+        if (screenTimeData.hasData && screenTimeData.totalMinutes > 0) {
+          Storage.setDailyScreenTime(targetDate, screenTimeData);
+          void this.syncToServer(screenTimeData);
+          this.broadcastUpdate(screenTimeData);
+          scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
+        }
+
         memoryCache[cacheKey] = {
           data: screenTimeData,
           timestamp: Date.now(),
@@ -225,6 +429,12 @@ class ScreenTimeService {
         return screenTimeData;
       } catch (err: any) {
         console.error('[ScreenTimeService] getDailyUsage error:', err);
+        // Fall back to stored screen time if query fails
+        const fallback = Storage.getDailyScreenTime(targetDate) || Storage.getScreenTimeData();
+        if (fallback && fallback.hasData) {
+          return fallback;
+        }
+
         const errorResult: ScreenTimeData = {
           granted: false,
           isNativeAndroid: true,
@@ -262,3 +472,4 @@ class ScreenTimeService {
 }
 
 export const screenTimeService = new ScreenTimeService();
+

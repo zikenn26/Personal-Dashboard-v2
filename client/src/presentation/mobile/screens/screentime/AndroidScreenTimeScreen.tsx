@@ -219,7 +219,7 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
       </div>
 
       {/* Permission Alert Banner */}
-      {isSupported && !data?.granted && (
+      {screenTimeService.isNativeAndroid() && !data?.granted && (
         <div className="p-4 rounded-3xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/70 dark:border-amber-900/40 space-y-3">
           <div className="flex items-start gap-3">
             <div className="w-8 h-8 rounded-2xl bg-amber-600 text-white flex items-center justify-center shrink-0">
@@ -257,7 +257,7 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
           </div>
 
           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/20 text-white">
-            {isSupported ? 'Android' : 'Preview'}
+            {data?.isNativeAndroid ? 'Android' : 'Synced'}
           </span>
         </div>
 
@@ -265,9 +265,9 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
           <div className="text-4xl font-black tracking-tight">
             {isLoading && !data
               ? '...'
-              : data?.granted
-              ? formatHoursAndMinutes(data.totalMinutes)
-              : isSupported
+              : (data?.totalMinutes !== undefined && data.totalMinutes > 0) || data?.granted
+              ? formatHoursAndMinutes(data?.totalMinutes || 0)
+              : screenTimeService.isNativeAndroid()
               ? 'Permission Needed'
               : '0m'}
           </div>

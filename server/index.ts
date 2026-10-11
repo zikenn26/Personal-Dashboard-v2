@@ -3,6 +3,7 @@ import { createServer } from "http";
 import path from "path";
 import { fileURLToPath } from "url";
 import { registerGeminiRoutes, setupGeminiLiveWebSocket } from "./geminiService.js";
+import { registerScreenTimeRoutes } from "./screenTimeService.js";
 import { rateLimit, requireAuthForServerKeyUsage } from "./security.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -56,6 +57,9 @@ async function startServer() {
 
   // Register Gemini Chat, Commands, TTS and Health routes on /api/gemini/*
   registerGeminiRoutes(app);
+
+  // Register Screen Time sync, daily, and history routes on /api/screentime/*
+  registerScreenTimeRoutes(app);
 
   // Baseline rate limiting on every API route to blunt abuse/DoS attempts
   app.use("/api/", rateLimit({ windowMs: 60_000, max: 60, keyPrefix: "api" }));
