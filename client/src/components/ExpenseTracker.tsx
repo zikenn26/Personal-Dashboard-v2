@@ -1413,28 +1413,12 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   return (
     <div id="spending-view-root" className="space-y-6 max-w-7xl mx-auto pb-16">
       {/* ========================================================================= */}
-      {/* 1. TOP BREADCRUMB & ACTION BUTTONS (Exact Match to Screenshot)            */}
+      {/* 1. TOP TITLE & ACTION BUTTONS                                             */}
       {/* ========================================================================= */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        {/* Left: Breadcrumbs ← Home / Today • Money & Spending 236 */}
+        {/* Left: Expense Section Title & Count Badge */}
         <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-gray-500 dark:text-gray-400">
-          <button
-            type="button"
-            onClick={() => onNavigate?.('home')}
-            className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-200 transition-colors cursor-pointer"
-            title="Go to Home / Today"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => onNavigate?.('home')}
-            className="hover:text-purple-600 dark:hover:text-purple-400 cursor-pointer transition-colors"
-          >
-            Home / Today
-          </button>
-          <span className="text-gray-300 dark:text-gray-600">•</span>
-          <span className="text-gray-900 dark:text-white font-bold">
+          <span className="text-gray-900 dark:text-white font-bold text-base sm:text-lg">
             Expense
           </span>
           <span className="px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 font-extrabold text-xs">

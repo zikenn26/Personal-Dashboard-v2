@@ -17,6 +17,10 @@ android {
         }
     }
     signingConfigs {
+        debug {
+            v1SigningEnabled true
+            v2SigningEnabled true
+        }
         release {
             if (file('release-key.jks').exists()) {
                 storeFile file('release-key.jks')
@@ -27,17 +31,27 @@ android {
                     storePassword sPassword
                     keyAlias kAlias
                     keyPassword kPassword
+                    v1SigningEnabled true
+                    v2SigningEnabled true
                 }
+            } else {
+                // When release-key.jks is not present, fall back to debug signing configuration.
+                // This guarantees standalone shareable APKs (shared via WhatsApp, Files, etc.)
+                // are always properly signed with v1 & v2 signatures and avoid "App not installed" errors.
+                initWith(signingConfigs.debug)
+                v1SigningEnabled true
+                v2SigningEnabled true
             }
         }
     }
     buildTypes {
         release {
-            if (file('release-key.jks').exists()) {
-                signingConfig signingConfigs.release
-            }
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            signingConfig signingConfigs.debug
         }
     }
 }
