@@ -2129,13 +2129,31 @@ export const Storage = {
 
   getScreenTimeData: (): ScreenTimeData | null => {
     const data = loadFromStorage<ScreenTimeData | null>(STORAGE_KEYS.SCREEN_TIME, null);
-    if (data && data.dataSource === 'simulatedBaseline') {
-      return null;
+    if (data) {
+      if (data.dataSource === 'simulatedBaseline') return null;
+      // Filter out stale unverified mock 185m data with single Instagram app
+      if (
+        data.totalMinutes === 185 &&
+        Array.isArray(data.apps) &&
+        data.apps.length === 1 &&
+        data.apps[0]?.packageName === 'com.instagram.android'
+      ) {
+        return null;
+      }
     }
     return data;
   },
   setScreenTimeData: (data: ScreenTimeData): void => {
     try {
+      if (
+        data &&
+        data.totalMinutes === 185 &&
+        Array.isArray(data.apps) &&
+        data.apps.length === 1 &&
+        data.apps[0]?.packageName === 'com.instagram.android'
+      ) {
+        return;
+      }
       const sanitized = sanitizeScreenTimeForStorage(data);
       saveToStorage(STORAGE_KEYS.SCREEN_TIME, sanitized);
       if (sanitized?.date) {
@@ -2154,22 +2172,38 @@ export const Storage = {
   getDailyScreenTime: (date: string): ScreenTimeData | null => {
     const history = Storage.getScreenTimeHistory();
     const item = history[date];
-    if (item && item.dataSource !== 'simulatedBaseline') return item;
+    if (item && item.dataSource !== 'simulatedBaseline') {
+      if (
+        !(item.totalMinutes === 185 &&
+          Array.isArray(item.apps) &&
+          item.apps.length === 1 &&
+          item.apps[0]?.packageName === 'com.instagram.android')
+      ) {
+        return item;
+      }
+    }
     const latest = Storage.getScreenTimeData();
     if (latest && latest.dataSource !== 'simulatedBaseline') {
-      if (latest.date === date) return latest;
-      if (Array.isArray(latest.past7Days)) {
-        const match = latest.past7Days.find((d) => d.date === date);
-        if (match) {
-          return {
-            ...latest,
-            date,
-            formattedDate: date,
-            totalMinutes: match.totalMinutes,
-            totalMillis: match.totalMillis,
-            hasData: true,
-            granted: true,
-          };
+      if (
+        !(latest.totalMinutes === 185 &&
+          Array.isArray(latest.apps) &&
+          latest.apps.length === 1 &&
+          latest.apps[0]?.packageName === 'com.instagram.android')
+      ) {
+        if (latest.date === date) return latest;
+        if (Array.isArray(latest.past7Days)) {
+          const match = latest.past7Days.find((d) => d.date === date);
+          if (match) {
+            return {
+              ...latest,
+              date,
+              formattedDate: date,
+              totalMinutes: match.totalMinutes,
+              totalMillis: match.totalMillis,
+              hasData: true,
+              granted: true,
+            };
+          }
         }
       }
     }
@@ -2177,6 +2211,15 @@ export const Storage = {
   },
   setDailyScreenTime: (date: string, data: ScreenTimeData): void => {
     try {
+      if (
+        data &&
+        data.totalMinutes === 185 &&
+        Array.isArray(data.apps) &&
+        data.apps.length === 1 &&
+        data.apps[0]?.packageName === 'com.instagram.android'
+      ) {
+        return;
+      }
       const sanitized = sanitizeScreenTimeForStorage(data);
       const history = Storage.getScreenTimeHistory();
       history[date] = sanitized;

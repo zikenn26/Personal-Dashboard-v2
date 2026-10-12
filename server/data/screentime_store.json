@@ -1,31 +1,5 @@
 {
-  "latest": {
-    "date": "2026-10-12",
-    "hasData": true,
-    "totalMinutes": 185,
-    "apps": [
-      {
-        "packageName": "com.instagram.android",
-        "appName": "Instagram",
-        "durationMinutes": 95
-      }
-    ],
-    "lastSyncedTimestamp": 1791788619572
-  },
-  "history": {
-    "2026-10-12": {
-      "date": "2026-10-12",
-      "hasData": true,
-      "totalMinutes": 185,
-      "apps": [
-        {
-          "packageName": "com.instagram.android",
-          "appName": "Instagram",
-          "durationMinutes": 95
-        }
-      ],
-      "lastSyncedTimestamp": 1791788619572
-    }
-  },
-  "lastSyncedTimestamp": 1791788619572
+  "latest": null,
+  "history": {},
+  "lastSyncedTimestamp": 0
 }

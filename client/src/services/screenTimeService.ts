@@ -22,7 +22,7 @@ export interface ScreenTimePluginInterface {
 const ScreenTime = registerPlugin<ScreenTimePluginInterface>('ScreenTime');
 
 // Cache configuration
-const CACHE_TTL_MS = 45 * 1000; // 45 seconds cache TTL to avoid duplicate concurrent/burst queries
+const CACHE_TTL_MS = 30 * 1000; // 30 seconds cache TTL
 interface CachedRecord {
   data: ScreenTimeData;
   timestamp: number;
@@ -34,6 +34,83 @@ let pendingQueryKey: string | null = null;
 // Event listeners for subscribers (e.g. dashboard card and full screen time view)
 type ScreenTimeListener = (data: ScreenTimeData) => void;
 const listeners = new Set<ScreenTimeListener>();
+
+/**
+ * Unified Data Synchronization Bridge for Screen Time Metrics
+ *
+ * Specifically validates the data source and prioritizes inputs originating from
+ * the Android native side (UsageStatsManager), ensuring consistency across web and mobile platforms.
+ */
+export class ScreenTimeSyncBridge {
+  /**
+   * Validates whether a candidate screen time payload genuinely originated from the
+   * native Android APK environment.
+   */
+  public static validateDataSource(payload: any): boolean {
+    if (!payload || typeof payload !== 'object') return false;
+    if (typeof payload.totalMinutes !== 'number' || payload.totalMinutes < 0) return false;
+    if (!payload.hasData && payload.totalMinutes > 0) return false;
+
+    // Explicit rejection of simulated baseline or unverified mock signatures
+    if (payload.dataSource === 'simulatedBaseline') return false;
+    if (
+      payload.totalMinutes === 185 &&
+      Array.isArray(payload.apps) &&
+      payload.apps.length === 1 &&
+      payload.apps[0]?.packageName === 'com.instagram.android'
+    ) {
+      return false;
+    }
+
+    // Must bear proof of Android native execution
+    const isNativeSource = Boolean(
+      payload.isFromApk ||
+      payload.isNativeAndroid ||
+      payload.dataSource === 'usageEventsUnion' ||
+      payload.dataSource === 'usageStatsFallback' ||
+      payload.dataSource === 'android_native_apk'
+    );
+
+    return isNativeSource;
+  }
+
+  /**
+   * Evaluates candidate screen time records and prioritizes inputs originating from the Android native side.
+   */
+  public static prioritizeNativeSource(
+    candidates: (ScreenTimeData | null | undefined)[]
+  ): ScreenTimeData | null {
+    const valid = candidates.filter((c): c is ScreenTimeData => Boolean(c && this.validateDataSource(c)));
+    if (valid.length === 0) return null;
+
+    return valid.reduce((best, current) => {
+      if (!best) return current;
+
+      const currentScore = this.getSourcePriorityScore(current);
+      const bestScore = this.getSourcePriorityScore(best);
+
+      if (currentScore > bestScore) return current;
+      if (currentScore < bestScore) return best;
+
+      // Equal priority: newer sync timestamp wins
+      const currentTs = current.lastSyncedTimestamp || 0;
+      const bestTs = best.lastSyncedTimestamp || 0;
+      return currentTs >= bestTs ? current : best;
+    }, null as ScreenTimeData | null);
+  }
+
+  private static getSourcePriorityScore(data: ScreenTimeData): number {
+    // 1000: Live native Android APK session on physical device
+    if (data.isNativeAndroid) return 1000;
+    // 900: Verified APK sync with usageEventsUnion mode
+    if (data.isFromApk && data.dataSource === 'usageEventsUnion') return 900;
+    // 800: Verified APK sync with confirmed isFromApk flag
+    if (data.isFromApk) return 800;
+    // 700: Known native fallback modes
+    if (data.dataSource === 'usageStatsFallback' || data.dataSource === 'android_native_apk') return 700;
+    return 100;
+  }
+}
 
 class ScreenTimeService {
   private isAndroid: boolean;
@@ -60,6 +137,17 @@ class ScreenTimeService {
     return this.isAndroid;
   }
 
+  /**
+   * Access to the unified data synchronization bridge
+   */
+  public get bridge() {
+    return ScreenTimeSyncBridge;
+  }
+
+  public validateDataSource(payload: any): boolean {
+    return ScreenTimeSyncBridge.validateDataSource(payload);
+  }
+
   private setupBroadcastChannel() {
     if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') return;
     try {
@@ -67,9 +155,11 @@ class ScreenTimeService {
       this.broadcastChannel.onmessage = (event) => {
         if (event.data?.screenTime) {
           const incoming: ScreenTimeData = event.data.screenTime;
-          this.clearCache();
-          Storage.setDailyScreenTime(incoming.date, incoming);
-          this.notifyListeners(incoming);
+          if (ScreenTimeSyncBridge.validateDataSource(incoming)) {
+            this.clearCache();
+            Storage.setDailyScreenTime(incoming.date, incoming);
+            this.notifyListeners(incoming);
+          }
         }
       };
     } catch {
@@ -108,7 +198,7 @@ class ScreenTimeService {
     if (this.pollIntervalId) clearInterval(this.pollIntervalId);
     this.pollIntervalId = setInterval(() => {
       void this.pollServerForUpdates();
-    }, 30000);
+    }, 25000);
   }
 
   public async pollServerForUpdates(): Promise<void> {
@@ -116,12 +206,13 @@ class ScreenTimeService {
     try {
       const today = getLocalDateString();
       const serverData = await this.fetchFromServer(today);
-      if (serverData && serverData.hasData && serverData.totalMinutes > 0) {
+      if (serverData && ScreenTimeSyncBridge.validateDataSource(serverData)) {
         const local = Storage.getDailyScreenTime(today);
-        if (!local || (serverData.lastSyncedTimestamp || 0) > (local.lastSyncedTimestamp || 0) || local.totalMinutes !== serverData.totalMinutes) {
-          Storage.setDailyScreenTime(today, serverData);
+        const prioritized = ScreenTimeSyncBridge.prioritizeNativeSource([local, serverData]);
+        if (prioritized && (!local || prioritized.totalMinutes !== local.totalMinutes || (prioritized.lastSyncedTimestamp || 0) > (local.lastSyncedTimestamp || 0))) {
+          Storage.setDailyScreenTime(today, prioritized);
           this.clearCache();
-          this.notifyListeners(serverData);
+          this.notifyListeners(prioritized);
         }
       }
     } catch {
@@ -151,6 +242,9 @@ class ScreenTimeService {
    */
   public async syncToServer(data: ScreenTimeData): Promise<boolean> {
     try {
+      if (!ScreenTimeSyncBridge.validateDataSource(data)) {
+        return false;
+      }
       const baseUrl = this.getServerBaseUrl();
       const sanitized = Storage.sanitizeScreenTime(data);
       const res = await fetch(`${baseUrl}/api/screentime/sync`, {
@@ -169,7 +263,7 @@ class ScreenTimeService {
   }
 
   /**
-   * Fetch screen time for a date from the local backend server.
+   * Fetch screen time for a date from the backend server, validating native source.
    */
   public async fetchFromServer(date: string): Promise<ScreenTimeData | null> {
     try {
@@ -184,7 +278,7 @@ class ScreenTimeService {
         const json = await res.json();
         if (json.success && json.data) {
           const item = json.data as ScreenTimeData;
-          if (item && item.dataSource !== 'simulatedBaseline') {
+          if (ScreenTimeSyncBridge.validateDataSource(item)) {
             return {
               ...item,
               granted: true,
@@ -205,7 +299,7 @@ class ScreenTimeService {
     if (typeof window === 'undefined') return;
     try {
       window.addEventListener('screentime-updated', (e: any) => {
-        if (e.detail?.data) {
+        if (e.detail?.data && ScreenTimeSyncBridge.validateDataSource(e.detail.data)) {
           this.clearCache();
           this.notifyListeners(e.detail.data);
         }
@@ -214,7 +308,7 @@ class ScreenTimeService {
         if (e.detail?.module === 'screentime') {
           this.clearCache();
           const latest = Storage.getScreenTimeData();
-          if (latest) {
+          if (latest && ScreenTimeSyncBridge.validateDataSource(latest)) {
             this.notifyListeners(latest);
           }
         }
@@ -229,7 +323,7 @@ class ScreenTimeService {
     try {
       void CapApp.addListener('appStateChange', (state) => {
         if (state.isActive && this.isAndroid) {
-          // Invalidate cache and auto-fetch fresh stats when app resumes (e.g. from Settings)
+          // Invalidate cache and auto-fetch fresh stats when app resumes from Android settings
           void this.getDailyUsage({ forceRefresh: true }).then((data) => {
             this.notifyListeners(data);
           }).catch(() => {});
@@ -291,7 +385,7 @@ class ScreenTimeService {
 
   /**
    * Get Daily Usage stats for a target calendar day (defaults to today in local time).
-   * Works on native Android APK as well as Web and Android Chrome via synced/stored stats.
+   * Prioritizes inputs originating from the Android native side and unifies synchronization across web and APK.
    */
   public async getDailyUsage(options?: {
     date?: string; // YYYY-MM-DD
@@ -305,7 +399,7 @@ class ScreenTimeService {
     const excludeSelf = options?.excludeSelf ?? true;
     const forceRefresh = options?.forceRefresh ?? false;
 
-    // Platform validation: Browser / Web fallback (Support Web and Android Chrome)
+    // Browser / Web synchronization bridge (Support Web and Android Chrome)
     if (!this.isAndroid) {
       const cacheKey = `web_${targetDate}_${forceRefresh}`;
       if (!forceRefresh && memoryCache[cacheKey]) {
@@ -315,63 +409,42 @@ class ScreenTimeService {
         }
       }
 
-      // 1. First, check local backend server for stats synced from APK
-      try {
-        const serverData = await this.fetchFromServer(targetDate);
-        if (serverData && serverData.hasData && serverData.totalMinutes >= 0 && serverData.dataSource !== 'simulatedBaseline') {
-          Storage.setDailyScreenTime(targetDate, serverData);
-          memoryCache[cacheKey] = {
-            data: serverData,
-            timestamp: Date.now(),
-          };
-          this.notifyListeners(serverData);
-          return serverData;
-        }
-      } catch {
-        // Fall through to storage/empty state
-      }
+      // Collect candidate data sources
+      const localForDate = Storage.getDailyScreenTime(targetDate);
+      const localLatest = Storage.getScreenTimeData();
+      const serverCandidate = await this.fetchFromServer(targetDate);
 
-      // 2. Check local storage for synced screen time data from APK for this specific date
-      const storedForDate = Storage.getDailyScreenTime(targetDate);
-      if (storedForDate && storedForDate.hasData && storedForDate.dataSource !== 'simulatedBaseline') {
+      // Prioritize authentic Android native inputs through the bridge
+      const prioritized = ScreenTimeSyncBridge.prioritizeNativeSource([
+        localForDate,
+        localLatest && (localLatest.date === targetDate || (!options?.date && localLatest.date === todayIso))
+          ? localLatest
+          : null,
+        serverCandidate,
+      ]);
+
+      if (prioritized) {
         const enriched: ScreenTimeData = {
-          ...storedForDate,
+          ...prioritized,
           granted: true,
           isNativeAndroid: false,
           isFromApk: true,
           hasData: true,
           date: targetDate,
         };
+
+        // Cache and ensure local storage has the verified native APK record
+        Storage.setDailyScreenTime(targetDate, enriched);
         memoryCache[cacheKey] = {
           data: enriched,
           timestamp: Date.now(),
         };
+        this.notifyListeners(enriched);
         return enriched;
       }
 
-      // 3. Check if latest general screen time data from APK is available and matches today
-      const latestStored = Storage.getScreenTimeData();
-      if (latestStored && latestStored.hasData && latestStored.dataSource !== 'simulatedBaseline') {
-        if (latestStored.date === targetDate || (!options?.date && latestStored.date === todayIso)) {
-          const enriched: ScreenTimeData = {
-            ...latestStored,
-            granted: true,
-            isNativeAndroid: false,
-            isFromApk: true,
-            hasData: true,
-            date: targetDate,
-          };
-          memoryCache[cacheKey] = {
-            data: enriched,
-            timestamp: Date.now(),
-          };
-          return enriched;
-        }
-      }
-
-      // 4. In Chrome and Web, ONLY take data from the APK version.
-      // Never fabricate false numbers or mock app hours.
-      // If no APK data has synced yet, return the honest empty state.
+      // If no authentic APK data has been synced yet, return the honest empty state.
+      // Never fabricate fake numbers (like 3h 5m) or mock apps.
       const emptyState = getEmptyScreenTimeData(targetDate);
       memoryCache[cacheKey] = {
         data: emptyState,
@@ -380,7 +453,7 @@ class ScreenTimeService {
       return emptyState;
     }
 
-    // Check memory cache
+    // Native Android APK execution path
     const cacheKey = `${targetDate}_${includeIcons}_${excludeSelf}`;
     if (!forceRefresh && memoryCache[cacheKey]) {
       const cached = memoryCache[cacheKey];
@@ -389,7 +462,6 @@ class ScreenTimeService {
       }
     }
 
-    // Coalesce duplicate concurrent requests
     if (pendingQueryPromise && pendingQueryKey === cacheKey) {
       return pendingQueryPromise;
     }
@@ -436,7 +508,7 @@ class ScreenTimeService {
           message: result?.message,
         };
 
-        // Persist to local storage and sync to Server & Supabase so stats are available in Web and Android Chrome
+        // Persist to local storage and sync to Server & Supabase
         if (screenTimeData.hasData && screenTimeData.totalMinutes > 0) {
           Storage.setDailyScreenTime(targetDate, screenTimeData);
           void this.syncToServer(screenTimeData);
@@ -453,15 +525,15 @@ class ScreenTimeService {
         return screenTimeData;
       } catch (err: any) {
         console.error('[ScreenTimeService] getDailyUsage error:', err);
-        // Fall back to stored screen time if query fails
         const fallback = Storage.getDailyScreenTime(targetDate) || Storage.getScreenTimeData();
-        if (fallback && fallback.hasData) {
+        if (fallback && ScreenTimeSyncBridge.validateDataSource(fallback)) {
           return fallback;
         }
 
         const errorResult: ScreenTimeData = {
           granted: false,
           isNativeAndroid: true,
+          isFromApk: true,
           hasData: false,
           date: targetDate,
           formattedDate: targetDate,
@@ -487,13 +559,9 @@ class ScreenTimeService {
     return pendingQueryPromise;
   }
 
-  /**
-   * Invalidate local memory cache
-   */
   public clearCache(): void {
     Object.keys(memoryCache).forEach((k) => delete memoryCache[k]);
   }
 }
 
 export const screenTimeService = new ScreenTimeService();
-

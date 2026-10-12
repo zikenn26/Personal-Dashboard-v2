@@ -208,6 +208,8 @@ describe('Cross-Platform Screen Time Synchronization (APK, Web & Android Chrome)
     const serverPayload: ScreenTimeData = {
       granted: true,
       isNativeAndroid: true,
+      isFromApk: true,
+      dataSource: 'usageEventsUnion',
       hasData: true,
       date: '2026-10-11',
       formattedDate: 'Sunday, Oct 11',
@@ -266,5 +268,77 @@ describe('Cross-Platform Screen Time Synchronization (APK, Web & Android Chrome)
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  it('8. ScreenTimeSyncBridge rejects unverified 185m (3h 5m) mock data and prioritizes 133m (2hr 13m) native Android APK data', async () => {
+    // 8a. Stale unverified mock payload (185 mins = 3h 5m)
+    const staleMockPayload = {
+      date: '2026-10-12',
+      hasData: true,
+      totalMinutes: 185, // 3h 5m
+      apps: [
+        {
+          packageName: 'com.instagram.android',
+          appName: 'Instagram',
+          durationMinutes: 95,
+        },
+      ],
+      lastSyncedTimestamp: 1000,
+    };
+    expect(screenTimeService.bridge.validateDataSource(staleMockPayload)).toBe(false);
+
+    // 8b. Real authentic Android native APK data (133 mins = 2hr 13m)
+    const authenticApkPayload: ScreenTimeData = {
+      granted: true,
+      isNativeAndroid: true,
+      isFromApk: true,
+      hasData: true,
+      date: '2026-10-12',
+      formattedDate: 'Monday, Oct 12',
+      totalMinutes: 133, // 2hr 13m
+      totalMillis: 133 * 60 * 1000,
+      apps: [
+        {
+          packageName: 'com.whatsapp',
+          appName: 'WhatsApp',
+          rank: 1,
+          durationMinutes: 70,
+          durationMillis: 70 * 60 * 1000,
+          sessionCount: 15,
+          percentageOfTotal: 53,
+        },
+        {
+          packageName: 'com.google.android.youtube',
+          appName: 'YouTube',
+          rank: 2,
+          durationMinutes: 63,
+          durationMillis: 63 * 60 * 1000,
+          sessionCount: 8,
+          percentageOfTotal: 47,
+        },
+      ],
+      topApps: [],
+      hourlyUsage: [],
+      past7Days: [],
+      dailyAverageMinutes: 133,
+      lastSyncedTimestamp: Date.now(),
+      dataSource: 'usageEventsUnion',
+    };
+    expect(screenTimeService.bridge.validateDataSource(authenticApkPayload)).toBe(true);
+
+    // 8c. Prioritization bridge selects authentic APK payload over unverified mock
+    const winner = screenTimeService.bridge.prioritizeNativeSource([staleMockPayload as any, authenticApkPayload]);
+    expect(winner).toBeDefined();
+    expect(winner?.totalMinutes).toBe(133); // 2hr 13m wins
+    expect(winner?.apps[0]?.appName).toBe('WhatsApp');
+
+    // 8d. Test on web: when APK payload is persisted, getDailyUsage returns 133 (2h 13m) and never 185 (3h 5m)
+    Storage.setDailyScreenTime('2026-10-12', authenticApkPayload);
+    screenTimeService.clearCache();
+
+    const result = await screenTimeService.getDailyUsage({ date: '2026-10-12' });
+    expect(result.totalMinutes).toBe(133); // 2hr 13m
+    expect(result.totalMinutes).not.toBe(185); // 3h 5m eliminated
+    expect(result.isFromApk).toBe(true);
   });
 });

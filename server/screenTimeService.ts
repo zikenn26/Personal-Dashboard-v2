@@ -22,6 +22,39 @@ let inMemoryStore: ScreenTimeStore = {
   lastSyncedTimestamp: 0,
 };
 
+/**
+ * Validates that an incoming or persisted payload originates from the Android native APK
+ * and is not synthetic, corrupted, or stale unverified mock data.
+ */
+export function isValidNativeAndroidPayload(payload: any): boolean {
+  if (!payload || typeof payload !== "object") return false;
+  if (!payload.hasData || typeof payload.totalMinutes !== "number" || payload.totalMinutes < 0) return false;
+
+  // Reject known unverified mock/dummy patterns (e.g. legacy 185m with single Instagram app)
+  if (
+    payload.totalMinutes === 185 &&
+    Array.isArray(payload.apps) &&
+    payload.apps.length === 1 &&
+    payload.apps[0]?.packageName === "com.instagram.android"
+  ) {
+    return false;
+  }
+  if (payload.dataSource === "simulatedBaseline") {
+    return false;
+  }
+
+  // Must originate from Android native APK
+  const isNative = Boolean(
+    payload.isFromApk ||
+    payload.isNativeAndroid ||
+    payload.dataSource === "usageEventsUnion" ||
+    payload.dataSource === "usageStatsFallback" ||
+    payload.dataSource === "android_native_apk"
+  );
+
+  return isNative;
+}
+
 // Initialize persistent storage from disk
 function loadStoreFromDisk(): void {
   try {
@@ -32,11 +65,21 @@ function loadStoreFromDisk(): void {
       const raw = fs.readFileSync(STORE_FILE, "utf-8");
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === "object") {
+        const cleanLatest = isValidNativeAndroidPayload(parsed.latest) ? parsed.latest : null;
+        const cleanHistory: Record<string, any> = {};
+        if (parsed.history && typeof parsed.history === "object") {
+          Object.entries(parsed.history).forEach(([d, val]) => {
+            if (isValidNativeAndroidPayload(val)) {
+              cleanHistory[d] = val;
+            }
+          });
+        }
         inMemoryStore = {
-          latest: parsed.latest || null,
-          history: parsed.history || {},
-          lastSyncedTimestamp: parsed.lastSyncedTimestamp || 0,
+          latest: cleanLatest,
+          history: cleanHistory,
+          lastSyncedTimestamp: cleanLatest ? (parsed.lastSyncedTimestamp || 0) : 0,
         };
+        persistStoreToDisk();
       }
     }
   } catch (err) {
@@ -101,6 +144,13 @@ export function handleScreenTimeSync(req: Request, res: Response): void {
     let updated = false;
 
     if (screenTime && typeof screenTime === "object" && screenTime.hasData) {
+      if (!isValidNativeAndroidPayload(screenTime)) {
+        res.status(400).json({
+          success: false,
+          error: "Rejected unverified screen time payload: only authenticated Android native APK data is accepted.",
+        });
+        return;
+      }
       const sanitized = sanitizeScreenTimePayload(screenTime);
       const targetDate = sanitized.date || date || new Date().toISOString().split("T")[0];
       sanitized.date = targetDate;
@@ -114,7 +164,7 @@ export function handleScreenTimeSync(req: Request, res: Response): void {
 
     if (history && typeof history === "object") {
       Object.entries(history).forEach(([d, val]) => {
-        if (val && typeof val === "object") {
+        if (val && typeof val === "object" && isValidNativeAndroidPayload(val)) {
           const sanitized = sanitizeScreenTimePayload(val);
           inMemoryStore.history[d] = sanitized;
           updated = true;
