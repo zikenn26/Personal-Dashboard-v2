@@ -1401,6 +1401,103 @@ export const Storage = {
     } catch {}
     return sanitized;
   },
+  /**
+   * Safely merges two expense lists by ID while preserving local transaction IDs,
+   * deduping by primary ID and secondary transaction/SMS references, and strictly
+   * respecting explicit user deletions (trash and deleted sheets).
+   */
+  mergeExpenseLists: (baseList: ExpenseItem[], incomingList: ExpenseItem[]): ExpenseItem[] => {
+    if (!Array.isArray(baseList) || baseList.length === 0) {
+      return Array.isArray(incomingList) ? incomingList.filter((e) => e && e.id) : [];
+    }
+    if (!Array.isArray(incomingList) || incomingList.length === 0) {
+      return baseList.filter((e) => e && e.id);
+    }
+
+    const trash = Storage.getTrash().filter((t) => t.module === 'expenses');
+    const trashedIds = new Set(
+      trash
+        .map((t) => (t.data?.id ? String(t.data.id).trim() : String(t.id).trim()))
+        .filter(Boolean)
+    );
+
+    const isValidExpense = (e: ExpenseItem | null | undefined): boolean => {
+      if (!e || !e.id) return false;
+      const idStr = String(e.id).trim();
+      if (trashedIds.has(idStr)) return false;
+      if (Storage.isSheetDeleted(e.importBatchId) || Storage.isSheetDeleted(e.sourceFile)) {
+        return false;
+      }
+      return true;
+    };
+
+    const resultMap = new Map<string, ExpenseItem>();
+    const refMap = new Map<string, string>(); // normalized refKey -> primary expense id
+
+    const getRefKey = (e: ExpenseItem): string | null => {
+      const ref = (e.smsReferenceId || e.referenceId || e.upiReference || '').trim();
+      if (ref && ref.length >= 4) {
+        return `ref:${ref.toLowerCase()}`;
+      }
+      return null;
+    };
+
+    const addOrMerge = (item: ExpenseItem) => {
+      if (!isValidExpense(item)) return;
+      const id = String(item.id).trim();
+      const refKey = getRefKey(item);
+
+      let existingKey = id;
+      let existing = resultMap.get(id);
+
+      if (!existing && refKey && refMap.has(refKey)) {
+        existingKey = refMap.get(refKey)!;
+        existing = resultMap.get(existingKey);
+      }
+
+      if (!existing) {
+        resultMap.set(id, item);
+        if (refKey) refMap.set(refKey, id);
+      } else {
+        const existingUpdated = Number(existing.updatedAt || existing.createdAt || 0);
+        const incomingUpdated = Number(item.updatedAt || item.createdAt || 0);
+
+        const newer = incomingUpdated > existingUpdated ? item : existing;
+        const older = incomingUpdated > existingUpdated ? existing : item;
+
+        const mergedItem: ExpenseItem = {
+          ...older,
+          ...newer,
+          // Preserve stable primary ID
+          id: existingKey,
+          // Merge metadata fields so details aren't lost
+          smsReferenceId: newer.smsReferenceId || older.smsReferenceId,
+          referenceId: newer.referenceId || older.referenceId,
+          upiReference: newer.upiReference || older.upiReference,
+          rawSmsText: newer.rawSmsText || older.rawSmsText,
+          bankName: newer.bankName || older.bankName,
+          bankOrAccount: newer.bankOrAccount || older.bankOrAccount,
+          maskedAccount: newer.maskedAccount || older.maskedAccount,
+          accountLast4: newer.accountLast4 || older.accountLast4,
+          payee: newer.payee || older.payee,
+          merchant: newer.merchant || older.merchant,
+          notes: newer.notes || older.notes,
+          sourceFile: newer.sourceFile || older.sourceFile,
+          importBatchId: newer.importBatchId || older.importBatchId,
+          createdAt: older.createdAt || newer.createdAt,
+          updatedAt: Math.max(existingUpdated, incomingUpdated) || Date.now(),
+        };
+
+        resultMap.set(existingKey, mergedItem);
+        if (refKey) refMap.set(refKey, existingKey);
+      }
+    };
+
+    baseList.forEach(addOrMerge);
+    incomingList.forEach(addOrMerge);
+
+    return Array.from(resultMap.values());
+  },
   addExpense: (expense: ExpenseItem): ExpenseItem[] => {
     const current = Storage.getExpenses();
     const nowMs = Date.now();
@@ -2544,35 +2641,9 @@ export const Storage = {
             return true;
           });
 
-          // Combine cloud and local expenses using Last-Write-Wins (LWW) conflict resolution
-          const finalMap = new Map<string, ExpenseItem>();
-          validCloudExpenses.forEach((cloudExp) => finalMap.set(String(cloudExp.id).trim(), cloudExp));
-
-          validLocalExpenses.forEach((localExp) => {
-            const expId = String(localExp.id).trim();
-            const existingCloud = finalMap.get(expId);
-            if (!existingCloud) {
-              // Item is present locally but absent in incoming cloud snapshot:
-              // If remote snapshot has a timestamp and local item was created/updated BEFORE that timestamp,
-              // it means the item was deleted on remote! Do NOT resurrect it unless created locally while offline.
-              const localUpdated = Number(localExp.updatedAt || localExp.createdAt || 0);
-              const wasCreatedOfflineAfterRemote = remoteTimestamp > 0 ? localUpdated > remoteTimestamp : true;
-              if (wasCreatedOfflineAfterRemote) {
-                finalMap.set(expId, localExp);
-              }
-            } else {
-              // Item exists in both: compare updatedAt timestamps
-              const localUpdated = Number(localExp.updatedAt || localExp.createdAt || 0);
-              const cloudUpdated = Number(existingCloud.updatedAt || existingCloud.createdAt || 0);
-              if (localUpdated > cloudUpdated) {
-                finalMap.set(expId, localExp);
-              } else {
-                finalMap.set(expId, existingCloud);
-              }
-            }
-          });
-
-          const mergedExpenses = Array.from(finalMap.values());
+          // Combine cloud and local expenses safely preserving local transaction IDs
+          // and ensuring records present in either valid source are preserved unless explicitly in trash.
+          const mergedExpenses = Storage.mergeExpenseLists(validLocalExpenses, validCloudExpenses);
           Storage.setExpenses(mergedExpenses);
         }
       }

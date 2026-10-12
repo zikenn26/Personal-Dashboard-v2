@@ -107,4 +107,110 @@ describe('SMS Logging and Cloud Sync Consistency Suite', () => {
     const stored = Storage.getExpenses();
     expect(stored.some((e) => e.amount === 200 && e.referenceId === '987654321012')).toBe(true);
   });
+
+  it('5. Storage.mergeExpenseLists preserves local transaction IDs and merges without array replacement', () => {
+    const local1: ExpenseItem = {
+      id: 'local-tx-101',
+      name: 'Local Store',
+      amount: 150,
+      category: 'Groceries & Food',
+      date: getLocalDateKey(),
+      createdAt: 1000,
+      updatedAt: 1000,
+    };
+    const local2: ExpenseItem = {
+      id: 'local-tx-102',
+      name: 'Pharmacy',
+      amount: 320,
+      category: 'Health & Medical',
+      date: getLocalDateKey(),
+      createdAt: 2000,
+      updatedAt: 2000,
+    };
+    const remote1: ExpenseItem = {
+      id: 'remote-tx-201',
+      name: 'Electricity Bill',
+      amount: 1450,
+      category: 'Utilities & Bills',
+      date: getLocalDateKey(),
+      createdAt: 1500,
+      updatedAt: 1500,
+    };
+
+    // Merging local state [local1, local2] with incoming remote snapshot [remote1]
+    const merged = Storage.mergeExpenseLists([local1, local2], [remote1]);
+
+    // All three transactions must be retained with exact IDs preserved
+    expect(merged.length).toBe(3);
+    const ids = merged.map((e) => e.id);
+    expect(ids).toContain('local-tx-101');
+    expect(ids).toContain('local-tx-102');
+    expect(ids).toContain('remote-tx-201');
+  });
+
+  it('6. preserves older local transactions even if cloud snapshot has higher syncVersion and is missing them', () => {
+    const olderLocalExpense: ExpenseItem = {
+      id: 'local-sms-older',
+      name: 'Quick Chai',
+      amount: 20,
+      category: 'Food & Dining',
+      date: getLocalDateKey(),
+      createdAt: 1000,
+      updatedAt: 1000,
+    };
+    Storage.setExpenses([olderLocalExpense]);
+
+    // Incoming cloud payload with higher remoteTimestamp (syncVersion) that does not contain olderLocalExpense
+    const cloudPayload = {
+      expenses: [
+        {
+          id: 'cloud-tx-301',
+          name: 'Bookstore',
+          amount: 500,
+          category: 'Education & Learning',
+          date: getLocalDateKey(),
+          createdAt: 5000,
+          updatedAt: 5000,
+        },
+      ],
+      _meta: {
+        syncVersion: 9999,
+      },
+    };
+
+    Storage.importAllDataPayload(cloudPayload);
+
+    // Both the cloud transaction AND the local transaction must be preserved
+    const current = Storage.getExpenses();
+    expect(current.some((e) => e.id === 'local-sms-older')).toBe(true);
+    expect(current.some((e) => e.id === 'cloud-tx-301')).toBe(true);
+  });
+
+  it('7. preserves two distinct transactions from the same bank within 5 minutes', () => {
+    const tx1: ExpenseItem = {
+      id: 'sms-hdfc-1',
+      name: 'Coffee Shop',
+      amount: 150,
+      category: 'Food & Dining',
+      date: getLocalDateKey(),
+      referenceId: 'REF-001',
+      createdAt: 100000,
+      updatedAt: 100000,
+    };
+    const tx2: ExpenseItem = {
+      id: 'sms-hdfc-2',
+      name: 'Coffee Shop',
+      amount: 150,
+      category: 'Food & Dining',
+      date: getLocalDateKey(),
+      referenceId: 'REF-002',
+      createdAt: 100200, // 200ms later
+      updatedAt: 100200,
+    };
+
+    const merged = Storage.mergeExpenseLists([tx1], [tx2]);
+    expect(merged.length).toBe(2);
+    expect(merged.some((e) => e.id === 'sms-hdfc-1')).toBe(true);
+    expect(merged.some((e) => e.id === 'sms-hdfc-2')).toBe(true);
+  });
 });

@@ -451,9 +451,16 @@ export default function App() {
     setGoals(Storage.getGoals());
     void Storage.hydrateVault(Storage.getSettings().masterPin).then(setVault);
 
-    // Force fresh direct read from scoped localStorage for expenses
+    // Safely hydrate expenses: merge existing in-memory React state with Storage to preserve
+    // local transaction IDs instead of performing a full array replacement which causes data loss
     const freshExpenses: ExpenseItem[] = Storage.getExpenses();
-    setExpenses([...freshExpenses]);
+    setExpenses((prevExpenses) => {
+      const merged = Storage.mergeExpenseLists(prevExpenses, freshExpenses);
+      if (merged.length !== freshExpenses.length) {
+        Storage.setExpenses(merged);
+      }
+      return merged;
+    });
 
     setExcelImportLogs(Storage.getExcelImportLogs());
     setJournal(Storage.getJournal());
@@ -493,19 +500,22 @@ export default function App() {
         return;
       }
 
-      // If custom event provided explicit updatedExpenses array,
-      // prefer it; otherwise read the current expenses from storage.
-      if (
-        customEvt?.detail?.updatedExpenses &&
-        Array.isArray(customEvt.detail.updatedExpenses)
-      ) {
-        const fresh = [...customEvt.detail.updatedExpenses];
-        setExpenses(fresh);
-        Storage.setExpenses(fresh);
-      } else {
-        const fresh = Storage.getExpenses();
-        setExpenses([...fresh]);
-      }
+      // Safely merge expenses: preserve local transaction IDs and prevent full array replacement
+      setExpenses((prevExpenses) => {
+        const currentStored = Storage.getExpenses();
+        const incoming =
+          customEvt?.detail?.updatedExpenses &&
+          Array.isArray(customEvt.detail.updatedExpenses)
+            ? customEvt.detail.updatedExpenses
+            : currentStored;
+
+        const mergedWithStored = Storage.mergeExpenseLists(currentStored, incoming);
+        const finalMerged = Storage.mergeExpenseLists(prevExpenses, mergedWithStored);
+
+        // Keep Storage updated with the authoritative merged expense list
+        Storage.setExpenses(finalMerged);
+        return finalMerged;
+      });
 
       // Refresh the other dashboard modules from local storage.
       setProfile(Storage.getProfile());
@@ -799,7 +809,7 @@ export default function App() {
     smsExpenseService.initialize();
 
     const handleSmsExpenseLogged = () => {
-      setExpenses(Storage.getExpenses());
+      setExpenses((prev) => Storage.mergeExpenseLists(prev, Storage.getExpenses()));
     };
     window.addEventListener('sms_expense_auto_logged', handleSmsExpenseLogged);
     return () => {
