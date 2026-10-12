@@ -218,7 +218,7 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
         </div>
       </div>
 
-      {/* Permission Alert Banner */}
+      {/* Permission Alert Banner (Native Android only) */}
       {screenTimeService.isNativeAndroid() && !data?.granted && (
         <div className="p-4 rounded-3xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/70 dark:border-amber-900/40 space-y-3">
           <div className="flex items-start gap-3">
@@ -244,6 +244,32 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
         </div>
       )}
 
+      {/* Awaiting APK sync banner (Mobile Chrome / Web) */}
+      {!screenTimeService.isNativeAndroid() && !data?.hasData && (
+        <div className="p-4 rounded-3xl bg-violet-50 dark:bg-violet-950/40 border border-violet-200/70 dark:border-violet-900/40 space-y-3">
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-2xl bg-violet-600 text-white flex items-center justify-center shrink-0">
+              <Smartphone className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-xs font-bold text-violet-900 dark:text-violet-200">
+                Awaiting Data from Android APK
+              </h3>
+              <p className="text-[11px] text-violet-700 dark:text-violet-300 leading-relaxed mt-0.5">
+                Chrome Android cannot access device UsageStats. Real screen time is recorded exclusively by the installed APK. Open the Personal Dashboard APK on your phone to sync your real stats.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleRefresh}
+            className="w-full py-2 px-3 rounded-2xl bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs shadow-xs active:scale-98 transition-all cursor-pointer"
+          >
+            Check for APK Sync
+          </button>
+        </div>
+      )}
+
       {/* Hero Card: Today's Total Screen Time */}
       <div className="p-5 rounded-3xl bg-gradient-to-br from-violet-600 to-indigo-700 text-white shadow-lg space-y-4">
         <div className="flex items-center justify-between">
@@ -257,7 +283,7 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
           </div>
 
           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/20 text-white">
-            {data?.isNativeAndroid ? 'Android' : 'Synced'}
+            {data?.isNativeAndroid ? 'Live APK' : data?.hasData ? 'From APK' : 'Awaiting APK'}
           </span>
         </div>
 
@@ -265,7 +291,7 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
           <div className="text-4xl font-black tracking-tight">
             {isLoading && !data
               ? '...'
-              : (data?.totalMinutes !== undefined && data.totalMinutes > 0) || data?.granted
+              : (data?.totalMinutes !== undefined && data.totalMinutes > 0) || (data?.granted && data?.hasData)
               ? formatHoursAndMinutes(data?.totalMinutes || 0)
               : screenTimeService.isNativeAndroid()
               ? 'Permission Needed'
@@ -571,11 +597,11 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
               No Application Usage Data
             </p>
             <p className="text-[11px] text-gray-500 dark:text-gray-400">
-              {!isSupported
-                ? 'Usage tracking runs natively on Android.'
-                : data?.granted
+              {data?.granted && data?.hasData
                 ? 'No foreground app activity found for this day.'
-                : 'Grant Usage Access in Android Settings to activate.'}
+                : screenTimeService.isNativeAndroid()
+                ? 'Grant Usage Access in Android Settings to activate.'
+                : 'No screen time recorded yet. Open the Android APK version to sync real stats.'}
             </p>
           </div>
         )}

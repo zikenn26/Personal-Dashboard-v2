@@ -3,7 +3,7 @@ import { App as CapApp } from '@capacitor/app';
 import { ScreenTimeData } from '../types';
 import { getLocalDateString } from '../utils/screenTimeCalculator';
 import { Storage } from '../utils/storage';
-import { getBaselineScreenTimeData } from '../utils/screenTimeDefaults';
+import { getEmptyScreenTimeData } from '../utils/screenTimeDefaults';
 import { scheduleAutoSyncToSupabase } from '../utils/supabase';
 
 export interface ScreenTimePluginInterface {
@@ -129,13 +129,31 @@ class ScreenTimeService {
     }
   }
 
+  private getServerBaseUrl(): string {
+    if (typeof window === 'undefined') return '';
+    try {
+      const stored = localStorage.getItem('personal_dashboard_backend_url');
+      if (stored && stored.startsWith('http')) {
+        return stored.replace(/\/+$/, '');
+      }
+      const origin = window.location.origin || '';
+      if (origin && !origin.includes('localhost') && !origin.startsWith('capacitor://')) {
+        return origin.replace(/\/+$/, '');
+      }
+    } catch {
+      // Ignore
+    }
+    return '';
+  }
+
   /**
    * Synchronize screen time to local backend server so Web and Android Chrome can consume it.
    */
   public async syncToServer(data: ScreenTimeData): Promise<boolean> {
     try {
+      const baseUrl = this.getServerBaseUrl();
       const sanitized = Storage.sanitizeScreenTime(data);
-      const res = await fetch('/api/screentime/sync', {
+      const res = await fetch(`${baseUrl}/api/screentime/sync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -155,9 +173,10 @@ class ScreenTimeService {
    */
   public async fetchFromServer(date: string): Promise<ScreenTimeData | null> {
     try {
+      const baseUrl = this.getServerBaseUrl();
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 2500);
-      const res = await fetch(`/api/screentime/daily?date=${encodeURIComponent(date)}`, {
+      const res = await fetch(`${baseUrl}/api/screentime/daily?date=${encodeURIComponent(date)}`, {
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -165,12 +184,15 @@ class ScreenTimeService {
         const json = await res.json();
         if (json.success && json.data) {
           const item = json.data as ScreenTimeData;
-          return {
-            ...item,
-            granted: true,
-            isNativeAndroid: false,
-            hasData: true,
-          };
+          if (item && item.dataSource !== 'simulatedBaseline') {
+            return {
+              ...item,
+              granted: true,
+              isNativeAndroid: false,
+              isFromApk: true,
+              hasData: true,
+            };
+          }
         }
       }
       return null;
@@ -296,7 +318,7 @@ class ScreenTimeService {
       // 1. First, check local backend server for stats synced from APK
       try {
         const serverData = await this.fetchFromServer(targetDate);
-        if (serverData && serverData.hasData && serverData.totalMinutes > 0) {
+        if (serverData && serverData.hasData && serverData.totalMinutes >= 0 && serverData.dataSource !== 'simulatedBaseline') {
           Storage.setDailyScreenTime(targetDate, serverData);
           memoryCache[cacheKey] = {
             data: serverData,
@@ -306,16 +328,17 @@ class ScreenTimeService {
           return serverData;
         }
       } catch {
-        // Fall through to storage/baseline
+        // Fall through to storage/empty state
       }
 
-      // 2. Check local storage for synced screen time data for this specific date
+      // 2. Check local storage for synced screen time data from APK for this specific date
       const storedForDate = Storage.getDailyScreenTime(targetDate);
-      if (storedForDate && storedForDate.hasData && storedForDate.totalMinutes > 0) {
+      if (storedForDate && storedForDate.hasData && storedForDate.dataSource !== 'simulatedBaseline') {
         const enriched: ScreenTimeData = {
           ...storedForDate,
           granted: true,
           isNativeAndroid: false,
+          isFromApk: true,
           hasData: true,
           date: targetDate,
         };
@@ -326,14 +349,15 @@ class ScreenTimeService {
         return enriched;
       }
 
-      // 3. Check if latest general screen time data is available and matches today
+      // 3. Check if latest general screen time data from APK is available and matches today
       const latestStored = Storage.getScreenTimeData();
-      if (latestStored && latestStored.hasData && latestStored.totalMinutes > 0) {
+      if (latestStored && latestStored.hasData && latestStored.dataSource !== 'simulatedBaseline') {
         if (latestStored.date === targetDate || (!options?.date && latestStored.date === todayIso)) {
           const enriched: ScreenTimeData = {
             ...latestStored,
             granted: true,
             isNativeAndroid: false,
+            isFromApk: true,
             hasData: true,
             date: targetDate,
           };
@@ -345,16 +369,15 @@ class ScreenTimeService {
         }
       }
 
-      // 4. If no stored data exists yet (before initial APK sync or in standalone web),
-      // generate rich baseline data for targetDate so all charts, apps list, and 7-day
-      // app toggles work immediately in web and Android Chrome.
-      const baseline = getBaselineScreenTimeData(targetDate);
-      Storage.setDailyScreenTime(targetDate, baseline);
+      // 4. In Chrome and Web, ONLY take data from the APK version.
+      // Never fabricate false numbers or mock app hours.
+      // If no APK data has synced yet, return the honest empty state.
+      const emptyState = getEmptyScreenTimeData(targetDate);
       memoryCache[cacheKey] = {
-        data: baseline,
+        data: emptyState,
         timestamp: Date.now(),
       };
-      return baseline;
+      return emptyState;
     }
 
     // Check memory cache
@@ -383,6 +406,7 @@ class ScreenTimeService {
         const screenTimeData: ScreenTimeData = {
           granted: Boolean(result?.granted),
           isNativeAndroid: true,
+          isFromApk: true,
           hasData: Boolean(result?.hasData),
           date: result?.date || targetDate,
           formattedDate:

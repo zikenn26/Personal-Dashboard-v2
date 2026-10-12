@@ -131,7 +131,7 @@ export const ScreenTimeCard: React.FC<ScreenTimeCardProps> = ({
             <span className="text-2xl sm:text-3xl font-extrabold text-[#37352F] dark:text-white tracking-tight">
               {isLoading && !data
                 ? '...'
-                : (data?.totalMinutes !== undefined && data.totalMinutes > 0) || data?.granted
+                : (data?.totalMinutes !== undefined && data.totalMinutes > 0) || (data?.granted && data?.hasData)
                 ? formatHoursAndMinutes(data?.totalMinutes || 0)
                 : screenTimeService.isNativeAndroid()
                 ? 'Permission Needed'
@@ -139,7 +139,7 @@ export const ScreenTimeCard: React.FC<ScreenTimeCardProps> = ({
             </span>
             {data && data.totalMinutes > 0 && (
               <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-md border border-emerald-200/60 dark:border-emerald-900/40">
-                {data.isNativeAndroid ? 'Live Stats' : 'Synced'}
+                {data.isNativeAndroid ? 'Live APK' : 'From APK'}
               </span>
             )}
           </div>
@@ -154,7 +154,7 @@ export const ScreenTimeCard: React.FC<ScreenTimeCardProps> = ({
       {data?.granted && topApps.length > 0 ? (
         <div className="space-y-2 pt-1 border-t border-[#EDECE9] dark:border-[#334155]/60">
           <div className="text-[10px] uppercase font-bold tracking-wider text-[#787774] dark:text-[#94A3B8]">
-            Top Apps Today
+            Top Apps Today {data?.isNativeAndroid ? '' : '(from APK)'}
           </div>
           <div className="space-y-1.5">
             {topApps.map((app) => (
@@ -205,7 +205,9 @@ export const ScreenTimeCard: React.FC<ScreenTimeCardProps> = ({
       ) : (
         <div className="p-2.5 rounded-xl bg-gray-50/70 dark:bg-gray-900/30 border border-gray-100 dark:border-gray-800 text-xs text-gray-500 dark:text-gray-400">
           <p className="text-[11px] leading-relaxed">
-            No application usage recorded for today.
+            {screenTimeService.isNativeAndroid()
+              ? 'No application usage recorded for today.'
+              : 'Awaiting data from Android APK. Open the APK on your device to sync real stats.'}
           </p>
         </div>
       )}

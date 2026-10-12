@@ -115,14 +115,60 @@ describe('Cross-Platform Screen Time Synchronization (APK, Web & Android Chrome)
     expect(restored?.totalMinutes).toBe(mockData.totalMinutes);
   });
 
-  it('5. screenTimeService.getDailyUsage loads stats seamlessly in Web and Android Chrome environments', async () => {
-    const data = await screenTimeService.getDailyUsage({ date: '2026-10-11' });
-    expect(data).toBeDefined();
-    expect(data.granted).toBe(true);
-    expect(data.hasData).toBe(true);
-    expect(data.totalMinutes).toBeGreaterThan(0);
-    expect(data.apps.length).toBeGreaterThan(0);
-    expect(data.past7Days.length).toBe(7);
+  it('5. screenTimeService.getDailyUsage returns honest empty state without APK data, and loads exact APK stats once synced', async () => {
+    // 5a. When no APK data has synced yet, Web and Chrome return honest empty state awaiting APK sync
+    const emptyData = await screenTimeService.getDailyUsage({ date: '2026-10-11' });
+    expect(emptyData).toBeDefined();
+    expect(emptyData.hasData).toBe(false);
+    expect(emptyData.totalMinutes).toBe(0);
+    expect(emptyData.apps.length).toBe(0);
+
+    // 5b. When APK syncs data, Web and Chrome immediately reflect that exact APK data
+    const apkData: ScreenTimeData = {
+      granted: true,
+      isNativeAndroid: true,
+      isFromApk: true,
+      hasData: true,
+      date: '2026-10-11',
+      formattedDate: 'Sunday, Oct 11',
+      totalMinutes: 145,
+      totalMillis: 145 * 60 * 1000,
+      apps: [
+        {
+          packageName: 'com.example.realapp',
+          appName: 'Real App',
+          rank: 1,
+          durationMinutes: 145,
+          durationMillis: 145 * 60 * 1000,
+          sessionCount: 12,
+          percentageOfTotal: 100,
+        },
+      ],
+      topApps: [
+        {
+          packageName: 'com.example.realapp',
+          appName: 'Real App',
+          rank: 1,
+          durationMinutes: 145,
+          durationMillis: 145 * 60 * 1000,
+          sessionCount: 12,
+          percentageOfTotal: 100,
+        },
+      ],
+      hourlyUsage: [],
+      past7Days: [],
+      dailyAverageMinutes: 145,
+      lastSyncedTimestamp: Date.now(),
+      dataSource: 'usageEventsUnion',
+    };
+    Storage.setDailyScreenTime('2026-10-11', apkData);
+    screenTimeService.clearCache();
+
+    const synced = await screenTimeService.getDailyUsage({ date: '2026-10-11' });
+    expect(synced.hasData).toBe(true);
+    expect(synced.totalMinutes).toBe(145);
+    expect(synced.apps[0].appName).toBe('Real App');
+    expect(synced.isFromApk).toBe(true);
   });
 
   it('6. sanitizeScreenTime strips oversized base64 icons to protect localStorage quota', () => {

@@ -94,7 +94,7 @@ export const AndroidScreenTimeCard: React.FC<AndroidScreenTimeCardProps> = ({
           <div className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">
             {isLoading && !data
               ? '...'
-              : (data?.totalMinutes !== undefined && data.totalMinutes > 0) || data?.granted
+              : (data?.totalMinutes !== undefined && data.totalMinutes > 0) || (data?.granted && data?.hasData)
               ? formatHoursAndMinutes(data?.totalMinutes || 0)
               : screenTimeService.isNativeAndroid()
               ? 'Access Needed'
@@ -107,13 +107,13 @@ export const AndroidScreenTimeCard: React.FC<AndroidScreenTimeCardProps> = ({
                 : 'Daily screen time'
               : screenTimeService.isNativeAndroid() && !data?.granted
               ? 'Tap to grant Usage Access'
-              : 'Daily screen time'}
+              : 'Screen time from APK'}
           </p>
         </div>
 
         {data && data.totalMinutes > 0 && (
           <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-violet-50 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 border border-violet-200/70 dark:border-violet-900/50">
-            {topApps.length > 0 ? `${topApps.length} Apps Active` : data.isNativeAndroid ? 'Live' : 'Synced'}
+            {topApps.length > 0 ? `${topApps.length} Apps Active` : data.isNativeAndroid ? 'Live APK' : 'From APK'}
           </span>
         )}
       </div>
@@ -180,7 +180,9 @@ export const AndroidScreenTimeCard: React.FC<AndroidScreenTimeCardProps> = ({
       ) : (
         <div className="p-3 rounded-2xl bg-gray-50 dark:bg-[#161D2C] border border-gray-100 dark:border-gray-800 text-xs text-gray-600 dark:text-gray-300">
           <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed">
-            No application activity recorded for today.
+            {screenTimeService.isNativeAndroid()
+              ? 'No application activity recorded for today.'
+              : 'Awaiting sync from APK. Open the Android APK to sync real stats.'}
           </p>
         </div>
       )}

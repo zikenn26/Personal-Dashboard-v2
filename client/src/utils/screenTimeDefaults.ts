@@ -2,9 +2,41 @@ import { ScreenTimeData, AppUsageItem, HourlyUsageBucket, DailyUsageSummary } fr
 import { getLocalDateString, shiftLocalDateString } from './screenTimeCalculator';
 
 /**
- * Generates realistic baseline screen time data for non-native platforms
- * (Web browser and Android Chrome) so that stats and interactive charts
- * are immediately visible and testable prior to / alongside native APK sync.
+ * Returns an honest empty state for Web and Chrome Android when no real stats
+ * have been synchronized from the APK yet.
+ * Never fabricates or invents fake mock app hours.
+ */
+export function getEmptyScreenTimeData(targetDate?: string): ScreenTimeData {
+  const dateStr = targetDate || getLocalDateString();
+  const dateObj = new Date(dateStr + 'T12:00:00');
+  const formattedDate = dateObj.toLocaleDateString(undefined, {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+  });
+
+  return {
+    granted: true,
+    isNativeAndroid: false,
+    isFromApk: false,
+    hasData: false,
+    date: dateStr,
+    formattedDate,
+    totalMinutes: 0,
+    totalMillis: 0,
+    apps: [],
+    topApps: [],
+    hourlyUsage: [],
+    past7Days: [],
+    dailyAverageMinutes: 0,
+    lastSyncedTimestamp: 0,
+    dataSource: 'pendingApkSync',
+    message: 'No screen time recorded yet. Open the Android APK version to sync real device stats.',
+  };
+}
+
+/**
+ * Baseline test fixture for unit test environments only.
  */
 export function getBaselineScreenTimeData(targetDate?: string): ScreenTimeData {
   const dateStr = targetDate || getLocalDateString();

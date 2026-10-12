@@ -218,11 +218,17 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
                 Screen Time &amp; App Activity
               </h1>
               <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 border border-violet-200/60 dark:border-violet-900/40">
-                {data?.isNativeAndroid ? 'Android' : 'Synced'}
+                {screenTimeService.isNativeAndroid()
+                  ? 'Android APK (Live)'
+                  : data?.hasData
+                  ? 'Synced from APK'
+                  : 'Awaiting APK Sync'}
               </span>
             </div>
             <p className="text-xs text-[#787774] dark:text-[#94A3B8]">
-              Track your daily screen time, app activity, and weekly trends.
+              {screenTimeService.isNativeAndroid()
+                ? 'Track your daily screen time, app activity, and weekly trends natively.'
+                : 'Viewing screen time synchronized from the Android APK version.'}
             </p>
           </div>
         </div>
@@ -295,6 +301,32 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
         </div>
       ) : null}
 
+      {/* Awaiting APK sync banner (Web and Chrome Android when no APK data has synced yet) */}
+      {!screenTimeService.isNativeAndroid() && !data?.hasData && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-violet-50/70 dark:bg-violet-950/30 border border-violet-200/60 dark:border-violet-900/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-xl bg-violet-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+              <Smartphone className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-violet-950 dark:text-violet-200">
+                Awaiting Data from Android APK
+              </h3>
+              <p className="text-xs text-violet-800 dark:text-violet-300 mt-0.5 leading-relaxed max-w-2xl">
+                Screen time statistics are gathered exclusively by the Android APK using system UsageStatsManager. Open the Personal Dashboard APK on your phone to automatically record and sync your real screen time.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleRefresh}
+            className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold shadow-xs active:scale-95 transition-all cursor-pointer whitespace-nowrap"
+          >
+            Check for APK Sync
+          </button>
+        </div>
+      )}
+
       {/* Top Metric KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Metric 1: Total Screen Time */}
@@ -307,7 +339,7 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
             <div className="text-3xl font-extrabold text-[#37352F] dark:text-white tracking-tight">
               {isLoading && !data
                 ? '...'
-                : (data?.totalMinutes !== undefined && data.totalMinutes > 0) || data?.granted
+                : (data?.totalMinutes !== undefined && data.totalMinutes > 0) || (data?.granted && data?.hasData)
                 ? formatHoursAndMinutes(data?.totalMinutes || 0)
                 : screenTimeService.isNativeAndroid()
                 ? 'Locked'
@@ -318,7 +350,7 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
             <span>Selected Day Total</span>
             {data?.granted && data.totalMinutes > 0 && (
               <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                Active
+                {data.isNativeAndroid ? 'Live APK' : 'From APK'}
               </span>
             )}
           </div>
@@ -750,11 +782,11 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
               No Application Usage Recorded
             </h3>
             <p className="text-xs text-gray-500 dark:text-gray-400 max-w-md mx-auto">
-              {data?.granted
+              {data?.granted && data?.hasData
                 ? 'No foreground app activity was found for this specific date range.'
                 : screenTimeService.isNativeAndroid()
                 ? 'Grant Usage Access permission to view daily statistics.'
-                : 'No application usage recorded.'}
+                : 'No screen time recorded yet. Open the Android APK version on your phone to sync real stats.'}
             </p>
           </div>
         )}

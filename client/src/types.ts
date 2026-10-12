@@ -972,6 +972,7 @@ export interface ScreenTimeDiagnostics {
 export interface ScreenTimeData {
   granted: boolean;
   isNativeAndroid: boolean;
+  isFromApk?: boolean;
   hasData: boolean;
   date: string;
   formattedDate: string;

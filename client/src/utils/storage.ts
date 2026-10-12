@@ -2128,7 +2128,11 @@ export const Storage = {
   },
 
   getScreenTimeData: (): ScreenTimeData | null => {
-    return loadFromStorage<ScreenTimeData | null>(STORAGE_KEYS.SCREEN_TIME, null);
+    const data = loadFromStorage<ScreenTimeData | null>(STORAGE_KEYS.SCREEN_TIME, null);
+    if (data && data.dataSource === 'simulatedBaseline') {
+      return null;
+    }
+    return data;
   },
   setScreenTimeData: (data: ScreenTimeData): void => {
     try {
@@ -2149,21 +2153,24 @@ export const Storage = {
   },
   getDailyScreenTime: (date: string): ScreenTimeData | null => {
     const history = Storage.getScreenTimeHistory();
-    if (history[date]) return history[date];
+    const item = history[date];
+    if (item && item.dataSource !== 'simulatedBaseline') return item;
     const latest = Storage.getScreenTimeData();
-    if (latest && latest.date === date) return latest;
-    if (latest && Array.isArray(latest.past7Days)) {
-      const match = latest.past7Days.find((d) => d.date === date);
-      if (match) {
-        return {
-          ...latest,
-          date,
-          formattedDate: date,
-          totalMinutes: match.totalMinutes,
-          totalMillis: match.totalMillis,
-          hasData: true,
-          granted: true,
-        };
+    if (latest && latest.dataSource !== 'simulatedBaseline') {
+      if (latest.date === date) return latest;
+      if (Array.isArray(latest.past7Days)) {
+        const match = latest.past7Days.find((d) => d.date === date);
+        if (match) {
+          return {
+            ...latest,
+            date,
+            formattedDate: date,
+            totalMinutes: match.totalMinutes,
+            totalMillis: match.totalMillis,
+            hasData: true,
+            granted: true,
+          };
+        }
       }
     }
     return null;
@@ -2184,7 +2191,14 @@ export const Storage = {
     }
   },
   getScreenTimeHistory: (): Record<string, ScreenTimeData> => {
-    return loadFromStorage<Record<string, ScreenTimeData>>(STORAGE_KEYS.SCREEN_TIME_HISTORY, {});
+    const rawHistory = loadFromStorage<Record<string, ScreenTimeData>>(STORAGE_KEYS.SCREEN_TIME_HISTORY, {});
+    const cleanHistory: Record<string, ScreenTimeData> = {};
+    Object.entries(rawHistory || {}).forEach(([k, v]) => {
+      if (v && v.dataSource !== 'simulatedBaseline') {
+        cleanHistory[k] = v;
+      }
+    });
+    return cleanHistory;
   },
   setScreenTimeHistory: (history: Record<string, ScreenTimeData>): void => {
     try {
