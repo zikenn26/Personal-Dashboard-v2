@@ -3,16 +3,13 @@
     android:id="@+id/widget_spending_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="horizontal"
     android:background="@drawable/widget_spending_bg"
-    android:paddingStart="12dp"
-    android:paddingEnd="12dp"
-    android:paddingTop="8dp"
-    android:paddingBottom="8dp"
-    android:baselineAligned="false"
-    android:gravity="center_vertical">
+    android:orientation="horizontal"
+    android:padding="12dp"
+    android:gravity="center_vertical"
+    android:baselineAligned="false">
 
-    <!-- LEFT SECTION: Today -->
+    <!-- Left section — Today -->
     <LinearLayout
         android:id="@+id/widget_section_today"
         android:layout_width="0dp"
@@ -20,10 +17,10 @@
         android:layout_weight="1"
         android:orientation="vertical"
         android:gravity="center_vertical"
-        android:paddingStart="4dp"
-        android:paddingEnd="6dp">
+        android:paddingEnd="8dp"
+        android:paddingRight="8dp">
 
-        <!-- Header: Green Calendar Icon + "Today" Label -->
+        <!-- Header: Icon + Label -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -31,62 +28,64 @@
             android:gravity="center_vertical">
 
             <ImageView
-                android:id="@+id/widget_today_icon"
+                android:id="@+id/widget_icon_today"
                 android:layout_width="14dp"
                 android:layout_height="14dp"
                 android:src="@drawable/ic_widget_calendar_green"
                 android:contentDescription="@string/spending_widget_today" />
 
             <TextView
-                android:id="@+id/widget_today_label"
+                android:id="@+id/widget_label_today"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="5dp"
+                android:layout_marginStart="6dp"
+                android:layout_marginLeft="6dp"
                 android:text="@string/spending_widget_today"
-                android:textSize="11sp"
-                android:textStyle="bold"
                 android:textColor="@color/widget_spending_subtext"
+                android:textSize="11sp"
+                android:textStyle="normal"
+                android:fontFamily="sans-serif-medium"
                 android:singleLine="true" />
         </LinearLayout>
 
-        <!-- Large Bold White Total Spending -->
+        <!-- Large bold total spending -->
         <TextView
-            android:id="@+id/widget_today_amount"
+            android:id="@+id/widget_amount_today"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
             android:text="₹0"
-            android:textSize="17sp"
-            android:textStyle="bold"
             android:textColor="@color/widget_spending_amount"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:fontFamily="sans-serif-bold"
             android:singleLine="true"
             android:ellipsize="end" />
 
-        <!-- Small Green/Red Percentage Trend Underneath -->
+        <!-- Trend -->
         <TextView
-            android:id="@+id/widget_today_trend"
+            android:id="@+id/widget_trend_today"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="1dp"
-            android:textSize="10sp"
-            android:textStyle="bold"
+            android:text=""
             android:textColor="@color/widget_spending_trend_green"
+            android:textSize="10sp"
+            android:fontFamily="sans-serif"
             android:singleLine="true"
             android:visibility="gone" />
     </LinearLayout>
 
-    <!-- THIN VERTICAL DIVIDER -->
-    <TextView
-        android:id="@+id/widget_divider"
+    <!-- Thin vertical divider -->
+    <View
+        android:id="@+id/widget_spending_divider_view"
         android:layout_width="1dp"
         android:layout_height="match_parent"
-        android:layout_marginTop="6dp"
-        android:layout_marginBottom="6dp"
-        android:background="@color/widget_spending_divider"
-        android:importantForAccessibility="no"
-        android:text="" />
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="4dp"
+        android:background="@color/widget_spending_divider" />
 
-    <!-- RIGHT SECTION: This Week -->
+    <!-- Right section — This Week -->
     <LinearLayout
         android:id="@+id/widget_section_week"
         android:layout_width="0dp"
@@ -95,9 +94,9 @@
         android:orientation="vertical"
         android:gravity="center_vertical"
         android:paddingStart="12dp"
-        android:paddingEnd="4dp">
+        android:paddingLeft="12dp">
 
-        <!-- Header: Cyan Bar-Chart Icon + "This Week" Label -->
+        <!-- Header: Icon + Label -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -105,46 +104,50 @@
             android:gravity="center_vertical">
 
             <ImageView
-                android:id="@+id/widget_week_icon"
+                android:id="@+id/widget_icon_week"
                 android:layout_width="14dp"
                 android:layout_height="14dp"
                 android:src="@drawable/ic_widget_barchart_cyan"
                 android:contentDescription="@string/spending_widget_week" />
 
             <TextView
-                android:id="@+id/widget_week_label"
+                android:id="@+id/widget_label_week"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="5dp"
+                android:layout_marginStart="6dp"
+                android:layout_marginLeft="6dp"
                 android:text="@string/spending_widget_week"
-                android:textSize="11sp"
-                android:textStyle="bold"
                 android:textColor="@color/widget_spending_subtext"
+                android:textSize="11sp"
+                android:textStyle="normal"
+                android:fontFamily="sans-serif-medium"
                 android:singleLine="true" />
         </LinearLayout>
 
-        <!-- Large Bold White Weekly Total Spending -->
+        <!-- Large bold total spending -->
         <TextView
-            android:id="@+id/widget_week_amount"
+            android:id="@+id/widget_amount_week"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
             android:text="₹0"
-            android:textSize="17sp"
-            android:textStyle="bold"
             android:textColor="@color/widget_spending_amount"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:fontFamily="sans-serif-bold"
             android:singleLine="true"
             android:ellipsize="end" />
 
-        <!-- Small Green/Red Percentage Trend Underneath -->
+        <!-- Trend -->
         <TextView
-            android:id="@+id/widget_week_trend"
+            android:id="@+id/widget_trend_week"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="1dp"
-            android:textSize="10sp"
-            android:textStyle="bold"
+            android:text=""
             android:textColor="@color/widget_spending_trend_green"
+            android:textSize="10sp"
+            android:fontFamily="sans-serif"
             android:singleLine="true"
             android:visibility="gone" />
     </LinearLayout>

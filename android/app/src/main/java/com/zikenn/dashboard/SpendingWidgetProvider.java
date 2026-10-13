@@ -45,36 +45,36 @@ public class SpendingWidgetProvider extends AppWidgetProvider {
 
         // 1. Populate Today's spending
         String todayFormatted = prefs.getString(KEY_TODAY_AMOUNT_FORMATTED, "₹0");
-        views.setTextViewText(R.id.widget_today_amount, todayFormatted);
+        views.setTextViewText(R.id.widget_amount_today, todayFormatted);
 
         boolean todayTrendVisible = prefs.getBoolean(KEY_TODAY_TREND_VISIBLE, false);
         if (todayTrendVisible) {
             String todayTrend = prefs.getString(KEY_TODAY_TREND_TEXT, "");
             String todayColor = prefs.getString(KEY_TODAY_TREND_COLOR, "neutral");
-            views.setTextViewText(R.id.widget_today_trend, todayTrend);
+            views.setTextViewText(R.id.widget_trend_today, todayTrend);
             int colorVal = "red".equalsIgnoreCase(todayColor) ? 0xFFF87171 :
                            "green".equalsIgnoreCase(todayColor) ? 0xFF34D399 : 0xFF94A3B8;
-            views.setTextColor(R.id.widget_today_trend, colorVal);
-            views.setViewVisibility(R.id.widget_today_trend, View.VISIBLE);
+            views.setTextColor(R.id.widget_trend_today, colorVal);
+            views.setViewVisibility(R.id.widget_trend_today, View.VISIBLE);
         } else {
-            views.setViewVisibility(R.id.widget_today_trend, View.GONE);
+            views.setViewVisibility(R.id.widget_trend_today, View.GONE);
         }
 
         // 2. Populate This Week's spending
         String weekFormatted = prefs.getString(KEY_WEEK_AMOUNT_FORMATTED, "₹0");
-        views.setTextViewText(R.id.widget_week_amount, weekFormatted);
+        views.setTextViewText(R.id.widget_amount_week, weekFormatted);
 
         boolean weekTrendVisible = prefs.getBoolean(KEY_WEEK_TREND_VISIBLE, false);
         if (weekTrendVisible) {
             String weekTrend = prefs.getString(KEY_WEEK_TREND_TEXT, "");
             String weekColor = prefs.getString(KEY_WEEK_TREND_COLOR, "neutral");
-            views.setTextViewText(R.id.widget_week_trend, weekTrend);
+            views.setTextViewText(R.id.widget_trend_week, weekTrend);
             int colorVal = "red".equalsIgnoreCase(weekColor) ? 0xFFF87171 :
                            "green".equalsIgnoreCase(weekColor) ? 0xFF34D399 : 0xFF94A3B8;
-            views.setTextColor(R.id.widget_week_trend, colorVal);
-            views.setViewVisibility(R.id.widget_week_trend, View.VISIBLE);
+            views.setTextColor(R.id.widget_trend_week, colorVal);
+            views.setViewVisibility(R.id.widget_trend_week, View.VISIBLE);
         } else {
-            views.setViewVisibility(R.id.widget_week_trend, View.GONE);
+            views.setViewVisibility(R.id.widget_trend_week, View.GONE);
         }
 
         // 3. Tapping either section or root opens the Spending (Money) page in the APK
