@@ -7,10 +7,13 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.util.Log;
 import android.view.View;
 import android.widget.RemoteViews;
 
 public class SpendingWidgetProvider extends AppWidgetProvider {
+
+    private static final String TAG = "SpendingWidgetProvider";
 
     public static final String PREFS_NAME = "SpendingWidgetPrefs";
     public static final String KEY_TODAY_TOTAL = "spending_today_total";
@@ -31,6 +34,8 @@ public class SpendingWidgetProvider extends AppWidgetProvider {
 
     @Override
     public void onUpdate(Context context, AppWidgetManager appWidgetManager, int[] appWidgetIds) {
+        int count = appWidgetIds != null ? appWidgetIds.length : 0;
+        Log.d(TAG, "onUpdate called with " + count + " widget id(s)");
         if (appWidgetIds == null) return;
         for (int appWidgetId : appWidgetIds) {
             updateAppWidget(context, appWidgetManager, appWidgetId);
@@ -38,8 +43,12 @@ public class SpendingWidgetProvider extends AppWidgetProvider {
     }
 
     public static void updateAppWidget(Context context, AppWidgetManager appWidgetManager, int appWidgetId) {
-        if (context == null || appWidgetManager == null) return;
+        if (context == null || appWidgetManager == null) {
+            Log.w(TAG, "updateAppWidget aborted: context or appWidgetManager is null");
+            return;
+        }
 
+        Log.d(TAG, "updateAppWidget started for widgetId=" + appWidgetId);
         SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.spending_widget);
 
@@ -96,8 +105,9 @@ public class SpendingWidgetProvider extends AppWidgetProvider {
 
         try {
             appWidgetManager.updateAppWidget(appWidgetId, views);
+            Log.d(TAG, "Successfully submitted updateAppWidget for widgetId=" + appWidgetId);
         } catch (Exception e) {
-            e.printStackTrace();
+            Log.e(TAG, "Failed to updateAppWidget for widgetId=" + appWidgetId, e);
         }
     }
 
@@ -108,12 +118,15 @@ public class SpendingWidgetProvider extends AppWidgetProvider {
             ComponentName thisWidget = new ComponentName(context, SpendingWidgetProvider.class);
             int[] allWidgetIds = appWidgetManager.getAppWidgetIds(thisWidget);
             if (allWidgetIds != null && allWidgetIds.length > 0) {
+                Log.d(TAG, "updateAllWidgets refreshing " + allWidgetIds.length + " widget(s)");
                 for (int widgetId : allWidgetIds) {
                     updateAppWidget(context, appWidgetManager, widgetId);
                 }
+            } else {
+                Log.d(TAG, "updateAllWidgets called but no spending widgets are currently on the home screen");
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            Log.e(TAG, "Error in updateAllWidgets", e);
         }
     }
 
@@ -122,6 +135,7 @@ public class SpendingWidgetProvider extends AppWidgetProvider {
         super.onReceive(context, intent);
         if (intent != null) {
             String action = intent.getAction();
+            Log.d(TAG, "onReceive intent action: " + action);
             if (ACTION_WIDGET_UPDATE.equals(action) ||
                 AppWidgetManager.ACTION_APPWIDGET_UPDATE.equals(action) ||
                 Intent.ACTION_DATE_CHANGED.equals(action) ||

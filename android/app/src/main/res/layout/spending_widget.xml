@@ -76,14 +76,16 @@
             android:visibility="gone" />
     </LinearLayout>
 
-    <!-- Thin vertical divider -->
-    <View
+    <!-- Thin vertical divider: ImageView is compatible with Android RemoteViews (android.view.View is prohibited in RemoteViews) -->
+    <ImageView
         android:id="@+id/widget_spending_divider_view"
         android:layout_width="1dp"
         android:layout_height="match_parent"
         android:layout_marginTop="4dp"
         android:layout_marginBottom="4dp"
-        android:background="@color/widget_spending_divider" />
+        android:background="@color/widget_spending_divider"
+        android:importantForAccessibility="no"
+        android:contentDescription="@null" />
 
     <!-- Right section — This Week -->
     <LinearLayout
