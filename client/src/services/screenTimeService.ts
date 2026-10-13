@@ -597,7 +597,10 @@ class ScreenTimeService {
           timestamp: Date.now(),
         };
 
-        this.notifyListeners(screenTimeData);
+        // Guard against race conditions: only notify general subscribers if queried date is today's current date
+        if (targetDate === getLocalDateString()) {
+          this.notifyListeners(screenTimeData);
+        }
         return screenTimeData;
       } catch (err: any) {
         console.error('[ScreenTimeService] getDailyUsage error:', err);

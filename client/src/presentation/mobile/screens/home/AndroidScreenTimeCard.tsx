@@ -97,11 +97,11 @@ export const AndroidScreenTimeCard: React.FC<AndroidScreenTimeCardProps> = ({
           <div className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">
             {isLoading && !data
               ? '...'
-              : (data?.totalMinutes !== undefined && data.totalMinutes > 0) || (data?.granted && data?.hasData)
+              : data?.granted
               ? formatHoursAndMinutes(data?.totalMinutes || 0)
               : screenTimeService.isNativeAndroid()
               ? 'Access Needed'
-              : '0m'}
+              : formatHoursAndMinutes(data?.totalMinutes || 0)}
           </div>
           <p className="text-[11px] text-gray-500 dark:text-gray-400">
             {data && data.totalMinutes > 0
@@ -110,6 +110,8 @@ export const AndroidScreenTimeCard: React.FC<AndroidScreenTimeCardProps> = ({
                 : 'Daily screen time'
               : screenTimeService.isNativeAndroid() && !data?.granted
               ? 'Tap to grant Usage Access'
+              : data?.granted
+              ? 'No screen time recorded today'
               : 'Screen time from APK'}
           </p>
         </div>
