@@ -44,13 +44,17 @@ public class SpendingWidgetPlugin extends Plugin {
 
             SharedPreferences.Editor editor = prefs.edit();
 
-            editor.putFloat(SpendingWidgetProvider.KEY_TODAY_TOTAL, (float) call.getDouble("todayTotal", 0.0));
+            Double todayValue = call.getDouble("todayTotal");
+            double todayTotal = todayValue != null ? todayValue : 0.0;
+            editor.putFloat(SpendingWidgetProvider.KEY_TODAY_TOTAL, (float) todayTotal);
             editor.putString(SpendingWidgetProvider.KEY_TODAY_AMOUNT_FORMATTED, call.getString("formattedTodayTotal", "₹0"));
             editor.putString(SpendingWidgetProvider.KEY_TODAY_TREND_TEXT, call.getString("todayTrendText", ""));
             editor.putString(SpendingWidgetProvider.KEY_TODAY_TREND_COLOR, call.getString("todayTrendColor", "neutral"));
             editor.putBoolean(SpendingWidgetProvider.KEY_TODAY_TREND_VISIBLE, Boolean.TRUE.equals(call.getBoolean("todayTrendVisible", false)));
 
-            editor.putFloat(SpendingWidgetProvider.KEY_WEEK_TOTAL, (float) call.getDouble("weekTotal", 0.0));
+            Double weekValue = call.getDouble("weekTotal");
+            double weekTotal = weekValue != null ? weekValue : 0.0;
+            editor.putFloat(SpendingWidgetProvider.KEY_WEEK_TOTAL, (float) weekTotal);
             editor.putString(SpendingWidgetProvider.KEY_WEEK_AMOUNT_FORMATTED, call.getString("formattedWeekTotal", "₹0"));
             editor.putString(SpendingWidgetProvider.KEY_WEEK_TREND_TEXT, call.getString("weekTrendText", ""));
             editor.putString(SpendingWidgetProvider.KEY_WEEK_TREND_COLOR, call.getString("weekTrendColor", "neutral"));
