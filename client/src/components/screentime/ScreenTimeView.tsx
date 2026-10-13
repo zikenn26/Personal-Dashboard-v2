@@ -83,7 +83,19 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
         setData(updated);
       }
     });
-    return () => unsubscribe();
+
+    const isViewingToday = selectedDate === getLocalDateString();
+    const interval = setInterval(() => {
+      const today = getLocalDateString();
+      if (isViewingToday && selectedDate !== today) {
+        setSelectedDate(today);
+      }
+    }, 15000);
+
+    return () => {
+      unsubscribe();
+      clearInterval(interval);
+    };
   }, [selectedDate, excludeSelf]);
 
   const handleRefresh = async () => {

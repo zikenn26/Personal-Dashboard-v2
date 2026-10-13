@@ -46,6 +46,7 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
   const [selectedAppPackage, setSelectedAppPackage] = useState<string | null>(null);
 
   const isSupported = screenTimeService.isSupported();
+  const isTodaySelected = selectedDate === getLocalDateString();
 
   const loadData = async (force = false) => {
     setIsLoading(true);
@@ -69,8 +70,20 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
         setData(updated);
       }
     });
-    return () => unsubscribe();
-  }, [selectedDate]);
+
+    // Check periodically or on visibility for midnight rollover
+    const interval = setInterval(() => {
+      const today = getLocalDateString();
+      if (isTodaySelected && selectedDate !== today) {
+        setSelectedDate(today);
+      }
+    }, 15000);
+
+    return () => {
+      unsubscribe();
+      clearInterval(interval);
+    };
+  }, [selectedDate, isTodaySelected]);
 
   const handleRefresh = async () => {
     void nativeService.triggerHaptic('selection');
@@ -98,8 +111,6 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
     if (nextDate > today) return;
     setSelectedDate(nextDate);
   };
-
-  const isTodaySelected = selectedDate === getLocalDateString();
 
   const selectedApp = useMemo(() => {
     if (!selectedAppPackage || !data?.apps) return null;

@@ -55,16 +55,16 @@ public class ScreenTimeWidgetProvider extends AppWidgetProvider {
             views.setViewVisibility(R.id.widget_screentime_unavailable, View.VISIBLE);
             views.setTextViewText(R.id.widget_screentime_status_title, context.getString(R.string.screentime_widget_perm_needed));
             views.setTextViewText(R.id.widget_screentime_status_desc, context.getString(R.string.screentime_widget_tap_to_setup));
-        } else if (!isDateCurrent && !hasData) {
-            // New day before first sync
+        } else if (!isDateCurrent) {
+            // New calendar day after midnight: always reset to 0m for today until new today sync occurs
             views.setViewVisibility(R.id.widget_screentime_duration, View.VISIBLE);
             views.setViewVisibility(R.id.widget_screentime_unavailable, View.GONE);
             views.setTextViewText(R.id.widget_screentime_duration, "0m");
         } else {
-            // Normal state: display verified Screen Time duration
+            // Normal state: display verified Screen Time duration for today
             views.setViewVisibility(R.id.widget_screentime_duration, View.VISIBLE);
             views.setViewVisibility(R.id.widget_screentime_unavailable, View.GONE);
-            views.setTextViewText(R.id.widget_screentime_duration, formattedDuration);
+            views.setTextViewText(R.id.widget_screentime_duration, hasData ? formattedDuration : "0m");
         }
 
         // Tap widget -> open Screen Time screen in APK

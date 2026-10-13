@@ -265,7 +265,9 @@ public class ScreenTimePlugin extends Plugin {
             JSArray packageReconciliations = new JSArray();
 
             if (!rawEventList.isEmpty()) {
-                // Primary method: Reconstruct non-overlapping intervals via ScreenTimeCalculator
+                // Primary & Authoritative method: Reconstruct non-overlapping intervals via ScreenTimeCalculator.
+                // Device screen time is the exact mathematical union of all foreground intervals.
+                // This matches Android Digital Wellbeing and prevents multi-window / PiP inflation.
                 calcResult = ScreenTimeCalculator.calculateDailyScreenTime(
                         rawEventList,
                         startOfDay,
@@ -275,11 +277,11 @@ public class ScreenTimePlugin extends Plugin {
                 originalEventTotal = calcResult.totalDeviceMillis;
                 calculationMode = "usageEventsUnion";
 
-                // Audit each package: compare event-derived duration with OS UsageStats aggregate
+                // Informational Audit: compare event-derived duration with OS UsageStats aggregate
+                // We log diagnostics and record audit data for verification, but DO NOT overwrite
+                // the event-union totals or app durations with multi-window inflated OS sums.
                 Set<String> allPackages = new HashSet<>(calcResult.appUsage.keySet());
                 allPackages.addAll(osRecords.keySet());
-
-                long totalDiscrepancyMillis = 0L;
 
                 for (String pkg : allPackages) {
                     ScreenTimeCalculator.AppCalculation appCalc = calcResult.appUsage.get(pkg);
@@ -300,11 +302,8 @@ public class ScreenTimePlugin extends Plugin {
                             decision = "EVENT_CONFIRMED";
                             explanation = "Reconstructed from verified UsageEvents intervals (" + (-diff) + "ms higher than OS aggregate).";
                         } else {
-                            // osDuration > eventDuration: Android OS kernel-level tracking captured more time
-                            decision = "OS_RECONCILED";
-                            explanation = "Reconciled with authentic OS UsageStats foreground duration (" + (diff / 1000) + "s captured by OS).";
-                            appCalc.durationMillis = osDuration;
-                            totalDiscrepancyMillis += diff;
+                            decision = "EVENT_AUTHORITATIVE";
+                            explanation = "Using verified UsageEvents foreground interval; OS aggregate had overlapping or background activities (" + (diff / 1000) + "s higher).";
                         }
                     } else if (appCalc != null) {
                         decision = "EVENTS_ONLY";
@@ -312,13 +311,8 @@ public class ScreenTimePlugin extends Plugin {
                     } else {
                         // appCalc == null but osRec != null
                         if (osDuration >= 5000L) {
-                            decision = "OS_RECONCILED_NO_EVENTS";
-                            explanation = "Zero UsageEvents captured (OEM buffer eviction); OS daily record present within day.";
-                            ScreenTimeCalculator.AppCalculation addedApp = new ScreenTimeCalculator.AppCalculation(pkg);
-                            addedApp.durationMillis = osDuration;
-                            addedApp.sessionCount = Math.max(1, osRec.recordCount);
-                            calcResult.appUsage.put(pkg, addedApp);
-                            totalDiscrepancyMillis += osDuration;
+                            decision = "OS_ONLY_NO_EVENTS";
+                            explanation = "Zero UsageEvents captured in buffer; present in OS aggregate.";
                         } else {
                             decision = "OS_IGNORED_TRIVIAL";
                             explanation = "OS aggregate found without events but duration < 5s.";
@@ -343,13 +337,8 @@ public class ScreenTimePlugin extends Plugin {
                     pkgDiag.put("explanation", explanation);
                     packageReconciliations.put(pkgDiag);
                 }
-
-                if (totalDiscrepancyMillis > 0) {
-                    long maxPossible = Math.max(0L, effectiveEnd - startOfDay);
-                    calcResult.totalDeviceMillis = Math.min(maxPossible, calcResult.totalDeviceMillis + totalDiscrepancyMillis);
-                }
             } else {
-                // Secondary fallback if UsageEvents is blocked by an OEM ROM
+                // Secondary fallback only if UsageEvents list is completely empty (e.g. OEM ROM restriction)
                 calcResult = executeAggregateFallback(usageStatsManager, startOfDay, effectiveEnd, excludeSelf ? ourPackage : null);
                 calculationMode = "usageStatsFallback";
             }

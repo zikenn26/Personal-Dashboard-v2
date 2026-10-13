@@ -126,14 +126,18 @@ class ScreenTimeService {
   private resumeListenerBound = false;
   private broadcastChannel: BroadcastChannel | null = null;
   private pollIntervalId: any = null;
+  private lastKnownDate: string;
+  private midnightTimerId: any = null;
 
   constructor() {
     this.isNative = Capacitor.isNativePlatform();
     this.isAndroid = this.isNative && Capacitor.getPlatform() === 'android';
+    this.lastKnownDate = getLocalDateString();
     this.setupResumeListener();
     this.setupStorageListener();
     this.setupBroadcastChannel();
     this.setupFocusListener();
+    this.setupMidnightTimer();
     this.startPeriodicSync();
   }
 
@@ -189,11 +193,15 @@ class ScreenTimeService {
     if (typeof window === 'undefined') return;
     try {
       window.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible' && !this.isAndroid) {
-          void this.pollServerForUpdates();
+        if (document.visibilityState === 'visible') {
+          this.validateDateBoundary();
+          if (!this.isAndroid) {
+            void this.pollServerForUpdates();
+          }
         }
       });
       window.addEventListener('focus', () => {
+        this.validateDateBoundary();
         if (!this.isAndroid) {
           void this.pollServerForUpdates();
         }
@@ -330,15 +338,67 @@ class ScreenTimeService {
     }
   }
 
+  /**
+   * Sets up an accurate midnight timer to flush the memory cache and refresh Screen Time
+   * as soon as a new calendar day begins.
+   */
+  private setupMidnightTimer() {
+    if (typeof window === 'undefined') return;
+    try {
+      if (this.midnightTimerId) clearTimeout(this.midnightTimerId);
+
+      const now = new Date();
+      const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1, 0);
+      const msUntilMidnight = Math.max(1000, midnight.getTime() - now.getTime());
+
+      this.midnightTimerId = setTimeout(() => {
+        this.handleDateRollover();
+        this.setupMidnightTimer(); // Reschedule for next day
+      }, msUntilMidnight);
+    } catch {
+      // Ignore
+    }
+  }
+
+  /**
+   * Checks whether the local calendar date has changed since last query.
+   * If so, invalidates cache and triggers an immediate refresh for the new day.
+   */
+  public validateDateBoundary(): boolean {
+    const currentDate = getLocalDateString();
+    if (this.lastKnownDate && this.lastKnownDate !== currentDate) {
+      this.handleDateRollover();
+      return true;
+    }
+    this.lastKnownDate = currentDate;
+    return false;
+  }
+
+  private handleDateRollover() {
+    const newDate = getLocalDateString();
+    this.lastKnownDate = newDate;
+    this.clearCache();
+
+    // Trigger fresh load for the new calendar day
+    void this.getDailyUsage({ date: newDate, forceRefresh: true }).then((data) => {
+      this.notifyListeners(data);
+    }).catch(() => {});
+  }
+
   private setupResumeListener() {
     if (this.resumeListenerBound || !this.isNative) return;
     try {
       void CapApp.addListener('appStateChange', (state) => {
-        if (state.isActive && this.isAndroid) {
-          // Invalidate cache and auto-fetch fresh stats when app resumes from Android settings
-          void this.getDailyUsage({ forceRefresh: true }).then((data) => {
-            this.notifyListeners(data);
-          }).catch(() => {});
+        if (state.isActive) {
+          // Check if date rolled over while app was in background
+          this.validateDateBoundary();
+
+          if (this.isAndroid) {
+            // Invalidate cache and auto-fetch fresh stats when app resumes
+            void this.getDailyUsage({ forceRefresh: true }).then((data) => {
+              this.notifyListeners(data);
+            }).catch(() => {});
+          }
         }
       });
       this.resumeListenerBound = true;
