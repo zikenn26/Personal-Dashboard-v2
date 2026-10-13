@@ -15,6 +15,7 @@
     <string name="spending_widget_name">Spending</string>
     <string name="spending_widget_desc">Track today and weekly spending at a glance</string>
     <string name="spending_widget_today">Today</string>
+    <string name="spending_widget_week">This Week</string>
     <!-- Screen Time Widget Strings -->
     <string name="screentime_widget_name">Screen Time</string>
     <string name="screentime_widget_desc">Track today\'s screen time at a glance</string>
