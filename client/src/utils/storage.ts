@@ -46,6 +46,7 @@ import { INITIAL_USER_EXAMS } from '../data/defaultExams';
 import { getMondayOfWeek, getWeekId, formatWeekRange } from './habitWeekManager';
 import { normalizeExpenseDateKey, getLocalDateKey } from './expenseUtils';
 import { scratchpadWidgetService } from '../services/scratchpadWidgetService';
+import { spendingWidgetService } from '../services/spendingWidgetService';
 import { getLocalDateString, resolveCleanAppName } from './screenTimeCalculator';
 
 export const STORAGE_KEYS = {
@@ -1401,6 +1402,7 @@ export const Storage = {
     try {
       localStorage.setItem('lifeos_expenses_backup', JSON.stringify(sanitized));
     } catch {}
+    void spendingWidgetService.syncToNativeWidget(sanitized);
     return sanitized;
   },
   /**

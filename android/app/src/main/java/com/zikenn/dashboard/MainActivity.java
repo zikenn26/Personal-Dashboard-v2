@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(SmsTransactionPlugin.class);
         registerPlugin(ScratchPadWidgetPlugin.class);
+        registerPlugin(SpendingWidgetPlugin.class);
         registerPlugin(ScreenTimePlugin.class);
         super.onCreate(savedInstanceState);
         handleWidgetIntent(getIntent());
@@ -28,6 +29,8 @@ public class MainActivity extends BridgeActivity {
         if (ScratchPadWidgetProvider.ACTION_OPEN_SCRATCHPAD.equals(action) || "scratchpad".equals(target)) {
             boolean autoAdd = intent.getBooleanExtra("auto_add", false);
             ScratchPadWidgetPlugin.setPendingWidgetOpen(autoAdd);
+        } else if (SpendingWidgetProvider.ACTION_OPEN_SPENDING.equals(action) || "spending".equals(target) || "money".equals(target)) {
+            SpendingWidgetPlugin.setPendingWidgetOpen();
         }
     }
 }

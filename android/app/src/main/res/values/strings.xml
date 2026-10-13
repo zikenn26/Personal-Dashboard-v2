@@ -10,4 +10,10 @@
     <string name="scratchpad_widget_title">Scratch Pad</string>
     <string name="scratchpad_widget_desc">Sticky notes and quick thoughts from Personal Dashboard</string>
     <string name="scratchpad_widget_empty">No notes yet.\nTap to write a quick note.</string>
+
+    <!-- Spending Widget Strings -->
+    <string name="spending_widget_name">Spending</string>
+    <string name="spending_widget_desc">Track today and weekly spending at a glance</string>
+    <string name="spending_widget_today">Today</string>
+    <string name="spending_widget_week">This Week</string>
 </resources>

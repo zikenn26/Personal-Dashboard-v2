@@ -52,6 +52,7 @@ import { ApiKeySettingsModal } from './components/ApiKeySettingsModal';
 import { smsExpenseService } from './services/smsExpenseService';
 import { screenTimeService } from './services/screenTimeService';
 import { scratchpadWidgetService } from './services/scratchpadWidgetService';
+import { spendingWidgetService } from './services/spendingWidgetService';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { QuickCaptureBar } from './components/QuickCaptureBar';
 import { BackupRestoreView } from './components/BackupRestoreView';
@@ -595,6 +596,37 @@ export default function App() {
       cleanup();
     };
   }, []);
+
+  // Sync Native Spending Android Widget & Listen for Widget Tap Actions
+  useEffect(() => {
+    // 1. Initial push to native widget SharedPreferences
+    void spendingWidgetService.syncToNativeWidget(Storage.getExpenses());
+
+    const handleSpendingTrigger = () => {
+      setActiveView('expenses');
+    };
+
+    // 2. Check if the app was launched by tapping the spending widget
+    void spendingWidgetService.checkLaunchIntent().then((res) => {
+      if (res?.openSpending) {
+        handleSpendingTrigger();
+      }
+    });
+
+    // 3. Listen for runtime widget taps while app is already in memory
+    const cleanup = spendingWidgetService.setupWidgetListener(() => {
+      handleSpendingTrigger();
+    });
+
+    return () => {
+      cleanup();
+    };
+  }, []);
+
+  // Re-sync spending widget whenever expenses change
+  useEffect(() => {
+    void spendingWidgetService.syncToNativeWidget(expenses);
+  }, [expenses]);
 
   // Listen for external atomic expense deletion requests
   useEffect(() => {

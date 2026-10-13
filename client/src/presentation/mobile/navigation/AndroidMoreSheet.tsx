@@ -187,7 +187,6 @@ export const AndroidMoreSheet: React.FC<AndroidMoreSheetProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title="More"
-      subtitle="Application feature launcher"
       maxHeight="max-h-[85vh]"
     >
       <div className="p-4 pb-12 overflow-y-auto space-y-3">
