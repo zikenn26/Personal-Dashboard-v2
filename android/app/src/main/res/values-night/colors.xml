@@ -28,5 +28,12 @@
     <color name="widget_spending_barchart_cyan">#06B6D4</color>
     <color name="widget_spending_trend_green">#34D399</color>
     <color name="widget_spending_trend_red">#F87171</color>
-    <color name="widget_spending_trend_neutral">#94A3B8</color>
+    <!-- Screen Time Widget Colors (Dark) -->
+    <color name="widget_screentime_bg">#0B0E1B</color>
+    <color name="widget_screentime_border">#1E243E</color>
+    <color name="widget_screentime_label">#A5B4FC</color>
+    <color name="widget_screentime_duration">#FFFFFF</color>
+    <color name="widget_screentime_subtext">#818CF8</color>
+    <color name="widget_screentime_error">#F87171</color>
+    <color name="widget_screentime_accent">#6366F1</color>
 </resources>

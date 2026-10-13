@@ -31,6 +31,8 @@ public class MainActivity extends BridgeActivity {
             ScratchPadWidgetPlugin.setPendingWidgetOpen(autoAdd);
         } else if (SpendingWidgetProvider.ACTION_OPEN_SPENDING.equals(action) || "spending".equals(target) || "money".equals(target)) {
             SpendingWidgetPlugin.setPendingWidgetOpen();
+        } else if (ScreenTimeWidgetProvider.ACTION_OPEN_SCREENTIME.equals(action) || "screentime".equals(target)) {
+            ScreenTimePlugin.setPendingWidgetOpen();
         }
     }
 }

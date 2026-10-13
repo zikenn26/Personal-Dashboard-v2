@@ -628,6 +628,29 @@ export default function App() {
     void spendingWidgetService.syncToNativeWidget(expenses);
   }, [expenses]);
 
+  // Listen for Native Screen Time Android Widget Tap Actions
+  useEffect(() => {
+    const handleScreenTimeTrigger = () => {
+      setActiveView('screentime');
+    };
+
+    // 1. Check if app was launched by tapping the Screen Time widget
+    void screenTimeService.checkLaunchIntent().then((res) => {
+      if (res?.openScreenTime) {
+        handleScreenTimeTrigger();
+      }
+    });
+
+    // 2. Listen for runtime widget taps while app is already in memory
+    const cleanup = screenTimeService.setupWidgetListener(() => {
+      handleScreenTimeTrigger();
+    });
+
+    return () => {
+      cleanup();
+    };
+  }, []);
+
   // Listen for external atomic expense deletion requests
   useEffect(() => {
     const handleRequestAtomicExpenseDeletion = (e: Event) => {

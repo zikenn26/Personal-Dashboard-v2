@@ -40,7 +40,10 @@ public class ScreenTimeCalculator {
     public static final int EVENT_SCREEN_NON_INTERACTIVE = 16;
     public static final int EVENT_KEYGUARD_SHOWN = 17;
     public static final int EVENT_KEYGUARD_HIDDEN = 18;
+    public static final int EVENT_FOREGROUND_SERVICE_START = 19;
+    public static final int EVENT_FOREGROUND_SERVICE_STOP = 20;
     public static final int EVENT_ACTIVITY_STOPPED = 23;
+    public static final int EVENT_ACTIVITY_DESTROYED = 24;
     public static final int EVENT_DEVICE_SHUTDOWN = 26;
     public static final int EVENT_DEVICE_STARTUP = 27;
 
@@ -207,6 +210,7 @@ public class ScreenTimeCalculator {
         long lastInteractionTime = 0L;
         boolean isScreenInteractive = true;
         Set<String> activeActivities = new HashSet<>();
+        int activeActivityCount = 0;
 
         List<SessionInterval> rawSessions = new ArrayList<>();
 
@@ -236,13 +240,15 @@ public class ScreenTimeCalculator {
                         if (cls != null && !cls.isEmpty()) {
                             activeActivities.add(cls);
                         }
+                        activeActivityCount = 1;
                     } else if (activePkg != null && activePkg.equals(pkg)) {
-                        // Same package internal navigation (Activity A -> Activity B):
+                        // Same package internal navigation (e.g. Chat List -> Conversation -> Media View):
                         // Continuous uninterrupted foreground session. Keep sessionStartTime intact.
                         lastInteractionTime = t;
                         if (cls != null && !cls.isEmpty()) {
                             activeActivities.add(cls);
                         }
+                        activeActivityCount++;
                     } else {
                         // Initial session or session after screen unlock
                         activePkg = pkg;
@@ -252,28 +258,46 @@ public class ScreenTimeCalculator {
                         if (cls != null && !cls.isEmpty()) {
                             activeActivities.add(cls);
                         }
+                        activeActivityCount = 1;
                     }
                     isScreenInteractive = true;
                     break;
 
                 case EVENT_ACTIVITY_PAUSED:
                     if (activePkg != null && activePkg.equals(pkg)) {
-                        if (cls != null && !cls.isEmpty() && !activeActivities.isEmpty()) {
+                        lastInteractionTime = t;
+                        if (cls != null && !cls.isEmpty()) {
                             activeActivities.remove(cls);
-                            // If another activity of this package is still active, app remains foreground!
-                            if (activeActivities.isEmpty()) {
-                                long sessionEnd = resolveSessionEnd(sessionStartTime, t, lastInteractionTime, result);
-                                rawSessions.add(new SessionInterval(activePkg, sessionStartTime, sessionEnd));
-                                activePkg = null;
-                                sessionStartTime = 0L;
-                            }
-                        } else {
-                            // No activity class name tracking available: close session at pause
+                        }
+                        activeActivityCount = Math.max(0, activeActivityCount - 1);
+                        boolean isClosed = (cls != null && !cls.isEmpty()) ? activeActivities.isEmpty() : activeActivityCount == 0;
+                        if (isClosed) {
                             long sessionEnd = resolveSessionEnd(sessionStartTime, t, lastInteractionTime, result);
                             rawSessions.add(new SessionInterval(activePkg, sessionStartTime, sessionEnd));
                             activePkg = null;
                             sessionStartTime = 0L;
                             activeActivities.clear();
+                            activeActivityCount = 0;
+                        }
+                    }
+                    break;
+
+                case EVENT_ACTIVITY_STOPPED:
+                case EVENT_ACTIVITY_DESTROYED:
+                    if (activePkg != null && activePkg.equals(pkg)) {
+                        lastInteractionTime = t;
+                        if (cls != null && !cls.isEmpty()) {
+                            activeActivities.remove(cls);
+                        }
+                        activeActivityCount = Math.max(0, activeActivityCount - 1);
+                        boolean isClosed = (cls != null && !cls.isEmpty()) ? activeActivities.isEmpty() : activeActivityCount == 0;
+                        if (isClosed) {
+                            long sessionEnd = resolveSessionEnd(sessionStartTime, t, lastInteractionTime, result);
+                            rawSessions.add(new SessionInterval(activePkg, sessionStartTime, sessionEnd));
+                            activePkg = null;
+                            sessionStartTime = 0L;
+                            activeActivities.clear();
+                            activeActivityCount = 0;
                         }
                     }
                     break;
@@ -299,6 +323,8 @@ public class ScreenTimeCalculator {
                     break;
 
                 case EVENT_USER_INTERACTION:
+                case EVENT_FOREGROUND_SERVICE_START:
+                case EVENT_FOREGROUND_SERVICE_STOP:
                     lastInteractionTime = t;
                     // If active package was null upon screen unlock or unhandled transition, recover it from user touch
                     if (activePkg == null && isScreenInteractive && pkg != null && !pkg.isEmpty()) {

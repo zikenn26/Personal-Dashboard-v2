@@ -17,6 +17,12 @@ export interface ScreenTimePluginInterface {
   getPast7DaysUsage(options?: {
     excludeSelf?: boolean;
   }): Promise<{ granted: boolean; days?: any[] }>;
+  checkLaunchIntent(): Promise<{ openScreenTime: boolean }>;
+  syncWidget(options: { totalMinutes: number; formattedDuration?: string }): Promise<{ success: boolean }>;
+  addListener(
+    eventName: 'widgetOpenScreenTime',
+    listenerFunc: (data: { openScreenTime: boolean }) => void
+  ): Promise<any>;
 }
 
 const ScreenTime = registerPlugin<ScreenTimePluginInterface>('ScreenTime');
@@ -567,6 +573,35 @@ class ScreenTimeService {
     })();
 
     return pendingQueryPromise;
+  }
+
+  public async checkLaunchIntent(): Promise<{ openScreenTime: boolean }> {
+    if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== 'android') {
+      return { openScreenTime: false };
+    }
+    try {
+      return await ScreenTime.checkLaunchIntent();
+    } catch {
+      return { openScreenTime: false };
+    }
+  }
+
+  public setupWidgetListener(onOpen: () => void): () => void {
+    if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== 'android') {
+      return () => {};
+    }
+    try {
+      const handle = ScreenTime.addListener('widgetOpenScreenTime', (data) => {
+        if (data?.openScreenTime) {
+          onOpen();
+        }
+      });
+      return () => {
+        handle.then((h) => h?.remove?.()).catch(() => {});
+      };
+    } catch {
+      return () => {};
+    }
   }
 
   public clearCache(): void {

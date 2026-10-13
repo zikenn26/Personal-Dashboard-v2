@@ -44,11 +44,39 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @CapacitorPlugin(name = "ScreenTime")
 public class ScreenTimePlugin extends Plugin {
-    private static final String TAG = "ScreenTimePlugin";
+    private static ScreenTimePlugin instance;
+    private static boolean pendingOpenScreenTime = false;
 
     // In-memory icon and app name caches across queries
     private static final Map<String, String> ICON_CACHE = new ConcurrentHashMap<>();
     private static final Map<String, String> APP_NAME_CACHE = new ConcurrentHashMap<>();
+
+    @Override
+    public void load() {
+        super.load();
+        instance = this;
+    }
+
+    public static void setPendingWidgetOpen() {
+        pendingOpenScreenTime = true;
+        if (instance != null) {
+            instance.emitWidgetOpenEvent();
+        }
+    }
+
+    private void emitWidgetOpenEvent() {
+        JSObject ret = new JSObject();
+        ret.put("openScreenTime", true);
+        notifyListeners("widgetOpenScreenTime", ret);
+    }
+
+    @PluginMethod
+    public void checkLaunchIntent(PluginCall call) {
+        JSObject ret = new JSObject();
+        ret.put("openScreenTime", pendingOpenScreenTime);
+        pendingOpenScreenTime = false;
+        call.resolve(ret);
+    }
 
     private static class OsPackageRecord {
         long durationMillis = 0L;
@@ -62,8 +90,13 @@ public class ScreenTimePlugin extends Plugin {
      */
     @PluginMethod
     public void hasPermission(PluginCall call) {
+        boolean granted = isUsageAccessGranted();
+        Context ctx = getContext();
+        if (!granted && ctx != null) {
+            ScreenTimeWidgetProvider.updateWidgetData(ctx, 0, "--", false, false);
+        }
         JSObject ret = new JSObject();
-        ret.put("granted", isUsageAccessGranted());
+        ret.put("granted", granted);
         call.resolve(ret);
     }
 
@@ -101,6 +134,10 @@ public class ScreenTimePlugin extends Plugin {
     @PluginMethod
     public void getDailyUsage(PluginCall call) {
         if (!isUsageAccessGranted()) {
+            Context ctx = getContext();
+            if (ctx != null) {
+                ScreenTimeWidgetProvider.updateWidgetData(ctx, 0, "--", false, false);
+            }
             JSObject ret = new JSObject();
             ret.put("granted", false);
             ret.put("hasData", false);
@@ -241,6 +278,8 @@ public class ScreenTimePlugin extends Plugin {
                 Set<String> allPackages = new HashSet<>(calcResult.appUsage.keySet());
                 allPackages.addAll(osRecords.keySet());
 
+                long totalDiscrepancyMillis = 0L;
+
                 for (String pkg : allPackages) {
                     ScreenTimeCalculator.AppCalculation appCalc = calcResult.appUsage.get(pkg);
                     OsPackageRecord osRec = osRecords.get(pkg);
@@ -256,35 +295,32 @@ public class ScreenTimePlugin extends Plugin {
                         if (Math.abs(diff) <= 5000L) {
                             decision = "EXACT_MATCH";
                             explanation = "Event intervals match OS aggregate within 5 seconds.";
-                        } else if (osRec.firstTimeStamp < startOfDay || osRec.lastTimeStamp > effectiveEnd) {
-                            decision = "OS_MISALIGNED_WINDOW";
-                            explanation = "OS aggregate record spans outside [startOfDay, effectiveEnd] ("
-                                    + (osRec.firstTimeStamp < startOfDay ? "started before midnight; " : "")
-                                    + (osRec.lastTimeStamp > effectiveEnd ? "extends past cutoff" : "")
-                                    + "). Verified timestamped event intervals preserved.";
                         } else if (eventDuration >= osDuration) {
                             decision = "EVENT_CONFIRMED";
                             explanation = "Reconstructed from verified UsageEvents intervals (" + (-diff) + "ms higher than OS aggregate).";
                         } else {
-                            // osDuration > eventDuration and bounds are within range
-                            decision = "OS_HIGHER_WITHIN_BOUNDS";
-                            explanation = "OS aggregate reports " + (diff / 1000) + "s more than reconstructed events within day bounds.";
+                            // osDuration > eventDuration: Android OS kernel-level tracking captured more time
+                            decision = "OS_RECONCILED";
+                            explanation = "Reconciled with authentic OS UsageStats foreground duration (" + (diff / 1000) + "s captured by OS).";
+                            appCalc.durationMillis = osDuration;
+                            totalDiscrepancyMillis += diff;
                         }
                     } else if (appCalc != null) {
                         decision = "EVENTS_ONLY";
                         explanation = "No OS UsageStats record returned by system; strictly event-derived.";
                     } else {
                         // appCalc == null but osRec != null
-                        if (osRec.firstTimeStamp >= startOfDay && osRec.lastTimeStamp <= effectiveEnd && osDuration >= 5000L) {
-                            decision = "OS_ONLY_NO_EVENTS";
+                        if (osDuration >= 5000L) {
+                            decision = "OS_RECONCILED_NO_EVENTS";
                             explanation = "Zero UsageEvents captured (OEM buffer eviction); OS daily record present within day.";
                             ScreenTimeCalculator.AppCalculation addedApp = new ScreenTimeCalculator.AppCalculation(pkg);
                             addedApp.durationMillis = osDuration;
-                            addedApp.sessionCount = 1;
+                            addedApp.sessionCount = Math.max(1, osRec.recordCount);
                             calcResult.appUsage.put(pkg, addedApp);
+                            totalDiscrepancyMillis += osDuration;
                         } else {
-                            decision = "OS_IGNORED_OUT_OF_BOUNDS";
-                            explanation = "OS aggregate found without events but timestamps span outside requested day.";
+                            decision = "OS_IGNORED_TRIVIAL";
+                            explanation = "OS aggregate found without events but duration < 5s.";
                         }
                     }
 
@@ -305,6 +341,11 @@ public class ScreenTimePlugin extends Plugin {
                     pkgDiag.put("discrepancyMillis", diff);
                     pkgDiag.put("explanation", explanation);
                     packageReconciliations.put(pkgDiag);
+                }
+
+                if (totalDiscrepancyMillis > 0) {
+                    long maxPossible = Math.max(0L, effectiveEnd - startOfDay);
+                    calcResult.totalDeviceMillis = Math.min(maxPossible, calcResult.totalDeviceMillis + totalDiscrepancyMillis);
                 }
             } else {
                 // Secondary fallback if UsageEvents is blocked by an OEM ROM
@@ -423,11 +464,37 @@ public class ScreenTimePlugin extends Plugin {
             response.put("accuracyNotice", "Device screen time is calculated as the non-overlapping mathematical union of foreground sessions on an active screen, matching Android Digital Wellbeing.");
             response.put("limitationsNotice", "Native statistics gathered via Android UsageStatsManager. Calculations reflect active foreground time on interactive screen.");
 
+            // Update native Screen Time widget if query is for today
+            String todayIso = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
+            if (isoDate.equals(todayIso)) {
+                long totalMinutes = Math.round(totalDeviceMillis / 60000.0);
+                String formattedDuration = ScreenTimeWidgetProvider.formatMinutesToDuration(totalMinutes);
+                ScreenTimeWidgetProvider.updateWidgetData(ctx, totalMinutes, formattedDuration, true, totalDeviceMillis > 0);
+            }
+
             call.resolve(response);
         } catch (Exception e) {
             Log.e(TAG, "Error querying daily screen time usage", e);
             call.reject("Failed to query usage stats: " + e.getMessage());
         }
+    }
+
+    /**
+     * Explicit sync endpoint for the native Screen Time widget.
+     */
+    @PluginMethod
+    public void syncWidget(PluginCall call) {
+        Context ctx = getContext();
+        if (ctx != null) {
+            long totalMinutes = call.getInt("totalMinutes", 0);
+            String formattedDuration = call.getString("formattedDuration", ScreenTimeWidgetProvider.formatMinutesToDuration(totalMinutes));
+            boolean hasPermission = isUsageAccessGranted();
+            boolean hasData = totalMinutes > 0;
+            ScreenTimeWidgetProvider.updateWidgetData(ctx, totalMinutes, formattedDuration, hasPermission, hasData);
+        }
+        JSObject ret = new JSObject();
+        ret.put("success", true);
+        call.resolve(ret);
     }
 
     /**

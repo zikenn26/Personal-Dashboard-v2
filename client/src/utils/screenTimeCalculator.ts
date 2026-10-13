@@ -373,6 +373,7 @@ export function calculateScreenTime(
   let lastInteractionTime = 0;
   let isScreenInteractive = true;
   const activeActivities = new Set<string>();
+  let activeActivityCount = 0;
 
   const rawSessions: { packageName: string; start: number; end: number }[] = [];
 
@@ -430,11 +431,13 @@ export function calculateScreenTime(
           lastInteractionTime = t;
           activeActivities.clear();
           if (cls) activeActivities.add(cls);
+          activeActivityCount = 1;
         } else if (activePkg && activePkg === pkg) {
           // Intra-app activity transition (Activity A -> Activity B):
           // Uninterrupted continuous foreground session. Keep sessionStartTime intact.
           lastInteractionTime = t;
           if (cls) activeActivities.add(cls);
+          activeActivityCount++;
         } else {
           // New session starting
           activePkg = pkg;
@@ -442,27 +445,39 @@ export function calculateScreenTime(
           lastInteractionTime = t;
           activeActivities.clear();
           if (cls) activeActivities.add(cls);
+          activeActivityCount = 1;
         }
         isScreenInteractive = true;
         break;
 
       case EVENT_ACTIVITY_PAUSED:
         if (activePkg === pkg) {
-          if (cls && activeActivities.size > 0) {
-            activeActivities.delete(cls);
-            // If another activity of this package is still active, app remains in foreground!
-            if (activeActivities.size === 0) {
-              const sessionEnd = resolveSessionEnd(sessionStartTime, t, lastInteractionTime);
-              rawSessions.push({ packageName: activePkg, start: sessionStartTime, end: sessionEnd });
-              activePkg = null;
-              sessionStartTime = 0;
-            }
-          } else {
+          if (cls) activeActivities.delete(cls);
+          activeActivityCount = Math.max(0, activeActivityCount - 1);
+          const isClosed = cls ? activeActivities.size === 0 : activeActivityCount === 0;
+          if (isClosed) {
             const sessionEnd = resolveSessionEnd(sessionStartTime, t, lastInteractionTime);
             rawSessions.push({ packageName: activePkg, start: sessionStartTime, end: sessionEnd });
             activePkg = null;
             sessionStartTime = 0;
             activeActivities.clear();
+            activeActivityCount = 0;
+          }
+        }
+        break;
+
+      case EVENT_ACTIVITY_STOPPED:
+        if (activePkg === pkg) {
+          if (cls) activeActivities.delete(cls);
+          activeActivityCount = Math.max(0, activeActivityCount - 1);
+          const isClosed = cls ? activeActivities.size === 0 : activeActivityCount === 0;
+          if (isClosed) {
+            const sessionEnd = resolveSessionEnd(sessionStartTime, t, lastInteractionTime);
+            rawSessions.push({ packageName: activePkg, start: sessionStartTime, end: sessionEnd });
+            activePkg = null;
+            sessionStartTime = 0;
+            activeActivities.clear();
+            activeActivityCount = 0;
           }
         }
         break;

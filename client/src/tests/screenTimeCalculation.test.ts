@@ -499,4 +499,71 @@ describe('Screen Time Calculation Engine & Digital Wellbeing Parity', () => {
     expect(dormantHourly.length).toBe(24);
     expect(dormantHourly.every((h) => h.durationMinutes === 0)).toBe(true);
   });
+
+  it('21. accurately tracks long WhatsApp multi-interaction sessions (e.g. 1h 37m) across chat switches without undercounting', () => {
+    // Simulates user spending 1h 37m (97 min) on WhatsApp with chat switches, media viewing, and pauses:
+    // 10:00:00 - HomeActivity resumes
+    // 10:05:00 - ConversationActivity resumes
+    // 10:05:00.020 - HomeActivity pauses
+    // 10:30:00 - MediaViewActivity resumes
+    // 10:30:00.015 - ConversationActivity pauses
+    // 10:45:00 - ConversationActivity resumes again
+    // 10:45:00.010 - MediaViewActivity pauses
+    // 11:37:00 - User finishes, pauses ConversationActivity and switches to Home Launcher
+    const tStart = START_OF_DAY + 10 * 3600 * 1000;
+    const tChat1 = tStart + 5 * 60 * 1000;
+    const tChat1PauseHome = tChat1 + 20;
+    const tMedia = tStart + 30 * 60 * 1000;
+    const tMediaPauseChat1 = tMedia + 15;
+    const tChat2 = tStart + 45 * 60 * 1000;
+    const tChat2PauseMedia = tChat2 + 10;
+    const tEnd = tStart + 97 * 60 * 1000; // 1h 37m = 97 min
+
+    const events: RawUsageEvent[] = [
+      { packageName: 'com.whatsapp', className: 'com.whatsapp.HomeActivity', timestamp: tStart, eventType: EVENT_ACTIVITY_RESUMED },
+      { packageName: 'com.whatsapp', className: 'com.whatsapp.Conversation', timestamp: tChat1, eventType: EVENT_ACTIVITY_RESUMED },
+      { packageName: 'com.whatsapp', className: 'com.whatsapp.HomeActivity', timestamp: tChat1PauseHome, eventType: EVENT_ACTIVITY_PAUSED },
+      { packageName: 'com.whatsapp', className: 'com.whatsapp.MediaViewActivity', timestamp: tMedia, eventType: EVENT_ACTIVITY_RESUMED },
+      { packageName: 'com.whatsapp', className: 'com.whatsapp.Conversation', timestamp: tMediaPauseChat1, eventType: EVENT_ACTIVITY_PAUSED },
+      { packageName: 'com.whatsapp', className: 'com.whatsapp.Conversation', timestamp: tChat2, eventType: EVENT_ACTIVITY_RESUMED },
+      { packageName: 'com.whatsapp', className: 'com.whatsapp.MediaViewActivity', timestamp: tChat2PauseMedia, eventType: EVENT_ACTIVITY_PAUSED },
+      { packageName: 'com.whatsapp', className: 'com.whatsapp.Conversation', timestamp: tEnd, eventType: EVENT_ACTIVITY_PAUSED },
+      { packageName: 'com.google.android.apps.nexuslauncher', timestamp: tEnd, eventType: EVENT_ACTIVITY_RESUMED },
+      { packageName: 'android', timestamp: tEnd + 5000, eventType: EVENT_SCREEN_NON_INTERACTIVE },
+    ];
+
+    const result = calculateScreenTime(events, START_OF_DAY, END_OF_DAY);
+
+    const wa = result.apps.find((a) => a.packageName === 'com.whatsapp');
+    expect(wa).toBeDefined();
+    // Exactly 97 minutes (1h 37m) - verified!
+    expect(wa?.durationMinutes).toBe(97);
+    expect(result.totalDeviceMinutes).toBe(97);
+  });
+
+  it('22. handles split sessions with screen-off interruptions and preserves total accuracy', () => {
+    // 08:00 - 08:20: WhatsApp (20m)
+    // 08:20: Screen turned off (power button)
+    // 08:35: Screen turned on, WhatsApp resumes
+    // 08:45: Screen turned off (10m)
+    const t1 = START_OF_DAY + 8 * 3600 * 1000;
+    const tOff1 = t1 + 20 * 60 * 1000;
+    const tOn2 = t1 + 35 * 60 * 1000;
+    const tOff2 = tOn2 + 10 * 60 * 1000;
+
+    const events: RawUsageEvent[] = [
+      { packageName: 'com.whatsapp', timestamp: t1, eventType: EVENT_ACTIVITY_RESUMED },
+      { packageName: 'android', timestamp: tOff1, eventType: EVENT_SCREEN_NON_INTERACTIVE },
+      { packageName: 'android', timestamp: tOn2, eventType: EVENT_SCREEN_INTERACTIVE },
+      { packageName: 'com.whatsapp', timestamp: tOn2, eventType: EVENT_ACTIVITY_RESUMED },
+      { packageName: 'android', timestamp: tOff2, eventType: EVENT_SCREEN_NON_INTERACTIVE },
+    ];
+
+    const result = calculateScreenTime(events, START_OF_DAY, END_OF_DAY);
+
+    // 20 min + 10 min = 30 min (screen-off 15 min gap is NOT counted)
+    expect(result.totalDeviceMinutes).toBe(30);
+    const wa = result.apps.find((a) => a.packageName === 'com.whatsapp');
+    expect(wa?.durationMinutes).toBe(30);
+  });
 });
