@@ -22,7 +22,12 @@ import {
 import { screenTimeService } from '../../../../services/screenTimeService';
 import { ScreenTimeData } from '../../../../types';
 import { nativeService } from '../../../../services/nativeService';
-import { getLocalDateString, shiftLocalDateString } from '../../../../utils/screenTimeCalculator';
+import {
+  getLocalDateString,
+  shiftLocalDateString,
+  formatYAxisHours,
+  getAppHourlyUsage,
+} from '../../../../utils/screenTimeCalculator';
 
 export interface AndroidScreenTimeScreenProps {
   onBack?: () => void;
@@ -60,7 +65,9 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
   useEffect(() => {
     void loadData();
     const unsubscribe = screenTimeService.subscribe((updated) => {
-      setData(updated);
+      if (updated.date === selectedDate) {
+        setData(updated);
+      }
     });
     return () => unsubscribe();
   }, [selectedDate]);
@@ -113,13 +120,14 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
   }, [data?.apps, searchQuery, selectedCategory]);
 
   const hourlyChartData = useMemo(() => {
-    if (!data?.hourlyUsage) return [];
-    return data.hourlyUsage.map((h) => ({
+    const buckets = getAppHourlyUsage(data, selectedAppPackage);
+    return buckets.map((h) => ({
       hour: h.hour,
       label: h.label,
       minutes: h.durationMinutes,
+      formattedTime: formatHoursAndMinutes(h.durationMinutes),
     }));
-  }, [data?.hourlyUsage]);
+  }, [data, selectedAppPackage]);
 
   const weeklyChartData = useMemo(() => {
     if (!data?.past7Days || data.past7Days.length === 0) return [];
@@ -202,19 +210,6 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-violet-500' : ''}`} />
             </button>
           )}
-
-          {onBack && (
-            <button
-              type="button"
-              onClick={() => {
-                void nativeService.triggerHaptic('click');
-                onBack();
-              }}
-              className="px-3 py-1.5 rounded-2xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-xs font-bold active:scale-95 transition-all"
-            >
-              Home
-            </button>
-          )}
         </div>
       </div>
 
@@ -282,9 +277,11 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
             </span>
           </div>
 
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/20 text-white">
-            {data?.isNativeAndroid ? 'Live APK' : data?.hasData ? 'From APK' : 'Awaiting APK'}
-          </span>
+          {!data?.isNativeAndroid && (
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/20 text-white">
+              {data?.hasData ? 'From APK' : 'Awaiting APK'}
+            </span>
+          )}
         </div>
 
         <div className="space-y-1">
@@ -328,14 +325,33 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
       {/* Hourly Usage Bar Chart */}
       {hourlyChartData.length > 0 && (
         <div className="p-4 rounded-3xl bg-white dark:bg-[#121826] border border-[#E8E5F3] dark:border-[#242D40] shadow-2xs space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <BarChart2 className="w-4 h-4 text-violet-600 dark:text-violet-400" />
-              <h3 className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider">
-                Hourly Distribution
-              </h3>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <BarChart2 className="w-4 h-4 text-violet-600 dark:text-violet-400 shrink-0" />
+              <div className="min-w-0 flex items-center gap-1.5">
+                <h3 className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider truncate">
+                  {selectedApp ? `${selectedApp.appName} Hourly` : 'Hourly Distribution'}
+                </h3>
+                {selectedApp && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300 text-[10px] font-bold truncate">
+                    {selectedApp.appName}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void nativeService.triggerHaptic('selection');
+                        setSelectedAppPackage(null);
+                      }}
+                      className="ml-0.5 hover:opacity-70 cursor-pointer"
+                      title="Clear app filter"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                )}
+              </div>
             </div>
-            <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400">
+            <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 shrink-0">
               24-Hour Timeline
             </span>
           </div>
@@ -355,6 +371,23 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
                   unit="m"
                   axisLine={false}
                   tickLine={false}
+                />
+                <Tooltip
+                  content={({ active, payload }) => {
+                    if (active && payload && payload.length) {
+                      const item = payload[0].payload;
+                      return (
+                        <div className="bg-white dark:bg-[#1E293B] px-2.5 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-md text-xs space-y-0.5">
+                          <p className="font-bold text-gray-900 dark:text-white">{item.label}</p>
+                          <p className="text-violet-600 dark:text-violet-400 font-semibold text-[11px]">
+                            {selectedApp ? `${selectedApp.appName}: ` : 'Total: '}
+                            {item.formattedTime || formatHoursAndMinutes(item.minutes)}
+                          </p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
                 />
                 <Bar dataKey="minutes" fill="#8B5CF6" radius={[3, 3, 0, 0]}>
                   {hourlyChartData.map((entry, index) => (
@@ -431,7 +464,8 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
                 />
                 <YAxis
                   tick={{ fontSize: 9, fill: '#888' }}
-                  unit="m"
+                  tickFormatter={formatYAxisHours}
+                  domain={[0, (dataMax: number) => Math.max(60, Math.ceil(dataMax / 60) * 60)]}
                   axisLine={false}
                   tickLine={false}
                 />

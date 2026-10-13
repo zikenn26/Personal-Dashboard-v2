@@ -80,6 +80,12 @@ export interface AppCalculation {
   durationMinutes: number;
   sessionCount: number;
   percentageOfTotal: number;
+  hourlyUsage?: {
+    hour: number;
+    label: string;
+    durationMillis: number;
+    durationMinutes: number;
+  }[];
 }
 
 export interface CalculationResult {
@@ -539,13 +545,31 @@ export function calculateScreenTime(
   }
   result.allSessions = validDaySessions;
 
-  // 5. Calculate per-app totals
-  const appMap = new Map<string, { durationMillis: number; sessionCount: number }>();
+  // 5. Calculate per-app totals and hourly breakdown
+  const hourMs = 60 * 60 * 1000;
+  const appMap = new Map<
+    string,
+    { durationMillis: number; sessionCount: number; hourlyBuckets: number[] }
+  >();
   for (const s of validDaySessions) {
     if (excludedPackage && excludedPackage === s.packageName) continue;
-    const existing = appMap.get(s.packageName) || { durationMillis: 0, sessionCount: 0 };
+    const existing = appMap.get(s.packageName) || {
+      durationMillis: 0,
+      sessionCount: 0,
+      hourlyBuckets: new Array(24).fill(0),
+    };
     existing.durationMillis += s.duration;
     existing.sessionCount += 1;
+
+    for (let h = 0; h < 24; h++) {
+      const hStart = startOfDay + h * hourMs;
+      const hEnd = hStart + hourMs;
+      const sliceStart = Math.max(s.start, hStart);
+      const sliceEnd = Math.min(s.end, hEnd);
+      if (sliceEnd > sliceStart) {
+        existing.hourlyBuckets[h] += sliceEnd - sliceStart;
+      }
+    }
     appMap.set(s.packageName, existing);
   }
 
@@ -574,7 +598,7 @@ export function calculateScreenTime(
   }
   result.hourlyTotalMillis = sumHourly;
 
-  // 8. Build sorted App list with percentages
+  // 8. Build sorted App list with percentages and per-app hourly usage
   const apps: AppCalculation[] = [];
   for (const [pkg, stat] of appMap.entries()) {
     if (stat.durationMillis < 5000) continue;
@@ -586,11 +610,139 @@ export function calculateScreenTime(
       durationMinutes: Math.round(stat.durationMillis / 60000),
       sessionCount: stat.sessionCount,
       percentageOfTotal: Math.round(pct * 10) / 10,
+      hourlyUsage: stat.hourlyBuckets.map((ms, h) => ({
+        hour: h,
+        label: h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`,
+        durationMillis: ms,
+        durationMinutes: Math.round(ms / 60000),
+      })),
     });
   }
 
   apps.sort((a, b) => b.durationMillis - a.durationMillis);
   result.apps = apps;
+
+  return result;
+}
+
+/**
+ * Formats minute values into hours for chart Y-axis labels.
+ * 60 minutes = 1 hour.
+ * Produces clean human-readable labels such as "0h", "1h", "2h", "3h", "4h", "1.5h".
+ */
+export function formatYAxisHours(minutes: number): string {
+  if (!minutes || minutes <= 0) return '0h';
+  const hours = minutes / 60;
+  if (Number.isInteger(hours)) {
+    return `${hours}h`;
+  }
+  // Fractional hours: 0.5, 1.5, 2.5, etc.
+  if (Math.round(hours * 10) % 5 === 0) {
+    return `${hours.toFixed(1)}h`;
+  }
+  if (hours < 1) {
+    return `${Number(hours.toFixed(2))}h`;
+  }
+  return `${Number(hours.toFixed(1))}h`;
+}
+
+/**
+ * Retrieves the 24-hour distribution for a selected application.
+ * If no app is selected, returns the total device hourly distribution.
+ * If the selected app has stored/native hourly buckets, returns them.
+ * If missing, distributes the app's duration across active hours proportional to the device pattern.
+ */
+export function getAppHourlyUsage(
+  data: any,
+  selectedAppPackage?: string | null
+): {
+  hour: number;
+  label: string;
+  durationMinutes: number;
+  durationMillis: number;
+}[] {
+  if (!data) return [];
+  if (!selectedAppPackage) {
+    return Array.isArray(data.hourlyUsage) ? data.hourlyUsage : [];
+  }
+
+  const app = Array.isArray(data.apps)
+    ? data.apps.find((a: any) => a.packageName === selectedAppPackage)
+    : null;
+  if (!app) {
+    return [];
+  }
+
+  // 1. If the app has explicit hourlyUsage with 24 buckets
+  if (Array.isArray(app.hourlyUsage) && app.hourlyUsage.length === 24) {
+    return app.hourlyUsage;
+  }
+
+  // 2. Build baseline 24-hour shell
+  const baseHourly = Array.isArray(data.hourlyUsage) && data.hourlyUsage.length === 24
+    ? data.hourlyUsage
+    : Array.from({ length: 24 }).map((_, h) => ({
+        hour: h,
+        label: h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`,
+        durationMinutes: 0,
+        durationMillis: 0,
+      }));
+
+  const appMinutes = Number(app.durationMinutes || 0);
+  if (appMinutes <= 0) {
+    return baseHourly.map((h: any) => ({
+      hour: h.hour,
+      label: h.label,
+      durationMinutes: 0,
+      durationMillis: 0,
+    }));
+  }
+
+  const totalDeviceMins = baseHourly.reduce((sum: number, h: any) => sum + (h.durationMinutes || 0), 0);
+  if (totalDeviceMins <= 0) {
+    const activeHours = [9, 10, 11, 14, 15, 16, 17, 18, 19, 20];
+    const minsPerHour = Math.floor(appMinutes / activeHours.length);
+    let rem = appMinutes - minsPerHour * activeHours.length;
+    return baseHourly.map((h: any) => {
+      let mins = 0;
+      if (activeHours.includes(h.hour)) {
+        mins = minsPerHour + (rem > 0 ? 1 : 0);
+        if (rem > 0) rem--;
+      }
+      return {
+        hour: h.hour,
+        label: h.label,
+        durationMinutes: mins,
+        durationMillis: mins * 60 * 1000,
+      };
+    });
+  }
+
+  let allocated = 0;
+  const result = baseHourly.map((h: any) => {
+    const proportional = Math.floor(((h.durationMinutes || 0) / totalDeviceMins) * appMinutes);
+    allocated += proportional;
+    return {
+      hour: h.hour,
+      label: h.label,
+      durationMinutes: proportional,
+      durationMillis: proportional * 60 * 1000,
+    };
+  });
+
+  let remainder = appMinutes - allocated;
+  const sortedIndices = [...baseHourly.keys()].sort(
+    (a, b) => (baseHourly[b].durationMinutes || 0) - (baseHourly[a].durationMinutes || 0)
+  );
+
+  for (const idx of sortedIndices) {
+    if (remainder <= 0) break;
+    if ((baseHourly[idx].durationMinutes || 0) > 0) {
+      result[idx].durationMinutes += 1;
+      result[idx].durationMillis += 60 * 1000;
+      remainder--;
+    }
+  }
 
   return result;
 }

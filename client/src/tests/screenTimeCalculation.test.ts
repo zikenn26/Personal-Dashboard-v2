@@ -4,6 +4,8 @@ import {
   mergeIntervals,
   resolveCleanAppName,
   distributeMergedIntervalsHourly,
+  formatYAxisHours,
+  getAppHourlyUsage,
   EVENT_ACTIVITY_RESUMED,
   EVENT_ACTIVITY_PAUSED,
   EVENT_ACTIVITY_STOPPED,
@@ -375,5 +377,126 @@ describe('Screen Time Calculation Engine & Digital Wellbeing Parity', () => {
     const yesterdayDiscarded = result.discardedIntervals.find((d) => d.packageName === 'com.twitter.android');
     expect(yesterdayDiscarded).toBeDefined();
     expect(yesterdayDiscarded?.reason).toContain('before calendar day start');
+  });
+
+  it('17. calculates per-app 24-hour distribution strictly matching each apps active sessions', () => {
+    // 08:00 - 08:30: WhatsApp (30m in hour 8)
+    // 14:00 - 15:30: YouTube (60m in hour 14, 30m in hour 15)
+    const t8_00 = START_OF_DAY + 8 * 3600 * 1000;
+    const t8_30 = t8_00 + 30 * 60 * 1000;
+    const t14_00 = START_OF_DAY + 14 * 3600 * 1000;
+    const t14_45 = t14_00 + 45 * 60 * 1000;
+    const t15_30 = t14_00 + 90 * 60 * 1000;
+
+    const events: RawUsageEvent[] = [
+      { packageName: 'com.whatsapp', timestamp: t8_00, eventType: EVENT_ACTIVITY_RESUMED },
+      { packageName: 'com.whatsapp', timestamp: t8_30, eventType: EVENT_ACTIVITY_PAUSED },
+      { packageName: 'com.google.android.youtube', timestamp: t14_00, eventType: EVENT_ACTIVITY_RESUMED },
+      { packageName: 'com.google.android.youtube', timestamp: t14_45, eventType: EVENT_USER_INTERACTION },
+      { packageName: 'com.google.android.youtube', timestamp: t15_30, eventType: EVENT_ACTIVITY_PAUSED },
+    ];
+
+    const result = calculateScreenTime(events, START_OF_DAY, END_OF_DAY);
+
+    const whatsapp = result.apps.find((a) => a.packageName === 'com.whatsapp');
+    expect(whatsapp).toBeDefined();
+    expect(whatsapp?.hourlyUsage).toBeDefined();
+    expect(whatsapp?.hourlyUsage?.length).toBe(24);
+    expect(whatsapp?.hourlyUsage?.[8].durationMinutes).toBe(30);
+    expect(whatsapp?.hourlyUsage?.[14].durationMinutes).toBe(0);
+
+    const youtube = result.apps.find((a) => a.packageName === 'com.google.android.youtube');
+    expect(youtube).toBeDefined();
+    expect(youtube?.hourlyUsage).toBeDefined();
+    expect(youtube?.hourlyUsage?.[14].durationMinutes).toBe(60);
+    expect(youtube?.hourlyUsage?.[15].durationMinutes).toBe(30);
+    expect(youtube?.hourlyUsage?.[8].durationMinutes).toBe(0);
+  });
+
+  it('18. getAppHourlyUsage isolates selected apps data and returns total when unselected', () => {
+    const mockData: any = {
+      totalMinutes: 120,
+      hourlyUsage: Array.from({ length: 24 }).map((_, h) => ({
+        hour: h,
+        label: `${h}:00`,
+        durationMinutes: h === 10 ? 60 : h === 11 ? 60 : 0,
+        durationMillis: (h === 10 ? 60 : h === 11 ? 60 : 0) * 60000,
+      })),
+      apps: [
+        {
+          packageName: 'com.instagram.android',
+          appName: 'Instagram',
+          durationMinutes: 45,
+          hourlyUsage: Array.from({ length: 24 }).map((_, h) => ({
+            hour: h,
+            label: `${h}:00`,
+            durationMinutes: h === 10 ? 45 : 0,
+            durationMillis: (h === 10 ? 45 : 0) * 60000,
+          })),
+        },
+        {
+          packageName: 'com.spotify.music',
+          appName: 'Spotify',
+          durationMinutes: 20,
+          // No precomputed hourlyUsage - tests fallback proportional distribution
+        },
+      ],
+    };
+
+    // When no app is selected, returns total device hourly usage
+    const overall = getAppHourlyUsage(mockData, null);
+    expect(overall[10].durationMinutes).toBe(60);
+    expect(overall[11].durationMinutes).toBe(60);
+
+    // When Instagram is selected, returns only Instagram's usage
+    const instaHourly = getAppHourlyUsage(mockData, 'com.instagram.android');
+    expect(instaHourly[10].durationMinutes).toBe(45);
+    expect(instaHourly[11].durationMinutes).toBe(0);
+
+    // When Spotify is selected without explicit buckets, proportionally distributes its 20m across active hours 10 & 11
+    const spotifyHourly = getAppHourlyUsage(mockData, 'com.spotify.music');
+    const spotifyTotal = spotifyHourly.reduce((s, h) => s + h.durationMinutes, 0);
+    expect(spotifyTotal).toBe(20);
+    expect(spotifyHourly[10].durationMinutes + spotifyHourly[11].durationMinutes).toBe(20);
+  });
+
+  it('19. formatYAxisHours converts minute metrics to human-readable hours', () => {
+    expect(formatYAxisHours(0)).toBe('0h');
+    expect(formatYAxisHours(60)).toBe('1h');
+    expect(formatYAxisHours(120)).toBe('2h');
+    expect(formatYAxisHours(180)).toBe('3h');
+    expect(formatYAxisHours(240)).toBe('4h');
+    expect(formatYAxisHours(300)).toBe('5h');
+    expect(formatYAxisHours(30)).toBe('0.5h');
+    expect(formatYAxisHours(90)).toBe('1.5h');
+    expect(formatYAxisHours(150)).toBe('2.5h');
+    expect(formatYAxisHours(15)).toBe('0.25h');
+    expect(formatYAxisHours(45)).toBe('0.75h');
+  });
+
+  it('20. handles zero-usage days and low-usage apps without misleading labels or errors', () => {
+    const emptyHourly = getAppHourlyUsage(null, null);
+    expect(emptyHourly).toEqual([]);
+
+    const zeroAppData: any = {
+      totalMinutes: 0,
+      hourlyUsage: Array.from({ length: 24 }).map((_, h) => ({
+        hour: h,
+        label: `${h}:00`,
+        durationMinutes: 0,
+        durationMillis: 0,
+      })),
+      apps: [
+        {
+          packageName: 'com.dormant.app',
+          appName: 'Dormant App',
+          durationMinutes: 0,
+        },
+      ],
+    };
+
+    const dormantHourly = getAppHourlyUsage(zeroAppData, 'com.dormant.app');
+    expect(dormantHourly.length).toBe(24);
+    expect(dormantHourly.every((h) => h.durationMinutes === 0)).toBe(true);
   });
 });

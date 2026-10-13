@@ -703,6 +703,18 @@ public class ScreenTimePlugin extends Plugin {
         obj.put("category", category);
         obj.put("isSystemApp", isSystemApp);
 
+        // 24 Hourly Buckets for this individual app
+        JSArray appHourly = new JSArray();
+        for (int h = 0; h < 24; h++) {
+            JSObject hObj = new JSObject();
+            hObj.put("hour", h);
+            hObj.put("label", formatHourLabel(h));
+            hObj.put("durationMinutes", Math.round(item.hourlyBuckets[h] / 60000.0));
+            hObj.put("durationMillis", item.hourlyBuckets[h]);
+            appHourly.put(hObj);
+        }
+        obj.put("hourlyUsage", appHourly);
+
         return obj;
     }
 

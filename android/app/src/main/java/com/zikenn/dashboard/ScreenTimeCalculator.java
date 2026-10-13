@@ -125,6 +125,7 @@ public class ScreenTimeCalculator {
         public final String packageName;
         public long durationMillis = 0L;
         public int sessionCount = 0;
+        public long[] hourlyBuckets = new long[24];
 
         public AppCalculation(String packageName) {
             this.packageName = packageName;
@@ -349,7 +350,8 @@ public class ScreenTimeCalculator {
         }
         result.allSessions = validDaySessions;
 
-        // 5. Calculate per-app totals
+        // 5. Calculate per-app totals and hourly breakdown
+        long hourMs = 60 * 60 * 1000L;
         for (SessionInterval s : validDaySessions) {
             if (excludedPackage != null && excludedPackage.equals(s.packageName)) {
                 continue;
@@ -361,6 +363,17 @@ public class ScreenTimeCalculator {
             }
             app.durationMillis += s.getDuration();
             app.sessionCount += 1;
+
+            // Slices app session into 24 exact hourly buckets [0..23]
+            for (int h = 0; h < 24; h++) {
+                long hStart = startOfDay + (h * hourMs);
+                long hEnd = hStart + hourMs;
+                long sliceStart = Math.max(s.start, hStart);
+                long sliceEnd = Math.min(s.end, hEnd);
+                if (sliceEnd > sliceStart) {
+                    app.hourlyBuckets[h] += (sliceEnd - sliceStart);
+                }
+            }
         }
 
         // 6. Calculate TOTAL DEVICE SCREEN TIME using Interval Union (Merge Overlapping Intervals)

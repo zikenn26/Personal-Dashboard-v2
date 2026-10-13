@@ -32,7 +32,12 @@ import {
 import { screenTimeService } from '../../services/screenTimeService';
 import { ScreenTimeData, AppUsageItem } from '../../types';
 import { Sound } from '../../utils/audio';
-import { getLocalDateString, shiftLocalDateString } from '../../utils/screenTimeCalculator';
+import {
+  getLocalDateString,
+  shiftLocalDateString,
+  formatYAxisHours,
+  getAppHourlyUsage,
+} from '../../utils/screenTimeCalculator';
 
 export interface ScreenTimeViewProps {
   soundEnabled?: boolean;
@@ -74,7 +79,9 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
   useEffect(() => {
     void loadData();
     const unsubscribe = screenTimeService.subscribe((updated) => {
-      setData(updated);
+      if (updated.date === selectedDate) {
+        setData(updated);
+      }
     });
     return () => unsubscribe();
   }, [selectedDate, excludeSelf]);
@@ -144,16 +151,16 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
       .sort((a, b) => b.minutes - a.minutes);
   }, [data?.apps, data?.totalMinutes]);
 
-  // Hourly Chart Data (filter to sensible active hours or all 24h)
+  // Hourly Chart Data (all apps or selected app)
   const hourlyChartData = useMemo(() => {
-    if (!data?.hourlyUsage) return [];
-    return data.hourlyUsage.map((h) => ({
+    const buckets = getAppHourlyUsage(data, selectedAppPackage);
+    return buckets.map((h) => ({
       hour: h.hour,
       label: h.label,
       minutes: h.durationMinutes,
       formattedTime: formatHoursAndMinutes(h.durationMinutes),
     }));
-  }, [data?.hourlyUsage]);
+  }, [data, selectedAppPackage]);
 
   // Past 7 Days Chart Data (all apps or selected app)
   const weeklyChartData = useMemo(() => {
@@ -332,7 +339,7 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
         {/* Metric 1: Total Screen Time */}
         <div className="p-4 sm:p-5 rounded-2xl bg-[#F7F7F5] dark:bg-[#23324C] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-xs font-semibold text-[#787774] dark:text-[#94A3B8]">
-            <span>Today&apos;s Screen Time</span>
+            <span>{isTodaySelected ? "Today's Screen Time" : `${selectedDate} Screen Time`}</span>
             <Clock className="w-4 h-4 text-violet-500" />
           </div>
           <div className="my-2">
@@ -416,16 +423,36 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Chart 1: Hourly Distribution (24 Hours) */}
         <div className="p-4 sm:p-5 rounded-2xl bg-[#F7F7F5] dark:bg-[#23324C] border border-[#E5E5E2] dark:border-[#334155] shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-bold text-[#37352F] dark:text-white">
-                Hourly Usage Breakdown
-              </h2>
-              <p className="text-xs text-[#787774] dark:text-[#94A3B8]">
-                Screen-on time by hour of the day (12 AM - 11 PM)
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-bold text-[#37352F] dark:text-white truncate">
+                  {selectedApp ? `${selectedApp.appName} — Hourly Distribution` : 'Hourly Usage Breakdown'}
+                </h2>
+                {selectedApp && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300 text-xs font-bold shrink-0">
+                    {selectedApp.appName}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        Sound.click(soundEnabled);
+                        setSelectedAppPackage(null);
+                      }}
+                      className="ml-0.5 hover:opacity-75 cursor-pointer"
+                      title="Clear app filter"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-[#787774] dark:text-[#94A3B8] truncate">
+                {selectedApp
+                  ? `Hourly screen-on time breakdown for ${selectedApp.appName}`
+                  : 'Screen-on time by hour of the day (12 AM - 11 PM)'}
               </p>
             </div>
-            <span className="text-xs font-bold text-violet-600 dark:text-violet-400">
+            <span className="text-xs font-bold text-violet-600 dark:text-violet-400 shrink-0">
               24-Hour View
             </span>
           </div>
@@ -455,7 +482,7 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
                         <div className="bg-white dark:bg-[#1E293B] p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg text-xs">
                           <p className="font-bold text-[#37352F] dark:text-white">{item.label}</p>
                           <p className="text-violet-600 dark:text-violet-400 font-semibold mt-0.5">
-                            {item.formattedTime}
+                            {selectedApp ? `${selectedApp.appName}: ` : ''}{item.formattedTime}
                           </p>
                         </div>
                       );
@@ -540,7 +567,8 @@ export const ScreenTimeView: React.FC<ScreenTimeViewProps> = ({
                 />
                 <YAxis
                   tick={{ fontSize: 10, fill: '#888' }}
-                  unit="m"
+                  tickFormatter={formatYAxisHours}
+                  domain={[0, (dataMax: number) => Math.max(60, Math.ceil(dataMax / 60) * 60)]}
                   axisLine={false}
                   tickLine={false}
                 />

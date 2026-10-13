@@ -3,6 +3,7 @@ import { Smartphone, Clock, ArrowRight, ShieldAlert, Sparkles, RefreshCw, BarCha
 import { screenTimeService } from '../../services/screenTimeService';
 import { ScreenTimeData } from '../../types';
 import { Sound } from '../../utils/audio';
+import { getLocalDateString } from '../../utils/screenTimeCalculator';
 
 export interface ScreenTimeCardProps {
   dragHandle?: React.ReactNode;
@@ -33,9 +34,11 @@ export const ScreenTimeCard: React.FC<ScreenTimeCardProps> = ({
 
     void load();
 
-    // Subscribe to background/resume updates
+    // Subscribe to background/resume updates for today's record
     const unsubscribe = screenTimeService.subscribe((updated) => {
-      if (mounted) setData(updated);
+      if (mounted && (!updated.date || updated.date === getLocalDateString())) {
+        setData(updated);
+      }
     });
 
     return () => {

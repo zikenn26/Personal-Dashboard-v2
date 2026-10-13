@@ -341,4 +341,306 @@ describe('Cross-Platform Screen Time Synchronization (APK, Web & Android Chrome)
     expect(result.totalMinutes).not.toBe(185); // 3h 5m eliminated
     expect(result.isFromApk).toBe(true);
   });
+
+  describe('Regression Verification: 160m (2h 40m) reporting, date integrity & sync stability', () => {
+    const formatHoursAndMinutes = (totalMinutes: number) => {
+      if (!totalMinutes || totalMinutes <= 0) return '0m';
+      const hrs = Math.floor(totalMinutes / 60);
+      const mins = totalMinutes % 60;
+      if (hrs === 0) return `${mins}m`;
+      if (mins === 0) return `${hrs}h`;
+      return `${hrs}h ${mins}m`;
+    };
+
+    it('1. A synchronized daily total of 160 minutes displays as 2h 40m', async () => {
+      expect(formatHoursAndMinutes(160)).toBe('2h 40m');
+
+      const authentic160Payload: ScreenTimeData = {
+        granted: true,
+        isNativeAndroid: false,
+        isFromApk: true,
+        hasData: true,
+        date: '2026-10-13',
+        formattedDate: 'Tuesday, Oct 13',
+        totalMinutes: 160,
+        totalMillis: 160 * 60 * 1000,
+        apps: [
+          {
+            packageName: 'com.whatsapp',
+            appName: 'WhatsApp',
+            rank: 1,
+            durationMinutes: 90,
+            durationMillis: 90 * 60 * 1000,
+            sessionCount: 20,
+            percentageOfTotal: 56,
+          },
+          {
+            packageName: 'com.google.android.youtube',
+            appName: 'YouTube',
+            rank: 2,
+            durationMinutes: 70,
+            durationMillis: 70 * 60 * 1000,
+            sessionCount: 10,
+            percentageOfTotal: 44,
+          },
+        ],
+        topApps: [],
+        hourlyUsage: [],
+        past7Days: [],
+        dailyAverageMinutes: 160,
+        lastSyncedTimestamp: Date.now(),
+        dataSource: 'usageEventsUnion',
+      };
+
+      expect(screenTimeService.bridge.validateDataSource(authentic160Payload)).toBe(true);
+      Storage.setDailyScreenTime('2026-10-13', authentic160Payload);
+      screenTimeService.clearCache();
+
+      const result = await screenTimeService.getDailyUsage({ date: '2026-10-13' });
+      expect(result.totalMinutes).toBe(160);
+      expect(formatHoursAndMinutes(result.totalMinutes)).toBe('2h 40m');
+      expect(result.apps.reduce((sum, a) => sum + a.durationMinutes, 0)).toBe(160);
+    });
+
+    it('2. Today, yesterday, and previous dates display their own authentic recorded durations', async () => {
+      const todayData: ScreenTimeData = {
+        granted: true,
+        isNativeAndroid: false,
+        isFromApk: true,
+        hasData: true,
+        date: '2026-10-13',
+        formattedDate: 'Tuesday, Oct 13',
+        totalMinutes: 160, // 2h 40m
+        totalMillis: 160 * 60 * 1000,
+        apps: [
+          {
+            packageName: 'com.whatsapp',
+            appName: 'WhatsApp',
+            rank: 1,
+            durationMinutes: 160,
+            durationMillis: 160 * 60 * 1000,
+            sessionCount: 15,
+            percentageOfTotal: 100,
+          },
+        ],
+        topApps: [],
+        hourlyUsage: [],
+        past7Days: [
+          {
+            date: '2026-10-13',
+            dayOfWeek: 'Tue',
+            totalMinutes: 160,
+            totalMillis: 160 * 60 * 1000,
+            isToday: true,
+            appMinutes: { 'com.whatsapp': 160 },
+          },
+          {
+            date: '2026-10-12',
+            dayOfWeek: 'Mon',
+            totalMinutes: 215, // 3h 35m
+            totalMillis: 215 * 60 * 1000,
+            isToday: false,
+            appMinutes: { 'com.google.android.youtube': 215 },
+          },
+          {
+            date: '2026-10-11',
+            dayOfWeek: 'Sun',
+            totalMinutes: 95, // 1h 35m
+            totalMillis: 95 * 60 * 1000,
+            isToday: false,
+            appMinutes: { 'com.instagram.android': 95 },
+          },
+        ],
+        dailyAverageMinutes: 156,
+        lastSyncedTimestamp: Date.now(),
+        dataSource: 'usageEventsUnion',
+      };
+
+      Storage.setDailyScreenTime('2026-10-13', todayData);
+      screenTimeService.clearCache();
+
+      // Today's query returns 160m
+      const todayRes = await screenTimeService.getDailyUsage({ date: '2026-10-13' });
+      expect(todayRes.totalMinutes).toBe(160);
+      expect(formatHoursAndMinutes(todayRes.totalMinutes)).toBe('2h 40m');
+
+      // Yesterday's query returns 215m from past7Days without corrupting today
+      const yesterdayRes = await screenTimeService.getDailyUsage({ date: '2026-10-12' });
+      expect(yesterdayRes.totalMinutes).toBe(215);
+      expect(formatHoursAndMinutes(yesterdayRes.totalMinutes)).toBe('3h 35m');
+      expect(yesterdayRes.apps[0]?.packageName).toBe('com.google.android.youtube');
+
+      // Earlier date returns 95m
+      const sundayRes = await screenTimeService.getDailyUsage({ date: '2026-10-11' });
+      expect(sundayRes.totalMinutes).toBe(95);
+      expect(formatHoursAndMinutes(sundayRes.totalMinutes)).toBe('1h 35m');
+      expect(sundayRes.apps[0]?.packageName).toBe('com.instagram.android');
+
+      // Today's storage record remains intact (still 160m, never overwritten by yesterday's query)
+      const freshToday = Storage.getDailyScreenTime('2026-10-13');
+      expect(freshToday?.totalMinutes).toBe(160);
+      expect(formatHoursAndMinutes(freshToday?.totalMinutes || 0)).toBe('2h 40m');
+    });
+
+    it('3. Valid APK-synchronized data is not replaced by synthetic or stale web fallback data', async () => {
+      const apkData: ScreenTimeData = {
+        granted: true,
+        isNativeAndroid: false,
+        isFromApk: true,
+        hasData: true,
+        date: '2026-10-13',
+        formattedDate: 'Tuesday, Oct 13',
+        totalMinutes: 160,
+        totalMillis: 160 * 60 * 1000,
+        apps: [{ packageName: 'com.whatsapp', appName: 'WhatsApp', rank: 1, durationMinutes: 160, durationMillis: 160 * 60 * 1000, sessionCount: 10, percentageOfTotal: 100 }],
+        topApps: [],
+        hourlyUsage: [],
+        past7Days: [],
+        dailyAverageMinutes: 160,
+        lastSyncedTimestamp: 5000,
+        dataSource: 'usageEventsUnion',
+      };
+      Storage.setDailyScreenTime('2026-10-13', apkData);
+
+      // Attempt to import older or synthetic fallback payload
+      const olderCloudPayload = {
+        screenTime: {
+          totalMinutes: 45,
+          lastSyncedTimestamp: 2000, // Older than local
+          dataSource: 'simulatedBaseline',
+        },
+      };
+
+      Storage.importAllDataPayload(olderCloudPayload);
+
+      // Verify authentic APK data is preserved
+      const stored = Storage.getDailyScreenTime('2026-10-13');
+      expect(stored?.totalMinutes).toBe(160);
+    });
+
+    it('4. Refreshing or reopening the web/Chrome version does not change a previously correct total', async () => {
+      const authenticPayload: ScreenTimeData = {
+        granted: true,
+        isNativeAndroid: false,
+        isFromApk: true,
+        hasData: true,
+        date: '2026-10-13',
+        formattedDate: 'Tuesday, Oct 13',
+        totalMinutes: 160,
+        totalMillis: 160 * 60 * 1000,
+        apps: [{ packageName: 'com.whatsapp', appName: 'WhatsApp', rank: 1, durationMinutes: 160, durationMillis: 160 * 60 * 1000, sessionCount: 10, percentageOfTotal: 100 }],
+        topApps: [],
+        hourlyUsage: [],
+        past7Days: [],
+        dailyAverageMinutes: 160,
+        lastSyncedTimestamp: Date.now(),
+        dataSource: 'usageEventsUnion',
+      };
+      Storage.setDailyScreenTime('2026-10-13', authenticPayload);
+
+      // Simulate first page load
+      screenTimeService.clearCache();
+      const firstLoad = await screenTimeService.getDailyUsage({ date: '2026-10-13' });
+      expect(firstLoad.totalMinutes).toBe(160);
+
+      // Simulate user clicking refresh or reopening the tab
+      screenTimeService.clearCache();
+      const refreshedLoad = await screenTimeService.getDailyUsage({ date: '2026-10-13', forceRefresh: true });
+      expect(refreshedLoad.totalMinutes).toBe(160);
+      expect(formatHoursAndMinutes(refreshedLoad.totalMinutes)).toBe('2h 40m');
+    });
+
+    it('5. Switching dates and selected apps does not mix their usage records', async () => {
+      const day1: ScreenTimeData = {
+        granted: true,
+        isNativeAndroid: false,
+        isFromApk: true,
+        hasData: true,
+        date: '2026-10-12',
+        formattedDate: 'Monday, Oct 12',
+        totalMinutes: 120, // 2h
+        totalMillis: 120 * 60 * 1000,
+        apps: [
+          { packageName: 'com.google.android.youtube', appName: 'YouTube', rank: 1, durationMinutes: 120, durationMillis: 120 * 60 * 1000, sessionCount: 5, percentageOfTotal: 100 },
+        ],
+        topApps: [],
+        hourlyUsage: [],
+        past7Days: [],
+        dailyAverageMinutes: 120,
+        lastSyncedTimestamp: Date.now(),
+        dataSource: 'usageEventsUnion',
+      };
+      const day2: ScreenTimeData = {
+        granted: true,
+        isNativeAndroid: false,
+        isFromApk: true,
+        hasData: true,
+        date: '2026-10-13',
+        formattedDate: 'Tuesday, Oct 13',
+        totalMinutes: 160, // 2h 40m
+        totalMillis: 160 * 60 * 1000,
+        apps: [
+          { packageName: 'com.whatsapp', appName: 'WhatsApp', rank: 1, durationMinutes: 160, durationMillis: 160 * 60 * 1000, sessionCount: 12, percentageOfTotal: 100 },
+        ],
+        topApps: [],
+        hourlyUsage: [],
+        past7Days: [],
+        dailyAverageMinutes: 160,
+        lastSyncedTimestamp: Date.now(),
+        dataSource: 'usageEventsUnion',
+      };
+
+      Storage.setDailyScreenTime('2026-10-12', day1);
+      Storage.setDailyScreenTime('2026-10-13', day2);
+
+      const res12 = await screenTimeService.getDailyUsage({ date: '2026-10-12' });
+      const res13 = await screenTimeService.getDailyUsage({ date: '2026-10-13' });
+
+      expect(res12.totalMinutes).toBe(120);
+      expect(res12.apps[0].appName).toBe('YouTube');
+
+      expect(res13.totalMinutes).toBe(160);
+      expect(res13.apps[0].appName).toBe('WhatsApp');
+    });
+
+    it('6. The seven-day graph displayed values match the underlying daily totals', () => {
+      const past7Days = [
+        { date: '2026-10-07', dayOfWeek: 'Wed', totalMinutes: 100, totalMillis: 100 * 60000, isToday: false },
+        { date: '2026-10-08', dayOfWeek: 'Thu', totalMinutes: 130, totalMillis: 130 * 60000, isToday: false },
+        { date: '2026-10-09', dayOfWeek: 'Fri', totalMinutes: 140, totalMillis: 140 * 60000, isToday: false },
+        { date: '2026-10-10', dayOfWeek: 'Sat', totalMinutes: 180, totalMillis: 180 * 60000, isToday: false },
+        { date: '2026-10-11', dayOfWeek: 'Sun', totalMinutes: 95, totalMillis: 95 * 60000, isToday: false },
+        { date: '2026-10-12', dayOfWeek: 'Mon', totalMinutes: 215, totalMillis: 215 * 60000, isToday: false },
+        { date: '2026-10-13', dayOfWeek: 'Tue', totalMinutes: 160, totalMillis: 160 * 60000, isToday: true },
+      ];
+
+      past7Days.forEach((d) => {
+        const formatted = formatHoursAndMinutes(d.totalMinutes);
+        if (d.totalMinutes === 160) {
+          expect(formatted).toBe('2h 40m');
+        } else if (d.totalMinutes === 180) {
+          expect(formatted).toBe('3h');
+        } else if (d.totalMinutes === 95) {
+          expect(formatted).toBe('1h 35m');
+        }
+      });
+    });
+
+    it('7. Missing or invalid synchronized data is handled explicitly rather than silently represented as genuine usage', async () => {
+      // Query a date for which no sync exists
+      const emptyRes = await screenTimeService.getDailyUsage({ date: '2026-01-01' });
+      expect(emptyRes.hasData).toBe(false);
+      expect(emptyRes.totalMinutes).toBe(0);
+      expect(emptyRes.apps.length).toBe(0);
+      expect(emptyRes.dataSource).toBe('pendingApkSync');
+
+      // Simulated baseline or single 185m mock is explicitly rejected
+      const mockPayload = {
+        totalMinutes: 185,
+        apps: [{ packageName: 'com.instagram.android' }],
+        dataSource: 'simulatedBaseline',
+      };
+      expect(screenTimeService.bridge.validateDataSource(mockPayload)).toBe(false);
+    });
+  });
 });

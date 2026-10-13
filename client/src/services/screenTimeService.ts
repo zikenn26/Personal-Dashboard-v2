@@ -49,7 +49,6 @@ export class ScreenTimeSyncBridge {
   public static validateDataSource(payload: any): boolean {
     if (!payload || typeof payload !== 'object') return false;
     if (typeof payload.totalMinutes !== 'number' || payload.totalMinutes < 0) return false;
-    if (!payload.hasData && payload.totalMinutes > 0) return false;
 
     // Explicit rejection of simulated baseline or unverified mock signatures
     if (payload.dataSource === 'simulatedBaseline') return false;
@@ -62,13 +61,16 @@ export class ScreenTimeSyncBridge {
       return false;
     }
 
-    // Must bear proof of Android native execution
+    // Must bear proof of Android native execution or authentic sync
     const isNativeSource = Boolean(
       payload.isFromApk ||
       payload.isNativeAndroid ||
       payload.dataSource === 'usageEventsUnion' ||
       payload.dataSource === 'usageStatsFallback' ||
-      payload.dataSource === 'android_native_apk'
+      payload.dataSource === 'android_native_apk' ||
+      payload.dataSource === 'usageStats' ||
+      (Array.isArray(payload.apps) && payload.apps.some((a: any) => a?.packageName && a.packageName.includes('.'))) ||
+      (Array.isArray(payload.past7Days) && payload.past7Days.length > 0)
     );
 
     return isNativeSource;
@@ -158,7 +160,9 @@ class ScreenTimeService {
           if (ScreenTimeSyncBridge.validateDataSource(incoming)) {
             this.clearCache();
             Storage.setDailyScreenTime(incoming.date, incoming);
-            this.notifyListeners(incoming);
+            if (incoming.date === getLocalDateString()) {
+              this.notifyListeners(incoming);
+            }
           }
         }
       };
@@ -301,7 +305,9 @@ class ScreenTimeService {
       window.addEventListener('screentime-updated', (e: any) => {
         if (e.detail?.data && ScreenTimeSyncBridge.validateDataSource(e.detail.data)) {
           this.clearCache();
-          this.notifyListeners(e.detail.data);
+          if (!e.detail.data.date || e.detail.data.date === getLocalDateString()) {
+            this.notifyListeners(e.detail.data);
+          }
         }
       });
       window.addEventListener('dashboard-data-updated', (e: any) => {
@@ -429,7 +435,7 @@ class ScreenTimeService {
           granted: true,
           isNativeAndroid: false,
           isFromApk: true,
-          hasData: true,
+          hasData: Boolean(prioritized.totalMinutes > 0 || prioritized.hasData),
           date: targetDate,
         };
 
@@ -439,7 +445,11 @@ class ScreenTimeService {
           data: enriched,
           timestamp: Date.now(),
         };
-        this.notifyListeners(enriched);
+
+        // Only notify general subscribers (such as home screen cards) if the queried date is today
+        if (targetDate === todayIso) {
+          this.notifyListeners(enriched);
+        }
         return enriched;
       }
 

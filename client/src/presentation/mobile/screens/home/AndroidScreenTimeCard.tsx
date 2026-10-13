@@ -3,6 +3,7 @@ import { Smartphone, Clock, ChevronRight, ShieldAlert, Sparkles, RefreshCw } fro
 import { screenTimeService } from '../../../../services/screenTimeService';
 import { ScreenTimeData } from '../../../../types';
 import { nativeService } from '../../../../services/nativeService';
+import { getLocalDateString } from '../../../../utils/screenTimeCalculator';
 
 export interface AndroidScreenTimeCardProps {
   onNavigateToScreenTime: () => void;
@@ -30,7 +31,9 @@ export const AndroidScreenTimeCard: React.FC<AndroidScreenTimeCardProps> = ({
     void load();
 
     const unsubscribe = screenTimeService.subscribe((updated) => {
-      if (mounted) setData(updated);
+      if (mounted && (!updated.date || updated.date === getLocalDateString())) {
+        setData(updated);
+      }
     });
 
     return () => {
@@ -113,7 +116,7 @@ export const AndroidScreenTimeCard: React.FC<AndroidScreenTimeCardProps> = ({
 
         {data && data.totalMinutes > 0 && (
           <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-violet-50 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 border border-violet-200/70 dark:border-violet-900/50">
-            {topApps.length > 0 ? `${topApps.length} Apps Active` : data.isNativeAndroid ? 'Live APK' : 'From APK'}
+            {topApps.length > 0 ? `${topApps.length} Apps Active` : data.isNativeAndroid ? 'Active' : 'From APK'}
           </span>
         )}
       </div>

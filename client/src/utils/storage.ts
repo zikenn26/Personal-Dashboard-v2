@@ -38,6 +38,7 @@ import {
   TrashItem,
   TrashModule,
   ScreenTimeData,
+  AppUsageItem,
 } from '../types';
 import { STOCK_IMAGES } from '../assets/stockImages';
 import { decryptJson, encryptJson, isEncryptedPayload, EncryptedPayload } from './crypto';
@@ -45,6 +46,7 @@ import { INITIAL_USER_EXAMS } from '../data/defaultExams';
 import { getMondayOfWeek, getWeekId, formatWeekRange } from './habitWeekManager';
 import { normalizeExpenseDateKey, getLocalDateKey } from './expenseUtils';
 import { scratchpadWidgetService } from '../services/scratchpadWidgetService';
+import { getLocalDateString, resolveCleanAppName } from './screenTimeCalculator';
 
 export const STORAGE_KEYS = {
   TODOS: 'notion_os_v4_todos',
@@ -2291,14 +2293,61 @@ export const Storage = {
         if (Array.isArray(latest.past7Days)) {
           const match = latest.past7Days.find((d) => d.date === date);
           if (match) {
+            // Reconstruct apps list from match.appMinutes if present
+            let reconstructedApps: AppUsageItem[] = [];
+            if (match.appMinutes && typeof match.appMinutes === 'object') {
+              const knownAppsMap = new Map<string, AppUsageItem>();
+              (latest.apps || []).forEach((a) => {
+                if (a.packageName) knownAppsMap.set(a.packageName, a);
+              });
+
+              reconstructedApps = Object.entries(match.appMinutes)
+                .map(([pkg, mins]: [string, any], idx) => {
+                  const m = Number(mins) || 0;
+                  const known = knownAppsMap.get(pkg);
+                  return {
+                    packageName: pkg,
+                    appName: known?.appName || resolveCleanAppName(pkg),
+                    rank: idx + 1,
+                    durationMinutes: m,
+                    durationMillis: m * 60 * 1000,
+                    sessionCount: known?.sessionCount || 1,
+                    percentageOfTotal: match.totalMinutes > 0 ? Math.round((m / match.totalMinutes) * 100) : 0,
+                    category: known?.category,
+                    icon: known?.icon,
+                    isSystemApp: known?.isSystemApp,
+                  };
+                })
+                .filter((a) => a.durationMinutes > 0)
+                .sort((a, b) => b.durationMinutes - a.durationMinutes);
+
+              reconstructedApps.forEach((a, idx) => {
+                a.rank = idx + 1;
+              });
+            }
+
+            const formattedDate = new Date(date + 'T12:00:00').toLocaleDateString(undefined, {
+              weekday: 'long',
+              month: 'short',
+              day: 'numeric',
+            });
+
             return {
-              ...latest,
-              date,
-              formattedDate: date,
-              totalMinutes: match.totalMinutes,
-              totalMillis: match.totalMillis,
-              hasData: true,
               granted: true,
+              isNativeAndroid: false,
+              isFromApk: true,
+              hasData: match.totalMinutes > 0,
+              date,
+              formattedDate,
+              totalMinutes: match.totalMinutes,
+              totalMillis: match.totalMillis || (match.totalMinutes * 60 * 1000),
+              apps: reconstructedApps,
+              topApps: reconstructedApps.slice(0, 5),
+              hourlyUsage: [],
+              past7Days: latest.past7Days,
+              dailyAverageMinutes: latest.dailyAverageMinutes,
+              lastSyncedTimestamp: latest.lastSyncedTimestamp,
+              dataSource: (match as any).dataSource || 'usageEventsUnion',
             };
           }
         }
@@ -2321,9 +2370,16 @@ export const Storage = {
       const history = Storage.getScreenTimeHistory();
       history[date] = sanitized;
       saveToStorage(STORAGE_KEYS.SCREEN_TIME_HISTORY, history);
-      saveToStorage(STORAGE_KEYS.SCREEN_TIME, sanitized);
+
+      const today = getLocalDateString();
+      // Only overwrite today's screen time if the date being set is today or if no screen time exists yet
+      if (date === today || !Storage.getScreenTimeData()) {
+        saveToStorage(STORAGE_KEYS.SCREEN_TIME, sanitized);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('screentime-updated', { detail: { data: sanitized } }));
+        }
+      }
       if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('screentime-updated', { detail: { data: sanitized } }));
         window.dispatchEvent(new CustomEvent('dashboard-data-updated', { detail: { module: 'screentime' } }));
       }
     } catch (e) {
@@ -2689,10 +2745,24 @@ export const Storage = {
         Storage.setCommandMappings(data.commandMappings);
       }
       if (data.screenTime && typeof data.screenTime === 'object') {
-        Storage.setScreenTimeData(data.screenTime);
+        const currentLocal = Storage.getScreenTimeData();
+        // Do not let stale or empty cloud snapshots overwrite newer valid local APK records
+        if (!currentLocal || (data.screenTime.lastSyncedTimestamp || 0) >= (currentLocal.lastSyncedTimestamp || 0)) {
+          Storage.setScreenTimeData(data.screenTime);
+        }
       }
       if (data.screenTimeHistory && typeof data.screenTimeHistory === 'object') {
-        Storage.setScreenTimeHistory(data.screenTimeHistory);
+        const currentHistory = Storage.getScreenTimeHistory();
+        const mergedHistory = { ...currentHistory };
+        Object.entries(data.screenTimeHistory).forEach(([d, val]: [string, any]) => {
+          if (val && typeof val === 'object') {
+            const existing = mergedHistory[d];
+            if (!existing || (val.lastSyncedTimestamp || 0) >= (existing.lastSyncedTimestamp || 0)) {
+              mergedHistory[d] = sanitizeScreenTimeForStorage(val);
+            }
+          }
+        });
+        Storage.setScreenTimeHistory(mergedHistory);
       }
       return true;
     } catch (err) {

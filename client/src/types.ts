@@ -913,6 +913,7 @@ export interface AppUsageItem {
   isCurrentApp?: boolean;
   isSystemApp?: boolean;
   icon?: string; // Base64 data URL
+  hourlyUsage?: HourlyUsageBucket[];
 }
 
 export interface HourlyUsageBucket {

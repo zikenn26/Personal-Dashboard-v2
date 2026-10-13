@@ -28,7 +28,8 @@ let inMemoryStore: ScreenTimeStore = {
  */
 export function isValidNativeAndroidPayload(payload: any): boolean {
   if (!payload || typeof payload !== "object") return false;
-  if (!payload.hasData || typeof payload.totalMinutes !== "number" || payload.totalMinutes < 0) return false;
+  const hasData = payload.hasData ?? (payload.totalMinutes > 0);
+  if (!hasData || typeof payload.totalMinutes !== "number" || payload.totalMinutes < 0) return false;
 
   // Reject known unverified mock/dummy patterns (e.g. legacy 185m with single Instagram app)
   if (
@@ -49,7 +50,10 @@ export function isValidNativeAndroidPayload(payload: any): boolean {
     payload.isNativeAndroid ||
     payload.dataSource === "usageEventsUnion" ||
     payload.dataSource === "usageStatsFallback" ||
-    payload.dataSource === "android_native_apk"
+    payload.dataSource === "android_native_apk" ||
+    payload.dataSource === "usageStats" ||
+    (Array.isArray(payload.apps) && payload.apps.some((a: any) => a?.packageName && a.packageName.includes('.'))) ||
+    (Array.isArray(payload.past7Days) && payload.past7Days.length > 0)
   );
 
   return isNative;
@@ -213,15 +217,47 @@ export function handleScreenTimeDaily(req: Request, res: Response): void {
     if (inMemoryStore.latest && Array.isArray(inMemoryStore.latest.past7Days)) {
       const match = inMemoryStore.latest.past7Days.find((d: any) => d.date === targetDate);
       if (match) {
+        let reconstructedApps: any[] = [];
+        if (match.appMinutes && typeof match.appMinutes === "object") {
+          reconstructedApps = Object.entries(match.appMinutes)
+            .map(([pkg, mins]: [string, any], idx) => {
+              const m = Number(mins) || 0;
+              const known = (inMemoryStore.latest?.apps || []).find((a: any) => a.packageName === pkg);
+              return {
+                packageName: pkg,
+                appName: known?.appName || pkg.split('.').pop() || pkg,
+                rank: idx + 1,
+                durationMinutes: m,
+                durationMillis: m * 60 * 1000,
+                sessionCount: known?.sessionCount || 1,
+                percentageOfTotal: match.totalMinutes > 0 ? Math.round((m / match.totalMinutes) * 100) : 0,
+                category: known?.category,
+                icon: known?.icon,
+                isSystemApp: known?.isSystemApp,
+              };
+            })
+            .filter((a) => a.durationMinutes > 0)
+            .sort((a, b) => b.durationMinutes - a.durationMinutes);
+
+          reconstructedApps.forEach((a, idx) => {
+            a.rank = idx + 1;
+          });
+        }
+
         // Construct day summary
         const synth: any = {
           ...inMemoryStore.latest,
           date: targetDate,
           formattedDate: targetDate,
           totalMinutes: match.totalMinutes,
-          totalMillis: match.totalMillis,
-          hasData: true,
+          totalMillis: match.totalMillis || (match.totalMinutes * 60 * 1000),
+          apps: reconstructedApps.length > 0 ? reconstructedApps : [],
+          topApps: reconstructedApps.slice(0, 5),
+          hourlyUsage: [],
+          hasData: match.totalMinutes > 0,
           granted: true,
+          isFromApk: true,
+          dataSource: match.dataSource || "usageEventsUnion",
         };
         res.json({
           success: true,

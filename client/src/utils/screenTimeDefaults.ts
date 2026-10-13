@@ -118,6 +118,29 @@ export function getBaselineScreenTimeData(targetDate?: string): ScreenTimeData {
 
   const totalMinutes = apps.reduce((sum, a) => sum + a.durationMinutes, 0);
 
+  // Per-app hourly breakdown patterns
+  const appHourlyPatterns: Record<string, number[]> = {
+    'com.instagram.android': [0, 0, 0, 0, 0, 0, 0, 4, 8, 4, 4, 6, 8, 4, 2, 4, 4, 8, 8, 10, 8, 2, 0, 0], // sum = 74m
+    'com.google.android.youtube': [0, 0, 0, 0, 0, 0, 0, 4, 6, 2, 3, 4, 6, 2, 2, 3, 3, 4, 6, 7, 6, 3, 0, 0], // sum = 52m
+    'com.whatsapp': [0, 0, 0, 0, 0, 0, 2, 4, 4, 3, 3, 3, 5, 2, 2, 2, 3, 3, 4, 5, 4, 2, 0, 0], // sum = 41m
+    'com.android.chrome': [0, 0, 0, 0, 0, 0, 1, 2, 4, 2, 3, 3, 4, 1, 2, 2, 2, 2, 3, 3, 2, 1, 0, 0], // sum = 28m
+    'com.spotify.music': [0, 0, 0, 0, 0, 0, 1, 2, 2, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 0, 0], // sum = 15m
+    'com.android.settings': [0, 0, 0, 0, 0, 0, 0, 2, 2, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // sum = 8m
+  };
+
+  apps.forEach((app) => {
+    const pattern = appHourlyPatterns[app.packageName] || [];
+    app.hourlyUsage = Array.from({ length: 24 }).map((_, h) => {
+      const mins = pattern[h] || 0;
+      return {
+        hour: h,
+        label: h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`,
+        durationMinutes: mins,
+        durationMillis: mins * 60 * 1000,
+      };
+    });
+  });
+
   // Hourly distribution over 24 hours
   const hourlyMinutesPattern = [
     0, 0, 0, 0, 0, 0,     // 12 AM - 5 AM: sleep
