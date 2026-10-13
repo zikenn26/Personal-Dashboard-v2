@@ -44,6 +44,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @CapacitorPlugin(name = "ScreenTime")
 public class ScreenTimePlugin extends Plugin {
+    private static final String TAG = "ScreenTimePlugin";
     private static ScreenTimePlugin instance;
     private static boolean pendingOpenScreenTime = false;
 
