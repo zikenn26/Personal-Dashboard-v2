@@ -1,151 +1,284 @@
+<div align="center">
+
 # ⚡ Zikenn Dashboard
+### **Your life. Your ambitions. One command center.**
 
-### Your entire life, career, and finances — organized into one beautiful command center. Available as a **Web App** and a native **Android App**, powered by the same codebase.
+Bring your productivity, finances, career, learning, habits, goals, and everyday routines together in one personal dashboard — with high-performance Web and Android experiences.
 
-> Stop juggling ten different apps for your tasks, habits, goals, money, passwords, journal, and portfolio. Zikenn Dashboard brings it all into a single, elegant, private-first workspace that runs everywhere — in your browser, on your phone, and across every device you own, in perfect real-time sync.
+[![React 19](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Tailwind CSS 4](https://img.shields.io/badge/Tailwind_CSS-4-38BDF8?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![Capacitor](https://img.shields.io/badge/Capacitor-Android-119EFF?style=for-the-badge&logo=capacitor&logoColor=white)](https://capacitorjs.com/)
+[![Supabase Realtime](https://img.shields.io/badge/Supabase-Realtime-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
+[![License MIT](https://img.shields.io/badge/License-MIT-black?style=for-the-badge)](LICENSE)
+
+<br/>
+
+<a href="docs/assets/demo/zikenn-dashboard-demo.mp4">
+  <img src="docs/assets/demo/zikenn-dashboard-demo.gif" alt="Zikenn Dashboard Product Walkthrough Demo" width="880" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.25);" />
+</a>
 
 <p align="center">
-  <img alt="React 19" src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white">
-  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white">
-  <img alt="Tailwind CSS" src="https://img.shields.io/badge/Tailwind_CSS-4-38BDF8?logo=tailwindcss&logoColor=white">
-  <img alt="Capacitor" src="https://img.shields.io/badge/Capacitor-Android-119EFF?logo=capacitor&logoColor=white">
-  <img alt="Supabase" src="https://img.shields.io/badge/Supabase-Realtime-3ECF8E?logo=supabase&logoColor=white">
-  <img alt="License" src="https://img.shields.io/badge/License-MIT-black">
+  <em>Live 720p demonstration recorded directly from the running Zikenn Dashboard application. <br/>
+  Click the preview above or <a href="docs/assets/demo/zikenn-dashboard-demo.mp4">watch the full MP4 recording</a>.</em>
 </p>
 
----
-
-## 💡 Why Zikenn Dashboard?
-
-Modern life is scattered across a dozen apps — a to-do list here, a habit tracker there, a budgeting app, a password manager, a journal, and a separate portfolio site for your career. Zikenn Dashboard replaces all of them with **one cohesive product** that feels like it was designed by someone who actually lives the chaos of modern productivity — because it was.
-
-- 🧠 **One app, your whole life** — tasks, habits, goals, exams, finances, passwords, journal, media, and your professional portfolio, all in one place.
-- 🤖 **Built-in AI Secretary** — a conversational assistant that can create tasks, log expenses, update habits, and manage your day just by talking to it.
-- 🔒 **Bank-grade privacy by design** — your most sensitive data (passwords, private journal entries) is encrypted client-side. Not even the backend can read it.
-- 📱 **Truly cross-platform** — the exact same product ships as a fast Progressive Web App *and* a native Android app via Capacitor, sharing 100% of the code.
-- ⚡ **Real-time everywhere** — start a task on your laptop, finish it on your phone. Alarms, habits, and schedules sync across devices in under 30ms.
-- 🎨 **Delightful, not sterile** — smooth animations, satisfying sound effects, confetti celebrations, and a beautifully crafted dark/light UI make daily use genuinely enjoyable.
+</div>
 
 ---
 
-## 🌐 One Codebase, Two Powerful Products
+## 🧭 Why Zikenn Dashboard?
 
-| | 🖥️ Web App | 📱 Android App |
-|---|---|---|
-| **Tech** | Vite + React 19 SPA, served via an Express backend | Native Android shell powered by [Capacitor](https://capacitorjs.com/), wrapping the same web UI |
-| **Distribution** | Instantly accessible from any browser — no install needed | Installable APK/AAB, ready for the Google Play Store |
-| **Device Features** | Web Notifications, Web Crypto, Clipboard | Native Splash Screen, Status Bar theming, Haptics, Geolocation, Network status, native Share sheet |
-| **Offline Support** | Local-first storage, works without internet | Full offline-first support with native app resilience |
-| **Sync** | Realtime Supabase sync across every session | Same account, same data, instantly synced with the web app |
+Modern life is fractured across fragmented tools — a to-do list in one app, personal finance in another, habit tracking on a phone, career notes buried in documents, and screen time siloed inside OS settings. 
 
-This means every feature you build or fix benefits **both** platforms simultaneously — no duplicated effort, no feature drift.
+**Zikenn Dashboard ends context switching.** It brings every dimension of daily management into a singular, high-performance command center:
 
----
-
-## 🏆 Everything Your Users Get
-
-| Module | What It Delivers |
-|---|---|
-| 🏠 **Command Center & Home Dashboard** | A modular, drag-and-drop grid with a flip-clock, cross-device alarms, time-blocked daily schedule, Indian Panchang calendar, and quick-capture bar. |
-| 🤖 **Zikenn AI Assistant** | A Groq-powered AI secretary that can autonomously create tasks, log expenses, update habits, and answer questions in natural language. |
-| ☑️ **Tasks & Kanban Board** | A 4-stage kanban flow with priorities, due dates, subtasks, sound effects, and confetti celebrations. |
-| ⚡ **Habit Tracker** | A visual 7-day matrix with automated weekly rollover, streaks, and completion analytics. |
-| 🎯 **Goals & Milestones** | Long-term goal tracking with milestone-driven progress bars and category-based organization. |
-| 🎓 **Competitive Exams Hub** | Multi-phase exam prep with hierarchical syllabus tracking, book progress, and live countdowns. |
-| 💼 **Workfolio & Portfolio Showcase** | A polished, public-ready résumé and project portfolio — perfect for job hunting or client pitches. |
-| 💳 **Expense & Subscription Tracker** | Multi-currency ledger, recurring subscription alerts, and one-click Excel/CSV bank statement import. |
-| 🔐 **Encrypted Password Vault** | AES-GCM-256 + PBKDF2-SHA-256 (210,000 iterations) zero-knowledge vault — your passwords never leave your device unencrypted. |
-| 📖 **Dear Diary & Journal** | A beautifully themed private journal with mood tracking and PIN-protected entries. |
-| 🎬 **Media Library** | Track books, movies, shows, games, and podcasts with ratings and status pipelines. |
-| 🗺️ **Life Map & Achievements** | A visual timeline of milestones plus a digital trophy wall and doodle canvas. |
-| ⌘ **Command Palette** | Instant `Ctrl+K` fuzzy search across the entire app. |
-| 🔄 **Realtime Multi-Device Sync** | Local-first speed with Supabase-powered background sync and remote session management. |
+- 🎯 **Plan and Execute Seamlessly** — Transition effortlessly from high-level life goals to weekly milestone roadmaps, daily time blocks, and draggable Kanban tasks.
+- 💰 **Automate Personal Finances** — Record daily expenditures, categorize spending patterns, track active recurring subscriptions, and auto-parse transaction data.
+- 📱 **True Cross-Platform Presence** — Run instantly in modern desktop browsers, or build and install natively on Android with genuine home-screen AppWidgets.
+- 📊 **Honest Screen Time Analytics** — Monitor digital habits using genuine native Android `UsageStatsManager` session reconstructions, without misleading approximations.
+- 🤖 **AI-Assisted Workflow** — Query schedule availability, log quick items, and delegate repetitive updates using an intelligent conversational assistant.
+- 🔒 **Privacy-First Architecture** — Sensitive credentials and private notes stay safeguarded through client-side encryption and local-first persistence.
 
 ---
 
-## 🛠️ Under the Hood
+## 📸 Product Walkthrough & Feature Showcase
 
-| Layer | Technology |
-|---|---|
-| **Frontend** | React 19, TypeScript, Vite 7, Wouter (routing) |
-| **Styling & Motion** | Tailwind CSS v4, Framer Motion, Radix UI primitives |
-| **Mobile Shell** | Capacitor 8 (Android), with native Haptics, Geolocation, Network, Share, Splash Screen & Status Bar plugins |
-| **Backend** | Node.js + Express (API proxy & production server) |
-| **AI** | Groq (`gpt-oss-120b` / `qwen3` models) via `@google/genai` tool-calling |
-| **Data & Sync** | Supabase (PostgreSQL + Realtime WebSockets) with local-first `localStorage` caching |
-| **Security** | Web Crypto API — AES-GCM-256 authenticated encryption, PBKDF2-HMAC-SHA256 key derivation |
-| **Testing** | Vitest |
+### 1. Command Center & Daily Pulse
+*The beating heart of your morning routine: live digital clock, Indian Panchang calendar, persistent alarms, time-blocked schedule, and one-click quick-capture bar.*
+
+<div align="center">
+  <img src="docs/assets/screenshots/01_command_center_dashboard.png" alt="Zikenn Dashboard Command Center" width="850" style="border-radius: 8px; border: 1px solid #e2e8f0;" />
+</div>
+
+<br/>
+
+### 2. Draggable Kanban & Task Engine
+*Organize sprints, personal errands, and work priorities across customizable columns with priority badges, checklist breakdowns, and completion celebrations.*
+
+<div align="center">
+  <img src="docs/assets/screenshots/02_tasks_kanban.png" alt="Tasks and Kanban Workspace" width="850" style="border-radius: 8px; border: 1px solid #e2e8f0;" />
+</div>
+
+<br/>
+
+### 3. Habit Tracker & Consistency Matrix
+*Build sustainable daily habits with interactive weekly completion grids, multi-week streak counters, and celebratory milestone triggers.*
+
+<div align="center">
+  <img src="docs/assets/screenshots/03_habit_tracker.png" alt="Habit Consistency Matrix" width="850" style="border-radius: 8px; border: 1px solid #e2e8f0;" />
+</div>
+
+<br/>
+
+### 4. Personal Finance, Spending & Subscriptions
+*Track daily cashflow, inspect categorized spending analytics, manage recurring monthly subscriptions, and stay ahead of budget leaks.*
+
+<div align="center">
+  <img src="docs/assets/screenshots/05_spending_finance.png" alt="Spending and Personal Finance Tracker" width="850" style="border-radius: 8px; border: 1px solid #e2e8f0;" />
+</div>
+
+<br/>
+
+### 5. Screen Time & Digital Habit Analytics
+*Reconstruct daily foreground app activity, inspect 24-hour hourly distributions, and audit cross-platform usage patterns with interval union precision.*
+
+<div align="center">
+  <img src="docs/assets/screenshots/06_screentime_analytics.png" alt="Screen Time Analytics" width="850" style="border-radius: 8px; border: 1px solid #e2e8f0;" />
+</div>
+
+<br/>
+
+### 6. AI Assistant & Life Secretary
+*A natural language productivity assistant that creates tasks, categorizes expenses, answers schedule inquiries, and helps manage your day.*
+
+<div align="center">
+  <img src="docs/assets/screenshots/07_ai_assistant.png" alt="Zikenn AI Assistant" width="850" style="border-radius: 8px; border: 1px solid #e2e8f0;" />
+</div>
+
+<br/>
+
+### 7. Career Workfolio, Portfolio & Password Vault
+*Showcase your career milestones, manage tech skill taxonomy, rehearse for exams, and safely secure private credentials in an encrypted vault.*
+
+| Exam Preparation & Study Plans | Professional Career Workfolio |
+| :---: | :---: |
+| <img src="docs/assets/screenshots/08_exam_preparation.png" alt="Exam Preparation" width="410" style="border-radius: 6px;" /> | <img src="docs/assets/screenshots/09_workfolio_career.png" alt="Career Workfolio" width="410" style="border-radius: 6px;" /> |
+
+---
+
+## 📱 Web vs. Native Android Capabilities
+
+Zikenn Dashboard shares core logic across web and mobile while leveraging native Android platform capabilities when running via Capacitor:
+
+| Capability / Feature | 🖥️ Modern Web (Browser / PWA) | 📱 Native Android APK (Capacitor) |
+| :--- | :---: | :---: |
+| **Instant Access** | ✅ Zero install, any desktop or mobile browser | ✅ Native Android App package |
+| **Data Synchronization** | ✅ Supabase Realtime + LocalStorage fallback | ✅ Supabase Realtime + SQLite / Local Storage |
+| **Home-Screen Widgets** | ❌ Browser limitations | ✅ Native Android AppWidgets (Spending, Screen Time, ScratchPad) |
+| **Screen Time Tracking** | ✅ Cross-synced from APK or local manual logs | ✅ Hardware-level `UsageStatsManager` foreground reconstruction |
+| **Haptic Feedback** | ❌ Limited browser support | ✅ Native device haptics via `@capacitor/haptics` |
+| **Offline Reliability** | ✅ Local-first browser storage | ✅ Full offline resilience with background state sync |
+| **Security & Privacy** | ✅ Web Crypto API client-side encryption | ✅ Web Crypto API client-side encryption |
+
+---
+
+## 🏗️ Architecture & Technology Stack
+
+```mermaid
+graph TD
+    subgraph UI_Layer [Frontend Presentation]
+        A[React 19 SPA] --> B[Tailwind CSS 4 + Framer Motion]
+        B --> C[Radix UI Primitives + Lucide Icons]
+    end
+
+    subgraph Service_Bridge [Data & Hardware Bridge]
+        D[Storage & Crypto Engine] --> E[Supabase Cloud Sync]
+        F[Capacitor Native Plugins] --> G[Android Bridge Activity]
+    end
+
+    subgraph Android_Native [Native Android Platform]
+        G --> H[ScreenTimeWidgetProvider]
+        G --> I[SpendingWidgetProvider]
+        G --> J[ScratchPadWidgetProvider]
+        G --> K[UsageStatsManager / App Usage]
+    end
+
+    UI_Layer --> Service_Bridge
+    Service_Bridge --> Android_Native
+```
+
+### Core Technologies
+- **Client:** React 19, TypeScript 5, Vite 7, Tailwind CSS 4, Motion (Framer Motion).
+- **State & Data:** Local-first reactive architecture, Supabase Realtime database sync, Web Crypto AES-GCM.
+- **Mobile Engine:** Capacitor 8 with custom Java plugins for Android `AppWidgetProvider` and `UsageStatsManager`.
+- **Backend & APIs:** Node.js Express server (`server/index.ts`) serving production assets and sync bridges.
+
+---
+
+## 🔒 Privacy & Data Safety
+
+- 🛡️ **Client-Side Encryption:** Sensitive credentials in Password Vault and private journal entries are encrypted client-side using Web Crypto standard algorithms.
+- 🚫 **No Analytics Overreach:** Telemetry, ad trackers, and third-party profiling scripts are strictly omitted from the core dashboard codebase.
+- 🔑 **Credential Isolation:** API keys (such as Groq or Gemini AI tokens) are stored in your private local profile and are never committed or broadcast.
 
 ---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js `v18+`
-- npm `v9+`
-- For Android builds: Android Studio + a configured JDK (Gradle wrapper is included in [android/](android/))
+- **Node.js:** v18.0.0 or later (v20+ recommended)
+- **Package Manager:** `npm` (included with Node.js)
 
-### 1. Install dependencies
+### 1. Clone & Install Dependencies
 ```bash
+git clone https://github.com/your-username/personal-dashboard.git
+cd personal-dashboard
 npm install
 ```
 
-### 2. Configure environment variables
-Create a `.env` file with your Supabase and AI credentials:
+### 2. Configure Environment Variables
+Copy the example environment configuration:
+```bash
+cp .env.example .env
+```
+Provide your optional Supabase or AI API credentials if configuring cloud sync and AI workflows:
 ```env
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
-GROQ_API_KEY=your-groq-api-key
+VITE_SUPABASE_URL=your_supabase_project_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+VITE_GEMINI_API_KEY=your_gemini_api_key
 ```
 
-### 3. Run the web app locally
+### 3. Launch Development Server
 ```bash
 npm run dev
 ```
-Visit `http://localhost:3000`.
+Open **[http://localhost:3000](http://localhost:3000)** in your browser to experience the live dashboard.
 
-### 4. Build for production (web)
+### 4. Build for Production
 ```bash
 npm run build
 npm start
 ```
 
-### 5. Build & run the Android app
-```bash
-npm run cap:build   # builds the web app and syncs it into the Android project
-npm run cap:open    # opens the project in Android Studio
-```
-From Android Studio, run the app on an emulator or a physical device, or generate a signed APK/AAB for the Play Store.
+---
 
-### 6. Verify & test
+## 📱 Android Development & Native Build
+
+Zikenn Dashboard's Android application is powered by Capacitor:
+
+### 1. Sync Web Assets to Android
 ```bash
-npm run lint   # type-checking
-npm test       # automated tests (crypto, backup integrity, config validation)
+npm run cap:build
+```
+
+### 2. Open in Android Studio
+```bash
+npm run cap:open
+```
+
+### 3. Assemble Debug APK via CLI
+*(Requires Android SDK and Java JDK installed)*
+```bash
+cd android
+./gradlew assembleDebug
+```
+The compiled APK will be generated at:
+```
+android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
 ---
 
-## 📂 Project Structure
+## 🧪 Testing & Code Quality
+
+The codebase enforces strict unit testing, cross-platform synchronization tests, and type checking:
+
+```bash
+# Run the complete Vitest test suite (660+ tests)
+npm run test
+
+# Validate TypeScript type consistency across all modules
+npm run check
+
+# Verify code formatting and linting
+npm run lint
+```
+
+---
+
+## 📁 Repository Directory Structure
 
 ```
-client/        → React web app (shared by both Web & Android builds)
-server/        → Express backend & AI service proxy
-android/       → Native Android project generated & managed by Capacitor
-shared/        → Shared constants between client and server
-supabase/      → Database schema for cloud sync
-patches/       → Dependency patches applied via patch-package
+.
+├── android/               # Native Android Capacitor application & AppWidgets
+│   └── app/src/main/
+│       ├── java/.../      # ScreenTime, Spending, and ScratchPad Widget plugins
+│       └── res/layout/    # Native home-screen widget XML layouts
+├── client/                # React 19 Frontend Application
+│   ├── src/
+│   │   ├── components/    # Modular dashboard views, widgets, and dialogs
+│   │   ├── presentation/  # Responsive layouts and mobile screen adapters
+│   │   ├── services/      # Screen Time, Widget, and SMS transaction services
+│   │   ├── utils/         # Crypto, audio soundscapes, and storage engines
+│   │   └── types.ts       # Central TypeScript schema and interfaces
+├── docs/                  # Documentation & authentic media gallery
+│   ├── DEMO.md            # Demo workflow and asset documentation
+│   └── assets/
+│       ├── demo/          # Real MP4 product recording and animated GIF
+│       └── screenshots/   # Authentically captured high-resolution screens
+├── server/                # Production Express server and API sync routes
+├── package.json           # Dependencies, build pipelines, and test scripts
+└── vite.config.ts         # Vite bundler configuration
 ```
 
 ---
 
 ## 📄 License
 
-Licensed under the **MIT License** — free to use, adapt, and build upon.
+This project is open-source under the **[MIT License](LICENSE)**.
 
----
-
-<p align="center">
-  <b>Zikenn Dashboard</b> — one app, every device, your whole life in sync.<br>
-  <i>Ready to ditch the app-juggling? Clone it, run it, and see what a truly unified life dashboard feels like.</i>
-</p>
-
+<div align="center">
+  <p><strong>One workspace. More clarity. Your life in motion.</strong></p>
+  <sub>Built with passion for high-performance personal computing.</sub>
+</div>
