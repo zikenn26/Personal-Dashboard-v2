@@ -50,8 +50,8 @@ export function cleanMerchantName(raw: string): string {
   let cleaned = raw
     .trim()
     .replace(/^[\s,.\-_:;]+|[\s,.\-_:;]+$/g, '')
-    // Strip trailing reference, date, or balance noise
-    .replace(/\s+(?:on|via|ref|using|dated|rrn|txn|imps|neft)\b.*$/i, '')
+    // Strip trailing reference, date, status words, or balance noise
+    .replace(/\s+(?:on|via|ref|using|dated|rrn|txn|imps|neft|was|is|has\s+been|confirmed|successful|success)\b.*$/i, '')
     .replace(/\s+(?:A\/c|card|ending|\*+|xx+).*$/i, '')
     .trim();
 
@@ -404,12 +404,12 @@ export function parseSmsTransaction(
   // --------------------------------------------------------------------------
 
   const isDebit =
-    /\b(debited|debited by|debit of|debit|paid|spent|withdrawn|transferred to|sent to|purchase of|purchase at|charged|deducted|used at|txn of|payment of|dr to|vpa debit|pos txn|atm wdl)\b/i.test(
+    /\b(debited|debited by|debit of|debit|paid|spent|withdrawn|transferred to|transfer to|transfer of|transferred|sent to|sent\b|purchase of|purchase at|purchase|charged|deducted|used at|txn of|txn\b|transaction of|payment of|payment for|payment\b|payment done|paid to|dr to|vpa debit|pos txn|atm wdl)\b/i.test(
       lower
     );
 
   const isCredit =
-    /\b(credited|credited to|credited with|received|deposited|refund of|cashback of|cr to)\b/i.test(
+    /\b(credited|credited to|credited with|credit of|credit\b|received|deposited|refund of|refund\b|cashback of|cashback\b|cr to)\b/i.test(
       lower
     );
 
@@ -427,14 +427,24 @@ export function parseSmsTransaction(
   let amount = 0;
   let currency = '₹';
 
-  // Verb-bound amount (e.g. "debited by 1200.00", "debited by Rs 450", "spent INR 650", "paid Rs 200")
+  // Verb-bound amount (e.g. "payment of 1787.95", "debited by 1200.00", "spent INR 650", "paid Rs 200", "txn of 1787.95", "transfer of 1787.95")
   const verbAmountMatch = text.match(
-    /\b(?:debited\s*(?:by|for|with)?|credited\s*(?:by|for|with)?|spent|withdrawn|paid|transferred|dr\s*(?:by)?|cr\s*(?:by)?)\s*(?:(?:rs\.?|inr|₹|\$|usd|eur|€|gbp|£|aed)\s*)?([0-9,]+(?:\.[0-9]{1,2})?)\b/i
+    /\b(?:debited\s*(?:by|for|with)?|credited\s*(?:by|for|with)?|spent|withdrawn|paid\s*(?:to|for)?|payment\s*(?:of|for|done|confirmed|successful)?|transferred\s*(?:to)?|transfer\s*(?:of)?|sent|purchase\s*(?:of)?|charged|deducted|txn\s*(?:of)?|transaction\s*(?:of)?|dr\s*(?:by|to)?|cr\s*(?:by|to)?|amount\s*(?:of)?)\s*(?:(?:rs\.?|inr|₹|\$|usd|eur|€|gbp|£|aed)\s*)?([0-9]+(?:,[0-9]+)*(?:\.[0-9]{1,2})?)\b/i
+  );
+
+  // Amount before verb: "1787.95 debited", "1787.95 paid", "INR 1787.95 has been debited"
+  const amountBeforeVerbMatch = text.match(
+    /\b(?:(?:rs\.?|inr|₹|\$|usd|eur|€|gbp|£|aed)\s*)?([0-9]+(?:,[0-9]+)*(?:\.[0-9]{1,2})?)\s*(?:has\s+been\s+|was\s+|is\s+)?(?:debited|credited|paid|spent|withdrawn|transferred|deducted|charged|sent)\b/i
+  );
+
+  // Payment confirmation with colon or status: "Payment confirmed: 1787.95", "Payment confirmed for 1787.95"
+  const paymentConfirmMatch = text.match(
+    /\b(?:payment\s*(?:of|for|done|confirmed|successful)?|confirmed\s*[:\-]?\s*payment|payment\s+confirmation)\s*[:#\-]?\s*(?:of|for)?\s*(?:(?:rs\.?|inr|₹|\$|usd|eur|€|gbp|£|aed)\s*)?([0-9]+(?:,[0-9]+)*(?:\.[0-9]{1,2})?)\b/i
   );
 
   // All currency-prefixed amounts: "Rs. 450.00", "INR 1,200", "₹500", "$25.50"
   const allCurrencyMatches = Array.from(
-    text.matchAll(/(rs\.?|inr|₹|\$|usd|eur|€|gbp|£|aed)\s*([0-9,]+(?:\.[0-9]{1,2})?)/gi)
+    text.matchAll(/(rs\.?|inr|₹|\$|usd|eur|€|gbp|£|aed)\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]{1,2})?)/gi)
   );
 
   // Find first currency match that is not preceded by balance/limit keywords
@@ -447,13 +457,26 @@ export function parseSmsTransaction(
 
   // Amount followed by currency suffix: "450.00 Rs", "1200 INR", "500 rupees"
   const amountSuffixMatch = text.match(
-    /\b([0-9,]+(?:\.[0-9]{1,2})?)\s*(?:rs\.?|inr|₹|rupees)\b/i
+    /\b([0-9]+(?:,[0-9]+)*(?:\.[0-9]{1,2})?)\s*(?:rs\.?|inr|₹|rupees)\b/i
   );
 
   // Bare amount following transaction verbs
   const bareAmountMatch = text.match(
-    /\b(?:debited\s+by|debited\s+for|credited\s+by|credited\s+with|spent|withdrawn|amount\s+of|dr\s+by|cr\s+by)\s+([0-9,]+(?:\.[0-9]{1,2})?)/i
+    /\b(?:debited\s+(?:by|for|with)|credited\s+(?:by|with)|spent|withdrawn|amount\s+of|dr\s+(?:by|to)|cr\s+(?:by|to)|payment\s+(?:of|for|confirmed|done|successful)|paid|transfer\s+of|transferred|txn\s+of|transaction\s+of|sent|purchase\s+of|charged|deducted|debit\s+of|credit\s+of)\s+([0-9]+(?:,[0-9]+)*(?:\.[0-9]{1,2})?)/i
   );
+
+  // Standalone decimal float: find all decimal numbers that are not preceded by balance keywords
+  const allDecimalMatches = Array.from(
+    text.matchAll(/\b([0-9]+(?:,[0-9]+)*\.[0-9]{1,2})\b/g)
+  );
+  const nonBalDecimal = allDecimalMatches.find((m) => {
+    if (m.index === undefined) return false;
+    const prefix = text.substring(Math.max(0, m.index - 30), m.index).toLowerCase();
+    return (
+      !/\b(?:bal|balance|avl|avail|available|limit)\s*[:#\-]?\s*$/i.test(prefix) &&
+      !/\b(?:bal|balance|avl\s*bal|avail\s*bal|available\s*bal|credit\s*limit)\b/i.test(prefix)
+    );
+  });
 
   if (verbAmountMatch && verbAmountMatch[1]) {
     const rawNum = verbAmountMatch[1].replace(/,/g, '');
@@ -462,6 +485,22 @@ export function parseSmsTransaction(
     else if (/[€]|eur/i.test(verbAmountMatch[0])) currency = '€';
     else if (/[£]|gbp/i.test(verbAmountMatch[0])) currency = '£';
     else if (/aed/i.test(verbAmountMatch[0])) currency = 'AED';
+    else currency = '₹';
+  } else if (amountBeforeVerbMatch && amountBeforeVerbMatch[1]) {
+    const rawNum = amountBeforeVerbMatch[1].replace(/,/g, '');
+    amount = parseFloat(rawNum);
+    if (/[$]|usd/i.test(amountBeforeVerbMatch[0])) currency = '$';
+    else if (/[€]|eur/i.test(amountBeforeVerbMatch[0])) currency = '€';
+    else if (/[£]|gbp/i.test(amountBeforeVerbMatch[0])) currency = '£';
+    else if (/aed/i.test(amountBeforeVerbMatch[0])) currency = 'AED';
+    else currency = '₹';
+  } else if (paymentConfirmMatch && paymentConfirmMatch[1]) {
+    const rawNum = paymentConfirmMatch[1].replace(/,/g, '');
+    amount = parseFloat(rawNum);
+    if (/[$]|usd/i.test(paymentConfirmMatch[0])) currency = '$';
+    else if (/[€]|eur/i.test(paymentConfirmMatch[0])) currency = '€';
+    else if (/[£]|gbp/i.test(paymentConfirmMatch[0])) currency = '£';
+    else if (/aed/i.test(paymentConfirmMatch[0])) currency = 'AED';
     else currency = '₹';
   } else if (nonBalCurrency && nonBalCurrency[2]) {
     const rawNum = nonBalCurrency[2].replace(/,/g, '');
@@ -478,6 +517,10 @@ export function parseSmsTransaction(
     currency = '₹';
   } else if (bareAmountMatch && bareAmountMatch[1]) {
     const rawNum = bareAmountMatch[1].replace(/,/g, '');
+    amount = parseFloat(rawNum);
+    currency = '₹';
+  } else if (nonBalDecimal && nonBalDecimal[1]) {
+    const rawNum = nonBalDecimal[1].replace(/,/g, '');
     amount = parseFloat(rawNum);
     currency = '₹';
   } else if (allCurrencyMatches.length > 0 && allCurrencyMatches[0][2]) {
@@ -635,12 +678,13 @@ export function parseSmsTransaction(
       text.match(/\b(?:to\s+vpa|vpa)\s+[A-Za-z0-9._\-]+@[A-Za-z0-9._\-]+\s*\(([A-Za-z0-9\s._@\-]+?)\)/i) ||
       text.match(/\bupi\s*[:#\/=\s-]*\d{10,14}-([A-Za-z0-9\s._@\-]+?)(?:[\/:\.\n;]|\s+(?:on|via|ref|bal)|$)/i) ||
       text.match(/([A-Za-z][A-Za-z0-9\s._@\-]{1,40})\s+has\s+been\s+credited\b/i) ||
+      text.match(/\b(?:paid|payment\s+of|transfer\s+of|sent|txn\s+of)?\s*(?:rs\.?|inr|₹)?\s*[0-9,.]+\s+(?:done\s+|was\s+)?(?:via\s+upi\s+)?(?:made\s+)?to\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:via|on|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i) ||
       text.match(/\bpaid to\s+([A-Za-z0-9\s._@\-]+?)\s+(?:rs\.?|inr|₹)/i) ||
       text.match(/\bsent to\s+([A-Za-z0-9\s._@\-]+?)\s+(?:from|via|on|ref)/i);
 
     if (explicitPayeeMatch && explicitPayeeMatch[1]) {
       const candidate = cleanMerchantName(explicitPayeeMatch[1]);
-      if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa|your|bal|balance)$/i.test(candidate)) {
+      if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa|your|bal|balance|via)$/i.test(candidate)) {
         rawMerchant = candidate;
       }
     }
@@ -673,7 +717,7 @@ export function parseSmsTransaction(
     // 2. "debited to [Name]", "paid to [Name]", "sent to [Name]", "transfer to [Name]", "transferred to [Name]", "credited by [Name]"
     if (!rawMerchant) {
       const directPayeeMatch = text.match(
-        /\b(?:debited to|paid to|transfer to|transferred to|sent to|credited by)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:via|on|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i
+        /\b(?:debited to|paid to|payment to|transfer to|transferred to|sent to|credited by)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:via|on|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i
       );
       if (directPayeeMatch && directPayeeMatch[1]) {
         const candidate = cleanMerchantName(directPayeeMatch[1]);

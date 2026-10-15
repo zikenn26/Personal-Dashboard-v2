@@ -7,7 +7,7 @@ import { nativeService } from './nativeService';
 import { Sound } from '../utils/audio';
 import { parseSmsTransaction } from './smsParser';
 import { normalizeExpenseDateKey } from '../utils/expenseUtils';
-import { scheduleAutoSyncToSupabase, getCustomWorkspaceIdentifier } from '../utils/supabase';
+import { scheduleAutoSyncToSupabase, flushAutoSyncImmediately, getCustomWorkspaceIdentifier } from '../utils/supabase';
 import { toast } from 'sonner';
 
 export interface SmsTransactionCandidate {
@@ -270,6 +270,11 @@ export function isLikelyFinancialSms(sender: string, body: string): boolean {
     lower.includes('deducted') ||
     lower.includes('txn of') ||
     lower.includes('payment of') ||
+    lower.includes('payment for') ||
+    lower.includes('payment confirmed') ||
+    lower.includes('payment successful') ||
+    lower.includes('payment done') ||
+    lower.includes('payment') ||
     lower.includes('received') ||
     lower.includes('deposited') ||
     lower.includes('refund') ||
@@ -1072,6 +1077,15 @@ class SmsExpenseService {
 
       if (loggedCount > 0) {
         const fresh = Storage.getExpenses();
+        // Immediately persist merged workspace state to Supabase so background wakeups don't overwrite it
+        try {
+          await flushAutoSyncImmediately({
+            ...Storage.getAllDataPayload(),
+            expenses: fresh,
+          });
+        } catch (syncErr) {
+          console.warn('Failed immediate cloud flush after logging pending SMS:', syncErr);
+        }
         broadcastDataChanged('expenses', { updatedExpenses: fresh });
         if (typeof window !== 'undefined') {
           window.dispatchEvent(

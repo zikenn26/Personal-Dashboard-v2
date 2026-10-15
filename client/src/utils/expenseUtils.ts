@@ -228,3 +228,100 @@ export const normalizeExpenseDateKey = (value?: string | null): string => {
   }
   return '';
 };
+
+/**
+ * Safely merges two expense lists by ID and reference ID while preserving local transaction IDs,
+ * deduping by primary ID and secondary transaction/SMS references, and strictly
+ * respecting explicit user deletions (trash and deleted sheets).
+ */
+export function mergeExpenseLists(
+  baseList: ExpenseItem[],
+  incomingList: ExpenseItem[],
+  trashedIds?: Set<string>,
+  isSheetDeleted?: (importBatchId?: string, sourceFile?: string) => boolean
+): ExpenseItem[] {
+  if (!Array.isArray(baseList) || baseList.length === 0) {
+    return Array.isArray(incomingList) ? incomingList.filter((e) => e && e.id) : [];
+  }
+  if (!Array.isArray(incomingList) || incomingList.length === 0) {
+    return baseList.filter((e) => e && e.id);
+  }
+
+  const isValidExpense = (e: ExpenseItem | null | undefined): boolean => {
+    if (!e || !e.id) return false;
+    const idStr = String(e.id).trim();
+    if (trashedIds && trashedIds.has(idStr)) return false;
+    if (isSheetDeleted && (isSheetDeleted(e.importBatchId, e.sourceFile))) {
+      return false;
+    }
+    return true;
+  };
+
+  const resultMap = new Map<string, ExpenseItem>();
+  const refMap = new Map<string, string>(); // normalized refKey -> primary expense id
+
+  const getRefKey = (e: ExpenseItem): string | null => {
+    const ref = (e.smsReferenceId || e.referenceId || e.upiReference || '').trim();
+    if (ref && ref.length >= 4) {
+      return `ref:${ref.toLowerCase()}`;
+    }
+    return null;
+  };
+
+  const addOrMerge = (item: ExpenseItem) => {
+    if (!isValidExpense(item)) return;
+    const id = String(item.id).trim();
+    const refKey = getRefKey(item);
+
+    let existingKey = id;
+    let existing = resultMap.get(id);
+
+    if (!existing && refKey && refMap.has(refKey)) {
+      existingKey = refMap.get(refKey)!;
+      existing = resultMap.get(existingKey);
+    }
+
+    if (!existing) {
+      resultMap.set(id, item);
+      if (refKey) refMap.set(refKey, id);
+    } else {
+      const existingUpdated = Number(existing.updatedAt || existing.createdAt || 0);
+      const incomingUpdated = Number(item.updatedAt || item.createdAt || 0);
+
+      const newer = incomingUpdated > existingUpdated ? item : existing;
+      const older = incomingUpdated > existingUpdated ? existing : item;
+
+      const mergedItem: ExpenseItem = {
+        ...older,
+        ...newer,
+        // Preserve stable primary ID
+        id: existingKey,
+        // Merge metadata fields so details aren't lost
+        smsReferenceId: newer.smsReferenceId || older.smsReferenceId,
+        referenceId: newer.referenceId || older.referenceId,
+        upiReference: newer.upiReference || older.upiReference,
+        rawSmsText: newer.rawSmsText || older.rawSmsText,
+        bankName: newer.bankName || older.bankName,
+        bankOrAccount: newer.bankOrAccount || older.bankOrAccount,
+        maskedAccount: newer.maskedAccount || older.maskedAccount,
+        accountLast4: newer.accountLast4 || older.accountLast4,
+        payee: newer.payee || older.payee,
+        merchant: newer.merchant || older.merchant,
+        notes: newer.notes || older.notes,
+        sourceFile: newer.sourceFile || older.sourceFile,
+        importBatchId: newer.importBatchId || older.importBatchId,
+        createdAt: older.createdAt || newer.createdAt,
+        updatedAt: Math.max(existingUpdated, incomingUpdated) || Date.now(),
+      };
+
+      resultMap.set(existingKey, mergedItem);
+      if (refKey) refMap.set(refKey, existingKey);
+    }
+  };
+
+  baseList.forEach(addOrMerge);
+  incomingList.forEach(addOrMerge);
+
+  return Array.from(resultMap.values());
+}
+

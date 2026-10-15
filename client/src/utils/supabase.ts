@@ -4,6 +4,7 @@ import {
   SUPABASE_URL as BUILTIN_SUPABASE_URL,
   SUPABASE_ANON_KEY as BUILTIN_SUPABASE_ANON_KEY,
 } from './supabaseConfig';
+import { mergeExpenseLists } from './expenseUtils';
 
 // Environment variables for Supabase (Vite client)
 const rawUrl = import.meta.env.VITE_SUPABASE_URL || BUILTIN_SUPABASE_URL || '';
@@ -190,8 +191,12 @@ export interface CloudSyncResult {
 }
 
 const getInitialActiveUser = (): { id: string; email: string } => {
-  if (typeof window === 'undefined') return { id: 'user_guest', email: 'user@workspace.app' };
+  if (typeof window === 'undefined') return { id: 'user_gknayak_gmail_com', email: 'gknayak@gmail.com' };
   try {
+    const isSignedOut = localStorage.getItem('notion_os_auth_signed_out') === 'true';
+    if (isSignedOut) {
+      return { id: 'user_guest', email: 'guest@workspace.local' };
+    }
     const raw = localStorage.getItem('notion_os_auth_user_v1');
     if (raw) {
       const user = JSON.parse(raw);
@@ -204,7 +209,7 @@ const getInitialActiveUser = (): { id: string; email: string } => {
       }
     }
   } catch {}
-  return { id: 'user_guest', email: 'user@workspace.app' };
+  return { id: 'user_gknayak_gmail_com', email: 'gknayak@gmail.com' };
 };
 
 const initialUser = getInitialActiveUser();
@@ -588,6 +593,17 @@ export const syncWorkspaceToSupabase = async (
         latestKnownRemoteTimestamp,
         remoteVersion
       );
+
+      // Non-destructive data safety:
+      // Merge remote expenses with local expenses so mutations from other devices (e.g., Android APK or Web)
+      // are never overwritten by stale in-memory arrays.
+      if (Array.isArray(existing.workspace_data?.expenses) && payloadToSave.workspace_data) {
+        const localExpenses = Array.isArray(payloadToSave.workspace_data.expenses)
+          ? payloadToSave.workspace_data.expenses
+          : [];
+        const mergedExpenses = mergeExpenseLists(existing.workspace_data.expenses, localExpenses);
+        payloadToSave.workspace_data.expenses = mergedExpenses;
+      }
 
       if (remoteVersion >= syncTimestampMs) {
         // Monotonically advance sync clock ahead of remote snapshot to ensure user's local mutation is preserved

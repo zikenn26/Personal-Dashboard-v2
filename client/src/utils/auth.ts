@@ -209,12 +209,16 @@ export const Auth = {
    */
   getCurrentUser: (): AuthUser | null => {
     try {
+      const isSignedOut = typeof window !== 'undefined' && localStorage.getItem('notion_os_auth_signed_out') === 'true';
+      if (isSignedOut) {
+        return null;
+      }
       const stored = localStorage.getItem(AUTH_STORAGE_KEY);
       if (stored) {
         const user = JSON.parse(stored);
         if (user && user.email) {
           // Normalize legacy mock ID if previously saved
-          if (user.id.includes('mock')) {
+          if (user.id && user.id.includes('mock')) {
             user.id = `usr_${user.email.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
             try {
               localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
@@ -230,7 +234,15 @@ export const Auth = {
     } catch (e) {
       console.warn('Failed to parse current auth user:', e);
     }
-    return null;
+
+    // Default primary dashboard account (Gulshan Kumar Nayak) for unified cross-platform sync
+    setCustomWorkspaceIdentifier('user_gknayak_gmail_com');
+    setCustomWorkspaceEmail('gknayak@gmail.com');
+    try {
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(DEFAULT_GKN_USER));
+      localStorage.removeItem('notion_os_auth_signed_out');
+    } catch {}
+    return DEFAULT_GKN_USER;
   },
 
   /**
@@ -239,6 +251,7 @@ export const Auth = {
   setCurrentUser: (user: AuthUser | null) => {
     try {
       if (user) {
+        localStorage.removeItem('notion_os_auth_signed_out');
         localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
         setCustomWorkspaceIdentifier(getUserWorkspaceKey(user));
         setCustomWorkspaceEmail(user.email);
@@ -253,6 +266,7 @@ export const Auth = {
         localStorage.setItem(SAVED_USERS_KEY, JSON.stringify(accounts));
       } else {
         localStorage.removeItem(AUTH_STORAGE_KEY);
+        localStorage.setItem('notion_os_auth_signed_out', 'true');
         setCustomWorkspaceIdentifier('user_guest');
         setCustomWorkspaceEmail('guest@workspace.local');
       }
