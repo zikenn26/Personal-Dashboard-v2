@@ -198,6 +198,11 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   const now = new Date();
   const todayDateStr = getLocalDateKey(now);
   const weekStartDateStr = getMondayDateKey(now);
+  const weekEndDate = new Date(now);
+  const dayOfWeek = weekEndDate.getDay();
+  const distanceToSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+  weekEndDate.setDate(weekEndDate.getDate() + distanceToSunday);
+  const weekEndDateStr = getLocalDateKey(weekEndDate);
   const currentMonthPrefix = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
   const [selectedMonthPrefix, setSelectedMonthPrefix] = useState<string>(() => currentMonthPrefix);
 
@@ -222,7 +227,14 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
             ? customEvt.detail.updatedExpenses
             : Storage.getExpenses();
         setLocalExpenses(fresh);
-        setSelectedMonthPrefix(currentMonthPrefix);
+        if (customEvt?.detail?.expense?.date) {
+          const dateKey = normalizeExpenseDateKey(customEvt.detail.expense.date);
+          if (dateKey && dateKey.length >= 7) {
+            setSelectedMonthPrefix(dateKey.slice(0, 7));
+          }
+        } else {
+          setSelectedMonthPrefix(currentMonthPrefix);
+        }
       }
     };
 
@@ -250,8 +262,8 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   }, [currentMonthPrefix]);
 
   const activeExpenses = useMemo(() => {
-    const source = localExpenses && localExpenses.length >= 0 ? localExpenses : expenses;
-    return source.filter((e) => e.active !== false);
+    const source = localExpenses && localExpenses.length > 0 ? localExpenses : expenses;
+    return (source || []).filter((e) => e.active !== false);
   }, [localExpenses, expenses]);
 
   const handleSmsAction = async () => {
@@ -350,7 +362,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
           todayDebits += amt;
         }
 
-        if (dateKey >= weekStartDateStr && dateKey <= todayDateStr) {
+        if (dateKey >= weekStartDateStr && dateKey <= weekEndDateStr) {
           weekDebits += amt;
         }
 
@@ -366,7 +378,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
       selectedMonthSpending: selectedMonthDebits,
       allTimeSpending: allTimeDebits,
     };
-  }, [activeExpenses, todayDateStr, weekStartDateStr, selectedMonthPrefix]);
+  }, [activeExpenses, todayDateStr, weekStartDateStr, weekEndDateStr, selectedMonthPrefix]);
 
   // The transaction list follows the selected period filter
   const filteredExpenses = useMemo(() => {
@@ -380,7 +392,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
             if (dateKey !== todayDateStr) return false;
             break;
           case 'week':
-            if (dateKey < weekStartDateStr || dateKey > todayDateStr) return false;
+            if (dateKey < weekStartDateStr || dateKey > weekEndDateStr) return false;
             break;
           case 'month':
             if (!dateKey.startsWith(selectedMonthPrefix)) return false;
@@ -1113,8 +1125,15 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
       <ControlledSmsRescanModal
         isOpen={isRescanModalOpen}
         onClose={() => setIsRescanModalOpen(false)}
-        onSuccess={() => {
-          setLocalExpenses(Storage.getExpenses());
+        onSuccess={(result) => {
+          const fresh = Storage.getExpenses();
+          setLocalExpenses(fresh);
+          if (result?.importedExpenses && result.importedExpenses.length > 0) {
+            const firstDateKey = normalizeExpenseDateKey(result.importedExpenses[0].date);
+            if (firstDateKey && firstDateKey.length >= 7) {
+              setSelectedMonthPrefix(firstDateKey.slice(0, 7));
+            }
+          }
         }}
       />
 

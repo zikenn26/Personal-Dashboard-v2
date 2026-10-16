@@ -235,14 +235,7 @@ export const Auth = {
       console.warn('Failed to parse current auth user:', e);
     }
 
-    // Default primary dashboard account (Gulshan Kumar Nayak) for unified cross-platform sync
-    setCustomWorkspaceIdentifier('user_gknayak_gmail_com');
-    setCustomWorkspaceEmail('gknayak@gmail.com');
-    try {
-      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(DEFAULT_GKN_USER));
-      localStorage.removeItem('notion_os_auth_signed_out');
-    } catch {}
-    return DEFAULT_GKN_USER;
+    return null;
   },
 
   /**

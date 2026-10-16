@@ -405,6 +405,11 @@ public class SmsReceiver extends BroadcastReceiver {
             lower.contains("deducted") || 
             lower.contains("txn of") || 
             lower.contains("payment of") || 
+            lower.contains("payment for") || 
+            lower.contains("payment confirmed") || 
+            lower.contains("payment successful") || 
+            lower.contains("payment done") || 
+            lower.contains("payment") || 
             lower.contains("received") || 
             lower.contains("deposited") || 
             lower.contains("refund") || 
