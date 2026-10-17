@@ -102,6 +102,7 @@ import {
   getAutoSyncStatus,
   setCustomWorkspaceIdentifier,
   setCustomWorkspaceEmail,
+  checkHasNewerCloudWorkspace,
 } from './utils/supabase';
 import { nativeService } from './services/nativeService';
 import { normalizeExpenseDateKey, getLocalDateKey } from './utils/expenseUtils';
@@ -452,16 +453,14 @@ export default function App() {
     setGoals(Storage.getGoals());
     void Storage.hydrateVault(Storage.getSettings().masterPin).then(setVault);
 
-    // Safely hydrate expenses: merge existing in-memory React state with Storage to preserve
-    // local transaction IDs instead of performing a full array replacement which causes data loss
+    // Hydrate expenses cleanly from Storage to keep state in sync
     const freshExpenses: ExpenseItem[] = Storage.getExpenses();
-    setExpenses((prevExpenses) => {
-      const merged = Storage.mergeExpenseLists(prevExpenses, freshExpenses);
-      if (merged.length !== freshExpenses.length) {
-        Storage.setExpenses(merged);
-      }
-      return merged;
-    });
+    setExpenses(freshExpenses);
+    window.dispatchEvent(
+      new CustomEvent('dashboard-data-updated', {
+        detail: { module: 'expenses', updatedExpenses: freshExpenses },
+      })
+    );
 
     setExcelImportLogs(Storage.getExcelImportLogs());
     setJournal(Storage.getJournal());
@@ -501,22 +500,17 @@ export default function App() {
         return;
       }
 
-      // Safely merge expenses: preserve local transaction IDs and prevent full array replacement
-      setExpenses((prevExpenses) => {
-        const currentStored = Storage.getExpenses();
+      // Update expenses state reactively when expenses module changes
+      if (!customEvt?.detail?.module || customEvt.detail.module === 'expenses') {
         const incoming =
           customEvt?.detail?.updatedExpenses &&
           Array.isArray(customEvt.detail.updatedExpenses)
             ? customEvt.detail.updatedExpenses
-            : currentStored;
+            : Storage.getExpenses();
 
-        const mergedWithStored = Storage.mergeExpenseLists(currentStored, incoming);
-        const finalMerged = Storage.mergeExpenseLists(prevExpenses, mergedWithStored);
-
-        // Keep Storage updated with the authoritative merged expense list
-        Storage.setExpenses(finalMerged);
-        return finalMerged;
-      });
+        Storage.setExpenses(incoming);
+        setExpenses(incoming);
+      }
 
       // Refresh the other dashboard modules from local storage.
       setProfile(Storage.getProfile());
@@ -697,9 +691,6 @@ export default function App() {
           setTimeout(() => {
             isRemoteUpdating.current = false;
           }, 300);
-
-          // Ensure cloud is immediately updated with merged state
-          void flushAutoSyncImmediately(Storage.getAllDataPayload());
         }
       } catch (err) {
         console.warn('Initial cloud sync check:', err);
@@ -726,6 +717,21 @@ export default function App() {
         }
       }
     }, 25000);
+
+    // Periodic check to auto-pull remote workspace updates if WebSocket was idle or reconnecting
+    const cloudSyncInterval = setInterval(async () => {
+      if (!isMounted || !currentUser || document.visibilityState !== 'visible' || isRemoteUpdating.current) {
+        return;
+      }
+      try {
+        const hasRemoteUpdate = await checkHasNewerCloudWorkspace();
+        if (hasRemoteUpdate && isMounted) {
+          await autoSyncFromCloud();
+        }
+      } catch {
+        // ignore background poll error
+      }
+    }, 6000);
 
     // 2. Realtime WebSocket channel for instant cross-device updates (<30ms delivery, no lag, no refresh)
     const unsubRealtime = subscribeToRealtimeWorkspace(
@@ -777,6 +783,7 @@ export default function App() {
       isMounted = false;
       clearTimeout(readyTimer);
       clearInterval(sessionPollInterval);
+      clearInterval(cloudSyncInterval);
       unsubRealtime();
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleFocus);
@@ -1979,9 +1986,15 @@ export default function App() {
     );
 
     // 5. Flush auto sync immediately to Supabase
+    const deletedIdsList = itemsToDelete.map((i) => String(i.id).trim());
     flushAutoSyncImmediately({
       ...Storage.getAllDataPayload(),
       expenses: nextStored,
+      trash: Storage.getTrash(),
+      _meta: {
+        deletedExpenseIds: deletedIdsList,
+        lastDeletedAt: Date.now(),
+      },
     });
 
     // 6. Trigger Undo Toast
@@ -2044,9 +2057,15 @@ export default function App() {
           detail: { module: 'expenses', updatedExpenses: nextStored },
         })
       );
+      const deletedIdsList = targetIds.map((id) => String(id).trim());
       flushAutoSyncImmediately({
         ...Storage.getAllDataPayload(),
         expenses: nextStored,
+        trash: Storage.getTrash(),
+        _meta: {
+          deletedExpenseIds: deletedIdsList,
+          lastDeletedAt: Date.now(),
+        },
       });
       return;
     }

@@ -266,6 +266,7 @@ export const DEVICE_SESSION_ID = getPersistentDeviceId();
 let lastPushedTimestamp = 0;
 let autoSyncTimeout: any = null;
 let broadcastSyncTimeout: any = null;
+let reconnectRealtimeTimeout: any = null;
 let activeRealtimeChannel: any = null;
 let currentSyncStatus: 'synced' | 'syncing' | 'error' | 'idle' = 'idle';
 
@@ -278,6 +279,9 @@ let latestLocalMutationTimestamp =
     ? Number(localStorage.getItem('lifeos_workspace_sync_clock') || '0')
     : 0;
 let latestKnownRemoteTimestamp = 0;
+let lastAppliedRemoteVersion = 0;
+
+export const getLastAppliedRemoteVersion = () => lastAppliedRemoteVersion;
 
 const getSyncTimestamp = (): number => {
   const now = Date.now();
@@ -594,15 +598,53 @@ export const syncWorkspaceToSupabase = async (
         remoteVersion
       );
 
-      // Non-destructive data safety:
-      // Merge remote expenses with local expenses so mutations from other devices (e.g., Android APK or Web)
-      // are never overwritten by stale in-memory arrays.
-      if (Array.isArray(existing.workspace_data?.expenses) && payloadToSave.workspace_data) {
+      // Collect all trashed / deleted expense IDs across local payload and remote snapshot
+      const trashedExpenseIds = new Set<string>();
+      const addTrash = (source: any) => {
+        if (Array.isArray(source?.trash)) {
+          source.trash.forEach((t: any) => {
+            if (t && (t.module === 'expenses' || !t.module)) {
+              if (t.data?.id) trashedExpenseIds.add(String(t.data.id).trim());
+              if (typeof t.data === 'string' && t.data.trim()) trashedExpenseIds.add(t.data.trim());
+              if (t.id) trashedExpenseIds.add(String(t.id).trim());
+            }
+          });
+        }
+        if (Array.isArray(source?._meta?.deletedExpenseIds)) {
+          source._meta.deletedExpenseIds.forEach((id: string) => {
+            if (id) trashedExpenseIds.add(String(id).trim());
+          });
+        }
+      };
+      addTrash(existing.workspace_data);
+      addTrash(payloadToSave.workspace_data);
+
+      // Clean local expenses of any known trashed / deleted items
+      if (Array.isArray(payloadToSave.workspace_data?.expenses)) {
+        payloadToSave.workspace_data.expenses = payloadToSave.workspace_data.expenses.filter(
+          (e: any) => e && e.id && !trashedExpenseIds.has(String(e.id).trim())
+        );
+      }
+
+      // Only merge if the remote cloud version was newer than our local base mutation,
+      // and ONLY preserve remote expenses that were newly created on another device.
+      // NEVER resurrect items that were deleted or moved to trash.
+      if (remoteVersion >= syncTimestampMs && Array.isArray(existing.workspace_data?.expenses) && payloadToSave.workspace_data) {
         const localExpenses = Array.isArray(payloadToSave.workspace_data.expenses)
           ? payloadToSave.workspace_data.expenses
           : [];
-        const mergedExpenses = mergeExpenseLists(existing.workspace_data.expenses, localExpenses);
-        payloadToSave.workspace_data.expenses = mergedExpenses;
+        const localIdSet = new Set(localExpenses.map((e: any) => String(e.id).trim()));
+
+        const preservedRemote = existing.workspace_data.expenses.filter((remoteExp: any) => {
+          if (!remoteExp || !remoteExp.id) return false;
+          const id = String(remoteExp.id).trim();
+          if (localIdSet.has(id)) return false;
+          if (trashedExpenseIds.has(id)) return false;
+          const remoteCreated = Number(remoteExp.createdAt || 0);
+          return remoteCreated > 0 && remoteCreated > latestKnownRemoteTimestamp;
+        });
+
+        payloadToSave.workspace_data.expenses = [...localExpenses, ...preservedRemote];
       }
 
       if (remoteVersion >= syncTimestampMs) {
@@ -781,14 +823,23 @@ export const subscribeToRealtimeWorkspace = (
               payload.data,
               payload.timestamp
             );
-            if (remoteVersion <= latestLocalMutationTimestamp) {
+            if (remoteVersion <= lastAppliedRemoteVersion) {
               return;
             }
 
+            lastAppliedRemoteVersion = Math.max(
+              lastAppliedRemoteVersion,
+              remoteVersion
+            );
             latestKnownRemoteTimestamp = Math.max(
               latestKnownRemoteTimestamp,
               remoteVersion
             );
+            latestLocalMutationTimestamp = Math.max(
+              latestLocalMutationTimestamp,
+              remoteVersion
+            );
+
             onRemoteChange(
               payload.data,
               payload.timestamp || new Date(remoteVersion).toISOString()
@@ -866,17 +917,24 @@ export const subscribeToRealtimeWorkspace = (
               newRecord.workspace_data,
               newRecord.updated_at
             );
-            if (remoteVersion <= latestLocalMutationTimestamp) {
+            if (remoteVersion <= lastAppliedRemoteVersion) {
               return;
             }
 
+            lastAppliedRemoteVersion = Math.max(
+              lastAppliedRemoteVersion,
+              remoteVersion
+            );
             latestKnownRemoteTimestamp = Math.max(
               latestKnownRemoteTimestamp,
               remoteVersion
             );
+            latestLocalMutationTimestamp = Math.max(
+              latestLocalMutationTimestamp,
+              remoteVersion
+            );
 
-            // Trigger silent real-time hydration on this device only for a
-            // genuinely newer workspace snapshot.
+            // Trigger silent real-time hydration on this device for this newer workspace snapshot
             onRemoteChange(
               newRecord.workspace_data,
               newRecord.updated_at || new Date(remoteVersion).toISOString()
@@ -890,6 +948,19 @@ export const subscribeToRealtimeWorkspace = (
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           notifyStatus('synced');
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('Realtime channel disconnected or timed out:', status);
+          notifyStatus('idle');
+          if (reconnectRealtimeTimeout) clearTimeout(reconnectRealtimeTimeout);
+          reconnectRealtimeTimeout = setTimeout(() => {
+            if (activeRealtimeChannel) {
+              try {
+                client.removeChannel(activeRealtimeChannel);
+              } catch {}
+              activeRealtimeChannel = null;
+            }
+            subscribeToRealtimeWorkspace(onRemoteChange, onDeviceRevoked);
+          }, 2500);
         }
       });
 
@@ -949,6 +1020,10 @@ export const fetchWorkspaceFromSupabase = async (): Promise<CloudSyncResult> => 
       data.workspace_data,
       data.updated_at
     );
+    lastAppliedRemoteVersion = Math.max(
+      lastAppliedRemoteVersion,
+      remoteVersion
+    );
     latestKnownRemoteTimestamp = Math.max(
       latestKnownRemoteTimestamp,
       remoteVersion
@@ -969,6 +1044,32 @@ export const fetchWorkspaceFromSupabase = async (): Promise<CloudSyncResult> => 
       success: false,
       message: `Cloud retrieval error: ${err?.message || 'Network failure'}`,
     };
+  }
+};
+
+/**
+ * Fast check to see if Supabase Cloud has a newer workspace version than what
+ * this device has currently applied. Ideal for lightweight visibility/periodic polling.
+ */
+export const checkHasNewerCloudWorkspace = async (): Promise<boolean> => {
+  if (!isSupabaseConfigured()) return false;
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const activeId = getCustomWorkspaceIdentifier();
+    const { data, error } = await client
+      .from('user_workspaces')
+      .select('updated_at, workspace_data')
+      .eq('user_identifier', activeId)
+      .maybeSingle();
+
+    if (error || !data) return false;
+
+    const remoteVersion = getPayloadSyncTimestamp(data.workspace_data, data.updated_at);
+    return remoteVersion > lastAppliedRemoteVersion;
+  } catch {
+    return false;
   }
 };
 

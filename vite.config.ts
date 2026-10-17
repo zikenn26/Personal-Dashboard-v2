@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react(), tailwindcss(), geminiVitePlugin(), screenTimeVitePlugin()],
     resolve: {
-      dedupe: ["react", "react-dom"],
+      dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime"],
       alias: {
         "react": path.resolve(import.meta.dirname, "node_modules/react"),
         "react-dom": path.resolve(import.meta.dirname, "node_modules/react-dom"),
@@ -23,6 +23,15 @@ export default defineConfig(({ mode }) => {
         "@shared": path.resolve(import.meta.dirname, "shared"),
         "@assets": path.resolve(import.meta.dirname, "attached_assets"),
       },
+    },
+    optimizeDeps: {
+      include: [
+        "react",
+        "react-dom",
+        "react-dom/client",
+        "react/jsx-runtime",
+        "react/jsx-dev-runtime",
+      ],
     },
     envDir: path.resolve(import.meta.dirname),
     root: path.resolve(import.meta.dirname, "client"),
@@ -39,6 +48,7 @@ export default defineConfig(({ mode }) => {
       strictPort: true,
       host: "0.0.0.0",
       allowedHosts: true,
+      hmr: false,
       proxy: {
         "/api/groq": {
           target: "https://api.groq.com/openai/v1",

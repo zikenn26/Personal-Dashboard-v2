@@ -1469,11 +1469,12 @@ export const Storage = {
    */
   mergeExpenseLists: (baseList: ExpenseItem[], incomingList: ExpenseItem[]): ExpenseItem[] => {
     const trash = Storage.getTrash().filter((t) => t.module === 'expenses');
-    const trashedIds = new Set(
-      trash
-        .map((t) => (t.data?.id ? String(t.data.id).trim() : String(t.id).trim()))
-        .filter(Boolean)
-    );
+    const trashedIds = new Set<string>();
+    trash.forEach((t) => {
+      if (t.data?.id) trashedIds.add(String(t.data.id).trim());
+      if (typeof t.data === 'string' && t.data.trim()) trashedIds.add(t.data.trim());
+      if (t.id) trashedIds.add(String(t.id).trim());
+    });
     return mergeExpenseListsUtil(baseList, incomingList, trashedIds, (importBatchId, sourceFile) => {
       return Storage.isSheetDeleted(importBatchId) || Storage.isSheetDeleted(sourceFile);
     });
@@ -2637,11 +2638,20 @@ export const Storage = {
       if (Array.isArray(data.expenses)) {
         const currentLocal = Storage.getExpenses();
         const trash = Storage.getTrash().filter((t) => t.module === 'expenses');
-        const trashedIds = new Set(
-          trash
-            .map((t) => (t.data?.id ? String(t.data.id).trim() : String(t.id).trim()))
-            .filter(Boolean)
-        );
+        const trashedIds = new Set<string>();
+        trash.forEach((t) => {
+          if (t.data?.id) trashedIds.add(String(t.data.id).trim());
+          if (typeof t.data === 'string' && t.data.trim()) trashedIds.add(t.data.trim());
+          if (t.id) trashedIds.add(String(t.id).trim());
+        });
+
+        // Also incorporate any explicit deletedExpenseIds from metadata
+        const metaDeleted = data._meta?.deletedExpenseIds;
+        if (Array.isArray(metaDeleted)) {
+          metaDeleted.forEach((id: string) => {
+            if (id) trashedIds.add(String(id).trim());
+          });
+        }
 
         const remoteMeta = data._meta || {};
         const remoteTimestamp = Number(remoteMeta.syncVersion || remoteMeta.clientTimestamp || 0);
@@ -2668,7 +2678,7 @@ export const Storage = {
           });
 
           // Filter valid local expenses:
-          // Local expenses are never discarded merely by sheet tombstone if actively retained by the user!
+          // Strictly exclude any items that are present in trashedIds or deletedSheet
           const validLocalExpenses = currentLocal.filter((localExp) => {
             if (!localExp || !localExp.id) return false;
             if (trashedIds.has(String(localExp.id).trim())) return false;

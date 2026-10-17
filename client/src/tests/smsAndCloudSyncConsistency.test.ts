@@ -213,4 +213,55 @@ describe('SMS Logging and Cloud Sync Consistency Suite', () => {
     expect(merged.some((e) => e.id === 'sms-hdfc-1')).toBe(true);
     expect(merged.some((e) => e.id === 'sms-hdfc-2')).toBe(true);
   });
+
+  it('8. removes deleted expenses across devices when payload contains trash or deletedExpenseIds', () => {
+    const exp1: ExpenseItem = {
+      id: 'exp-to-keep',
+      name: 'Groceries',
+      amount: 400,
+      category: 'Food & Dining',
+      date: getLocalDateKey(),
+      createdAt: 1000,
+      updatedAt: 1000,
+    };
+    const exp2: ExpenseItem = {
+      id: 'exp-to-delete',
+      name: 'Unwanted Expense',
+      amount: 150,
+      category: 'Other',
+      date: getLocalDateKey(),
+      createdAt: 2000,
+      updatedAt: 2000,
+    };
+
+    // Device B currently has both expenses stored locally
+    Storage.setExpenses([exp1, exp2]);
+    expect(Storage.getExpenses().length).toBe(2);
+
+    // Device A deleted exp-to-delete and pushed updated workspace payload with trash and deletedExpenseIds
+    const cloudPayload = {
+      expenses: [exp1],
+      trash: [
+        {
+          id: 'trash-12345',
+          module: 'expenses',
+          label: 'Unwanted Expense (₹150)',
+          data: exp2,
+          deletedAt: 3000,
+        },
+      ],
+      _meta: {
+        syncVersion: 3000,
+        deletedExpenseIds: ['exp-to-delete'],
+      },
+    };
+
+    Storage.importAllDataPayload(cloudPayload);
+
+    // After import, exp-to-delete must be completely removed and NOT resurrected
+    const current = Storage.getExpenses();
+    expect(current.some((e) => e.id === 'exp-to-delete')).toBe(false);
+    expect(current.some((e) => e.id === 'exp-to-keep')).toBe(true);
+    expect(current.length).toBe(1);
+  });
 });
