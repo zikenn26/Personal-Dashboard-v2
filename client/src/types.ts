@@ -674,6 +674,7 @@ export interface DeviceSession {
   lastActive: number;
   createdAt: number;
   isCurrent?: boolean;
+  isApk?: boolean;
 }
 
 export type ExamStageStatus = 'upcoming' | 'ongoing' | 'completed';

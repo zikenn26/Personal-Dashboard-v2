@@ -10,6 +10,7 @@ import {
   AchievementItem,
 } from '../types';
 import { STOCK_IMAGES } from '../assets/stockImages';
+import { UserAvatar } from './UserAvatar';
 import {
   Mail,
   Phone,
@@ -209,12 +210,11 @@ export const ResumeView: React.FC<ResumeViewProps> = ({
         {/* Right: Circular Avatar & Italic Quote */}
         <div className="flex items-center gap-3 sm:gap-4 shrink-0 self-start sm:self-center">
           <div className="relative">
-            <img
-              src={profile.avatarUrl || STOCK_IMAGES.avatar}
-              alt={displayName}
-              crossOrigin="anonymous"
-              referrerPolicy="no-referrer"
-              className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border-2 border-white shadow-sm ring-1 ring-gray-200"
+            <UserAvatar
+              avatarUrl={profile.avatarUrl}
+              name={displayName}
+              size="lg"
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-full border-2 border-white shadow-sm ring-1 ring-gray-200"
             />
           </div>
 

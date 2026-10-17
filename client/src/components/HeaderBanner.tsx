@@ -22,6 +22,7 @@ import { UserProfile, TodoItem, HabitItem, ExpenseItem, LifeMilestone } from '..
 import { Sound } from '../utils/audio';
 import { STOCK_IMAGES } from '../assets/stockImages';
 import { AvatarPickerModal } from './AvatarPickerModal';
+import { UserAvatar } from './UserAvatar';
 
 interface HeaderBannerProps {
   profile: UserProfile;
@@ -189,21 +190,12 @@ export const HeaderBanner: React.FC<HeaderBannerProps> = ({
                 className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl border border-[#E5E7EB] dark:border-[#374151] bg-white dark:bg-[#111827] p-1 overflow-hidden shadow-sm flex items-center justify-center relative cursor-pointer group focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
                 title="Click to change profile picture"
               >
-                {profile.avatarUrl ? (
-                  <img
-                    src={profile.avatarUrl}
-                    alt={profile.name}
-                    className="w-full h-full object-cover rounded-xl transition-transform duration-200 group-hover:scale-105"
-                    referrerPolicy="no-referrer"
-                    onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).src = STOCK_IMAGES.avatar;
-                    }}
-                  />
-                ) : (
-                  <div className="w-full h-full rounded-xl bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 font-bold text-2xl flex items-center justify-center">
-                    {(profile.name || 'U').charAt(0).toUpperCase()}
-                  </div>
-                )}
+                <UserAvatar
+                  avatarUrl={profile.avatarUrl}
+                  name={profile.name}
+                  size="xl"
+                  className="w-full h-full rounded-xl"
+                />
                 {/* Hover Camera Overlay Badge */}
                 <div className="absolute inset-1 rounded-xl bg-black/55 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white transition-opacity duration-150 backdrop-blur-2xs">
                   <Camera className="w-5 h-5 mb-0.5" />

@@ -10,6 +10,7 @@ import {
   AchievementItem,
 } from '../types';
 import { STOCK_IMAGES } from '../assets/stockImages';
+import { UserAvatar } from './UserAvatar';
 import {
   Download,
   Mail,
@@ -345,10 +346,11 @@ export const WebPortfolioView: React.FC<WebPortfolioViewProps> = ({
 
             {/* Person Cutout / Portrait */}
             <div className="relative z-10 w-56 sm:w-64 md:w-72 max-w-full flex items-center justify-center">
-              <img
-                src={profile.avatarUrl || STOCK_IMAGES.avatar}
-                alt={displayName}
-                className="w-48 sm:w-56 md:w-64 h-64 sm:h-72 md:h-80 object-cover object-top rounded-3xl shadow-md border-4 border-white"
+              <UserAvatar
+                avatarUrl={profile.avatarUrl}
+                name={displayName}
+                size="xl"
+                className="w-48 sm:w-56 md:w-64 h-64 sm:h-72 md:h-80 object-cover object-top rounded-3xl shadow-md border-4 border-white text-4xl"
               />
 
               {/* Floating Italic Quote beside head (compact on mobile to prevent clipping) */}

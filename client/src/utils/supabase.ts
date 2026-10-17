@@ -280,8 +280,10 @@ let latestLocalMutationTimestamp =
     : 0;
 let latestKnownRemoteTimestamp = 0;
 let lastAppliedRemoteVersion = 0;
+let lastAppliedRemoteUpdatedAt = '';
 
 export const getLastAppliedRemoteVersion = () => lastAppliedRemoteVersion;
+export const getLastAppliedRemoteUpdatedAt = () => lastAppliedRemoteUpdatedAt;
 
 const getSyncTimestamp = (): number => {
   const now = Date.now();
@@ -483,8 +485,7 @@ export const syncWorkspaceToSupabase = async (
 
     let now = new Date(syncTimestampMs).toISOString();
 
-    // Include a monotonic client-side version in the payload. Receivers use
-    // this to reject older Broadcast/Postgres snapshots.
+    const isNativeApk = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
     const enrichedPayload = {
       ...workspacePayload,
       _meta: {
@@ -492,6 +493,13 @@ export const syncWorkspaceToSupabase = async (
         lastDeviceId: DEVICE_SESSION_ID,
         clientTimestamp: syncTimestampMs,
         syncVersion: syncTimestampMs,
+        ...(isNativeApk
+          ? {
+              apkInstalled: true,
+              lastApkSyncTimestamp: Date.now(),
+              apkDeviceName: 'Android Native APK',
+            }
+          : {}),
       },
     };
 
@@ -624,6 +632,12 @@ export const syncWorkspaceToSupabase = async (
         payloadToSave.workspace_data.expenses = payloadToSave.workspace_data.expenses.filter(
           (e: any) => e && e.id && !trashedExpenseIds.has(String(e.id).trim())
         );
+      }
+
+      // Persist deletedExpenseIds in metadata so peer devices know these items are deleted
+      if (trashedExpenseIds.size > 0 && payloadToSave.workspace_data) {
+        if (!payloadToSave.workspace_data._meta) payloadToSave.workspace_data._meta = {};
+        payloadToSave.workspace_data._meta.deletedExpenseIds = Array.from(trashedExpenseIds).slice(-500);
       }
 
       // Only merge if the remote cloud version was newer than our local base mutation,
@@ -823,14 +837,14 @@ export const subscribeToRealtimeWorkspace = (
               payload.data,
               payload.timestamp
             );
-            if (remoteVersion <= lastAppliedRemoteVersion) {
+            const remoteTs = payload.timestamp || '';
+            // Do not discard remote peer broadcasts due to local clock skew
+            if (remoteVersion === lastAppliedRemoteVersion && remoteTs && remoteTs === lastAppliedRemoteUpdatedAt) {
               return;
             }
 
-            lastAppliedRemoteVersion = Math.max(
-              lastAppliedRemoteVersion,
-              remoteVersion
-            );
+            lastAppliedRemoteVersion = Math.max(lastAppliedRemoteVersion, remoteVersion);
+            lastAppliedRemoteUpdatedAt = remoteTs;
             latestKnownRemoteTimestamp = Math.max(
               latestKnownRemoteTimestamp,
               remoteVersion
@@ -917,10 +931,13 @@ export const subscribeToRealtimeWorkspace = (
               newRecord.workspace_data,
               newRecord.updated_at
             );
-            if (remoteVersion <= lastAppliedRemoteVersion) {
+            const remoteUpdatedAt = newRecord.updated_at || '';
+            // Reject identical already-applied update
+            if (remoteUpdatedAt && remoteUpdatedAt === lastAppliedRemoteUpdatedAt && remoteVersion === lastAppliedRemoteVersion) {
               return;
             }
 
+            lastAppliedRemoteUpdatedAt = remoteUpdatedAt;
             lastAppliedRemoteVersion = Math.max(
               lastAppliedRemoteVersion,
               remoteVersion
@@ -1066,11 +1083,41 @@ export const checkHasNewerCloudWorkspace = async (): Promise<boolean> => {
 
     if (error || !data) return false;
 
+    // Ignore if last update was made by this exact device session
+    if (data.workspace_data?._meta?.lastDeviceId === DEVICE_SESSION_ID) {
+      return false;
+    }
+
     const remoteVersion = getPayloadSyncTimestamp(data.workspace_data, data.updated_at);
+    const remoteUpdatedAt = data.updated_at || '';
+
+    if (remoteUpdatedAt && remoteUpdatedAt !== lastAppliedRemoteUpdatedAt) {
+      return true;
+    }
     return remoteVersion > lastAppliedRemoteVersion;
   } catch {
     return false;
   }
+};
+
+/**
+ * Checks if the Android native APK has synced to this user's account,
+ * returning its registration status and recent sync timestamp.
+ */
+export const isApkInstalledInAccount = (workspaceData?: any): {
+  isInstalled: boolean;
+  lastSync: number | null;
+  deviceName?: string;
+} => {
+  const meta = workspaceData?._meta;
+  if (meta?.apkInstalled) {
+    return {
+      isInstalled: true,
+      lastSync: meta.lastApkSyncTimestamp || null,
+      deviceName: meta.apkDeviceName || 'Android Native APK',
+    };
+  }
+  return { isInstalled: false, lastSync: null };
 };
 
 /**

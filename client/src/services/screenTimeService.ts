@@ -150,6 +150,28 @@ class ScreenTimeService {
   }
 
   /**
+   * Determine whether the native APK is installed/active for this account
+   * and whether the current client is Android Chrome.
+   */
+  public getApkStatus(): {
+    isNativeAndroid: boolean;
+    isApkInstalledForAccount: boolean;
+    lastSyncedTimestamp: number | null;
+    isAndroidBrowser: boolean;
+  } {
+    const latest = Storage.getScreenTimeData();
+    const hasApkData = Boolean(latest && (latest.isFromApk || latest.dataSource === 'usageEventsUnion'));
+    const isNative = this.isAndroid;
+    const isBrowser = !isNative && typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+    return {
+      isNativeAndroid: isNative,
+      isApkInstalledForAccount: hasApkData,
+      lastSyncedTimestamp: latest?.lastSyncedTimestamp || null,
+      isAndroidBrowser: isBrowser,
+    };
+  }
+
+  /**
    * Access to the unified data synchronization bridge
    */
   public get bridge() {

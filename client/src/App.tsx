@@ -69,6 +69,8 @@ import { ScreenTimeView } from './components/screentime/ScreenTimeView';
 import { AuthModal } from './components/AuthModal';
 import { AvatarPickerModal } from './components/AvatarPickerModal';
 import { BrandLogo } from './components/BrandLogo';
+import { UserAvatar } from './components/UserAvatar';
+import { isDummyMockAvatar } from './utils/userUtils';
 import { EXPENSE_CATEGORIES } from './components/ExpenseTracker';
 import { STOCK_IMAGES } from './assets/stockImages';
 import LandingPage from './components/LandingPage';
@@ -374,7 +376,7 @@ export default function App() {
       updatedProfile.contactEmail = user.email;
       hasProfileChanges = true;
     }
-    if (user.avatarUrl && (!current.avatarUrl || current.avatarUrl === STOCK_IMAGES.avatar || user.avatarUrl !== current.avatarUrl)) {
+    if (user.avatarUrl && !isDummyMockAvatar(user.avatarUrl) && (!current.avatarUrl || isDummyMockAvatar(current.avatarUrl) || user.avatarUrl !== current.avatarUrl)) {
       updatedProfile.avatarUrl = user.avatarUrl;
       hasProfileChanges = true;
     }
@@ -3071,23 +3073,16 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setIsAccountMenuOpen((open) => !open)}
-                className="w-7 h-7 rounded-full overflow-hidden border border-gray-200 dark:border-gray-700 cursor-pointer hover:ring-2 hover:ring-indigo-500 transition-all shrink-0 flex items-center justify-center text-xs font-medium text-gray-600 dark:text-gray-300"
+                className="w-7 h-7 rounded-full overflow-hidden cursor-pointer hover:ring-2 hover:ring-indigo-500 transition-all shrink-0 flex items-center justify-center text-xs font-medium"
                 title="Account menu"
                 aria-label="Account menu"
               >
-                {profile.avatarUrl ? (
-                  <img
-                    src={profile.avatarUrl}
-                    alt="Account"
-                    className="w-full h-full object-cover"
-                    referrerPolicy="no-referrer"
-                    onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).src = STOCK_IMAGES.avatar;
-                    }}
-                  />
-                ) : (
-                  <span>{(profile.name || currentUser?.name || 'U').charAt(0).toUpperCase()}</span>
-                )}
+                <UserAvatar
+                  avatarUrl={profile.avatarUrl}
+                  name={profile.name || currentUser?.name}
+                  size="sm"
+                  className="w-full h-full"
+                />
               </button>
               {isAccountMenuOpen && (
                 <>
@@ -3097,13 +3092,20 @@ export default function App() {
                   />
                   <div className="absolute right-0 top-10 z-50 w-56 rounded-xl bg-white dark:bg-gray-900 p-1.5 shadow-xl border border-gray-200 dark:border-gray-700">
                     {/* User display name & email */}
-                    <div className="px-3 py-2 mb-1 border-b border-gray-100 dark:border-gray-800">
-                      <p className="text-xs font-semibold text-gray-900 dark:text-white truncate">
-                        {profile.name || currentUser?.name || 'Workspace User'}
-                      </p>
-                      <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
-                        {currentUser?.email || profile.contactEmail || 'user@workspace.local'}
-                      </p>
+                    <div className="flex items-center gap-2.5 px-3 py-2 mb-1 border-b border-gray-100 dark:border-gray-800">
+                      <UserAvatar
+                        avatarUrl={profile.avatarUrl}
+                        name={profile.name || currentUser?.name}
+                        size="md"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold text-gray-900 dark:text-white truncate">
+                          {profile.name || currentUser?.name || 'Workspace User'}
+                        </p>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
+                          {currentUser?.email || profile.contactEmail || 'user@workspace.local'}
+                        </p>
+                      </div>
                     </div>
 
                     {/* Change Profile Picture */}

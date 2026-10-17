@@ -43,6 +43,15 @@ import {
 } from '../../../../utils/expenseUtils';
 import { SmsTransaction } from '../../../../services/smsExpenseService';
 import { Capacitor } from '@capacitor/core';
+import { UserAvatar } from '../../../../components/UserAvatar';
+import {
+  isAndroidBrowser,
+  launchNativeApkIntent,
+  fetchAccountDevices,
+  hasApkDeviceInstalled,
+  getApkDevice,
+} from '../../../../utils/devices';
+import { Auth } from '../../../../utils/auth';
 
 export interface AndroidMoneyScreenProps {
   expenses: ExpenseItem[];
@@ -185,7 +194,6 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
     setLocalExpenses(expenses);
   }, [expenses]);
 
-  // Android SMS Auto-Logging State
   const [isSmsEnabled, setIsSmsEnabled] = useState<boolean>(() => {
     return Storage.isSmsAutoTrackingEnabled();
   });
@@ -194,6 +202,25 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   >(() => {
     return Storage.isSmsAutoTrackingEnabled() ? 'granted' : 'prompt';
   });
+
+  // Multi-Device APK Detection State
+  const [isApkActiveOnAccount, setIsApkActiveOnAccount] = useState<boolean>(false);
+  const [apkDeviceName, setApkDeviceName] = useState<string | null>(null);
+  const isAndroidWeb = useMemo(() => isAndroidBrowser(), []);
+
+  useEffect(() => {
+    const user = Auth.getCurrentUser();
+    if (user?.email) {
+      void fetchAccountDevices(user.email).then((devices) => {
+        const hasApk = hasApkDeviceInstalled(devices);
+        setIsApkActiveOnAccount(hasApk);
+        const apkDev = getApkDevice(devices);
+        if (apkDev) {
+          setApkDeviceName(apkDev.deviceName);
+        }
+      });
+    }
+  }, []);
 
   const now = new Date();
   const todayDateStr = getLocalDateKey(now);
@@ -309,7 +336,26 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         setSmsPermissionStatus('prompt');
       } else if (res === 'unsupported') {
         setSmsPermissionStatus('unsupported');
-        toast.info('SMS Auto-Logging is an Android-exclusive feature.');
+        if (isAndroidWeb) {
+          toast.info(
+            isApkActiveOnAccount
+              ? `Bank SMS is auto-tracked by your ${apkDeviceName || 'Android APK'}.`
+              : 'SMS tracking runs natively inside the APK.',
+            {
+              description: 'Tap to open the Android APK directly on this device.',
+              action: {
+                label: 'Open APK',
+                onClick: () => launchNativeApkIntent(),
+              },
+            }
+          );
+        } else {
+          toast.info(
+            isApkActiveOnAccount
+              ? `Bank SMS is auto-tracked by your ${apkDeviceName || 'Android APK'} and synced in real time.`
+              : 'SMS Auto-Logging is an Android APK exclusive feature.'
+          );
+        }
       }
     } catch {
       setSmsPermissionStatus('denied');
@@ -672,20 +718,15 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
                   window.dispatchEvent(new CustomEvent('navigate-view', { detail: { view: 'workfolio' } }));
                 }
               }}
-              className="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-500 to-indigo-600 p-[1.5px] cursor-pointer shrink-0"
+              className="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-500 to-indigo-600 p-[1.5px] cursor-pointer shrink-0 overflow-hidden"
               aria-label="Profile"
             >
-              <div className="w-full h-full rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden flex items-center justify-center text-[11px] font-bold text-slate-700 dark:text-slate-200">
-                {profile?.avatarUrl ? (
-                  <img
-                    src={profile.avatarUrl}
-                    alt={profile.name || 'User'}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <span>{profile?.name ? profile.name.charAt(0).toUpperCase() : 'U'}</span>
-                )}
-              </div>
+              <UserAvatar
+                avatarUrl={profile?.avatarUrl}
+                name={profile?.name}
+                size="sm"
+                className="w-full h-full"
+              />
             </button>
           </div>
         </div>
@@ -778,8 +819,16 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
               onClick={handleSmsAction}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 cursor-pointer active:scale-95 transition-all"
             >
-              <span className={`w-1.5 h-1.5 rounded-full ${isSmsEnabled && smsPermissionStatus === 'granted' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-              <span>{isSmsEnabled && smsPermissionStatus === 'granted' ? 'SMS ON' : 'SMS OFF'}</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${
+                (isSmsEnabled && smsPermissionStatus === 'granted') || (!Capacitor.isNativePlatform() && isApkActiveOnAccount)
+                  ? 'bg-emerald-500 animate-pulse'
+                  : 'bg-amber-500'
+              }`} />
+              <span>
+                {Capacitor.isNativePlatform()
+                  ? (isSmsEnabled && smsPermissionStatus === 'granted' ? 'SMS ON' : 'SMS OFF')
+                  : (isApkActiveOnAccount ? 'APK SMS ON' : 'SMS (Via APK)')}
+              </span>
             </button>
           </div>
         </div>
@@ -788,6 +837,36 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
 
       {/* BEGIN: MainContent */}
       <main className="flex-1 px-3.5 pt-1.5 pb-6 space-y-3">
+        {/* Android Chrome APK Linked Banner */}
+        {!Capacitor.isNativePlatform() && (
+          <div className="p-3 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-900/50 flex items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
+              <div className="min-w-0">
+                <span className="text-[11px] font-bold text-emerald-950 dark:text-emerald-100 block truncate">
+                  {isApkActiveOnAccount
+                    ? `APK Connected • Real SMS Tracking via ${apkDeviceName || 'Android APK'}`
+                    : 'Real SMS Tracking requires Android APK'}
+                </span>
+                <span className="text-[10px] text-emerald-700 dark:text-emerald-300/90 block truncate">
+                  {isApkActiveOnAccount
+                    ? 'All transactions detected by your APK device sync here in real time.'
+                    : 'Open or install the APK to automatically log bank and UPI transactions.'}
+                </span>
+              </div>
+            </div>
+            {isAndroidWeb && (
+              <button
+                type="button"
+                onClick={() => launchNativeApkIntent()}
+                className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] shrink-0 active:scale-95 transition-all cursor-pointer shadow-2xs"
+              >
+                Open APK
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Space-Efficient KPI Card */}
         <section
           className="rounded-xl p-3.5 text-white shadow-sm border border-emerald-700/60 bg-gradient-to-br from-[#064e3b] via-[#065f46] to-[#047857]"

@@ -21,6 +21,7 @@ import {
 import { AppSettings, AuthUser, DeviceSession } from '../types';
 import { Sound } from '../utils/audio';
 import { STOCK_IMAGES } from '../assets/stockImages';
+import { UserAvatar } from './UserAvatar';
 import { Storage } from '../utils/storage';
 import { testGroqApiKey, SUPPORTED_GROQ_MODELS, DEFAULT_GROQ_MODEL } from '../services/groqService';
 import { testGeminiApiKey } from '../services/geminiService';
@@ -358,19 +359,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="flex items-center gap-3.5 pb-3 border-b border-[#E5E7EB] dark:border-[#1F2937]">
                 <div className="relative group">
                   <div className="w-12 h-12 rounded-2xl overflow-hidden border border-[#E5E7EB] dark:border-[#374151] bg-white dark:bg-[#111827] p-0.5 shadow-2xs flex items-center justify-center">
-                    {avatarUrl ? (
-                      <img
-                        src={avatarUrl}
-                        alt="Profile"
-                        className="w-full h-full object-cover rounded-xl"
-                        referrerPolicy="no-referrer"
-                        onError={(e) => {
-                          (e.currentTarget as HTMLImageElement).src = STOCK_IMAGES.avatar;
-                        }}
-                      />
-                    ) : (
-                      <User className="w-6 h-6 text-[#6366F1]" />
-                    )}
+                    <UserAvatar
+                      avatarUrl={avatarUrl}
+                      name={userName}
+                      size="lg"
+                      className="w-full h-full rounded-xl"
+                    />
                   </div>
                   {onOpenAvatarPicker && (
                     <button
@@ -506,6 +500,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           <p className="text-xs font-bold text-[#111827] dark:text-white truncate">
                             {device.deviceName}
                           </p>
+                          {device.isApk && (
+                            <span className="px-1.5 py-0.5 rounded-md bg-violet-600 text-white text-[10px] font-bold">
+                              Native APK (Primary Data Source)
+                            </span>
+                          )}
                           {isSelf && (
                             <span className="px-1.5 py-0.2 rounded-md bg-[#6366F1] text-white text-[10px] font-bold">
                               This Device

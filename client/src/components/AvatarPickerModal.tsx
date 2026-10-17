@@ -1,58 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, Upload, Check, X, RefreshCw, Link as LinkIcon, Trash2, User, Loader2, AlertCircle, Sparkles } from 'lucide-react';
+import { Camera, Upload, Check, X, Link as LinkIcon, Trash2, User, Loader2, AlertCircle, Sparkles } from 'lucide-react';
 import { Sound } from '../utils/audio';
-import { STOCK_IMAGES } from '../assets/stockImages';
 import { uploadAvatarImage } from '../utils/imageUtils';
-
-export interface AvatarPreset {
-  id: string;
-  name: string;
-  url: string;
-  category: 'professional' | 'developer' | 'illustrated' | 'minimal';
-}
-
-export const CURATED_AVATAR_PRESETS: AvatarPreset[] = [
-  {
-    id: 'local-default',
-    name: 'Professional Default',
-    url: STOCK_IMAGES.avatar,
-    category: 'professional',
-  },
-  {
-    id: 'headshot-pro-1',
-    name: 'Studio Portrait • Professional',
-    url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80',
-    category: 'professional',
-  },
-  {
-    id: 'headshot-pro-2',
-    name: 'Tech Lead • Modern Corporate',
-    url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80',
-    category: 'professional',
-  },
-  {
-    id: 'headshot-pro-3',
-    name: 'Software Engineer • Casual',
-    url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80',
-    category: 'developer',
-  },
-  {
-    id: 'headshot-pro-4',
-    name: 'Creative Developer',
-    url: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80',
-    category: 'developer',
-  },
-  {
-    id: 'headshot-pro-5',
-    name: 'Minimalist Monochrome',
-    url: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=800&q=80',
-    category: 'minimal',
-  },
-];
+import { getUserInitials, isDummyMockAvatar, getInitialsColorClass } from '../utils/userUtils';
 
 interface AvatarPickerModalProps {
   isOpen: boolean;
   currentAvatarUrl: string;
+  userName?: string;
   onSelectAvatar: (url: string) => void;
   onClose: () => void;
   soundEnabled: boolean;
@@ -62,6 +17,7 @@ interface AvatarPickerModalProps {
 export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
   isOpen,
   currentAvatarUrl,
+  userName = 'User',
   onSelectAvatar,
   onClose,
   soundEnabled,
@@ -69,64 +25,78 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
 }) => {
   const [customUrlInput, setCustomUrlInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [processingStatus, setProcessingStatus] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (isOpen) {
-      setErrorMessage(null);
       setCustomUrlInput('');
+      setErrorMessage(null);
       setIsProcessing(false);
+      setIsDragging(false);
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const processImageFile = async (file: File) => {
+  const isMock = isDummyMockAvatar(currentAvatarUrl);
+  const hasValidCustomPhoto = Boolean(currentAvatarUrl && !isMock);
+  const initials = getUserInitials(userName);
+  const palette = getInitialsColorClass(userName);
+
+  const handleFileSelected = async (file: File) => {
+    if (!file) return;
+
     if (!file.type.startsWith('image/')) {
-      setErrorMessage('Please select a valid image file (JPG, PNG, WebP, etc.).');
+      setErrorMessage('Please select a valid image file (JPEG, PNG, WebP, etc.).');
+      Sound.error(soundEnabled);
       return;
     }
 
-    setErrorMessage(null);
-    setIsProcessing(true);
-    setProcessingStatus('Optimizing photo for instant sync...');
+    if (file.size > 15 * 1024 * 1024) {
+      setErrorMessage('Image size exceeds 15MB limit. Please choose a smaller photo.');
+      Sound.error(soundEnabled);
+      return;
+    }
 
     try {
-      const result = await uploadAvatarImage(file, userId);
-      setProcessingStatus(result.isCloudStorage ? 'Synced to Cloud Storage!' : 'Photo optimized & ready!');
-      Sound.success(soundEnabled);
-      onSelectAvatar(result.url);
-      setTimeout(() => {
-        setIsProcessing(false);
+      setIsProcessing(true);
+      setErrorMessage(null);
+      Sound.click(soundEnabled);
+
+      const targetUserId = userId || 'user_local';
+      const result = await uploadAvatarImage(file, targetUserId);
+
+      if (result && result.url) {
+        Sound.success(soundEnabled);
+        onSelectAvatar(result.url);
         onClose();
-      }, 400);
+      } else {
+        throw new Error(result?.error || 'Failed to process and upload image.');
+      }
     } catch (err: any) {
       console.error('Error processing avatar:', err);
-      setErrorMessage(err?.message || 'Failed to process image. Please try another photo.');
-      setIsProcessing(false);
+      setErrorMessage(err?.message || 'Failed to process image. You can also paste an image URL below.');
       Sound.error(soundEnabled);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    void processImageFile(file);
-    // Reset file input so same file can be re-selected if desired
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      void handleFileSelected(files[0]);
     }
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      void processImageFile(file);
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      void handleFileSelected(files[0]);
     }
   };
 
@@ -135,8 +105,7 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
     setIsDragging(true);
   };
 
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
+  const handleDragLeave = () => {
     setIsDragging(false);
   };
 
@@ -150,10 +119,10 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
     onClose();
   };
 
-  const handleResetDefault = () => {
+  const handleResetToInitials = () => {
     setErrorMessage(null);
     Sound.click(soundEnabled);
-    onSelectAvatar(STOCK_IMAGES.avatar);
+    onSelectAvatar('');
     onClose();
   };
 
@@ -166,7 +135,7 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
         {/* Header */}
         <div className="px-5 py-4 border-b border-[#EDECE9] dark:border-[#1F2937] flex items-center justify-between bg-[#FAF9F6] dark:bg-[#1F2937]/50">
           <div className="flex items-center gap-2.5">
-            <span className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-[#6366F1] dark:text-[#818CF8]">
+            <span className="p-2 rounded-xl bg-violet-50 dark:bg-violet-950/60 text-violet-600 dark:text-violet-400">
               <Camera className="w-5 h-5" />
             </span>
             <div>
@@ -174,7 +143,7 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
                 Update Profile Photo
               </h3>
               <p className="text-[11px] text-[#6B7280] dark:text-[#9CA3AF]">
-                Upload from your device, choose a curated preset, or paste an image URL
+                Upload your own photo or use your initials avatar ({initials})
               </p>
             </div>
           </div>
@@ -208,23 +177,23 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
             onDragLeave={handleDragLeave}
             className={`relative flex items-center gap-4 p-4 rounded-2xl border transition-all ${
               isDragging
-                ? 'border-[#6366F1] bg-indigo-50/70 dark:bg-indigo-950/40 ring-2 ring-[#6366F1]/40'
+                ? 'border-violet-600 bg-violet-50/70 dark:bg-violet-950/40 ring-2 ring-violet-500/40'
                 : 'border-[#E2E8F0] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#1E293B]/60'
             }`}
           >
-            <div className="relative w-16 h-16 rounded-full overflow-hidden border-2 border-[#6366F1] shadow-sm shrink-0 flex items-center justify-center bg-purple-50 dark:bg-purple-950/40">
-              {currentAvatarUrl ? (
+            <div className="relative w-16 h-16 rounded-full overflow-hidden border-2 border-violet-500 shadow-sm shrink-0 flex items-center justify-center">
+              {hasValidCustomPhoto ? (
                 <img
                   src={currentAvatarUrl}
                   alt="Profile Preview"
                   className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
-                  onError={(e) => {
-                    (e.currentTarget as HTMLImageElement).src = STOCK_IMAGES.avatar;
-                  }}
+                  onError={() => onSelectAvatar('')}
                 />
               ) : (
-                <User className="w-8 h-8 text-[#6366F1]" />
+                <div className={`w-full h-full flex items-center justify-center font-bold text-xl ${palette.bg} ${palette.text}`}>
+                  {initials}
+                </div>
               )}
 
               {isProcessing && (
@@ -237,38 +206,37 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
             <div className="flex-1 space-y-1">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-bold text-[#111827] dark:text-white flex items-center gap-1.5">
-                  <span>Upload Photo</span>
-                  <span className="text-[10px] font-normal text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
-                    <Sparkles className="w-3 h-3" /> Auto-synced
-                  </span>
+                  <span>Upload Personal Photo</span>
                 </h4>
+                <span className="text-[10px] text-[#9CA3AF]">Max 15MB</span>
               </div>
-              <p className="text-[11px] text-[#6B7280] dark:text-[#9CA3AF]">
-                Drag &amp; drop or browse. Automatically optimized to sync across all devices instantly.
+              <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8]">
+                Drag and drop your picture here or choose from your files
               </p>
+
               <div className="pt-1.5 flex items-center gap-2">
                 <input
                   type="file"
                   ref={fileInputRef}
-                  onChange={handleFileUpload}
-                  accept="image/png,image/jpeg,image/webp,image/gif,image/*"
+                  onChange={handleInputChange}
+                  accept="image/jpeg,image/png,image/webp,image/gif,image/heic"
                   className="hidden"
                 />
                 <button
                   type="button"
                   disabled={isProcessing}
                   onClick={() => fileInputRef.current?.click()}
-                  className="px-3.5 py-1.5 rounded-xl bg-[#6366F1] hover:bg-[#4F46E5] text-white text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs disabled:opacity-50"
+                  className="px-3.5 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer disabled:opacity-50"
                 >
                   {isProcessing ? (
                     <>
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>{processingStatus || 'Uploading...'}</span>
+                      <span>Optimizing...</span>
                     </>
                   ) : (
                     <>
                       <Upload className="w-3.5 h-3.5" />
-                      <span>Choose From Device</span>
+                      <span>Choose Photo</span>
                     </>
                   )}
                 </button>
@@ -276,62 +244,40 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
             </div>
           </div>
 
-          {/* Curated Presets Grid */}
-          <div className="space-y-2">
-            <label className="text-[11px] font-bold text-[#4B5563] dark:text-[#9CA3AF] uppercase tracking-wider flex items-center gap-1.5">
-              <User className="w-3.5 h-3.5 text-[#6366F1]" />
-              <span>Or Choose a Professional Preset</span>
-            </label>
-            <div className="grid grid-cols-3 gap-2.5">
-              {CURATED_AVATAR_PRESETS.map((preset) => {
-                const isSelected = currentAvatarUrl === preset.url;
-                return (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    disabled={isProcessing}
-                    onClick={() => {
-                      Sound.success(soundEnabled);
-                      onSelectAvatar(preset.url);
-                      onClose();
-                    }}
-                    className={`group relative p-2 rounded-2xl border transition-all text-center flex flex-col items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
-                      isSelected
-                        ? 'border-[#6366F1] bg-indigo-50/50 dark:bg-indigo-950/30 ring-2 ring-[#6366F1]/30'
-                        : 'border-[#E5E7EB] dark:border-[#374151] hover:border-[#6366F1] bg-white dark:bg-[#1F2937]'
-                    }`}
-                  >
-                    <div className="relative w-12 h-12 rounded-full overflow-hidden border border-[#E5E7EB] dark:border-[#374151]">
-                      {preset.url ? (
-                        <img
-                          src={preset.url}
-                          alt={preset.name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                          referrerPolicy="no-referrer"
-                          onError={(e) => {
-                            (e.currentTarget as HTMLImageElement).src = STOCK_IMAGES.avatar;
-                          }}
-                        />
-                      ) : null}
-                      {isSelected && (
-                        <div className="absolute inset-0 bg-[#6366F1]/40 flex items-center justify-center">
-                          <Check className="w-4 h-4 text-white" />
-                        </div>
-                      )}
-                    </div>
-                    <span className="text-[10px] font-medium text-[#4B5563] dark:text-[#CBD5E1] truncate w-full">
-                      {preset.name}
-                    </span>
-                  </button>
-                );
-              })}
+          {/* Initials Default Option */}
+          <div className="p-4 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#1A2234] flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className={`w-11 h-11 rounded-full flex items-center justify-center font-bold text-base shadow-xs ${palette.bg} ${palette.text}`}>
+                {initials}
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-gray-900 dark:text-white">
+                  Initials Avatar ({initials})
+                </h4>
+                <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                  Default avatar generated cleanly from your name ({userName})
+                </p>
+              </div>
             </div>
+
+            <button
+              type="button"
+              disabled={isProcessing || !hasValidCustomPhoto}
+              onClick={handleResetToInitials}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                !hasValidCustomPhoto
+                  ? 'bg-violet-100 dark:bg-violet-950/70 text-violet-700 dark:text-violet-300 ring-1 ring-violet-500/50'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-violet-50 hover:text-violet-600'
+              }`}
+            >
+              {!hasValidCustomPhoto ? 'Active' : 'Use Initials'}
+            </button>
           </div>
 
           {/* Custom URL Input Bar */}
           <div className="pt-2 border-t border-[#EDECE9] dark:border-[#1F2937] space-y-2">
             <label className="text-[11px] font-bold text-[#4B5563] dark:text-[#9CA3AF] uppercase tracking-wider flex items-center gap-1.5">
-              <LinkIcon className="w-3.5 h-3.5 text-[#6366F1]" />
+              <LinkIcon className="w-3.5 h-3.5 text-violet-600" />
               <span>Or Paste Direct Photo URL</span>
             </label>
             <form onSubmit={handleApplyCustom} className="flex items-center gap-2">
@@ -339,13 +285,13 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
                 type="url"
                 value={customUrlInput}
                 onChange={(e) => setCustomUrlInput(e.target.value)}
-                placeholder="https://images.unsplash.com/... or https://..."
-                className="flex-1 px-3 py-2 rounded-xl text-xs bg-[#F7F7F5] dark:bg-[#1F2937] border border-[#EDECE9] dark:border-[#374151] text-[#111827] dark:text-white placeholder:text-[#9CA3AF] focus:outline-none focus:ring-1 focus:ring-[#6366F1]"
+                placeholder="https://example.com/my-photo.jpg"
+                className="flex-1 px-3 py-2 rounded-xl text-xs bg-[#F7F7F5] dark:bg-[#1F2937] border border-[#EDECE9] dark:border-[#374151] text-[#111827] dark:text-white placeholder:text-[#9CA3AF] focus:outline-none focus:ring-1 focus:ring-violet-500"
               />
               <button
                 type="submit"
                 disabled={!customUrlInput.trim() || isProcessing}
-                className="px-3.5 py-2 rounded-xl bg-[#6366F1] hover:bg-[#4F46E5] text-white text-xs font-semibold transition-all disabled:opacity-40 cursor-pointer shrink-0 shadow-2xs"
+                className="px-3.5 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold transition-all disabled:opacity-40 cursor-pointer shrink-0 shadow-2xs"
               >
                 Apply
               </button>
@@ -355,15 +301,21 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
 
         {/* Footer Actions */}
         <div className="px-5 py-3 border-t border-[#EDECE9] dark:border-[#1F2937] bg-[#FAF9F6] dark:bg-[#1F2937]/50 flex items-center justify-between gap-2">
-          <button
-            type="button"
-            disabled={isProcessing}
-            onClick={handleResetDefault}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#111827] border border-[#EDECE9] dark:border-[#374151] text-xs font-semibold text-[#6B7280] dark:text-[#9CA3AF] hover:text-rose-500 transition-all cursor-pointer disabled:opacity-50"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>Reset Default Photo</span>
-          </button>
+          {hasValidCustomPhoto ? (
+            <button
+              type="button"
+              disabled={isProcessing}
+              onClick={handleResetToInitials}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#111827] border border-[#EDECE9] dark:border-[#374151] text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer disabled:opacity-50"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Remove Photo (Use Initials)</span>
+            </button>
+          ) : (
+            <span className="text-[11px] text-gray-500 dark:text-gray-400">
+              Using clean {initials} initials
+            </span>
+          )}
 
           <button
             type="button"

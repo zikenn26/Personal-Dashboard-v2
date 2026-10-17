@@ -3,6 +3,7 @@ import { User, Moon, Sun, Volume2, VolumeX, ChevronRight } from 'lucide-react';
 import { UserProfile, AppSettings } from '../../../types';
 import { nativeService } from '../../../services/nativeService';
 import { BottomSheet } from '../gestures/BottomSheet';
+import { UserAvatar } from '../../../components/UserAvatar';
 
 export interface AndroidProfileSheetProps {
   isOpen: boolean;
@@ -62,17 +63,12 @@ export const AndroidProfileSheet: React.FC<AndroidProfileSheetProps> = ({
           onClick={handleOpenProfile}
           className="w-full flex items-center gap-3 p-3.5 rounded-3xl bg-gray-50 dark:bg-[#1A2234] border border-[#E8E5F3] dark:border-[#242D40] text-left active:scale-[0.98] transition-all cursor-pointer group hover:border-violet-400"
         >
-          <div className="w-12 h-12 rounded-full overflow-hidden ring-2 ring-violet-500/50 shrink-0 bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300 font-bold flex items-center justify-center text-base">
-            {profile.avatarUrl ? (
-              <img
-                src={profile.avatarUrl}
-                alt={profile.name}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              profile.name ? profile.name.charAt(0) : 'U'
-            )}
-          </div>
+          <UserAvatar
+            avatarUrl={profile.avatarUrl}
+            name={profile.name}
+            size="lg"
+            className="ring-2 ring-violet-500/50"
+          />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <h3 className="text-sm font-extrabold text-gray-900 dark:text-white truncate">

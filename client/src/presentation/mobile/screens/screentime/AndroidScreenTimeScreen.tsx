@@ -28,6 +28,14 @@ import {
   formatYAxisHours,
   getAppHourlyUsage,
 } from '../../../../utils/screenTimeCalculator';
+import {
+  isAndroidBrowser,
+  launchNativeApkIntent,
+  fetchAccountDevices,
+  hasApkDeviceInstalled,
+  getApkDevice,
+} from '../../../../utils/devices';
+import { Auth } from '../../../../utils/auth';
 
 export interface AndroidScreenTimeScreenProps {
   onBack?: () => void;
@@ -44,6 +52,23 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedAppPackage, setSelectedAppPackage] = useState<string | null>(null);
+  const [apkDeviceName, setApkDeviceName] = useState<string | null>(null);
+  const [isApkActiveOnAccount, setIsApkActiveOnAccount] = useState<boolean>(false);
+  const isAndroidWeb = useMemo(() => isAndroidBrowser(), []);
+
+  useEffect(() => {
+    const user = Auth.getCurrentUser();
+    if (user?.email) {
+      void fetchAccountDevices(user.email).then((devices) => {
+        const hasApk = hasApkDeviceInstalled(devices);
+        setIsApkActiveOnAccount(hasApk);
+        const apkDev = getApkDevice(devices);
+        if (apkDev) {
+          setApkDeviceName(apkDev.deviceName);
+        }
+      });
+    }
+  }, []);
 
   const isSupported = screenTimeService.isSupported();
   const isTodaySelected = selectedDate === getLocalDateString();
@@ -250,29 +275,39 @@ export const AndroidScreenTimeScreen: React.FC<AndroidScreenTimeScreenProps> = (
         </div>
       )}
 
-      {/* Awaiting APK sync banner (Mobile Chrome / Web) */}
-      {!screenTimeService.isNativeAndroid() && !data?.hasData && (
-        <div className="p-4 rounded-3xl bg-violet-50 dark:bg-violet-950/40 border border-violet-200/70 dark:border-violet-900/40 space-y-3">
-          <div className="flex items-start gap-3">
-            <div className="w-8 h-8 rounded-2xl bg-violet-600 text-white flex items-center justify-center shrink-0">
+      {/* APK Connected status banner (Mobile Chrome / Web) */}
+      {!screenTimeService.isNativeAndroid() && (
+        <div className="p-3.5 rounded-2xl bg-violet-50/80 dark:bg-violet-950/40 border border-violet-200/80 dark:border-violet-900/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-violet-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
               <Smartphone className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-xs font-bold text-violet-900 dark:text-violet-200">
-                Awaiting Data from Android APK
-              </h3>
-              <p className="text-[11px] text-violet-700 dark:text-violet-300 leading-relaxed mt-0.5">
-                Chrome Android cannot access device UsageStats. Real screen time is recorded exclusively by the installed APK. Open the Personal Dashboard APK on your phone to sync your real stats.
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs font-bold text-violet-950 dark:text-violet-100">
+                  {data?.hasData ? 'Sole Determiner: Android APK' : 'Awaiting Android APK Sync'}
+                </span>
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-200/70 dark:bg-violet-900/60 text-violet-800 dark:text-violet-300">
+                  {apkDeviceName || (isApkActiveOnAccount ? 'APK Device Active' : 'APK Linked')}
+                </span>
+              </div>
+              <p className="text-[11px] text-violet-700 dark:text-violet-300/90 leading-tight mt-0.5">
+                {data?.hasData
+                  ? 'Chrome and other versions fetch recent details from your installed APK.'
+                  : 'Real screen time is recorded exclusively by the APK on your phone and mirrored here.'}
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={handleRefresh}
-            className="w-full py-2 px-3 rounded-2xl bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs shadow-xs active:scale-98 transition-all cursor-pointer"
-          >
-            Check for APK Sync
-          </button>
+          {isAndroidWeb && (
+            <button
+              type="button"
+              onClick={() => launchNativeApkIntent()}
+              className="px-3.5 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs shadow-xs active:scale-95 transition-all cursor-pointer self-start sm:self-auto shrink-0 flex items-center gap-1.5"
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              <span>Open Android APK</span>
+            </button>
+          )}
         </div>
       )}
 

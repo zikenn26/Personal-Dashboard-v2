@@ -3,6 +3,7 @@ import { Search, Sparkles } from 'lucide-react';
 import { UserProfile } from '../../../types';
 import { nativeService } from '../../../services/nativeService';
 import { BrandLogo } from '../../../components/BrandLogo';
+import { UserAvatar } from '../../../components/UserAvatar';
 
 export interface AndroidTopAppBarProps {
   profile: UserProfile;
@@ -83,20 +84,14 @@ export const AndroidTopAppBar: React.FC<AndroidTopAppBarProps> = ({
             type="button"
             onClick={handleProfileClick}
             aria-label="Open profile settings"
-            className="w-8 h-8 rounded-full overflow-hidden ring-1 ring-violet-500/40 shadow-2xs active:scale-95 transition-all cursor-pointer flex items-center justify-center bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300 font-bold text-xs"
+            className="w-8 h-8 rounded-full overflow-hidden ring-1 ring-violet-500/40 shadow-2xs active:scale-95 transition-all cursor-pointer flex items-center justify-center shrink-0"
           >
-            {profile.avatarUrl ? (
-              <img
-                src={profile.avatarUrl}
-                alt={profile.name || 'User'}
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  (e.currentTarget as HTMLElement).style.display = 'none';
-                }}
-              />
-            ) : (
-              <span>{profile.name ? profile.name.charAt(0).toUpperCase() : 'G'}</span>
-            )}
+            <UserAvatar
+              avatarUrl={profile.avatarUrl}
+              name={profile.name}
+              size="md"
+              className="w-full h-full"
+            />
           </button>
         </div>
       </div>

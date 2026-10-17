@@ -48,6 +48,8 @@ import { normalizeExpenseDateKey, getLocalDateKey, mergeExpenseLists as mergeExp
 import { scratchpadWidgetService } from '../services/scratchpadWidgetService';
 import { spendingWidgetService } from '../services/spendingWidgetService';
 import { getLocalDateString, resolveCleanAppName } from './screenTimeCalculator';
+import { isDummyMockAvatar } from './userUtils';
+import { Capacitor } from '@capacitor/core';
 
 export const STORAGE_KEYS = {
   TODOS: 'notion_os_v4_todos',
@@ -58,6 +60,7 @@ export const STORAGE_KEYS = {
   GOALS: 'notion_os_v4_goals',
   VAULT: 'notion_os_v4_vault',
   EXPENSES: 'notion_os_v4_expenses',
+  DELETED_EXPENSE_IDS: 'notion_os_v4_deleted_expense_ids',
   JOURNAL: 'notion_os_v4_journal',
   MEDIA: 'notion_os_v4_media',
   ACHIEVEMENTS: 'notion_os_v4_achievements',
@@ -547,7 +550,7 @@ export const INITIAL_PROFILE: UserProfile = {
   location: 'San Francisco, CA',
   statusText: 'Open to opportunities',
   statusEmoji: '💼',
-  avatarUrl: STOCK_IMAGES.avatar,
+  avatarUrl: '',
   avatarEnabled: true,
   bannerType: 'gradient',
   bannerBg: 'linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 50%, #FDF4FF 100%)',
@@ -1462,10 +1465,31 @@ export const Storage = {
     void spendingWidgetService.syncToNativeWidget(sanitized);
     return sanitized;
   },
+  getDeletedExpenseIds: (): string[] => loadFromStorage<string[]>(STORAGE_KEYS.DELETED_EXPENSE_IDS, []),
+  setDeletedExpenseIds: (ids: string[]) => saveToStorage(STORAGE_KEYS.DELETED_EXPENSE_IDS, ids),
+  recordDeletedExpenseId: (idOrIds: string | string[]): string[] => {
+    const toAdd = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
+    const current = Storage.getDeletedExpenseIds();
+    const set = new Set(current.map((s) => String(s).trim()));
+    toAdd.forEach((id) => {
+      if (id && String(id).trim()) {
+        set.add(String(id).trim());
+      }
+    });
+    const updated = Array.from(set).slice(-1000);
+    Storage.setDeletedExpenseIds(updated);
+    return updated;
+  },
+  isExpenseDeleted: (id?: string | null): boolean => {
+    if (!id || !String(id).trim()) return false;
+    const clean = String(id).trim();
+    const current = Storage.getDeletedExpenseIds();
+    return current.some((d) => String(d).trim() === clean);
+  },
   /**
    * Safely merges two expense lists by ID while preserving local transaction IDs,
    * deduping by primary ID and secondary transaction/SMS references, and strictly
-   * respecting explicit user deletions (trash and deleted sheets).
+   * respecting explicit user deletions (trash, deleted sheets, and deleted expense tombstones).
    */
   mergeExpenseLists: (baseList: ExpenseItem[], incomingList: ExpenseItem[]): ExpenseItem[] => {
     const trash = Storage.getTrash().filter((t) => t.module === 'expenses');
@@ -1474,6 +1498,9 @@ export const Storage = {
       if (t.data?.id) trashedIds.add(String(t.data.id).trim());
       if (typeof t.data === 'string' && t.data.trim()) trashedIds.add(t.data.trim());
       if (t.id) trashedIds.add(String(t.id).trim());
+    });
+    Storage.getDeletedExpenseIds().forEach((id) => {
+      if (id) trashedIds.add(String(id).trim());
     });
     return mergeExpenseListsUtil(baseList, incomingList, trashedIds, (importBatchId, sourceFile) => {
       return Storage.isSheetDeleted(importBatchId) || Storage.isSheetDeleted(sourceFile);
@@ -1842,8 +1869,8 @@ export const Storage = {
       data.website = INITIAL_PROFILE.website;
       data.professionalSummary = INITIAL_PROFILE.professionalSummary;
     }
-    if (!data.avatarUrl) {
-      data.avatarUrl = STOCK_IMAGES.avatar;
+    if (!data.avatarUrl || isDummyMockAvatar(data.avatarUrl)) {
+      data.avatarUrl = '';
     }
     if (!data.educationRecords || data.educationRecords.length === 0) {
       data.educationRecords = INITIAL_EDUCATION_RECORDS;
@@ -1881,7 +1908,11 @@ export const Storage = {
     return data;
   },
   setProfile: (profile: UserProfile) => {
-    return saveToStorage(STORAGE_KEYS.PROFILE, profile);
+    const cleanProfile = { ...profile };
+    if (isDummyMockAvatar(cleanProfile.avatarUrl)) {
+      cleanProfile.avatarUrl = '';
+    }
+    return saveToStorage(STORAGE_KEYS.PROFILE, cleanProfile);
   },
 
   getSettings: (): AppSettings => {
@@ -2426,6 +2457,7 @@ export const Storage = {
       alarmSnoozeInterval: Storage.getAlarmSnoozeInterval(),
       commandMappings: Storage.getCommandMappings(),
       trash: Storage.getTrash(),
+      deletedExpenseIds: Storage.getDeletedExpenseIds(),
     };
   },
 
@@ -2434,7 +2466,7 @@ export const Storage = {
       if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
       const knownKeys = [
         'profile', 'todos', 'habits', 'goals', 'vaultEncrypted', 'vault',
-        'expenses', 'excelImportLogs', 'deletedSheetIds', 'journal', 'media', 'achievements', 'doodles',
+        'expenses', 'excelImportLogs', 'deletedSheetIds', 'deletedExpenseIds', 'journal', 'media', 'achievements', 'doodles',
         'timeline', 'projects', 'skills', 'settings', 'sections',
         'photos', 'resume', 'quotes', 'exams', 'schedule', 'version', 'activeAlarm', 'alarmSnoozeInterval',
         'commandMappings', 'trash', 'scratchpad', 'screenTime', 'screenTimeHistory'
@@ -2494,10 +2526,12 @@ export const Storage = {
           ...currentProfile,
           ...data.profile,
         };
-        if (incomingAvatar) {
+        if (incomingAvatar && !isDummyMockAvatar(incomingAvatar)) {
           mergedProfile.avatarUrl = incomingAvatar;
-        } else if (currentAvatar && currentAvatar !== STOCK_IMAGES.avatar) {
+        } else if (currentAvatar && !isDummyMockAvatar(currentAvatar)) {
           mergedProfile.avatarUrl = currentAvatar;
+        } else {
+          mergedProfile.avatarUrl = '';
         }
         Storage.setProfile(mergedProfile);
       }
@@ -2645,13 +2679,17 @@ export const Storage = {
           if (t.id) trashedIds.add(String(t.id).trim());
         });
 
-        // Also incorporate any explicit deletedExpenseIds from metadata
-        const metaDeleted = data._meta?.deletedExpenseIds;
+        // Also incorporate any explicit deletedExpenseIds from metadata or payload
+        const metaDeleted = data._meta?.deletedExpenseIds || data.deletedExpenseIds;
         if (Array.isArray(metaDeleted)) {
+          Storage.recordDeletedExpenseId(metaDeleted);
           metaDeleted.forEach((id: string) => {
             if (id) trashedIds.add(String(id).trim());
           });
         }
+        Storage.getDeletedExpenseIds().forEach((id) => {
+          if (id) trashedIds.add(String(id).trim());
+        });
 
         const remoteMeta = data._meta || {};
         const remoteTimestamp = Number(remoteMeta.syncVersion || remoteMeta.clientTimestamp || 0);
@@ -2661,34 +2699,43 @@ export const Storage = {
           // Authoritative remote clear-all: only preserve items created locally AFTER clear-all
           const preservedLocal = currentLocal.filter((localExp) => {
             if (!localExp || !localExp.id) return false;
-            if (trashedIds.has(String(localExp.id).trim())) return false;
+            const id = String(localExp.id).trim();
+            if (trashedIds.has(id) || Storage.isExpenseDeleted(id)) return false;
             const localCreated = Number(localExp.createdAt || 0);
             return localCreated > remoteTimestamp;
           });
           Storage.setExpenses(preservedLocal);
         } else {
-          // Authoritative cloud expenses, strictly excluding any trashed IDs OR deleted sheet items
+          // Authoritative cloud expenses, strictly excluding any trashed IDs OR deleted sheet items OR deleted expense tombstones
           const validCloudExpenses = data.expenses.filter((e: any) => {
             if (!e || !e.id) return false;
-            if (trashedIds.has(String(e.id).trim())) return false;
+            const id = String(e.id).trim();
+            if (trashedIds.has(id)) return false;
+            if (Storage.isExpenseDeleted(id)) return false;
             if (Storage.isSheetDeleted(e.importBatchId) || Storage.isSheetDeleted(e.sourceFile)) {
               return false;
             }
             return true;
           });
 
-          // Filter valid local expenses:
-          // Strictly exclude any items that are present in trashedIds or deletedSheet
-          const validLocalExpenses = currentLocal.filter((localExp) => {
+          const cloudExpenseIds = new Set(validCloudExpenses.map((e: any) => String(e.id).trim()));
+
+          // Filter local expenses:
+          // Strictly exclude items present in cloud (already captured) or deleted/trashed
+          const preservedLocalNewExpenses = currentLocal.filter((localExp) => {
             if (!localExp || !localExp.id) return false;
-            if (trashedIds.has(String(localExp.id).trim())) return false;
-            return true;
+            const id = String(localExp.id).trim();
+            if (cloudExpenseIds.has(id)) return false;
+            if (trashedIds.has(id) || Storage.isExpenseDeleted(id)) return false;
+            if (Storage.isSheetDeleted(localExp.importBatchId) || Storage.isSheetDeleted(localExp.sourceFile)) return false;
+
+            // Only preserve local expenses created strictly AFTER the remote cloud snapshot
+            const localCreated = Number(localExp.createdAt || 0);
+            return remoteTimestamp > 0 && localCreated > remoteTimestamp;
           });
 
-          // Combine cloud and local expenses safely preserving local transaction IDs
-          // and ensuring records present in either valid source are preserved unless explicitly in trash.
-          const mergedExpenses = Storage.mergeExpenseLists(validLocalExpenses, validCloudExpenses);
-          Storage.setExpenses(mergedExpenses);
+          const finalExpenses = [...validCloudExpenses, ...preservedLocalNewExpenses];
+          Storage.setExpenses(finalExpenses);
         }
       }
       if (Array.isArray(data.excelImportLogs)) {
@@ -2733,10 +2780,33 @@ export const Storage = {
         Storage.setCommandMappings(data.commandMappings);
       }
       if (data.screenTime && typeof data.screenTime === 'object') {
+        const isCurrentNativeApk =
+          typeof Capacitor !== 'undefined' &&
+          Capacitor.isNativePlatform() &&
+          Capacitor.getPlatform() === 'android';
+
         const currentLocal = Storage.getScreenTimeData();
-        // Do not let stale or empty cloud snapshots overwrite newer valid local APK records
-        if (!currentLocal || (data.screenTime.lastSyncedTimestamp || 0) >= (currentLocal.lastSyncedTimestamp || 0)) {
-          Storage.setScreenTimeData(data.screenTime);
+        const incoming = data.screenTime;
+        const isIncomingFromApk = Boolean(
+          incoming.isFromApk ||
+          incoming.isNativeAndroid ||
+          incoming.dataSource === 'usageEventsUnion' ||
+          incoming.dataSource === 'usageStatsFallback' ||
+          incoming.dataSource === 'android_native_apk'
+        );
+
+        if (isCurrentNativeApk) {
+          // Native APK device is the authoritative source; only update if incoming is confirmed APK and strictly newer
+          if (isIncomingFromApk && (incoming.lastSyncedTimestamp || 0) > (currentLocal?.lastSyncedTimestamp || 0)) {
+            Storage.setScreenTimeData(incoming);
+          }
+        } else {
+          // Chrome/Web version: fetch recent details from APK version; ignore non-APK screen times
+          if (isIncomingFromApk) {
+            if (!currentLocal || (incoming.lastSyncedTimestamp || 0) >= (currentLocal.lastSyncedTimestamp || 0)) {
+              Storage.setScreenTimeData(incoming);
+            }
+          }
         }
       }
       if (data.screenTimeHistory && typeof data.screenTimeHistory === 'object') {
@@ -2744,9 +2814,17 @@ export const Storage = {
         const mergedHistory = { ...currentHistory };
         Object.entries(data.screenTimeHistory).forEach(([d, val]: [string, any]) => {
           if (val && typeof val === 'object') {
-            const existing = mergedHistory[d];
-            if (!existing || (val.lastSyncedTimestamp || 0) >= (existing.lastSyncedTimestamp || 0)) {
-              mergedHistory[d] = sanitizeScreenTimeForStorage(val);
+            const isEntryFromApk = Boolean(
+              val.isFromApk ||
+              val.isNativeAndroid ||
+              val.dataSource === 'usageEventsUnion' ||
+              val.dataSource === 'usageStatsFallback'
+            );
+            if (isEntryFromApk) {
+              const existing = mergedHistory[d];
+              if (!existing || (val.lastSyncedTimestamp || 0) >= (existing.lastSyncedTimestamp || 0)) {
+                mergedHistory[d] = sanitizeScreenTimeForStorage(val);
+              }
             }
           }
         });

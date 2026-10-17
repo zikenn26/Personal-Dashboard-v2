@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core';
 import { DeviceSession } from '../types';
 import {
   getSupabaseClient,
@@ -16,13 +17,30 @@ export const getDeviceInfo = (): {
   browser: string;
   os: string;
   deviceType: 'desktop' | 'mobile' | 'tablet';
+  isApk?: boolean;
 } => {
+  const isNativeApk =
+    typeof Capacitor !== 'undefined' &&
+    Capacitor.isNativePlatform() &&
+    Capacitor.getPlatform() === 'android';
+
+  if (isNativeApk) {
+    return {
+      deviceName: 'Android APK App',
+      browser: 'Android Native APK',
+      os: 'Android Native',
+      deviceType: 'mobile',
+      isApk: true,
+    };
+  }
+
   if (typeof navigator === 'undefined') {
     return {
       deviceName: 'Web Browser',
       browser: 'Web',
       os: 'Cloud',
       deviceType: 'desktop',
+      isApk: false,
     };
   }
 
@@ -149,6 +167,7 @@ export const registerCurrentDevice = async (email: string): Promise<DeviceSessio
     lastActive: Date.now(),
     createdAt: Date.now(),
     isCurrent: true,
+    isApk: Boolean(info.isApk),
   };
 
   // 1. Load existing devices
@@ -401,3 +420,58 @@ export const simulateSecondaryDevice = async (email: string): Promise<DeviceSess
     isCurrent: d.id === DEVICE_SESSION_ID,
   }));
 };
+
+/**
+ * Checks whether an authentic Android APK device is present in the account device session list.
+ */
+export const hasApkDeviceInstalled = (devices: DeviceSession[]): boolean => {
+  if (!Array.isArray(devices)) return false;
+  return devices.some(
+    (d) =>
+      d &&
+      (d.isApk ||
+        d.browser === 'Android Native APK' ||
+        d.os === 'Android Native' ||
+        d.deviceName?.includes('APK'))
+  );
+};
+
+/**
+ * Returns the most recently active Android APK device registered to this account.
+ */
+export const getApkDevice = (devices: DeviceSession[]): DeviceSession | undefined => {
+  if (!Array.isArray(devices)) return undefined;
+  const apkDevices = devices.filter(
+    (d) =>
+      d &&
+      (d.isApk ||
+        d.browser === 'Android Native APK' ||
+        d.os === 'Android Native' ||
+        d.deviceName?.includes('APK'))
+  );
+  if (apkDevices.length === 0) return undefined;
+  return apkDevices.sort((a, b) => (b.lastActive || 0) - (a.lastActive || 0))[0];
+};
+
+/**
+ * Checks whether the current environment is a web browser running on an Android mobile device.
+ */
+export const isAndroidBrowser = (): boolean => {
+  if (typeof navigator === 'undefined') return false;
+  const isNative =
+    typeof Capacitor !== 'undefined' &&
+    Capacitor.isNativePlatform() &&
+    Capacitor.getPlatform() === 'android';
+  if (isNative) return false;
+  return /Android/i.test(navigator.userAgent);
+};
+
+/**
+ * Launches the native Android APK via Android intent link from Android Chrome.
+ */
+export const launchNativeApkIntent = (): void => {
+  if (typeof window === 'undefined') return;
+  const intentUri = 'intent://open#Intent;scheme=zikenn;package=com.zikenn.dashboard;end';
+  window.location.href = intentUri;
+};
+

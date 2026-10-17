@@ -49,6 +49,7 @@ import { TrashView } from '../../../components/TrashView';
 import { AndroidSearchOverlay } from '../components/AndroidSearchOverlay';
 import { AndroidProfileSheet } from '../components/AndroidProfileSheet';
 import { AndroidAssistantSheet } from '../components/AndroidAssistantSheet';
+import { UserAvatar } from '../../../components/UserAvatar';
 
 export interface AndroidShellProps {
   // Navigation & View state
@@ -380,18 +381,15 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
                   void nativeService.triggerHaptic('selection');
                   setIsProfileOpen(true);
                 }}
-                className="w-8 h-8 rounded-full overflow-hidden ring-1 ring-violet-500/40 shadow-2xs active:scale-95 transition-all cursor-pointer flex items-center justify-center bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300 font-bold text-xs"
+                className="w-8 h-8 rounded-full overflow-hidden ring-1 ring-violet-500/40 shadow-2xs active:scale-95 transition-all cursor-pointer flex items-center justify-center shrink-0"
                 aria-label="Profile"
               >
-                {profile.avatarUrl ? (
-                  <img
-                    src={profile.avatarUrl}
-                    alt={profile.name || 'User'}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <span>{profile.name ? profile.name.charAt(0).toUpperCase() : 'G'}</span>
-                )}
+                <UserAvatar
+                  avatarUrl={profile.avatarUrl}
+                  name={profile.name}
+                  size="md"
+                  className="w-full h-full"
+                />
               </button>
             </div>
           </div>
