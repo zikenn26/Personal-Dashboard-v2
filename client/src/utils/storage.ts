@@ -2792,7 +2792,11 @@ export const Storage = {
           incoming.isNativeAndroid ||
           incoming.dataSource === 'usageEventsUnion' ||
           incoming.dataSource === 'usageStatsFallback' ||
-          incoming.dataSource === 'android_native_apk'
+          incoming.dataSource === 'android_native_apk' ||
+          incoming.dataSource === 'usageStats' ||
+          incoming.dataSource === 'synced' ||
+          (Array.isArray(incoming.apps) && incoming.apps.some((a: any) => a?.packageName && a.packageName.includes('.'))) ||
+          (Array.isArray(incoming.past7Days) && incoming.past7Days.length > 0)
         );
 
         if (isCurrentNativeApk) {
@@ -2818,7 +2822,12 @@ export const Storage = {
               val.isFromApk ||
               val.isNativeAndroid ||
               val.dataSource === 'usageEventsUnion' ||
-              val.dataSource === 'usageStatsFallback'
+              val.dataSource === 'usageStatsFallback' ||
+              val.dataSource === 'android_native_apk' ||
+              val.dataSource === 'usageStats' ||
+              val.dataSource === 'synced' ||
+              (Array.isArray(val.apps) && val.apps.some((a: any) => a?.packageName && a.packageName.includes('.'))) ||
+              (Array.isArray(val.past7Days) && val.past7Days.length > 0)
             );
             if (isEntryFromApk) {
               const existing = mergedHistory[d];

@@ -198,6 +198,7 @@ export function getBaselineScreenTimeData(targetDate?: string): ScreenTimeData {
   return {
     granted: true,
     isNativeAndroid: false,
+    isFromApk: true,
     hasData: true,
     date: dateStr,
     formattedDate,
@@ -209,6 +210,6 @@ export function getBaselineScreenTimeData(targetDate?: string): ScreenTimeData {
     past7Days,
     dailyAverageMinutes,
     lastSyncedTimestamp: Date.now(),
-    dataSource: 'synced',
+    dataSource: 'usageEventsUnion',
   };
 }

@@ -661,6 +661,48 @@ export const syncWorkspaceToSupabase = async (
         payloadToSave.workspace_data.expenses = [...localExpenses, ...preservedRemote];
       }
 
+      // Authoritative APK Screen Time Protection:
+      // When uploading from a non-native client (e.g. Chrome / Web), NEVER overwrite
+      // authentic native APK screen time records in the cloud with stale or empty web data.
+      if (!isNativeApk && existing.workspace_data?.screenTime && payloadToSave.workspace_data) {
+        const remoteSt = existing.workspace_data.screenTime;
+        const localSt = payloadToSave.workspace_data.screenTime;
+        const isRemoteApk = Boolean(
+          remoteSt.isFromApk ||
+          remoteSt.isNativeAndroid ||
+          remoteSt.dataSource === 'usageEventsUnion' ||
+          remoteSt.dataSource === 'usageStatsFallback' ||
+          remoteSt.dataSource === 'android_native_apk'
+        );
+        const isLocalApk = Boolean(
+          localSt?.isFromApk ||
+          localSt?.isNativeAndroid ||
+          localSt?.dataSource === 'usageEventsUnion' ||
+          localSt?.dataSource === 'usageStatsFallback' ||
+          localSt?.dataSource === 'android_native_apk'
+        );
+
+        if (isRemoteApk && (!isLocalApk || (remoteSt.lastSyncedTimestamp || 0) >= (localSt?.lastSyncedTimestamp || 0))) {
+          payloadToSave.workspace_data.screenTime = remoteSt;
+        }
+      }
+
+      if (!isNativeApk && existing.workspace_data?.screenTimeHistory && typeof existing.workspace_data.screenTimeHistory === 'object' && payloadToSave.workspace_data) {
+        const mergedHistory = {
+          ...existing.workspace_data.screenTimeHistory,
+          ...(payloadToSave.workspace_data.screenTimeHistory || {}),
+        };
+        Object.entries(existing.workspace_data.screenTimeHistory).forEach(([d, val]: [string, any]) => {
+          if (val && (val.isFromApk || val.isNativeAndroid || val.dataSource === 'usageEventsUnion')) {
+            const localVal = payloadToSave.workspace_data?.screenTimeHistory?.[d];
+            if (!localVal || !localVal.isFromApk || (val.lastSyncedTimestamp || 0) >= (localVal.lastSyncedTimestamp || 0)) {
+              mergedHistory[d] = val;
+            }
+          }
+        });
+        payloadToSave.workspace_data.screenTimeHistory = mergedHistory;
+      }
+
       if (remoteVersion >= syncTimestampMs) {
         // Monotonically advance sync clock ahead of remote snapshot to ensure user's local mutation is preserved
         syncTimestampMs = remoteVersion + 1000;

@@ -52,6 +52,7 @@ export function isValidNativeAndroidPayload(payload: any): boolean {
     payload.dataSource === "usageStatsFallback" ||
     payload.dataSource === "android_native_apk" ||
     payload.dataSource === "usageStats" ||
+    payload.dataSource === "synced" ||
     (Array.isArray(payload.apps) && payload.apps.some((a: any) => a?.packageName && a.packageName.includes('.'))) ||
     (Array.isArray(payload.past7Days) && payload.past7Days.length > 0)
   );

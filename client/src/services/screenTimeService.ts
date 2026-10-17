@@ -4,7 +4,11 @@ import { ScreenTimeData } from '../types';
 import { getLocalDateString } from '../utils/screenTimeCalculator';
 import { Storage } from '../utils/storage';
 import { getEmptyScreenTimeData } from '../utils/screenTimeDefaults';
-import { scheduleAutoSyncToSupabase } from '../utils/supabase';
+import {
+  scheduleAutoSyncToSupabase,
+  flushAutoSyncImmediately,
+  fetchWorkspaceFromSupabase,
+} from '../utils/supabase';
 
 export interface ScreenTimePluginInterface {
   hasPermission(): Promise<{ granted: boolean }>;
@@ -139,6 +143,7 @@ class ScreenTimeService {
     this.setupFocusListener();
     this.setupMidnightTimer();
     this.startPeriodicSync();
+    this.startApkPeriodicSync();
   }
 
   public isSupported(): boolean {
@@ -238,18 +243,25 @@ class ScreenTimeService {
     if (this.pollIntervalId) clearInterval(this.pollIntervalId);
     this.pollIntervalId = setInterval(() => {
       void this.pollServerForUpdates();
-    }, 25000);
+    }, 15000);
+  }
+
+  private startApkPeriodicSync() {
+    if (!this.isAndroid || typeof window === 'undefined') return;
+    setInterval(() => {
+      void this.getDailyUsage({ forceRefresh: true }).catch(() => {});
+    }, 45000);
   }
 
   public async pollServerForUpdates(): Promise<void> {
     if (this.isAndroid) return;
     try {
       const today = getLocalDateString();
-      const serverData = await this.fetchFromServer(today);
-      if (serverData && ScreenTimeSyncBridge.validateDataSource(serverData)) {
+      const cloudData = await this.fetchFromCloudOrServer(today);
+      if (cloudData && ScreenTimeSyncBridge.validateDataSource(cloudData)) {
         const local = Storage.getDailyScreenTime(today);
-        const prioritized = ScreenTimeSyncBridge.prioritizeNativeSource([local, serverData]);
-        if (prioritized && (!local || prioritized.totalMinutes !== local.totalMinutes || (prioritized.lastSyncedTimestamp || 0) > (local.lastSyncedTimestamp || 0))) {
+        const prioritized = ScreenTimeSyncBridge.prioritizeNativeSource([local, cloudData]);
+        if (prioritized) {
           Storage.setDailyScreenTime(today, prioritized);
           this.clearCache();
           this.notifyListeners(prioritized);
@@ -303,14 +315,76 @@ class ScreenTimeService {
   }
 
   /**
-   * Fetch screen time for a date from the backend server, validating native source.
+   * Fetch screen time from backend server proxy or Supabase cloud.
    */
-  public async fetchFromServer(date: string): Promise<ScreenTimeData | null> {
+  public async fetchFromServer(date?: string): Promise<ScreenTimeData | null> {
+    return this.fetchFromCloudOrServer(date || getLocalDateString());
+  }
+
+  /**
+   * Fetch screen time for a date by querying Supabase cloud first (where the native APK writes),
+   * followed by the local backend server proxy.
+   */
+  public async fetchFromCloudOrServer(date: string): Promise<ScreenTimeData | null> {
+    const today = getLocalDateString();
+    const queryDate = date || today;
+
+    // 1. Primary: Fetch authoritative workspace data from Supabase Cloud
+    try {
+      const cloudRes = await fetchWorkspaceFromSupabase();
+      if (cloudRes.success && cloudRes.data) {
+        const payload = cloudRes.data;
+        if (payload.screenTime || payload.screenTimeHistory) {
+          Storage.importAllDataPayload({
+            screenTime: payload.screenTime,
+            screenTimeHistory: payload.screenTimeHistory,
+          });
+        }
+
+        // Check if Storage now has the record (handles history and past7Days reconstruction)
+        const localMatch = Storage.getDailyScreenTime(queryDate);
+        if (localMatch && ScreenTimeSyncBridge.validateDataSource(localMatch)) {
+          const enriched: ScreenTimeData = {
+            ...localMatch,
+            granted: true,
+            isNativeAndroid: false,
+            isFromApk: true,
+            hasData: Boolean(localMatch.totalMinutes > 0 || localMatch.hasData),
+            date: queryDate,
+          };
+          Storage.setDailyScreenTime(queryDate, enriched);
+          return enriched;
+        }
+
+        const candidate =
+          (payload.screenTimeHistory && payload.screenTimeHistory[queryDate]) ||
+          (payload.screenTime && (payload.screenTime.date === queryDate || (!date && payload.screenTime.date === today))
+            ? payload.screenTime
+            : null);
+
+        if (candidate && ScreenTimeSyncBridge.validateDataSource(candidate)) {
+          const enriched: ScreenTimeData = {
+            ...candidate,
+            granted: true,
+            isNativeAndroid: false,
+            isFromApk: true,
+            hasData: Boolean(candidate.totalMinutes > 0 || candidate.hasData),
+            date: queryDate,
+          };
+          Storage.setDailyScreenTime(queryDate, enriched);
+          return enriched;
+        }
+      }
+    } catch (e) {
+      console.warn('[ScreenTimeService] Supabase cloud fetch notice:', e);
+    }
+
+    // 2. Secondary fallback: Local backend proxy/server
     try {
       const baseUrl = this.getServerBaseUrl();
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 2500);
-      const res = await fetch(`${baseUrl}/api/screentime/daily?date=${encodeURIComponent(date)}`, {
+      const res = await fetch(`${baseUrl}/api/screentime/daily?date=${encodeURIComponent(queryDate)}`, {
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -319,13 +393,16 @@ class ScreenTimeService {
         if (json.success && json.data) {
           const item = json.data as ScreenTimeData;
           if (ScreenTimeSyncBridge.validateDataSource(item)) {
-            return {
+            const enriched: ScreenTimeData = {
               ...item,
               granted: true,
               isNativeAndroid: false,
               isFromApk: true,
-              hasData: true,
+              hasData: Boolean(item.totalMinutes > 0 || item.hasData),
+              date: queryDate,
             };
+            Storage.setDailyScreenTime(queryDate, enriched);
+            return enriched;
           }
         }
       }
@@ -506,7 +583,12 @@ class ScreenTimeService {
       // Collect candidate data sources
       const localForDate = Storage.getDailyScreenTime(targetDate);
       const localLatest = Storage.getScreenTimeData();
-      const serverCandidate = await this.fetchFromServer(targetDate);
+      let serverCandidate: ScreenTimeData | null = null;
+      try {
+        serverCandidate = await this.fetchFromServer(targetDate);
+      } catch (err) {
+        console.warn('[ScreenTimeService] fetch candidate notice:', err);
+      }
 
       // Prioritize authentic Android native inputs through the bridge
       const prioritized = ScreenTimeSyncBridge.prioritizeNativeSource([
@@ -607,7 +689,7 @@ class ScreenTimeService {
         };
 
         // Persist to local storage and sync to Server & Supabase
-        if (screenTimeData.hasData && screenTimeData.totalMinutes > 0) {
+        if (screenTimeData.hasData || screenTimeData.granted || screenTimeData.totalMinutes > 0) {
           Storage.setDailyScreenTime(targetDate, screenTimeData);
           void this.syncToServer(screenTimeData);
           this.broadcastUpdate(screenTimeData);
