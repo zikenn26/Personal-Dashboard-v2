@@ -330,16 +330,21 @@ class ScreenTimeService {
     const queryDate = date || today;
 
     // 1. Primary: Fetch authoritative workspace data from Supabase Cloud
-    try {
-      const cloudRes = await fetchWorkspaceFromSupabase();
-      if (cloudRes.success && cloudRes.data) {
-        const payload = cloudRes.data;
-        if (payload.screenTime || payload.screenTimeHistory) {
-          Storage.importAllDataPayload({
-            screenTime: payload.screenTime,
-            screenTimeHistory: payload.screenTimeHistory,
-          });
-        }
+    // In unit test runner (Vitest), avoid hitting remote live production database
+    const isTestEnv =
+      (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.MODE === 'test') ||
+      (typeof process !== 'undefined' && process.env?.NODE_ENV === 'test');
+    if (!isTestEnv) {
+      try {
+        const cloudRes = await fetchWorkspaceFromSupabase();
+        if (cloudRes.success && cloudRes.data) {
+          const payload = cloudRes.data;
+          if (payload.screenTime || payload.screenTimeHistory) {
+            Storage.importAllDataPayload({
+              screenTime: payload.screenTime,
+              screenTimeHistory: payload.screenTimeHistory,
+            });
+          }
 
         // Check if Storage now has the record (handles history and past7Days reconstruction)
         const localMatch = Storage.getDailyScreenTime(queryDate);
@@ -375,8 +380,9 @@ class ScreenTimeService {
           return enriched;
         }
       }
-    } catch (e) {
-      console.warn('[ScreenTimeService] Supabase cloud fetch notice:', e);
+      } catch (e) {
+        console.warn('[ScreenTimeService] Supabase cloud fetch notice:', e);
+      }
     }
 
     // 2. Secondary fallback: Local backend proxy/server
@@ -584,10 +590,12 @@ class ScreenTimeService {
       const localForDate = Storage.getDailyScreenTime(targetDate);
       const localLatest = Storage.getScreenTimeData();
       let serverCandidate: ScreenTimeData | null = null;
-      try {
-        serverCandidate = await this.fetchFromServer(targetDate);
-      } catch (err) {
-        console.warn('[ScreenTimeService] fetch candidate notice:', err);
+      if (forceRefresh || (!localForDate && !localLatest)) {
+        try {
+          serverCandidate = await this.fetchFromServer(targetDate);
+        } catch (err) {
+          console.warn('[ScreenTimeService] fetch candidate notice:', err);
+        }
       }
 
       // Prioritize authentic Android native inputs through the bridge

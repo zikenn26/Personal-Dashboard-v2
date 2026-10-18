@@ -499,10 +499,13 @@ class SmsExpenseService {
       }
 
       // Check if an existing Spending entry already has this exact Reference ID
+      const refUpper = cleanRef;
       const matchByRef = existingExpenses.find(
         (e) =>
-          (e.smsReferenceId && e.smsReferenceId.trim().toUpperCase() === cleanRef) ||
-          (e.notes && e.notes.toUpperCase().includes(cleanRef))
+          (e.smsReferenceId && e.smsReferenceId.trim().toUpperCase() === refUpper) ||
+          (e.referenceId && e.referenceId.trim().toUpperCase() === refUpper) ||
+          (e.upiReference && e.upiReference.trim().toUpperCase() === refUpper) ||
+          (e.notes && e.notes.toUpperCase().includes(refUpper))
       );
       if (matchByRef) {
         return {
@@ -914,7 +917,32 @@ class SmsExpenseService {
       // CHECKPOINT 6 — LOCAL PERSISTENCE VERIFICATION
       // =========================================================================
       const verifiedExpenses = Storage.getExpenses();
-      const isPersisted = verifiedExpenses.some((e) => e.id === newExpense.id);
+      const cleanRef = (newExpense.referenceId || newExpense.smsReferenceId || newExpense.upiReference || '').trim();
+      const cleanRefUpper = cleanRef.toUpperCase();
+      const cleanRawSms = (newExpense.rawSmsText || body || '').trim().toLowerCase();
+
+      const persistedMatch = verifiedExpenses.find((e) => {
+        if (e.id === newExpense.id) return true;
+        const eRef = (e.referenceId || e.smsReferenceId || e.upiReference || '').trim().toUpperCase();
+        if (cleanRefUpper && cleanRefUpper.length >= 4 && eRef && (eRef === cleanRefUpper || eRef.includes(cleanRefUpper) || cleanRefUpper.includes(eRef))) {
+          return true;
+        }
+        if (cleanRawSms && e.rawSmsText && e.rawSmsText.trim().toLowerCase() === cleanRawSms) {
+          return true;
+        }
+        if (
+          Math.abs(Number(e.amount) - newExpense.amount) < 0.01 &&
+          normalizeExpenseDateKey(e.date) === normalizeExpenseDateKey(newExpense.date) &&
+          (e.name || '').trim().toLowerCase() === (newExpense.name || '').trim().toLowerCase()
+        ) {
+          return true;
+        }
+        return false;
+      });
+      const isPersisted = Boolean(persistedMatch);
+      if (persistedMatch && persistedMatch.id !== newExpense.id) {
+        newExpense.id = persistedMatch.id;
+      }
 
       if (!isPersisted) {
         const errorReason = `Storage verification failed: Expense ${newExpense.id} was not present in Storage.getExpenses() immediately after write!`;
@@ -1396,6 +1424,21 @@ class SmsExpenseService {
     // during the rescan receive the complete latest expense list.
     if (result.imported > 0) {
       const freshExpenses = Storage.getExpenses();
+
+      // Synchronize immediately to Supabase Cloud and await persistence
+      try {
+        await flushAutoSyncImmediately({
+          ...Storage.getAllDataPayload(),
+          expenses: freshExpenses,
+        });
+        logDeviceDiagnostic('info', 'LifeOS_SMS:RESCAN_CLOUD_SYNC', 'Synchronized imported rescan expenses to Supabase cloud', {
+          importedCount: result.imported,
+          totalExpenses: freshExpenses.length,
+        });
+      } catch (syncErr: any) {
+        logDeviceDiagnostic('warn', 'LifeOS_SMS:RESCAN_CLOUD_SYNC', 'Notice syncing rescan to cloud (stored safely in local storage): ' + (syncErr?.message || syncErr));
+      }
+
       try {
         broadcastDataChanged('expenses', { updatedExpenses: freshExpenses });
         if (typeof window !== 'undefined') {

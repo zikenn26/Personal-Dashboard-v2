@@ -591,6 +591,7 @@ export const INITIAL_GOALS: GoalItem[] = [];
 export const INITIAL_VAULT: VaultCredential[] = [];
 
 let vaultCache: VaultCredential[] = [];
+let memoryExpensesCache: ExpenseItem[] | null = null;
 
 const getVaultStorageKey = () => getScopedKey(STORAGE_KEYS.VAULT);
 export const INITIAL_EXPENSES: ExpenseItem[] = [];
@@ -1357,11 +1358,23 @@ export const Storage = {
     const raw = loadFromStorage<ExpenseItem[]>(STORAGE_KEYS.EXPENSES, INITIAL_EXPENSES);
     let list: ExpenseItem[] = Array.isArray(raw) ? raw.filter((e) => e && typeof e === 'object' && e.id) : [];
 
+    // Ensure immediate read-after-write consistency if memory cache contains newly committed items
+    if (memoryExpensesCache && memoryExpensesCache.length > 0) {
+      const listIds = new Set(list.map((e) => e.id));
+      const unpersistedFromMemory = memoryExpensesCache.filter((e) => !listIds.has(e.id));
+      if (unpersistedFromMemory.length > 0) {
+        list = [...unpersistedFromMemory, ...list];
+        saveToStorage(STORAGE_KEYS.EXPENSES, list);
+      }
+    }
+
     // Cross-platform & cross-session resilience:
     // If the user manually added expenses or received SMS transactions in guest mode or on Android APK
     // before user authentication initialized, automatically recover and merge those expenses into the active workspace.
     try {
-      const guestRaw = localStorage.getItem('user_guest_' + STORAGE_KEYS.EXPENSES);
+      const activeId = getCustomWorkspaceIdentifier();
+      const isGuestMode = activeId === 'user_guest';
+      const guestRaw = !isGuestMode ? localStorage.getItem('user_guest_' + STORAGE_KEYS.EXPENSES) : null;
       const backupRaw = localStorage.getItem('lifeos_expenses_backup');
       const legacyRaw = localStorage.getItem(STORAGE_KEYS.EXPENSES);
 
@@ -1378,7 +1391,7 @@ export const Storage = {
           }
         } catch {}
       }
-      if (backupRaw) {
+      if (list.length === 0 && backupRaw) {
         try {
           const backupItems = JSON.parse(backupRaw);
           if (Array.isArray(backupItems) && backupItems.length > 0) {
@@ -1390,7 +1403,7 @@ export const Storage = {
           }
         } catch {}
       }
-      if (legacyRaw) {
+      if (list.length === 0 && legacyRaw) {
         try {
           const legacyItems = JSON.parse(legacyRaw);
           if (Array.isArray(legacyItems) && legacyItems.length > 0) {
@@ -1458,6 +1471,7 @@ export const Storage = {
       });
     }
 
+    memoryExpensesCache = sanitized;
     saveToStorage(STORAGE_KEYS.EXPENSES, sanitized);
     try {
       localStorage.setItem('lifeos_expenses_backup', JSON.stringify(sanitized));
@@ -1533,19 +1547,42 @@ export const Storage = {
       createdAt: expense.createdAt || nowMs,
       updatedAt: expense.updatedAt || nowMs,
     };
-    const existingIndex = current.findIndex((e) => e.id === expenseWithTimestamps.id);
+    const cleanRef = (expenseWithTimestamps.smsReferenceId || expenseWithTimestamps.referenceId || expenseWithTimestamps.upiReference || '').trim();
+    const existingIndex = current.findIndex(
+      (e) =>
+        e.id === expenseWithTimestamps.id ||
+        (cleanRef &&
+          cleanRef.length >= 4 &&
+          ((e.smsReferenceId && e.smsReferenceId.trim().toUpperCase() === cleanRef.toUpperCase()) ||
+            (e.referenceId && e.referenceId.trim().toUpperCase() === cleanRef.toUpperCase()) ||
+            (e.upiReference && e.upiReference.trim().toUpperCase() === cleanRef.toUpperCase())))
+    );
     let updated: ExpenseItem[];
     if (existingIndex >= 0) {
       updated = [...current];
-      updated[existingIndex] = { ...updated[existingIndex], ...expenseWithTimestamps };
+      const preservedId = current[existingIndex].id;
+      expenseWithTimestamps.id = preservedId;
+      expense.id = preservedId;
+      updated[existingIndex] = { ...updated[existingIndex], ...expenseWithTimestamps, id: preservedId };
     } else {
+      expense.id = expenseWithTimestamps.id;
       updated = [expenseWithTimestamps, ...current];
     }
     Storage.setExpenses(updated);
 
     // Immediate persistence verification
     const verified = Storage.getExpenses();
-    const isSaved = verified.some((e) => e.id === expenseWithTimestamps.id);
+    const cleanRefUpper = cleanRef.toUpperCase();
+    const isSaved = verified.some(
+      (e) =>
+        e.id === expenseWithTimestamps.id ||
+        (cleanRefUpper &&
+          cleanRefUpper.length >= 4 &&
+          ((e.referenceId && e.referenceId.trim().toUpperCase() === cleanRefUpper) ||
+            (e.smsReferenceId && e.smsReferenceId.trim().toUpperCase() === cleanRefUpper) ||
+            (e.upiReference && e.upiReference.trim().toUpperCase() === cleanRefUpper))) ||
+        (expenseWithTimestamps.rawSmsText && e.rawSmsText && e.rawSmsText.trim().toLowerCase() === expenseWithTimestamps.rawSmsText.trim().toLowerCase())
+    );
     if (!isSaved) {
       console.error('[STORAGE_ERROR] Storage.addExpense: Expense failed to verify in storage after write!', expenseWithTimestamps);
     }
@@ -2718,23 +2755,10 @@ export const Storage = {
             return true;
           });
 
-          const cloudExpenseIds = new Set(validCloudExpenses.map((e: any) => String(e.id).trim()));
-
-          // Filter local expenses:
-          // Strictly exclude items present in cloud (already captured) or deleted/trashed
-          const preservedLocalNewExpenses = currentLocal.filter((localExp) => {
-            if (!localExp || !localExp.id) return false;
-            const id = String(localExp.id).trim();
-            if (cloudExpenseIds.has(id)) return false;
-            if (trashedIds.has(id) || Storage.isExpenseDeleted(id)) return false;
-            if (Storage.isSheetDeleted(localExp.importBatchId) || Storage.isSheetDeleted(localExp.sourceFile)) return false;
-
-            // Only preserve local expenses created strictly AFTER the remote cloud snapshot
-            const localCreated = Number(localExp.createdAt || 0);
-            return remoteTimestamp > 0 && localCreated > remoteTimestamp;
-          });
-
-          const finalExpenses = [...validCloudExpenses, ...preservedLocalNewExpenses];
+          // Safely merge current local expenses with valid cloud expenses:
+          // Preserves newly logged local/SMS transactions and cloud transactions
+          // while strictly respecting deletions and preventing duplication.
+          const finalExpenses = Storage.mergeExpenseLists(currentLocal, validCloudExpenses);
           Storage.setExpenses(finalExpenses);
         }
       }

@@ -3,6 +3,7 @@ import { parseSmsTransaction } from '../services/smsParser';
 import { smsExpenseService, SmsTransaction, smsPluginWebImpl, sanitizeSmsForLog, isTraiServiceSender } from '../services/smsExpenseService';
 import { Storage } from '../utils/storage';
 import { ExpenseItem } from '../types';
+import * as supabaseUtils from '../utils/supabase';
 
 function setupMockStorage() {
   if (typeof globalThis.localStorage === 'undefined') {
@@ -323,6 +324,7 @@ describe('Real Android Device SMS Pipeline & End-to-End Test', () => {
 
       vi.spyOn(smsExpenseService, 'isNativePluginAvailable').mockResolvedValue(true);
       vi.spyOn(smsExpenseService, 'isAutoTrackingEnabled').mockReturnValue(true);
+      vi.spyOn(supabaseUtils, 'flushAutoSyncImmediately').mockResolvedValue(undefined as any);
       smsPluginWebImpl.getPendingSms = async () => ({
         messages: mockPendingMessages,
       });

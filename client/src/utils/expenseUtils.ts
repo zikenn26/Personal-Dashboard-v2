@@ -240,13 +240,6 @@ export function mergeExpenseLists(
   trashedIds?: Set<string>,
   isSheetDeleted?: (importBatchId?: string, sourceFile?: string) => boolean
 ): ExpenseItem[] {
-  if (!Array.isArray(baseList) || baseList.length === 0) {
-    return Array.isArray(incomingList) ? incomingList.filter((e) => e && e.id) : [];
-  }
-  if (!Array.isArray(incomingList) || incomingList.length === 0) {
-    return baseList.filter((e) => e && e.id);
-  }
-
   const isValidExpense = (e: ExpenseItem | null | undefined): boolean => {
     if (!e || !e.id) return false;
     const idStr = String(e.id).trim();
@@ -256,6 +249,13 @@ export function mergeExpenseLists(
     }
     return true;
   };
+
+  if (!Array.isArray(baseList) || baseList.length === 0) {
+    return Array.isArray(incomingList) ? incomingList.filter(isValidExpense) : [];
+  }
+  if (!Array.isArray(incomingList) || incomingList.length === 0) {
+    return baseList.filter(isValidExpense);
+  }
 
   const resultMap = new Map<string, ExpenseItem>();
   const refMap = new Map<string, string>(); // normalized refKey -> primary expense id
