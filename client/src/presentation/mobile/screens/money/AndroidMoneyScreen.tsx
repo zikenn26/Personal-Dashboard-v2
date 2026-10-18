@@ -837,35 +837,6 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
 
       {/* BEGIN: MainContent */}
       <main className="flex-1 px-3.5 pt-1.5 pb-6 space-y-3">
-        {/* Android Chrome APK Linked Banner */}
-        {!Capacitor.isNativePlatform() && (
-          <div className="p-3 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-900/50 flex items-center justify-between gap-2.5">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
-              <div className="min-w-0">
-                <span className="text-[11px] font-bold text-emerald-950 dark:text-emerald-100 block truncate">
-                  {isApkActiveOnAccount
-                    ? `APK Connected • Real SMS Tracking via ${apkDeviceName || 'Android APK'}`
-                    : 'Real SMS Tracking requires Android APK'}
-                </span>
-                <span className="text-[10px] text-emerald-700 dark:text-emerald-300/90 block truncate">
-                  {isApkActiveOnAccount
-                    ? 'All transactions detected by your APK device sync here in real time.'
-                    : 'Open or install the APK to automatically log bank and UPI transactions.'}
-                </span>
-              </div>
-            </div>
-            {isAndroidWeb && (
-              <button
-                type="button"
-                onClick={() => launchNativeApkIntent()}
-                className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] shrink-0 active:scale-95 transition-all cursor-pointer shadow-2xs"
-              >
-                Open APK
-              </button>
-            )}
-          </div>
-        )}
 
         {/* Space-Efficient KPI Card */}
         <section
