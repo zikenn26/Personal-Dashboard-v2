@@ -35,6 +35,7 @@ import {
   ResumeSectionConfig,
   ResumeThemeStyle,
   SmsTransactionLogItem,
+  SmsWriteRetryItem,
   TrashItem,
   TrashModule,
   ScreenTimeData,
@@ -91,6 +92,7 @@ export const STORAGE_KEYS = {
   SCRATCHPAD: 'lifeos_scratchpad_notes',
   SCREEN_TIME: 'notion_os_v4_screentime',
   SCREEN_TIME_HISTORY: 'notion_os_v4_screentime_history',
+  SMS_WRITE_RETRY_QUEUE: 'notion_os_v4_sms_write_retry_queue',
 };
 
 export const DEFAULT_COMMAND_MAPPINGS: CommandMapping[] = [
@@ -3117,5 +3119,25 @@ export const Storage = {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('sms_transaction_logged', { detail: null }));
     }
+  },
+
+  getSmsWriteRetryQueue: (): SmsWriteRetryItem[] => {
+    return loadFromStorage<SmsWriteRetryItem[]>(STORAGE_KEYS.SMS_WRITE_RETRY_QUEUE, []);
+  },
+  setSmsWriteRetryQueue: (queue: SmsWriteRetryItem[]): void => {
+    saveToStorage(STORAGE_KEYS.SMS_WRITE_RETRY_QUEUE, Array.isArray(queue) ? queue : []);
+  },
+  addSmsWriteRetryItem: (item: SmsWriteRetryItem): void => {
+    const current = Storage.getSmsWriteRetryQueue();
+    const filtered = current.filter((i) => i.id !== item.id && i.expense?.id !== item.expense?.id);
+    Storage.setSmsWriteRetryQueue([...filtered, item].slice(0, 100));
+  },
+  removeSmsWriteRetryItem: (idOrExpenseId: string): void => {
+    const current = Storage.getSmsWriteRetryQueue();
+    const updated = current.filter((i) => i.id !== idOrExpenseId && i.expense?.id !== idOrExpenseId);
+    Storage.setSmsWriteRetryQueue(updated);
+  },
+  clearSmsWriteRetryQueue: (): void => {
+    Storage.setSmsWriteRetryQueue([]);
   },
 };

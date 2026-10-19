@@ -4,6 +4,7 @@ import {
   isSupabaseConfigured,
   setCustomWorkspaceIdentifier,
   setCustomWorkspaceEmail,
+  getCustomWorkspaceIdentifier,
 } from './supabase';
 import { hashPassword, verifyPasswordHash } from './crypto';
 import { Storage } from './storage';
@@ -259,6 +260,11 @@ export const Auth = {
           accounts.push(user);
         }
         localStorage.setItem(SAVED_USERS_KEY, JSON.stringify(accounts));
+        // Restore any preserved messages for this specific user and process pending write retries
+        try {
+          void smsExpenseService.restorePreservedPendingSmsForUser(user.id);
+          void smsExpenseService.processPendingWriteRetries();
+        } catch {}
       } else {
         localStorage.removeItem(AUTH_STORAGE_KEY);
         localStorage.setItem('notion_os_auth_signed_out', 'true');
@@ -844,11 +850,14 @@ export const Auth = {
       }
     }
     // Prevent queued SMS from one user's session being assigned to another user after logout
+    // while safely preserving any unprocessed messages for this user
     try {
-      await smsExpenseService.clearPendingQueue();
+      const currentUser = Auth.getCurrentUser();
+      const uid = currentUser?.id || getCustomWorkspaceIdentifier();
+      await smsExpenseService.preservePendingQueueBeforeSignOut(uid);
       Storage.clearMemoryExpensesCache();
     } catch (e) {
-      console.warn('Notice clearing pending queue on signOut:', e);
+      console.warn('Notice preserving pending queue on signOut:', e);
     }
     Auth.setCurrentUser(null);
   },

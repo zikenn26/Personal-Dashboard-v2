@@ -1,6 +1,6 @@
 import { registerPlugin, Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
-import { ExpenseItem, ParsedSmsTransaction, SmsTransactionLogItem } from '../types';
+import { ExpenseItem, ParsedSmsTransaction, SmsTransactionLogItem, SmsWriteRetryItem } from '../types';
 import { Storage } from '../utils/storage';
 import { broadcastDataChanged } from './commandMappingService';
 import { nativeService } from './nativeService';
@@ -157,6 +157,84 @@ if (!(SmsTransaction as any).showTransactionNotification) {
 if (!(SmsTransaction as any).acknowledgePendingSms) {
   (SmsTransaction as any).acknowledgePendingSms = (opts: { ids?: string[]; hashes?: string[] }) =>
     smsPluginWebImpl.acknowledgePendingSms(opts);
+}
+
+/**
+ * Strict deep-equality verification between a persisted ExpenseItem from Storage
+ * and the expected ExpenseItem being written.
+ *
+ * Verifies that the specific record in Storage matches:
+ * 1. Primary ID or canonical preserved reference ID
+ * 2. Exact amount (within 0.001 precision)
+ * 3. Direction and transaction type ('DEBIT' | 'CREDIT')
+ * 4. Normalized date key (YYYY-MM-DD)
+ * 5. Normalized name / merchant
+ * 6. Normalized category
+ * 7. Active state
+ * 8. Bank / Reference ID (if present)
+ * 9. Normalized raw SMS text (if present)
+ *
+ * Never permits an ambiguous composite match to verify an unwritten or different record.
+ */
+export function isDeepEqualExpense(actual: ExpenseItem | null | undefined, expected: ExpenseItem | null | undefined): boolean {
+  if (!actual || !expected) return false;
+
+  const actualId = String(actual.id || '').trim();
+  const expectedId = String(expected.id || '').trim();
+
+  const cleanActualRef = (actual.referenceId || actual.smsReferenceId || actual.upiReference || '').trim().toUpperCase();
+  const cleanExpectedRef = (expected.referenceId || expected.smsReferenceId || expected.upiReference || '').trim().toUpperCase();
+
+  const idMatches = Boolean(actualId && expectedId && actualId === expectedId);
+  const refMatches = Boolean(
+    cleanExpectedRef &&
+    cleanExpectedRef.length >= 4 &&
+    cleanActualRef &&
+    (cleanActualRef === cleanExpectedRef || cleanActualRef.includes(cleanExpectedRef) || cleanExpectedRef.includes(cleanActualRef))
+  );
+
+  // Must match either the exact written ID or the explicit bank/UPI reference ID
+  if (!idMatches && !refMatches) {
+    return false;
+  }
+
+  // Exact amount check
+  const actualAmt = Number(actual.amount);
+  const expectedAmt = Number(expected.amount);
+  if (!Number.isFinite(actualAmt) || !Number.isFinite(expectedAmt)) return false;
+  if (Math.abs(actualAmt - expectedAmt) >= 0.01) return false;
+
+  // Exact direction check
+  const actualDir = (actual.direction || actual.transactionType || 'DEBIT').toUpperCase();
+  const expectedDir = (expected.direction || expected.transactionType || 'DEBIT').toUpperCase();
+  if (actualDir !== expectedDir) return false;
+
+  // Normalized Date Key check
+  const actualDate = normalizeExpenseDateKey(actual.date);
+  const expectedDate = normalizeExpenseDateKey(expected.date);
+  if (actualDate !== expectedDate) return false;
+
+  // Name / Merchant check
+  const actualName = (actual.name || '').trim().toLowerCase();
+  const expectedName = (expected.name || '').trim().toLowerCase();
+  if (actualName !== expectedName) return false;
+
+  // Category check
+  const actualCat = (actual.category || '').trim().toLowerCase();
+  const expectedCat = (expected.category || '').trim().toLowerCase();
+  if (actualCat !== expectedCat) return false;
+
+  // Active state check
+  if (actual.active === false && expected.active !== false) return false;
+
+  // Raw SMS text check (if present on expected)
+  if (expected.rawSmsText && actual.rawSmsText) {
+    const actualRaw = actual.rawSmsText.trim().toLowerCase().replace(/\s+/g, ' ');
+    const expectedRaw = expected.rawSmsText.trim().toLowerCase().replace(/\s+/g, ' ');
+    if (actualRaw !== expectedRaw) return false;
+  }
+
+  return true;
 }
 
 /**
@@ -653,7 +731,7 @@ class SmsExpenseService {
     showToastNotification: boolean = true
   ): {
     success: boolean;
-    status: 'logged' | 'duplicate_skipped' | 'ignored_not_financial';
+    status: 'logged' | 'duplicate_skipped' | 'ignored_not_financial' | 'storage_failed';
     reason?: string;
     expense?: ExpenseItem;
     parsed: ParsedSmsTransaction;
@@ -934,55 +1012,89 @@ class SmsExpenseService {
       });
 
       // =========================================================================
-      // CHECKPOINT 6 — LOCAL PERSISTENCE VERIFICATION
+      // CHECKPOINT 6 — LOCAL PERSISTENCE VERIFICATION (DEEP EQUALITY & RETRY)
       // =========================================================================
-      const verifiedExpenses = Storage.getExpenses();
       const cleanRef = (newExpense.referenceId || newExpense.smsReferenceId || newExpense.upiReference || '').trim();
       const cleanRefUpper = cleanRef.toUpperCase();
       const cleanRawSms = (newExpense.rawSmsText || body || '').trim().toLowerCase();
 
-      const persistedMatch = verifiedExpenses.find((e) => {
-        if (e.id === newExpense.id) return true;
-        const eRef = (e.referenceId || e.smsReferenceId || e.upiReference || '').trim().toUpperCase();
-        if (cleanRefUpper && cleanRefUpper.length >= 4 && eRef && (eRef === cleanRefUpper || eRef.includes(cleanRefUpper) || cleanRefUpper.includes(eRef))) {
-          return true;
+      let persistedMatch: ExpenseItem | undefined = undefined;
+      let writeAttempts = 0;
+      const MAX_WRITE_RETRIES = 3;
+
+      while (writeAttempts < MAX_WRITE_RETRIES) {
+        writeAttempts++;
+        const currentVerified = Storage.getExpenses();
+
+        // Specific record lookup (NEVER a loose composite match):
+        // A. Primary ID match (exact match on written ID)
+        // B. Or matching reference ID if Storage.addExpense canonicalized/preserved an existing ID
+        // C. Or exact normalized raw SMS match if non-empty
+        const candidate = currentVerified.find((e) => {
+          if (e.id === newExpense.id) return true;
+          const eRef = (e.referenceId || e.smsReferenceId || e.upiReference || '').trim().toUpperCase();
+          if (cleanRefUpper && cleanRefUpper.length >= 4 && eRef && (eRef === cleanRefUpper || eRef.includes(cleanRefUpper) || cleanRefUpper.includes(eRef))) {
+            return true;
+          }
+          if (cleanRawSms && e.rawSmsText && e.rawSmsText.trim().toLowerCase() === cleanRawSms) {
+            return true;
+          }
+          return false;
+        });
+
+        // Perform Deep-Equality Verification against the specific persisted record
+        if (candidate && isDeepEqualExpense(candidate, newExpense)) {
+          persistedMatch = candidate;
+          if (candidate.id !== newExpense.id) {
+            newExpense.id = candidate.id;
+          }
+          break;
         }
-        if (cleanRawSms && e.rawSmsText && e.rawSmsText.trim().toLowerCase() === cleanRawSms) {
-          return true;
+
+        // If candidate not found or deep equality failed, clear memory cache and retry write
+        if (writeAttempts < MAX_WRITE_RETRIES) {
+          Storage.clearMemoryExpensesCache();
+          Storage.addExpense(newExpense);
         }
-        if (
-          Math.abs(Number(e.amount) - newExpense.amount) < 0.01 &&
-          normalizeExpenseDateKey(e.date) === normalizeExpenseDateKey(newExpense.date) &&
-          (e.name || '').trim().toLowerCase() === (newExpense.name || '').trim().toLowerCase()
-        ) {
-          return true;
-        }
-        return false;
-      });
-      const isPersisted = Boolean(persistedMatch);
-      if (persistedMatch && persistedMatch.id !== newExpense.id) {
-        newExpense.id = persistedMatch.id;
       }
 
-      if (!isPersisted) {
-        const errorReason = `Storage verification failed: Expense ${newExpense.id} was not present in Storage.getExpenses() immediately after write!`;
+      if (!persistedMatch) {
+        const errorReason = `Storage verification failed: Expense ${newExpense.id} failed deep-equality verification in Storage.getExpenses() immediately after ${writeAttempts} write attempts!`;
         logDeviceDiagnostic('error', 'LifeOS_SMS:6_LOCAL_PERSISTENCE_RESULT', errorReason, {
           expenseId: newExpense.id,
           expectedCount: updatedExpenses.length,
-          actualCount: verifiedExpenses.length,
+          actualCount: Storage.getExpenses().length,
+          attempts: writeAttempts,
         });
+
+        // Enqueue into persistent write-retry queue so the transaction is never silently lost
+        Storage.addSmsWriteRetryItem({
+          id: `retry-${Date.now()}-${newExpense.id}`,
+          expense: newExpense,
+          rawSms: body,
+          sender,
+          timestamp,
+          attempts: writeAttempts,
+          lastAttemptAt: Date.now(),
+          lastError: errorReason,
+        });
+
         return {
           success: false,
-          status: 'ignored_not_financial',
+          status: 'storage_failed',
           reason: errorReason,
           expense: newExpense,
           parsed,
         };
       }
 
-      logDeviceDiagnostic('info', 'LifeOS_SMS:6_LOCAL_PERSISTENCE_RESULT', 'Verified persistent storage insertion successfully', {
+      // Successful verification: clear any previous transient retry items for this expense
+      Storage.removeSmsWriteRetryItem(newExpense.id);
+
+      logDeviceDiagnostic('info', 'LifeOS_SMS:6_LOCAL_PERSISTENCE_RESULT', 'Verified persistent storage insertion with deep equality successfully', {
         expenseId: newExpense.id,
-        verifiedCount: verifiedExpenses.length,
+        attempts: writeAttempts,
+        verifiedCount: Storage.getExpenses().length,
       });
 
       // Save multi-vector fingerprints to prevent any future duplicate
@@ -1030,13 +1142,14 @@ class SmsExpenseService {
       // =========================================================================
       // CHECKPOINT 8 — SPENDING REFRESH / STATE UPDATE
       // =========================================================================
+      const finalExpenses = Storage.getExpenses();
       // Dispatch system events with explicit updatedExpenses array so all dashboard views update in real time
-      broadcastDataChanged('expenses', { newExpense, updatedExpenses: verifiedExpenses });
+      broadcastDataChanged('expenses', { newExpense, updatedExpenses: finalExpenses });
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(
           new CustomEvent('sms_expense_auto_logged', {
-            detail: { expense: newExpense, parsed, updatedExpenses: verifiedExpenses },
+            detail: { expense: newExpense, parsed, updatedExpenses: finalExpenses },
           })
         );
       }
@@ -1120,6 +1233,125 @@ class SmsExpenseService {
   }
 
   /**
+   * Processes transient write-to-storage failure queue
+   */
+  public async processPendingWriteRetries(): Promise<number> {
+    const queue = Storage.getSmsWriteRetryQueue();
+    if (!queue || queue.length === 0) return 0;
+
+    let recoveredCount = 0;
+    const remaining: SmsWriteRetryItem[] = [];
+
+    for (const item of queue) {
+      if (item.attempts >= 5) {
+        logDeviceDiagnostic('error', 'LifeOS_SMS:WRITE_RETRY_EXHAUSTED', 'Write retry exhausted after 5 attempts', {
+          expenseId: item.expense.id,
+          lastError: item.lastError,
+        });
+        continue;
+      }
+
+      try {
+        Storage.addExpense(item.expense);
+        const verifiedList = Storage.getExpenses();
+        const candidate = verifiedList.find(
+          (e) =>
+            e.id === item.expense.id ||
+            (item.expense.referenceId &&
+              (e.referenceId === item.expense.referenceId || e.smsReferenceId === item.expense.referenceId))
+        );
+
+        if (candidate && isDeepEqualExpense(candidate, item.expense)) {
+          recoveredCount++;
+          logDeviceDiagnostic('info', 'LifeOS_SMS:WRITE_RETRY_SUCCESS', 'Successfully recovered failed write from retry queue', {
+            expenseId: item.expense.id,
+          });
+        } else {
+          remaining.push({
+            ...item,
+            attempts: item.attempts + 1,
+            lastAttemptAt: Date.now(),
+            lastError: 'Deep-equality verification failed on retry',
+          });
+        }
+      } catch (err: any) {
+        remaining.push({
+          ...item,
+          attempts: item.attempts + 1,
+          lastAttemptAt: Date.now(),
+          lastError: err?.message || String(err),
+        });
+      }
+    }
+
+    Storage.setSmsWriteRetryQueue(remaining);
+
+    if (recoveredCount > 0) {
+      const freshExpenses = Storage.getExpenses();
+      try {
+        await flushAutoSyncImmediately({
+          ...Storage.getAllDataPayload(),
+          expenses: freshExpenses,
+        });
+      } catch {}
+      broadcastDataChanged('expenses', { updatedExpenses: freshExpenses });
+    }
+
+    return recoveredCount;
+  }
+
+  /**
+   * Preserves any unhandled pending messages in user recovery storage before sign-out
+   */
+  public async preservePendingQueueBeforeSignOut(userId: string): Promise<void> {
+    try {
+      if (!(await this.isNativePluginAvailable())) return;
+      // 1. First attempt to sync pending messages so they are committed to this user's workspace
+      await this.syncPendingBackgroundMessages();
+
+      // 2. Read any remaining messages from native queue
+      const res = await SmsTransaction.getPendingSms();
+      const remaining = res?.messages || [];
+      if (remaining.length > 0 && userId) {
+        const recoveryKey = `user_${userId}_unprocessed_pending_sms`;
+        const existingRaw = localStorage.getItem(recoveryKey);
+        const existing = existingRaw ? JSON.parse(existingRaw) : [];
+        localStorage.setItem(recoveryKey, JSON.stringify([...existing, ...remaining].slice(0, 50)));
+      }
+
+      // 3. Clear native queue so next user doesn't receive previous user's messages
+      await SmsTransaction.clearPendingSms();
+    } catch (e) {
+      console.warn('Notice preserving pending queue before sign out:', e);
+    }
+  }
+
+  /**
+   * Restores and processes any unhandled pending messages that were preserved for this user
+   */
+  public async restorePreservedPendingSmsForUser(userId: string): Promise<number> {
+    if (!userId) return 0;
+    const recoveryKey = `user_${userId}_unprocessed_pending_sms`;
+    const existingRaw = localStorage.getItem(recoveryKey);
+    if (!existingRaw) return 0;
+    try {
+      const savedMessages: Array<{ sender: string; body: string; timestamp: number }> = JSON.parse(existingRaw);
+      localStorage.removeItem(recoveryKey);
+      if (!Array.isArray(savedMessages) || savedMessages.length === 0) return 0;
+
+      let processedCount = 0;
+      for (const msg of savedMessages) {
+        const res = this.processSms(msg.body, msg.sender, msg.timestamp, false);
+        if (res.status === 'logged') processedCount++;
+      }
+      return processedCount;
+    } catch {
+      localStorage.removeItem(recoveryKey);
+      return 0;
+    }
+  }
+
+  /**
    * Syncs messages that were queued by SmsReceiver while the app was backgrounded or terminated
    */
   public async syncPendingBackgroundMessages(): Promise<number> {
@@ -1159,6 +1391,12 @@ class SmsExpenseService {
           // Acknowledge duplicates and non-financial messages so they are not repeatedly processed
           if (msg.id) ackIds.push(msg.id);
           ackHashes.push(hash);
+        } else if (result.status === 'storage_failed') {
+          // Withhold ACK from native queue so message remains safe for retry
+          logDeviceDiagnostic('warn', 'LifeOS_SMS:PENDING_ACK_WITHHELD', 'Withheld ACK for pending SMS due to storage verification failure; will retry on next cycle', {
+            msgId: msg.id,
+            reason: result.reason,
+          });
         }
       }
 
@@ -1169,6 +1407,16 @@ class SmsExpenseService {
         } catch (ackErr) {
           console.warn('Failed to acknowledge processed SMS in native queue:', ackErr);
         }
+      }
+
+      // Automatically retry any pending items in the write retry queue
+      try {
+        const retryRecovered = await this.processPendingWriteRetries();
+        if (retryRecovered > 0) {
+          loggedCount += retryRecovered;
+        }
+      } catch (retryErr) {
+        console.warn('Notice processing pending write retries:', retryErr);
       }
 
       if (loggedCount > 0) {

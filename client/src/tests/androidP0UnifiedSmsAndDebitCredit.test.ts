@@ -3,7 +3,7 @@ import { Storage, STORAGE_KEYS } from '../utils/storage';
 import { smsExpenseService, isTraiServiceSender, isLikelyFinancialSms } from '../services/smsExpenseService';
 import { parseSmsTransaction } from '../services/smsParser';
 import { isCreditTransaction, getTransactionDirection } from '../utils/expenseUtils';
-import { ExpenseItem } from '../types';
+import * as supabaseUtils from '../utils/supabase';
 
 function setupMockStorage() {
   if (typeof globalThis.localStorage === 'undefined') {
@@ -35,6 +35,8 @@ describe('P0 – Unified SMS Controls, Native Inbox Scan, and Debit/Credit Parit
     Storage.setExpenses([]);
     Storage.clearSmsTransactionLogs();
     Storage.setSmsAutoTrackingEnabled(true);
+    vi.restoreAllMocks();
+    vi.spyOn(supabaseUtils, 'flushAutoSyncImmediately').mockResolvedValue(undefined as any);
   });
 
   describe('1. Indian Bank Senders & Financial Detection without -S Suffix', () => {

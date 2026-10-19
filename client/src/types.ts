@@ -183,7 +183,7 @@ export interface SmsTransactionLogItem {
   timestamp: number;
   sender: string;
   rawSms: string;
-  status: 'logged' | 'duplicate_skipped' | 'ignored_not_financial';
+  status: 'logged' | 'duplicate_skipped' | 'ignored_not_financial' | 'storage_failed';
   reason?: string;
   expenseId?: string;
   parsed?: {
@@ -194,6 +194,17 @@ export interface SmsTransactionLogItem {
     date: string;
     referenceId?: string;
   };
+}
+
+export interface SmsWriteRetryItem {
+  id: string;
+  expense: ExpenseItem;
+  rawSms: string;
+  sender: string;
+  timestamp: number;
+  attempts: number;
+  lastAttemptAt: number;
+  lastError: string;
 }
 
 export interface ExcelImportLog {

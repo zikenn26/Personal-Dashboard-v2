@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
-import { smsExpenseService, SmsTransactionCandidate } from '../services/smsExpenseService';
+import { smsExpenseService, SmsTransactionCandidate, isDeepEqualExpense } from '../services/smsExpenseService';
 import { Storage } from '../utils/storage';
 import * as supabaseUtils from '../utils/supabase';
 
@@ -443,4 +443,271 @@ describe('Bank SMS Rescan – Storage Verification, Persistence & Supabase Cloud
     expect(reconciled[0].id).toBe('exp-active-1');
     expect(reconciled.find((e) => e.id === deletedId)).toBeUndefined();
   });
+
+  it('11. isDeepEqualExpense performs rigorous deep verification and detects any field corruption or mismatch', () => {
+    const baseExpense = {
+      id: 'exp-test-deep-1',
+      name: 'Starbucks Coffee',
+      amount: 450.5,
+      category: 'Snacks & Coffee',
+      date: '2026-09-25',
+      direction: 'DEBIT' as const,
+      transactionType: 'DEBIT' as const,
+      referenceId: 'UPI1234567890',
+      active: true,
+      rawSmsText: 'Debited 450.50 at Starbucks Coffee UPI 1234567890',
+    };
+
+    // Exact match passes
+    expect(isDeepEqualExpense(baseExpense, { ...baseExpense })).toBe(true);
+
+    // Mismatched amount fails
+    expect(isDeepEqualExpense({ ...baseExpense, amount: 450.0 }, baseExpense)).toBe(false);
+
+    // Mismatched direction fails
+    expect(isDeepEqualExpense({ ...baseExpense, direction: 'CREDIT' as any }, baseExpense)).toBe(false);
+
+    // Mismatched date fails
+    expect(isDeepEqualExpense({ ...baseExpense, date: '2026-09-26' }, baseExpense)).toBe(false);
+
+    // Mismatched name fails
+    expect(isDeepEqualExpense({ ...baseExpense, name: 'Costa Coffee' }, baseExpense)).toBe(false);
+
+    // Mismatched category fails
+    expect(isDeepEqualExpense({ ...baseExpense, category: 'Dining Out' }, baseExpense)).toBe(false);
+
+    // Inactive record fails
+    expect(isDeepEqualExpense({ ...baseExpense, active: false }, baseExpense)).toBe(false);
+
+    // Mismatched ID without matching reference fails
+    expect(isDeepEqualExpense({ ...baseExpense, id: 'exp-other-id', referenceId: undefined }, { ...baseExpense, id: 'exp-expected-id', referenceId: undefined })).toBe(false);
+  });
+
+  it('12. two legitimate purchases with identical amounts, dates, and merchant names: verification locates the specific record and does not use ambiguous composite matching', async () => {
+    // Pre-existing purchase: Morning coffee at Starbucks for ₹350
+    const purchase1 = {
+      id: 'exp-starbucks-morning',
+      name: 'Starbucks',
+      amount: 350,
+      category: 'Snacks & Coffee',
+      date: '2026-09-25',
+      direction: 'DEBIT' as const,
+      referenceId: 'REF-STARBUCKS-AM',
+      smsReferenceId: 'REF-STARBUCKS-AM',
+      active: true,
+      rawSmsText: 'Rs 350 debited at Starbucks AM Ref REF-STARBUCKS-AM',
+    };
+    Storage.setExpenses([purchase1]);
+
+    // Second purchase in afternoon at Starbucks for identical ₹350 with different reference
+    const res = smsExpenseService.processSms(
+      'Rs 350 debited from A/C 9999 to Starbucks on 25-Sep-26. UPI: 998877665544.',
+      'AD-HDFCBK-S',
+      Date.now(),
+      false
+    );
+
+    expect(res.status).toBe('logged');
+    expect(res.success).toBe(true);
+    expect(res.expense).toBeDefined();
+
+    // The two expenses must remain separate records without composite collision
+    const allExpenses = Storage.getExpenses();
+    expect(allExpenses.length).toBe(2);
+    expect(allExpenses.map((e) => e.referenceId)).toEqual(
+      expect.arrayContaining(['REF-STARBUCKS-AM', '998877665544'])
+    );
+  });
+
+  it('13. transient write-to-storage failure withholds native queue ACK, enqueues to retry queue, and recovers via processPendingWriteRetries', async () => {
+    // Mock Storage.addExpense to simulate a transient failure (e.g. storage error)
+    const originalAddExpense = Storage.addExpense;
+    let failWrite = true;
+    vi.spyOn(Storage, 'addExpense').mockImplementation((exp) => {
+      if (failWrite) {
+        // Does not persist
+        return Storage.getExpenses();
+      }
+      return originalAddExpense(exp);
+    });
+
+    let nativeQueue = [
+      { id: 'transient-sms-1', sender: 'AD-HDFCBK-S', body: 'Rs 880.00 debited from A/C 1234 to Apollo on 25-Sep-26. UPI: 998811223344.', timestamp: Date.now() },
+    ];
+
+    vi.spyOn(smsExpenseService, 'isNativePluginAvailable').mockResolvedValue(true);
+    const { smsPluginWebImpl } = await import('../services/smsExpenseService');
+    vi.spyOn(smsPluginWebImpl, 'getPendingSms').mockImplementation(async () => ({ messages: [...nativeQueue] }));
+    const ackSpy = vi.spyOn(smsPluginWebImpl, 'acknowledgePendingSms').mockImplementation(async (opts) => {
+      const idsToRemove = new Set(opts.ids || []);
+      nativeQueue = nativeQueue.filter((item) => !idsToRemove.has(item.id));
+      return { success: true };
+    });
+
+    // Run sync when storage write fails
+    const loggedCount = await smsExpenseService.syncPendingBackgroundMessages();
+    expect(loggedCount).toBe(0);
+
+    // Native queue was NOT acknowledged; message is kept for retry
+    expect(nativeQueue.length).toBe(1);
+
+    // Item was safely enqueued into the persistent write retry queue
+    const retryQueue = Storage.getSmsWriteRetryQueue();
+    expect(retryQueue.length).toBe(1);
+    expect(retryQueue[0].expense.name).toBe('Apollo');
+    expect(retryQueue[0].expense.amount).toBe(880);
+
+    // Storage becomes writable again (transient failure resolved)
+    failWrite = false;
+
+    // Process retry queue
+    const recovered = await smsExpenseService.processPendingWriteRetries();
+    expect(recovered).toBe(1);
+
+    // Storage now contains Apollo
+    const stored = Storage.getExpenses();
+    expect(stored.some((e) => e.name === 'Apollo' && e.amount === 880)).toBe(true);
+
+    // Retry queue is now cleared
+    expect(Storage.getSmsWriteRetryQueue().length).toBe(0);
+
+    vi.restoreAllMocks();
+  });
+
+  it('14. user sign-out preserves pending messages in user recovery storage without loss, and restores on login', async () => {
+    vi.spyOn(smsExpenseService, 'isNativePluginAvailable').mockResolvedValue(true);
+    const { smsPluginWebImpl } = await import('../services/smsExpenseService');
+    const { Auth } = await import('../utils/auth');
+
+    // Simulate native queue having an unprocessed pending message that could not be written initially
+    let nativeMessages = [
+      { id: 'pending-sms-logout', sender: 'AD-HDFCBK-S', body: 'Rs 120.00 debited to Metro on 25-Sep-26. UPI: 445566778899.', timestamp: Date.now() },
+    ];
+    vi.spyOn(smsPluginWebImpl, 'getPendingSms').mockImplementation(async () => ({ messages: [...nativeMessages] }));
+    vi.spyOn(smsPluginWebImpl, 'clearPendingSms').mockImplementation(async () => {
+      nativeMessages = [];
+      return { success: true };
+    });
+
+    // Temporarily fail writes during logout sync so message remains in pending queue
+    const origAdd = Storage.addExpense;
+    let storageLocked = true;
+    vi.spyOn(Storage, 'addExpense').mockImplementation((exp) => {
+      if (storageLocked) return Storage.getExpenses();
+      return origAdd(exp);
+    });
+
+    // User "user_alice" signs out
+    const testUser = {
+      id: 'usr_alice_123',
+      email: 'alice@example.com',
+      name: 'Alice',
+      createdAt: Date.now(),
+      lastLoginAt: Date.now(),
+      provider: 'supabase' as const,
+    };
+    Auth.setCurrentUser(testUser);
+
+    // Preserve pending queue before sign out
+    await smsExpenseService.preservePendingQueueBeforeSignOut(testUser.id);
+
+    // Native queue is cleared so subsequent user has a clean state
+    expect(nativeMessages.length).toBe(0);
+
+    // User-scoped recovery storage holds the unprocessed message
+    const recoveryKey = `user_${testUser.id}_unprocessed_pending_sms`;
+    const preservedRaw = localStorage.getItem(recoveryKey);
+    expect(preservedRaw).not.toBeNull();
+    const preserved = JSON.parse(preservedRaw!);
+    expect(preserved.length).toBe(1);
+    expect(preserved[0].id).toBe('pending-sms-logout');
+
+    // Storage is unlocked
+    storageLocked = false;
+
+    // User logs back in
+    const restoredCount = await smsExpenseService.restorePreservedPendingSmsForUser(testUser.id);
+    expect(restoredCount).toBe(1);
+
+    // Expense is now properly logged in Storage
+    const stored = Storage.getExpenses();
+    expect(stored.some((e) => e.name === 'Metro' && e.amount === 120)).toBe(true);
+
+    // Recovery key is cleared after restoration
+    expect(localStorage.getItem(recoveryKey)).toBeNull();
+
+    vi.restoreAllMocks();
+  });
+
+  it('15. non-native web sync merges remote APK-authoritative SMS transactions while preserving legitimate web manual transactions without APK making itself exclusive owner of all expenses', () => {
+    // Remote workspace contains:
+    // 1. APK-committed SMS expense
+    // 2. An older manual expense created yesterday
+    const apkSmsExpense = {
+      id: 'exp-sms-apk-1',
+      name: 'Swiggy Delivery',
+      amount: 320,
+      category: 'Dining Out',
+      date: '2026-09-25',
+      direction: 'DEBIT' as const,
+      source: 'sms_auto',
+      rawSmsText: 'Debited 320 to Swiggy UPI 5544332211',
+      active: true,
+      createdAt: 1000,
+      updatedAt: 1000,
+    };
+    const olderManualExpense = {
+      id: 'exp-manual-1',
+      name: 'Old Book',
+      amount: 250,
+      category: 'Education',
+      date: '2026-09-24',
+      direction: 'DEBIT' as const,
+      active: true,
+      createdAt: 500,
+      updatedAt: 500,
+    };
+
+    // Web client has edited the older manual expense AND added a new manual expense
+    const editedManualExpense = {
+      ...olderManualExpense,
+      amount: 300, // user updated price on web
+      updatedAt: 2000,
+    };
+    const newWebManualExpense = {
+      id: 'exp-manual-web-2',
+      name: 'Stationery',
+      amount: 150,
+      category: 'Office',
+      date: '2026-09-25',
+      direction: 'DEBIT' as const,
+      active: true,
+      createdAt: 1500,
+      updatedAt: 1500,
+    };
+
+    // Non-native web sync performs merge
+    const merged = supabaseUtils.mergeExpenseLists(
+      [editedManualExpense, newWebManualExpense],
+      [apkSmsExpense, olderManualExpense]
+    );
+
+    expect(merged.length).toBe(3);
+
+    // 1. APK SMS expense is safely retained
+    const smsItem = merged.find((e) => e.id === 'exp-sms-apk-1');
+    expect(smsItem).toBeDefined();
+    expect(smsItem?.amount).toBe(320);
+
+    // 2. Web manual addition is safely retained
+    const webNewItem = merged.find((e) => e.id === 'exp-manual-web-2');
+    expect(webNewItem).toBeDefined();
+    expect(webNewItem?.amount).toBe(150);
+
+    // 3. Web manual edit (updated price to 300) wins over older remote snapshot
+    const editedItem = merged.find((e) => e.id === 'exp-manual-1');
+    expect(editedItem).toBeDefined();
+    expect(editedItem?.amount).toBe(300);
+  });
 });
+
