@@ -1389,6 +1389,8 @@ export const Storage = {
               hasRecoveredItems = true;
             }
           }
+          // Safely delete guest raw key so it does not contaminate subsequent reads or switch sessions
+          localStorage.removeItem('user_guest_' + STORAGE_KEYS.EXPENSES);
         } catch {}
       }
       if (list.length === 0 && backupRaw) {
@@ -1427,6 +1429,10 @@ export const Storage = {
     }
 
     return list;
+  },
+
+  clearMemoryExpensesCache: () => {
+    memoryExpensesCache = null;
   },
   setExpenses: (items: ExpenseItem[]): ExpenseItem[] => {
     if (!Array.isArray(items)) {

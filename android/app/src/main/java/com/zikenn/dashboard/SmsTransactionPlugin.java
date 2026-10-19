@@ -205,19 +205,81 @@ public class SmsTransactionPlugin extends Plugin {
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject obj = arr.getJSONObject(i);
                 JSObject js = new JSObject();
+                js.put("id", obj.optString("id", "pending_" + i + "_" + obj.optLong("timestamp")));
                 js.put("sender", obj.optString("sender"));
                 js.put("body", obj.optString("body"));
                 js.put("timestamp", obj.optLong("timestamp"));
                 messages.put(js);
             }
-            // Clear pending after retrieval to prevent repeated reads
-            prefs.edit().putString(KEY_PENDING_SMS, "[]").apply();
+            // Do NOT wipe queue on read. Items are acknowledged safely via acknowledgePendingSms
+            // once persistence verification succeeds in the application layer.
         } catch (Exception e) {
             Log.e(TAG, "Error parsing pending SMS", e);
         }
 
         JSObject ret = new JSObject();
         ret.put("messages", messages);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void acknowledgePendingSms(PluginCall call) {
+        JSArray ackIds = call.getArray("ids");
+        JSArray ackHashes = call.getArray("hashes");
+        SharedPreferences prefs = getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        String pendingRaw = prefs.getString(KEY_PENDING_SMS, "[]");
+
+        try {
+            JSONArray arr = new JSONArray(pendingRaw);
+            JSONArray remaining = new JSONArray();
+
+            List<String> toRemoveIds = new ArrayList<>();
+            List<String> toRemoveHashes = new ArrayList<>();
+
+            if (ackIds != null) {
+                for (int i = 0; i < ackIds.length(); i++) {
+                    String id = ackIds.getString(i);
+                    if (id != null && !id.trim().isEmpty()) {
+                        toRemoveIds.add(id.trim());
+                    }
+                }
+            }
+            if (ackHashes != null) {
+                for (int i = 0; i < ackHashes.length(); i++) {
+                    String h = ackHashes.getString(i);
+                    if (h != null && !h.trim().isEmpty()) {
+                        toRemoveHashes.add(h.trim().toLowerCase());
+                    }
+                }
+            }
+
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject obj = arr.getJSONObject(i);
+                String id = obj.optString("id", "");
+                String hash = (obj.optString("sender", "") + ":" + obj.optString("body", "").trim()).toLowerCase();
+                if (!toRemoveIds.contains(id) && !toRemoveHashes.contains(hash)) {
+                    remaining.put(obj);
+                }
+            }
+
+            prefs.edit().putString(KEY_PENDING_SMS, remaining.toString()).apply();
+        } catch (Exception e) {
+            Log.e(TAG, "Error acknowledging pending SMS", e);
+        }
+
+        JSObject ret = new JSObject();
+        ret.put("success", true);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void showTransactionNotification(PluginCall call) {
+        String title = call.getString("title", "💳 Transaction Logged");
+        String body = call.getString("body", "");
+        showBackgroundNotification(getContext(), title, body);
+
+        JSObject ret = new JSObject();
+        ret.put("success", true);
         call.resolve(ret);
     }
 
@@ -457,6 +519,7 @@ public class SmsTransactionPlugin extends Plugin {
             }
 
             JSONObject newObj = new JSONObject();
+            newObj.put("id", "sms_" + timestamp + "_" + (System.nanoTime() % 100000));
             newObj.put("sender", sender);
             newObj.put("body", body);
             newObj.put("timestamp", timestamp);
@@ -474,19 +537,17 @@ public class SmsTransactionPlugin extends Plugin {
             prefs.edit().putString(KEY_PENDING_SMS, arr.toString()).apply();
             Log.i(TAG, "[PLUGIN_SMS] Successfully queued incoming SMS from: " + sender + " (live_listener=" + (instance != null) + ")");
 
-            // 3. Show clean Android system notification to user when a financial transaction SMS is intercepted
-            if (SmsReceiver.isLikelyFinancialTransaction(sender, body)) {
-                showBackgroundNotification(context, sender, body);
-            }
+            // Note: Success notifications are triggered strictly after persistence & verification
+            // succeed via the showTransactionNotification plugin method.
         } catch (Exception e) {
             Log.e(TAG, "Failed to handle incoming SMS", e);
         }
     }
 
     /**
-     * Shows a clean Android system notification when a transaction SMS is logged in the background
+     * Shows a clean Android system notification when a transaction SMS is logged and verified
      */
-    private static void showBackgroundNotification(Context context, String sender, String body) {
+    private static void showBackgroundNotification(Context context, String title, String body) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -523,7 +584,7 @@ public class SmsTransactionPlugin extends Plugin {
 
             NotificationCompat.Builder builder = new NotificationCompat.Builder(context, channelId)
                 .setSmallIcon(android.R.drawable.stat_notify_more)
-                .setContentTitle("💳 Transaction Detected (" + sender + ")")
+                .setContentTitle(title != null && !title.isEmpty() ? title : "💳 Transaction Logged")
                 .setContentText(summary + " • Tap to review in Spending")
                 .setAutoCancel(true)
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT);

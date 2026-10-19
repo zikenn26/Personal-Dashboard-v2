@@ -48,7 +48,9 @@ export interface SmsTransactionPluginInterface {
   requestPermissions(): Promise<{ sms: 'granted' | 'denied' | 'prompt'; receiveSms?: string; readSms?: string }>;
   setEnabled(options: { enabled: boolean }): Promise<{ success: boolean; enabled: boolean }>;
   isEnabled(): Promise<{ enabled: boolean }>;
-  getPendingSms(): Promise<{ messages: Array<{ sender: string; body: string; timestamp: number }> }>;
+  getPendingSms(): Promise<{ messages: Array<{ id?: string; sender: string; body: string; timestamp: number }> }>;
+  acknowledgePendingSms(options: { ids?: string[]; hashes?: string[] }): Promise<{ success: boolean }>;
+  showTransactionNotification(options: { title: string; body: string }): Promise<{ success: boolean }>;
   clearPendingSms(): Promise<{ success: boolean }>;
   readRecentSms(options?: { limit?: number }): Promise<{ messages: Array<{ sender: string; body: string; timestamp: number }> }>;
   logDiagnostic?(options: { tag?: string; level?: 'info' | 'warn' | 'error' | 'debug'; message: string }): Promise<void>;
@@ -64,7 +66,9 @@ export const smsPluginWebImpl = {
   requestPermissions: async () => ({ sms: 'granted' as const, receiveSms: 'granted' }),
   setEnabled: async (opts: { enabled: boolean }) => ({ success: true, enabled: opts.enabled }),
   isEnabled: async () => ({ enabled: true }),
-  getPendingSms: async () => ({ messages: [] as Array<{ sender: string; body: string; timestamp: number }> }),
+  getPendingSms: async () => ({ messages: [] as Array<{ id?: string; sender: string; body: string; timestamp: number }> }),
+  acknowledgePendingSms: async (_opts?: { ids?: string[]; hashes?: string[] }) => ({ success: true }),
+  showTransactionNotification: async (_opts?: { title: string; body: string }) => ({ success: true }),
   clearPendingSms: async () => ({ success: true }),
   readRecentSms: async (opts?: { limit?: number }) => {
     if (typeof (smsPluginWebImpl as any)._inboxMock === 'function') {
@@ -145,6 +149,15 @@ export function logDeviceDiagnostic(
 export const SmsTransaction = registerPlugin<SmsTransactionPluginInterface>('SmsTransaction', {
   web: () => smsPluginWebImpl,
 });
+
+if (!(SmsTransaction as any).showTransactionNotification) {
+  (SmsTransaction as any).showTransactionNotification = (opts: { title: string; body: string }) =>
+    smsPluginWebImpl.showTransactionNotification(opts);
+}
+if (!(SmsTransaction as any).acknowledgePendingSms) {
+  (SmsTransaction as any).acknowledgePendingSms = (opts: { ids?: string[]; hashes?: string[] }) =>
+    smsPluginWebImpl.acknowledgePendingSms(opts);
+}
 
 /**
  * Under Telecom Regulatory Authority of India (TRAI) DLT regulations,
@@ -336,6 +349,13 @@ class SmsExpenseService {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Returns true if running inside native Android APK
+   */
+  public isNativeAndroidApp(): boolean {
+    return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
   }
 
   /**
@@ -1027,6 +1047,14 @@ class SmsExpenseService {
         amount: newExpense.amount,
       });
 
+      // Show native system notification ONLY after local persistence verification has succeeded
+      if (this.isNativeAndroidApp()) {
+        const formattedAmount = `₹${newExpense.amount.toLocaleString('en-IN')}`;
+        const title = `💳 ${newExpense.name} (${formattedAmount})`;
+        const bodyDesc = `${newExpense.category} • ${newExpense.bankOrAccount || newExpense.paymentMethod || 'Bank SMS'}`;
+        void this.postNativeSuccessNotification(title, bodyDesc);
+      }
+
       // Subtle feedback: Audio, Haptics, and In-App Toast
       try {
         const settings = Storage.getSettings();
@@ -1068,6 +1096,30 @@ class SmsExpenseService {
   }
 
   /**
+   * Posts native Android notification after transaction has been successfully verified in Storage
+   */
+  public async postNativeSuccessNotification(title: string, body: string): Promise<void> {
+    try {
+      await SmsTransaction.showTransactionNotification({ title, body });
+    } catch (err) {
+      console.warn('Could not post native success notification:', err);
+    }
+  }
+
+  /**
+   * Clears pending queue from native Android SharedPreferences (e.g. on user logout)
+   */
+  public async clearPendingQueue(): Promise<void> {
+    try {
+      if (await this.isNativePluginAvailable()) {
+        await SmsTransaction.clearPendingSms();
+      }
+    } catch (e) {
+      console.warn('Could not clear native pending SMS queue:', e);
+    }
+  }
+
+  /**
    * Syncs messages that were queued by SmsReceiver while the app was backgrounded or terminated
    */
   public async syncPendingBackgroundMessages(): Promise<number> {
@@ -1082,11 +1134,8 @@ class SmsExpenseService {
       const rawMessages = res?.messages || [];
       if (rawMessages.length === 0) return 0;
 
-      // Clear pending queue in native layer immediately to avoid re-syncing in concurrent passes
-      await SmsTransaction.clearPendingSms();
-
       // Redundancy Prevention: In-memory deduplication of pending queue
-      const uniqueMap = new Map<string, { sender: string; body: string; timestamp: number }>();
+      const uniqueMap = new Map<string, { id?: string; sender: string; body: string; timestamp: number }>();
       for (const msg of rawMessages) {
         const dedupeKey = `${(msg.sender || '').toUpperCase()}:${(msg.body || '').trim()}`;
         if (!uniqueMap.has(dedupeKey)) {
@@ -1096,10 +1145,29 @@ class SmsExpenseService {
       const messages = Array.from(uniqueMap.values());
 
       let loggedCount = 0;
+      const ackIds: string[] = [];
+      const ackHashes: string[] = [];
+
       for (const msg of messages) {
+        const hash = `${(msg.sender || '').toUpperCase()}:${(msg.body || '').trim()}`.toLowerCase();
         const result = this.processSms(msg.body, msg.sender, msg.timestamp, false);
         if (result.status === 'logged') {
           loggedCount++;
+          if (msg.id) ackIds.push(msg.id);
+          ackHashes.push(hash);
+        } else if (result.status === 'duplicate_skipped' || result.status === 'ignored_not_financial') {
+          // Acknowledge duplicates and non-financial messages so they are not repeatedly processed
+          if (msg.id) ackIds.push(msg.id);
+          ackHashes.push(hash);
+        }
+      }
+
+      // Safely acknowledge processed messages from the native queue
+      if (ackIds.length > 0 || ackHashes.length > 0) {
+        try {
+          await SmsTransaction.acknowledgePendingSms({ ids: ackIds, hashes: ackHashes });
+        } catch (ackErr) {
+          console.warn('Failed to acknowledge processed SMS in native queue:', ackErr);
         }
       }
 

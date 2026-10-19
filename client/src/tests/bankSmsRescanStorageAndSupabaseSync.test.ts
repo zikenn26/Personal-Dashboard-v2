@@ -284,4 +284,163 @@ describe('Bank SMS Rescan – Storage Verification, Persistence & Supabase Cloud
     expect(verified.length).toBe(1);
     expect(verified[0].id).toBe('exp-pre-existing-1');
   });
+
+  it('6. pending SMS queue is acknowledged safely: unhandled or failed items remain for retry', async () => {
+    let nativeQueue = [
+      { id: 'sms-1', sender: 'AD-HDFCBK-S', body: 'Rs 150.00 debited from A/C 1234 to Blinkit on 25-Sep-26. UPI: 778899001122.', timestamp: Date.now() },
+      { id: 'sms-2', sender: 'AD-HDFCBK-S', body: 'Rs 250.00 debited from A/C 1234 to Zepto on 25-Sep-26. UPI: 778899001133.', timestamp: Date.now() },
+    ];
+
+    vi.spyOn(smsExpenseService, 'isNativePluginAvailable').mockResolvedValue(true);
+    const { smsPluginWebImpl } = await import('../services/smsExpenseService');
+    const getPendingSpy = vi.spyOn(smsPluginWebImpl, 'getPendingSms').mockImplementation(async () => {
+      return { messages: [...nativeQueue] };
+    });
+    const ackSpy = vi.spyOn(smsPluginWebImpl, 'acknowledgePendingSms').mockImplementation(async (opts) => {
+      const idsToRemove = new Set(opts.ids || []);
+      nativeQueue = nativeQueue.filter((item) => !idsToRemove.has(item.id));
+      return { success: true };
+    });
+
+    const loggedCount = await smsExpenseService.syncPendingBackgroundMessages();
+    expect(loggedCount).toBe(2);
+
+    // Both messages were acknowledged
+    expect(ackSpy).toHaveBeenCalled();
+    expect(nativeQueue.length).toBe(0);
+
+    const stored = Storage.getExpenses();
+    expect(stored.length).toBe(2);
+    expect(stored.map((e) => e.name)).toEqual(expect.arrayContaining(['Blinkit', 'Zepto']));
+
+    getPendingSpy.mockRestore();
+    ackSpy.mockRestore();
+  });
+
+  it('7. shows success notifications ONLY after persistence checks succeed', async () => {
+    vi.spyOn(smsExpenseService, 'isNativeAndroidApp').mockReturnValue(true);
+    const { smsPluginWebImpl } = await import('../services/smsExpenseService');
+    const notifSpy = vi.spyOn(smsPluginWebImpl, 'showTransactionNotification');
+
+    // 1. Process genuine financial SMS -> should succeed and trigger notification
+    const resValid = smsExpenseService.processSms(
+      'Rs. 750.00 debited from HDFC Bank A/c **4321 on 25-09-2026 to ZOMATO. UPI: 334455667788.',
+      'AD-HDFCBK-S',
+      Date.now(),
+      false
+    );
+    expect(resValid.status).toBe('logged');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(notifSpy).toHaveBeenCalled();
+
+    // 2. Process duplicate SMS -> should NOT trigger notification
+    notifSpy.mockClear();
+    const resDup = smsExpenseService.processSms(
+      'Rs. 750.00 debited from HDFC Bank A/c **4321 on 25-09-2026 to ZOMATO. UPI: 334455667788.',
+      'AD-HDFCBK-S',
+      Date.now(),
+      false
+    );
+    expect(resDup.status).toBe('duplicate_skipped');
+    expect(notifSpy).not.toHaveBeenCalled();
+
+    // 3. Process non-financial text -> should NOT trigger notification
+    notifSpy.mockClear();
+    const resNonFin = smsExpenseService.processSms(
+      'Your OTP for login is 123456. Valid for 10 minutes.',
+      'AD-HDFCBK-S',
+      Date.now(),
+      false
+    );
+    expect(resNonFin.status).toBe('ignored_not_financial');
+    expect(notifSpy).not.toHaveBeenCalled();
+
+    notifSpy.mockRestore();
+  });
+
+  it('8. user logout clears pending native queue and memory cache, preventing cross-session leakage', async () => {
+    vi.spyOn(smsExpenseService, 'isNativePluginAvailable').mockResolvedValue(true);
+    const { smsPluginWebImpl } = await import('../services/smsExpenseService');
+    const clearSpy = vi.spyOn(smsPluginWebImpl, 'clearPendingSms');
+    const { Auth } = await import('../utils/auth');
+
+    await Auth.signOut();
+
+    expect(clearSpy).toHaveBeenCalled();
+    clearSpy.mockRestore();
+  });
+
+  it('9. cross-device reconciliation: web client preserves remote APK-authoritative SMS transactions', async () => {
+    // Simulate Supabase existing cloud data containing an SMS transaction committed by the APK
+    const apkSmsExpense = {
+      id: 'exp-sms-1792260835864-8fne0',
+      name: 'Uber India',
+      amount: 450,
+      category: 'Transportation',
+      date: '2026-09-25',
+      referenceId: '429482938492',
+      smsReferenceId: '429482938492',
+      direction: 'DEBIT' as const,
+      source: 'sms_auto',
+      rawSmsText: 'Debited Rs 450 to Uber Ref 429482938492',
+      active: true,
+      createdAt: 1792260835864,
+      updatedAt: 1792260835864,
+    };
+
+    // Web client has a locally created manual expense, but DOES NOT have the APK SMS expense yet
+    const webManualExpense = {
+      id: 'exp-manual-web-1',
+      name: 'Book Purchase',
+      amount: 600,
+      category: 'Education',
+      date: '2026-09-25',
+      direction: 'DEBIT' as const,
+      active: true,
+      createdAt: 1792260850000,
+      updatedAt: 1792260850000,
+    };
+
+    // Reconcile via mergeExpenseLists with APK authority rules
+    const reconciled = supabaseUtils.mergeExpenseLists([webManualExpense], [apkSmsExpense]);
+
+    // Both the manual web expense AND the APK-committed SMS expense are preserved
+    expect(reconciled.length).toBe(2);
+    const ids = reconciled.map((e) => e.id);
+    expect(ids).toContain('exp-sms-1792260835864-8fne0');
+    expect(ids).toContain('exp-manual-web-1');
+  });
+
+  it('10. deleted expense tombstones are strictly respected across devices and never resurrected', async () => {
+    const deletedId = 'exp-sms-deleted-1';
+    const activeExpense = {
+      id: 'exp-active-1',
+      name: 'Groceries',
+      amount: 1500,
+      category: 'Groceries',
+      date: '2026-09-25',
+      direction: 'DEBIT' as const,
+      active: true,
+      createdAt: 1000,
+      updatedAt: 1000,
+    };
+    const deletedExpense = {
+      id: deletedId,
+      name: 'Cancelled Service',
+      amount: 800,
+      category: 'Utilities',
+      date: '2026-09-25',
+      direction: 'DEBIT' as const,
+      active: true,
+      createdAt: 1000,
+      updatedAt: 1000,
+    };
+
+    const trashedIds = new Set<string>([deletedId]);
+    const reconciled = supabaseUtils.mergeExpenseLists([activeExpense], [activeExpense, deletedExpense], trashedIds);
+
+    expect(reconciled.length).toBe(1);
+    expect(reconciled[0].id).toBe('exp-active-1');
+    expect(reconciled.find((e) => e.id === deletedId)).toBeUndefined();
+  });
 });

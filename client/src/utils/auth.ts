@@ -6,6 +6,8 @@ import {
   setCustomWorkspaceEmail,
 } from './supabase';
 import { hashPassword, verifyPasswordHash } from './crypto';
+import { Storage } from './storage';
+import { smsExpenseService } from '../services/smsExpenseService';
 
 const AUTH_STORAGE_KEY = 'notion_os_auth_user_v1';
 const SAVED_USERS_KEY = 'notion_os_saved_accounts_v1';
@@ -840,6 +842,13 @@ export const Auth = {
       } catch (err) {
         console.warn('Supabase signOut error:', err);
       }
+    }
+    // Prevent queued SMS from one user's session being assigned to another user after logout
+    try {
+      await smsExpenseService.clearPendingQueue();
+      Storage.clearMemoryExpensesCache();
+    } catch (e) {
+      console.warn('Notice clearing pending queue on signOut:', e);
     }
     Auth.setCurrentUser(null);
   },

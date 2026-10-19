@@ -5,6 +5,7 @@ import {
   SUPABASE_ANON_KEY as BUILTIN_SUPABASE_ANON_KEY,
 } from './supabaseConfig';
 import { mergeExpenseLists } from './expenseUtils';
+export { mergeExpenseLists };
 
 // Environment variables for Supabase (Vite client)
 const rawUrl = import.meta.env.VITE_SUPABASE_URL || BUILTIN_SUPABASE_URL || '';
@@ -640,25 +641,58 @@ export const syncWorkspaceToSupabase = async (
         payloadToSave.workspace_data._meta.deletedExpenseIds = Array.from(trashedExpenseIds).slice(-500);
       }
 
-      // Only merge if the remote cloud version was newer than our local base mutation,
-      // and ONLY preserve remote expenses that were newly created on another device.
-      // NEVER resurrect items that were deleted or moved to trash.
-      if (remoteVersion >= syncTimestampMs && Array.isArray(existing.workspace_data?.expenses) && payloadToSave.workspace_data) {
-        const localExpenses = Array.isArray(payloadToSave.workspace_data.expenses)
-          ? payloadToSave.workspace_data.expenses
-          : [];
-        const localIdSet = new Set(localExpenses.map((e: any) => String(e.id).trim()));
+      // APK-Authoritative Expense Reconciliation & Cross-Device Consistency:
+      // 1. Android Native APK is authoritative for SMS-derived transactions.
+      // 2. Desktop Chrome & mobile Chrome must preserve all valid committed SMS transactions
+      //    from the remote workspace, while preserving user manual additions and edits.
+      // 3. Deletions (trashedExpenseIds) are strictly respected across all devices.
+      const remoteExpenses = Array.isArray(existing.workspace_data?.expenses)
+        ? existing.workspace_data.expenses
+        : [];
+      const localExpenses = Array.isArray(payloadToSave.workspace_data?.expenses)
+        ? payloadToSave.workspace_data.expenses
+        : [];
 
-        const preservedRemote = existing.workspace_data.expenses.filter((remoteExp: any) => {
-          if (!remoteExp || !remoteExp.id) return false;
-          const id = String(remoteExp.id).trim();
-          if (localIdSet.has(id)) return false;
-          if (trashedExpenseIds.has(id)) return false;
-          const remoteCreated = Number(remoteExp.createdAt || 0);
-          return remoteCreated > 0 && remoteCreated > latestKnownRemoteTimestamp;
-        });
+      if (payloadToSave.workspace_data) {
+        // Safely reconcile local and remote expenses
+        const reconciled = mergeExpenseLists(localExpenses, remoteExpenses, trashedExpenseIds);
 
-        payloadToSave.workspace_data.expenses = [...localExpenses, ...preservedRemote];
+        // If uploading from a non-native client (e.g. desktop Chrome / mobile Chrome),
+        // strictly ensure that all SMS-derived expenses committed by the APK are kept intact.
+        if (!isNativeApk && remoteExpenses.length > 0) {
+          const recIdSet = new Set(reconciled.map((e: any) => String(e.id).trim()));
+          const recRefSet = new Set(
+            reconciled
+              .map((e: any) => (e.smsReferenceId || e.referenceId || e.upiReference || '').trim().toUpperCase())
+              .filter((r: string) => r.length >= 4)
+          );
+
+          remoteExpenses.forEach((remoteExp: any) => {
+            if (!remoteExp || !remoteExp.id) return;
+            const expId = String(remoteExp.id).trim();
+            if (trashedExpenseIds.has(expId)) return;
+
+            const isSmsExpense =
+              remoteExp.source === 'sms_auto' ||
+              remoteExp.source === 'sms_rescan' ||
+              expId.startsWith('exp-sms-') ||
+              Boolean(remoteExp.rawSmsText || remoteExp.smsReferenceId || remoteExp.upiReference);
+
+            if (isSmsExpense) {
+              const remoteRef = (remoteExp.smsReferenceId || remoteExp.referenceId || remoteExp.upiReference || '').trim().toUpperCase();
+              const hasIdMatch = recIdSet.has(expId);
+              const hasRefMatch = remoteRef && remoteRef.length >= 4 && recRefSet.has(remoteRef);
+
+              if (!hasIdMatch && !hasRefMatch) {
+                reconciled.push(remoteExp);
+                recIdSet.add(expId);
+                if (remoteRef) recRefSet.add(remoteRef);
+              }
+            }
+          });
+        }
+
+        payloadToSave.workspace_data.expenses = reconciled;
       }
 
       // Authoritative APK Screen Time Protection:
