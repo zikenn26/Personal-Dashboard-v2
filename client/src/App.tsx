@@ -419,19 +419,83 @@ export default function App() {
     return unsub;
   }, []);
 
-  // Detect a Supabase password-recovery link and prompt the user to set a new password
+  // Listen to Supabase Auth state changes (sign-in, token refresh, password recovery)
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
     const client = getSupabaseClient();
     if (!client) return;
-    const { data: subscription } = client.auth.onAuthStateChange((event) => {
+    let isSubscribed = true;
+
+    const { data: subscription } = client.auth.onAuthStateChange(async (event, session) => {
+      console.info('[AUTH_DIAGNOSTIC] onAuthStateChange event:', event, { hasUser: Boolean(session?.user) });
+      if (!isSubscribed) return;
+
       if (event === 'PASSWORD_RECOVERY') {
         setAuthInitialMode('reset');
         setIsAuthModalOpen(true);
+      } else if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+        if (session?.user) {
+          const authUser = session.user;
+          const cleanEmail = (authUser.email || '').trim().toLowerCase();
+          const isSignedOut = localStorage.getItem('notion_os_auth_signed_out') === 'true';
+
+          if (!isSignedOut && (!currentUser || currentUser.email.toLowerCase() !== cleanEmail)) {
+            const displayName =
+              authUser.user_metadata?.full_name ||
+              authUser.user_metadata?.name ||
+              cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+            const user: AuthUser = {
+              id: authUser.id,
+              email: cleanEmail,
+              name: displayName,
+              avatarUrl: authUser.user_metadata?.avatar_url || authUser.user_metadata?.avatarUrl,
+              createdAt: authUser.created_at ? new Date(authUser.created_at).getTime() : Date.now(),
+              lastLoginAt: Date.now(),
+              provider: 'supabase',
+            };
+
+            Auth.setCurrentUser(user);
+            handleAuthenticated(user);
+          }
+        }
       }
     });
-    return () => subscription?.subscription?.unsubscribe();
-  }, []);
+
+    // Also check initial session on mount if currentUser is not yet set
+    void client.auth.getSession().then(({ data }) => {
+      if (!isSubscribed) return;
+      if (data?.session?.user) {
+        const isSignedOut = localStorage.getItem('notion_os_auth_signed_out') === 'true';
+        if (!isSignedOut && !currentUser) {
+          const authUser = data.session.user;
+          const cleanEmail = (authUser.email || '').trim().toLowerCase();
+          const displayName =
+            authUser.user_metadata?.full_name ||
+            authUser.user_metadata?.name ||
+            cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+          const user: AuthUser = {
+            id: authUser.id,
+            email: cleanEmail,
+            name: displayName,
+            avatarUrl: authUser.user_metadata?.avatar_url || authUser.user_metadata?.avatarUrl,
+            createdAt: authUser.created_at ? new Date(authUser.created_at).getTime() : Date.now(),
+            lastLoginAt: Date.now(),
+            provider: 'supabase',
+          };
+
+          Auth.setCurrentUser(user);
+          handleAuthenticated(user);
+        }
+      }
+    });
+
+    return () => {
+      isSubscribed = false;
+      subscription?.subscription?.unsubscribe();
+    };
+  }, [currentUser]);
 
   // Vault hydration is asynchronous because secrets are decrypted with Web Crypto only after the PIN is available.
   useEffect(() => {

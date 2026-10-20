@@ -331,17 +331,33 @@ export const getAutoSyncStatus = () => currentSyncStatus;
 export const broadcastWorkspaceUpdate = (enrichedPayload: any) => {
   if (!activeRealtimeChannel) return;
   try {
-    activeRealtimeChannel.send({
-      type: 'broadcast',
-      event: 'workspace_sync',
-      payload: {
-        data: enrichedPayload,
-        deviceId: DEVICE_SESSION_ID,
-        timestamp: new Date().toISOString(),
-      },
-    }).catch((err: any) => {
-      console.warn('Realtime broadcast send notice:', err);
-    });
+    const serialized = JSON.stringify(enrichedPayload);
+    // Supabase tenant broadcast payload limit is 250KB. Keep payload under 200KB for safety
+    if (serialized.length <= 200_000) {
+      activeRealtimeChannel.send({
+        type: 'broadcast',
+        event: 'workspace_sync',
+        payload: {
+          data: enrichedPayload,
+          deviceId: DEVICE_SESSION_ID,
+          timestamp: new Date().toISOString(),
+        },
+      }).catch((err: any) => {
+        console.warn('Realtime broadcast send notice:', err);
+      });
+    } else {
+      // Send lightweight sync ping telling peer devices to pull latest workspace directly
+      activeRealtimeChannel.send({
+        type: 'broadcast',
+        event: 'workspace_sync_ping',
+        payload: {
+          deviceId: DEVICE_SESSION_ID,
+          timestamp: new Date().toISOString(),
+        },
+      }).catch((err: any) => {
+        console.warn('Realtime broadcast ping notice:', err);
+      });
+    }
   } catch (err) {
     console.warn('Failed to send broadcast update:', err);
   }
@@ -937,6 +953,24 @@ export const subscribeToRealtimeWorkspace = (
             notifyStatus('synced');
           } catch (e) {
             console.warn('Realtime broadcast payload error:', e);
+          }
+        }
+      )
+      // 1b. Lightweight ping from peer device when payload was large (>200KB)
+      .on(
+        'broadcast',
+        { event: 'workspace_sync_ping' },
+        async (res: any) => {
+          try {
+            const payload = res?.payload;
+            if (!payload || payload.deviceId === DEVICE_SESSION_ID) return;
+            const remoteResult = await fetchWorkspaceFromSupabase();
+            if (remoteResult.success && remoteResult.data) {
+              onRemoteChange(remoteResult.data, remoteResult.timestamp || new Date().toISOString());
+              notifyStatus('synced');
+            }
+          } catch (e) {
+            console.warn('Realtime workspace_sync_ping handler notice:', e);
           }
         }
       )
