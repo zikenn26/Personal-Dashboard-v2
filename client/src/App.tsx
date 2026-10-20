@@ -2018,24 +2018,23 @@ export default function App() {
 
     const nextStored = currentStored.filter((e) => !deleteIds.has(String(e.id).trim()));
 
-    // 1. Immediately persist synchronously to localStorage (both scoped and unscoped)
+    // 1. Immediately persist synchronously to user-scoped localStorage
     Storage.setExpenses(nextStored);
     try {
       localStorage.setItem(getScopedKey(STORAGE_KEYS.EXPENSES), JSON.stringify(nextStored));
-      localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(nextStored));
     } catch {}
 
     // Clean up local backups so deleted items cannot be restored by stale local storage caches
     try {
-      const rawImported = localStorage.getItem('lifeos_last_imported_sheet_expenses');
+      const rawImported = localStorage.getItem(getScopedKey('lifeos_last_imported_sheet_expenses'));
       if (rawImported) {
         const parsed = JSON.parse(rawImported);
         if (Array.isArray(parsed)) {
           const filtered = parsed.filter((e) => !deleteIds.has(String(e.id).trim()));
-          localStorage.setItem('lifeos_last_imported_sheet_expenses', JSON.stringify(filtered));
+          localStorage.setItem(getScopedKey('lifeos_last_imported_sheet_expenses'), JSON.stringify(filtered));
         }
       }
-      localStorage.setItem('lifeos_expenses_backup', JSON.stringify(nextStored));
+      localStorage.setItem(getScopedKey('lifeos_expenses_backup'), JSON.stringify(nextStored));
     } catch {}
 
     // 2. Clean up spreadsheet logs if all expenses cleared
