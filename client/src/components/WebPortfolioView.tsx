@@ -77,16 +77,14 @@ export const WebPortfolioView: React.FC<WebPortfolioViewProps> = ({
   const [contactSent, setContactSent] = useState(false);
 
   // Fallback data aligning with user profile settings
-  const displayName = profile.name || 'Alex Morgan';
-  const displayTitle = profile.title || 'Data & AI Engineer  |  Researcher  |  Problem Solver';
-  const displayBio =
-    profile.bio ||
-    'I build data-driven systems, AI applications and intelligent solutions to solve real-world problems.';
-  const displayEmail = profile.contactEmail || 'alex.morgan@example.com';
-  const displayLocation = profile.location || 'San Francisco, CA';
-  const displayGithub = profile.github || 'github.com/alexmorgan';
-  const displayLinkedin = profile.linkedin || 'linkedin.com/in/alexmorgan';
-  const displayWebsite = profile.website || 'alexmorgan.dev';
+  const displayName = profile.name || '';
+  const displayTitle = profile.title || '';
+  const displayBio = profile.bio || '';
+  const displayEmail = profile.contactEmail || '';
+  const displayLocation = profile.location || '';
+  const displayGithub = profile.github || '';
+  const displayLinkedin = profile.linkedin || '';
+  const displayWebsite = profile.website || '';
 
   const experiences: JobExperience[] =
     profile.jobExperiences !== undefined

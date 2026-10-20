@@ -356,6 +356,9 @@ export default function App() {
 
   // Handle successful login or account switch
   const handleAuthenticated = (user: AuthUser) => {
+    // Clear any module in-memory caches from prior user immediately
+    Storage.clearMemoryCaches();
+
     setCurrentUser(user);
     setIsAuthModalOpen(false);
     setCustomWorkspaceIdentifier(getUserWorkspaceKey(user));
@@ -363,6 +366,11 @@ export default function App() {
     
     // Register active device session in cloud & storage
     registerCurrentDevice(user.email);
+
+    // If user has no existing local storage records on this device, initialize a clean default workspace
+    if (!Storage.hasUserData(user)) {
+      Storage.resetToCleanUserWorkspace(user);
+    }
 
     // Immediately hydrate state from the user-scoped Storage
     handleHydrateAllFromStorage(false);
@@ -404,6 +412,7 @@ export default function App() {
   const handleSignOut = async () => {
     Sound.click(settings.soundEnabled);
     await Auth.signOut();
+    Storage.clearMemoryCaches();
     setCurrentUser(null);
     setCustomWorkspaceIdentifier('user_guest');
     setCustomWorkspaceEmail('guest@workspace.local');
@@ -1927,8 +1936,8 @@ export default function App() {
 
     // Save authoritative local backup of imported items
     try {
-      localStorage.setItem('lifeos_last_imported_sheet_expenses', JSON.stringify(created));
-      localStorage.setItem('lifeos_expenses_backup', JSON.stringify(updated));
+      localStorage.setItem(getScopedKey('lifeos_last_imported_sheet_expenses'), JSON.stringify(created));
+      localStorage.setItem(getScopedKey('lifeos_expenses_backup'), JSON.stringify(updated));
     } catch {}
 
     let updatedLogs = excelImportLogs;

@@ -45,19 +45,19 @@ export const ResumeView: React.FC<ResumeViewProps> = ({
   visibleSections,
   onEditSection,
 }) => {
-  // Extract values with default fallbacks strictly matching profile settings
-  const displayName = profile.name || 'Alex Morgan';
-  const displayTitle = profile.title || 'Data & AI Engineer  |  Researcher  |  Problem Solver';
-  const displayEmail = profile.contactEmail || 'alex.morgan@example.com';
-  const displayPhone = profile.phone || '+1 (555) 234-5678';
-  const displayLocation = profile.location || 'San Francisco, CA';
-  const displayLinkedin = profile.linkedin || 'linkedin.com/in/alexmorgan';
-  const displayGithub = profile.github || 'github.com/alexmorgan';
-  const displayWebsite = profile.website || 'alexmorgan.dev';
+  // Extract values with clean fallbacks strictly matching profile settings
+  const displayName = profile.name || '';
+  const displayTitle = profile.title || '';
+  const displayEmail = profile.contactEmail || '';
+  const displayPhone = profile.phone || '';
+  const displayLocation = profile.location || '';
+  const displayLinkedin = profile.linkedin || '';
+  const displayGithub = profile.github || '';
+  const displayWebsite = profile.website || '';
   const summaryText =
     profile.professionalSummary !== undefined
       ? profile.professionalSummary
-      : 'Data and AI enthusiast with a strong academic background and hands-on experience in building intelligent systems. Passionate about solving real-world problems through data, machine learning and scalable software solutions.';
+      : '';
 
   const experienceList: JobExperience[] =
     profile.jobExperiences !== undefined

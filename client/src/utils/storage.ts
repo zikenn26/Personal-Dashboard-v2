@@ -542,28 +542,70 @@ export const INITIAL_LANGUAGES: Array<{ id: string; name: string; proficiency: s
   { id: 'lang-3', name: 'Odia', proficiency: 'Native' },
 ];
 
-// Clean Base User Profile formatted according to verified resume
-export const INITIAL_PROFILE: UserProfile = {
-  name: 'Alex Morgan',
-  caption: 'Data & AI Engineer | Researcher | Problem Solver',
-  handle: '@alex',
-  title: 'Data & AI Engineer | Researcher | Problem Solver',
-  bio: 'I build data-driven systems, AI applications and intelligent solutions to solve real-world problems.',
-  location: 'San Francisco, CA',
-  statusText: 'Open to opportunities',
-  statusEmoji: '💼',
+// Blank User Profile for new isolated accounts
+export const BLANK_PROFILE: UserProfile = {
+  name: '',
+  caption: '',
+  handle: '',
+  title: '',
+  bio: '',
+  location: '',
+  statusText: 'Active',
+  statusEmoji: '✨',
   avatarUrl: '',
   avatarEnabled: true,
   bannerType: 'gradient',
   bannerBg: 'linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 50%, #FDF4FF 100%)',
   staticCoverImage: STOCK_IMAGES.workspaceCover,
   coverImageEnabled: true,
-  contactEmail: 'alex.morgan@example.com',
-  phone: '+1 (555) 234-5678',
-  github: 'github.com/alexmorgan',
-  linkedin: 'linkedin.com/in/alexmorgan',
+  contactEmail: '',
+  phone: '',
+  github: '',
+  linkedin: '',
   twitter: '',
-  website: 'alexmorgan.dev',
+  website: '',
+  resumeAvailable: false,
+  services: [],
+  tools: [],
+  educationRecords: [],
+  jobExperiences: [],
+  hobbies: [],
+  certifications: [],
+  languages: [],
+  publications: [],
+  achievementsList: [],
+  resumeSectionConfig: DEFAULT_RESUME_SECTION_CONFIG,
+  resumeThemeStyle: 'modern',
+  professionalSummary: '',
+  careerObjective: '',
+  availabilityStatus: 'Open to opportunities',
+  yearsOfExperience: '',
+  currentCompany: '',
+  currentDesignation: '',
+};
+
+// Verified Base User Profile for primary account (Gulshan Kumar Nayak)
+export const INITIAL_PROFILE: UserProfile = {
+  name: 'Gulshan Kumar Nayak',
+  caption: 'Data & AI Engineer | Researcher | Problem Solver',
+  handle: '@gknayak',
+  title: 'Data & AI Engineer | Researcher | Problem Solver',
+  bio: 'I build data-driven systems, AI applications and intelligent solutions to solve real-world problems.',
+  location: 'San Francisco, CA',
+  statusText: 'Open to opportunities',
+  statusEmoji: '💼',
+  avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
+  avatarEnabled: true,
+  bannerType: 'gradient',
+  bannerBg: 'linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 50%, #FDF4FF 100%)',
+  staticCoverImage: STOCK_IMAGES.workspaceCover,
+  coverImageEnabled: true,
+  contactEmail: 'gknayak@gmail.com',
+  phone: '+1 (555) 234-5678',
+  github: 'github.com/gknayak',
+  linkedin: 'linkedin.com/in/gknayak',
+  twitter: '',
+  website: 'gknayak.dev',
   resumeAvailable: true,
   services: ['Data & AI Systems', 'Machine Learning & LLMs', 'Full-Stack Engineering', 'Distributed Computing'],
   tools: ['Python', 'PyTorch', 'Java', 'Spring Boot', 'React', 'TypeScript', 'SQL', 'Git'],
@@ -1042,13 +1084,13 @@ export const DEFAULT_ATS_RESUME: ResumeDocument = {
   summary:
     'Passionate and goal-driven software engineer with a strong academic foundation and hands-on experience in backend development, full-stack applications, Data Science and Analytics, and AI-integrated systems. Skilled in a wide range of technologies including Java, Spring Boot, React, Python, Networking, Power BI, Generative AI, LLM, and APIs. Strong problem solving skills, leadership qualities, and commitment to continuous learning and development.',
   contact: {
-    name: 'ALEX MORGAN',
+    name: 'GULSHAN KUMAR NAYAK',
     phone: '+1 (555) 234-5678',
-    email: 'alex.morgan@example.com',
-    github: 'https://github.com',
-    linkedin: 'https://linkedin.com',
-    location: 'San Francisco, CA',
-    portfolio: 'https://github.com',
+    email: 'gknayak@gmail.com',
+    github: 'https://github.com/gknayak',
+    linkedin: 'https://linkedin.com/in/gknayak',
+    location: 'Raipur, India',
+    portfolio: 'https://gknayak.dev',
   },
   skills: [
     'Java', 'Spring Boot', 'Python', 'C', 'C++', 'SQL', 'JavaScript', 'HTML', 'React',
@@ -1207,21 +1249,25 @@ export function getScopedKey(baseKey: string): string {
 // Safe Generic Storage Helpers
 export function loadFromStorage<T>(baseKey: string, fallback: T): T {
   try {
+    const ws = getCustomWorkspaceIdentifier();
     const scopedKey = getScopedKey(baseKey);
     const raw = localStorage.getItem(scopedKey);
     if (raw !== null) {
       return JSON.parse(raw) as T;
     }
-    // Also check unscoped legacy key for one-time migration, then remove it immediately
-    const legacyRaw = localStorage.getItem(baseKey);
-    if (legacyRaw !== null) {
-      try {
-        const parsed = JSON.parse(legacyRaw) as T;
-        localStorage.setItem(scopedKey, legacyRaw);
-        localStorage.removeItem(baseKey);
-        return parsed;
-      } catch {
-        localStorage.removeItem(baseKey);
+    // Only migrate unscoped legacy key for primary legacy user (gknayak@gmail.com).
+    // NEVER migrate legacy unscoped keys into new or other user workspaces (prevents cross-account data leakage).
+    if (ws === 'user_gknayak_gmail_com' || ws === 'user_gulnayak1206_gmail_com') {
+      const legacyRaw = localStorage.getItem(baseKey);
+      if (legacyRaw !== null) {
+        try {
+          const parsed = JSON.parse(legacyRaw) as T;
+          localStorage.setItem(scopedKey, legacyRaw);
+          localStorage.removeItem(baseKey);
+          return parsed;
+        } catch {
+          localStorage.removeItem(baseKey);
+        }
       }
     }
     return fallback;
@@ -1236,8 +1282,6 @@ export function saveToStorage<T>(baseKey: string, value: T): void {
     const scopedKey = getScopedKey(baseKey);
     const serialized = JSON.stringify(value);
     localStorage.setItem(scopedKey, serialized);
-    // Keep legacy/unscoped key strictly in sync so direct reads never fetch stale data
-    localStorage.setItem(baseKey, serialized);
   } catch (err) {
     console.warn(`Error writing key ${baseKey} to localStorage:`, err);
   }
@@ -1370,72 +1414,122 @@ export const Storage = {
       }
     }
 
-    // Cross-platform & cross-session resilience:
-    // If the user manually added expenses or received SMS transactions in guest mode or on Android APK
-    // before user authentication initialized, automatically recover and merge those expenses into the active workspace.
-    try {
-      const activeId = getCustomWorkspaceIdentifier();
-      const isGuestMode = activeId === 'user_guest';
-      const guestRaw = !isGuestMode ? localStorage.getItem('user_guest_' + STORAGE_KEYS.EXPENSES) : null;
-      const backupRaw = localStorage.getItem('lifeos_expenses_backup');
-      const legacyRaw = localStorage.getItem(STORAGE_KEYS.EXPENSES);
-
-      let hasRecoveredItems = false;
-      if (guestRaw) {
-        try {
-          const guestItems = JSON.parse(guestRaw);
-          if (Array.isArray(guestItems) && guestItems.length > 0) {
-            const merged = Storage.mergeExpenseLists(list, guestItems);
-            if (merged.length > list.length) {
-              list = merged;
-              hasRecoveredItems = true;
-            }
-          }
-          // Safely delete guest raw key so it does not contaminate subsequent reads or switch sessions
-          localStorage.removeItem('user_guest_' + STORAGE_KEYS.EXPENSES);
-        } catch {}
-      }
-      if (list.length === 0 && backupRaw) {
-        try {
-          const backupItems = JSON.parse(backupRaw);
-          if (Array.isArray(backupItems) && backupItems.length > 0) {
-            const merged = Storage.mergeExpenseLists(list, backupItems);
-            if (merged.length > list.length) {
-              list = merged;
-              hasRecoveredItems = true;
-            }
-          }
-        } catch {}
-      }
-      if (list.length === 0 && legacyRaw) {
-        try {
-          const legacyItems = JSON.parse(legacyRaw);
-          if (Array.isArray(legacyItems) && legacyItems.length > 0) {
-            const merged = Storage.mergeExpenseLists(list, legacyItems);
-            if (merged.length > list.length) {
-              list = merged;
-              hasRecoveredItems = true;
-            }
-          }
-        } catch {}
-      }
-
-      if (hasRecoveredItems) {
-        saveToStorage(STORAGE_KEYS.EXPENSES, list);
-        try {
-          localStorage.setItem('lifeos_expenses_backup', JSON.stringify(list));
-        } catch {}
-      }
-    } catch {
-      // ignore
-    }
-
     return list;
   },
 
   clearMemoryExpensesCache: () => {
     memoryExpensesCache = null;
   },
+
+  clearMemoryCaches: () => {
+    memoryExpensesCache = null;
+    vaultCache = [];
+  },
+
+  hasUserData: (user: AuthUser | null): boolean => {
+    if (!user || !user.email) return false;
+    const cleanEmail = user.email.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const ws = `user_${cleanEmail}`;
+    return (
+      localStorage.getItem(`${ws}_${STORAGE_KEYS.PROFILE}`) !== null ||
+      localStorage.getItem(`${ws}_${STORAGE_KEYS.EXPENSES}`) !== null ||
+      localStorage.getItem(`${ws}_${STORAGE_KEYS.TODOS}`) !== null
+    );
+  },
+
+  resetToCleanUserWorkspace: (user: AuthUser | null) => {
+    Storage.clearMemoryCaches();
+    if (!user || !user.email) return;
+    const cleanEmail = user.email.toLowerCase().trim();
+    const cleanName =
+      user.name ||
+      cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    const isGkn = cleanEmail === 'gknayak@gmail.com';
+
+    const cleanProfile: UserProfile = {
+      name: isGkn ? 'Gulshan Kumar Nayak' : cleanName,
+      caption: isGkn ? 'Data & AI Engineer | Researcher | Problem Solver' : '',
+      handle: isGkn ? '@gknayak' : `@${cleanEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+      title: isGkn ? 'Data & AI Engineer | Researcher | Problem Solver' : '',
+      bio: isGkn ? 'I build data-driven systems, AI applications and intelligent solutions to solve real-world problems.' : '',
+      location: isGkn ? 'San Francisco, CA' : '',
+      statusText: 'Active',
+      statusEmoji: '✨',
+      avatarUrl: isGkn ? 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp' : (user.avatarUrl || ''),
+      avatarEnabled: true,
+      bannerType: 'gradient',
+      bannerBg: 'linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 50%, #FDF4FF 100%)',
+      staticCoverImage: STOCK_IMAGES.workspaceCover,
+      coverImageEnabled: true,
+      contactEmail: cleanEmail,
+      phone: '',
+      github: isGkn ? 'github.com/gknayak' : '',
+      linkedin: isGkn ? 'linkedin.com/in/gknayak' : '',
+      twitter: '',
+      website: isGkn ? 'gknayak.dev' : '',
+      educationRecords: isGkn ? INITIAL_EDUCATION_RECORDS : [],
+      jobExperiences: isGkn ? INITIAL_JOB_EXPERIENCES : [],
+      certifications: isGkn ? INITIAL_CERTIFICATIONS : [],
+      hobbies: isGkn ? INITIAL_HOBBIES : [],
+      languages: isGkn ? INITIAL_LANGUAGES : [],
+      services: [],
+      tools: [],
+      achievementsList: [],
+      publications: [],
+    };
+
+    Storage.setProfile(cleanProfile);
+    Storage.setTodos([]);
+    Storage.setHabits([]);
+    Storage.setHabitHistory([]);
+    Storage.setHabitActiveWeek('');
+    Storage.setHabitActivities([]);
+    Storage.setGoals([]);
+    Storage.setExpenses([]);
+    Storage.setJournal([]);
+    Storage.setMedia([]);
+    Storage.setAchievements([]);
+    Storage.setDoodles([]);
+    Storage.setTimeline(isGkn ? INITIAL_TIMELINE : []);
+    Storage.setProjects(isGkn ? INITIAL_PROJECTS : []);
+    Storage.setSkills(isGkn ? INITIAL_SKILLS : []);
+    Storage.setSettings(INITIAL_SETTINGS);
+    Storage.setSections([]);
+    Storage.setPhotos([]);
+    Storage.setResume(
+      isGkn
+        ? DEFAULT_ATS_RESUME
+        : {
+            fileName: 'Resume.pdf',
+            fileSize: '0 KB',
+            uploadedAt: '',
+            summary: '',
+            contact: {
+              name: cleanName,
+              phone: '',
+              email: cleanEmail,
+              github: '',
+              linkedin: '',
+              location: '',
+              portfolio: '',
+            },
+            skills: [],
+            skillsByCategory: [],
+            education: [],
+            experiences: [],
+            projects: [],
+            certifications: [],
+            additionalInfo: [],
+          }
+    );
+    Storage.setQuotes([]);
+    Storage.setExams(isGkn ? INITIAL_USER_EXAMS : []);
+    Storage.setSchedule({ activities: [] });
+    Storage.setTrash([]);
+    Storage.setDeletedExpenseIds([]);
+    Storage.setDeletedSheetIds([]);
+  },
+
   setExpenses: (items: ExpenseItem[]): ExpenseItem[] => {
     if (!Array.isArray(items)) {
       items = [];
@@ -1481,9 +1575,7 @@ export const Storage = {
 
     memoryExpensesCache = sanitized;
     saveToStorage(STORAGE_KEYS.EXPENSES, sanitized);
-    try {
-      localStorage.setItem('lifeos_expenses_backup', JSON.stringify(sanitized));
-    } catch {}
+    saveToStorage('lifeos_expenses_backup', sanitized);
     void spendingWidgetService.syncToNativeWidget(sanitized);
     return sanitized;
   },
@@ -1625,6 +1717,8 @@ export const Storage = {
     Storage.setExpenses([]);
     Storage.setExcelImportLogs([]);
     try {
+      localStorage.removeItem(getScopedKey('lifeos_last_imported_sheet_expenses'));
+      localStorage.removeItem(getScopedKey('lifeos_expenses_backup'));
       localStorage.removeItem('lifeos_last_imported_sheet_expenses');
       localStorage.removeItem('lifeos_expenses_backup');
     } catch {}
@@ -1818,9 +1912,15 @@ export const Storage = {
 
       const toAdd: ExpenseItem[] = [];
 
-      // 1. Check lifeos_last_imported_sheet_expenses backup
+      const ws = getCustomWorkspaceIdentifier();
+      const isGkn = ws === 'user_gknayak_gmail_com' || ws === 'user_gulnayak1206_gmail_com';
+
+      // 1. Check user-scoped lifeos_last_imported_sheet_expenses backup
       try {
-        const rawImported = localStorage.getItem('lifeos_last_imported_sheet_expenses');
+        let rawImported = localStorage.getItem(getScopedKey('lifeos_last_imported_sheet_expenses'));
+        if (!rawImported && isGkn) {
+          rawImported = localStorage.getItem('lifeos_last_imported_sheet_expenses');
+        }
         if (rawImported) {
           const parsed = JSON.parse(rawImported);
           if (Array.isArray(parsed)) {
@@ -1840,9 +1940,12 @@ export const Storage = {
         }
       } catch {}
 
-      // 2. Check lifeos_expenses_backup
+      // 2. Check user-scoped lifeos_expenses_backup
       try {
-        const rawBackup = localStorage.getItem('lifeos_expenses_backup');
+        let rawBackup = localStorage.getItem(getScopedKey('lifeos_expenses_backup'));
+        if (!rawBackup && isGkn) {
+          rawBackup = localStorage.getItem('lifeos_expenses_backup');
+        }
         if (rawBackup) {
           const parsed = JSON.parse(rawBackup);
           if (Array.isArray(parsed)) {
@@ -1877,78 +1980,113 @@ export const Storage = {
 
   setDoodles: (items: DoodleItem[]) => saveToStorage(STORAGE_KEYS.DOODLES, items),
 
-  getTimeline: (): LifeMilestone[] => loadFromStorage(STORAGE_KEYS.TIMELINE, INITIAL_TIMELINE),
+  getTimeline: (): LifeMilestone[] => {
+    const ws = getCustomWorkspaceIdentifier();
+    const isGkn = ws === 'user_gknayak_gmail_com' || ws === 'user_gulnayak1206_gmail_com';
+    return loadFromStorage(STORAGE_KEYS.TIMELINE, isGkn ? INITIAL_TIMELINE : []);
+  },
   setTimeline: (items: LifeMilestone[]) => saveToStorage(STORAGE_KEYS.TIMELINE, items),
 
   getProjects: (): PortfolioProject[] => {
-    const loaded = loadFromStorage(STORAGE_KEYS.PROJECTS, INITIAL_PROJECTS);
-    if (!loaded || !Array.isArray(loaded) || loaded.length === 0) {
-      return INITIAL_PROJECTS;
+    const ws = getCustomWorkspaceIdentifier();
+    const isGkn = ws === 'user_gknayak_gmail_com' || ws === 'user_gulnayak1206_gmail_com';
+    const loaded = loadFromStorage(STORAGE_KEYS.PROJECTS, isGkn ? INITIAL_PROJECTS : []);
+    if (!loaded || !Array.isArray(loaded)) {
+      return isGkn ? INITIAL_PROJECTS : [];
     }
     return loaded;
   },
   setProjects: (items: PortfolioProject[]) => saveToStorage(STORAGE_KEYS.PROJECTS, items),
 
   getSkills: (): SkillCategory[] => {
-    const loaded = loadFromStorage(STORAGE_KEYS.SKILLS, INITIAL_SKILLS);
-    if (!loaded || !Array.isArray(loaded) || loaded.length === 0) {
-      return INITIAL_SKILLS;
+    const ws = getCustomWorkspaceIdentifier();
+    const isGkn = ws === 'user_gknayak_gmail_com' || ws === 'user_gulnayak1206_gmail_com';
+    const loaded = loadFromStorage(STORAGE_KEYS.SKILLS, isGkn ? INITIAL_SKILLS : []);
+    if (!loaded || !Array.isArray(loaded)) {
+      return isGkn ? INITIAL_SKILLS : [];
     }
     return loaded;
   },
   setSkills: (items: SkillCategory[]) => saveToStorage(STORAGE_KEYS.SKILLS, items),
 
   getProfile: (): UserProfile => {
-    const data = loadFromStorage(STORAGE_KEYS.PROFILE, INITIAL_PROFILE);
+    const ws = getCustomWorkspaceIdentifier();
+    const isGkn = ws === 'user_gknayak_gmail_com' || ws === 'user_gulnayak1206_gmail_com';
+    const fallbackProfile: UserProfile = isGkn ? INITIAL_PROFILE : BLANK_PROFILE;
+    const data = loadFromStorage(STORAGE_KEYS.PROFILE, fallbackProfile);
     if (!data.name || !data.name.trim()) {
-      data.name = INITIAL_PROFILE.name;
-      data.caption = INITIAL_PROFILE.caption;
-      data.handle = INITIAL_PROFILE.handle;
-      data.title = INITIAL_PROFILE.title;
-      data.bio = INITIAL_PROFILE.bio;
-      data.location = INITIAL_PROFILE.location;
-      data.contactEmail = INITIAL_PROFILE.contactEmail;
-      data.phone = INITIAL_PROFILE.phone;
-      data.github = INITIAL_PROFILE.github;
-      data.linkedin = INITIAL_PROFILE.linkedin;
-      data.website = INITIAL_PROFILE.website;
-      data.professionalSummary = INITIAL_PROFILE.professionalSummary;
+      if (isGkn) {
+        data.name = INITIAL_PROFILE.name;
+        data.caption = INITIAL_PROFILE.caption;
+        data.handle = INITIAL_PROFILE.handle;
+        data.title = INITIAL_PROFILE.title;
+        data.bio = INITIAL_PROFILE.bio;
+        data.location = INITIAL_PROFILE.location;
+        data.contactEmail = INITIAL_PROFILE.contactEmail;
+        data.phone = INITIAL_PROFILE.phone;
+        data.github = INITIAL_PROFILE.github;
+        data.linkedin = INITIAL_PROFILE.linkedin;
+        data.website = INITIAL_PROFILE.website;
+        data.professionalSummary = INITIAL_PROFILE.professionalSummary;
+      } else {
+        const activeEmail = getCustomWorkspaceEmail();
+        if (activeEmail && activeEmail !== 'guest@workspace.local') {
+          const derivedName = activeEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+          data.name = derivedName;
+          data.contactEmail = activeEmail;
+          data.handle = `@${activeEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+        } else {
+          data.name = '';
+          data.contactEmail = '';
+          data.handle = '';
+        }
+      }
     }
     if (!data.avatarUrl || isDummyMockAvatar(data.avatarUrl)) {
       data.avatarUrl = '';
     }
-    if (!data.educationRecords || data.educationRecords.length === 0) {
-      data.educationRecords = INITIAL_EDUCATION_RECORDS;
+    if (isGkn) {
+      if (!data.educationRecords || data.educationRecords.length === 0) {
+        data.educationRecords = INITIAL_EDUCATION_RECORDS;
+      } else {
+        data.educationRecords = data.educationRecords.map((edu) => {
+          if (
+            (edu.id === 'edu-nit-raipur' ||
+              edu.degree?.toLowerCase().includes('m.tech') ||
+              edu.institution?.toLowerCase().includes('raipur')) &&
+            (edu.score === '8.18 CGPA' || edu.score === '8.18')
+          ) {
+            return { ...edu, score: '8.55 CGPA' };
+          }
+          return edu;
+        });
+      }
+      if (!data.jobExperiences || data.jobExperiences.length === 0) {
+        data.jobExperiences = INITIAL_JOB_EXPERIENCES;
+      }
+      if (!data.hobbies || data.hobbies.length === 0) {
+        data.hobbies = INITIAL_HOBBIES;
+      }
+      if (!data.certifications || data.certifications.length === 0) {
+        data.certifications = INITIAL_CERTIFICATIONS;
+      }
+      if (!data.languages || data.languages.length === 0) {
+        data.languages = INITIAL_LANGUAGES;
+      }
+      if (!data.services || data.services.length === 0) {
+        data.services = INITIAL_PROFILE.services;
+      }
+      if (!data.tools || data.tools.length === 0) {
+        data.tools = INITIAL_PROFILE.tools;
+      }
     } else {
-      data.educationRecords = data.educationRecords.map((edu) => {
-        if (
-          (edu.id === 'edu-nit-raipur' ||
-            edu.degree?.toLowerCase().includes('m.tech') ||
-            edu.institution?.toLowerCase().includes('raipur')) &&
-          (edu.score === '8.18 CGPA' || edu.score === '8.18')
-        ) {
-          return { ...edu, score: '8.55 CGPA' };
-        }
-        return edu;
-      });
-    }
-    if (!data.jobExperiences || data.jobExperiences.length === 0) {
-      data.jobExperiences = INITIAL_JOB_EXPERIENCES;
-    }
-    if (!data.hobbies || data.hobbies.length === 0) {
-      data.hobbies = INITIAL_HOBBIES;
-    }
-    if (!data.certifications || data.certifications.length === 0) {
-      data.certifications = INITIAL_CERTIFICATIONS;
-    }
-    if (!data.languages || data.languages.length === 0) {
-      data.languages = INITIAL_LANGUAGES;
-    }
-    if (!data.services || data.services.length === 0) {
-      data.services = INITIAL_PROFILE.services;
-    }
-    if (!data.tools || data.tools.length === 0) {
-      data.tools = INITIAL_PROFILE.tools;
+      if (!data.educationRecords) data.educationRecords = [];
+      if (!data.jobExperiences) data.jobExperiences = [];
+      if (!data.hobbies) data.hobbies = [];
+      if (!data.certifications) data.certifications = [];
+      if (!data.languages) data.languages = [];
+      if (!data.services) data.services = [];
+      if (!data.tools) data.tools = [];
     }
     return data;
   },
@@ -2057,28 +2195,34 @@ export const Storage = {
     saveToStorage(STORAGE_KEYS.PHOTOS, photos),
 
   getResume: (): ResumeDocument => {
-    const loaded = loadFromStorage<ResumeDocument>(STORAGE_KEYS.RESUME, INITIAL_RESUME);
-    if (!loaded || !loaded.summary || !loaded.summary.trim() || !loaded.skills || loaded.skills.length === 0) {
-      saveToStorage(STORAGE_KEYS.RESUME, DEFAULT_ATS_RESUME);
-      return DEFAULT_ATS_RESUME;
-    }
-    // ensure all sections are populated
-    if (!loaded.contact) loaded.contact = DEFAULT_ATS_RESUME.contact;
-    if (!loaded.projects || loaded.projects.length === 0) loaded.projects = DEFAULT_ATS_RESUME.projects;
-    if (!loaded.certifications || loaded.certifications.length === 0) loaded.certifications = DEFAULT_ATS_RESUME.certifications;
-    if (!loaded.additionalInfo || loaded.additionalInfo.length === 0) loaded.additionalInfo = DEFAULT_ATS_RESUME.additionalInfo;
-    if (!loaded.skillsByCategory || loaded.skillsByCategory.length === 0) loaded.skillsByCategory = DEFAULT_ATS_RESUME.skillsByCategory;
-    if (loaded.education && Array.isArray(loaded.education)) {
-      loaded.education = loaded.education.map((edu) => {
-        if (
-          (edu.school?.toLowerCase().includes('raipur') ||
-            edu.degree?.toLowerCase().includes('m.tech')) &&
-          (edu.score === '8.18 CGPA' || edu.score === '8.18')
-        ) {
-          return { ...edu, score: '8.55 CGPA' };
-        }
-        return edu;
-      });
+    const ws = getCustomWorkspaceIdentifier();
+    const isGkn = ws === 'user_gknayak_gmail_com' || ws === 'user_gulnayak1206_gmail_com';
+    const loaded = loadFromStorage<ResumeDocument | null>(STORAGE_KEYS.RESUME, null);
+    if (!loaded) {
+      return isGkn
+        ? DEFAULT_ATS_RESUME
+        : {
+            fileName: 'Resume.pdf',
+            fileSize: '0 KB',
+            uploadedAt: '',
+            summary: '',
+            contact: {
+              name: '',
+              phone: '',
+              email: '',
+              github: '',
+              linkedin: '',
+              location: '',
+              portfolio: '',
+            },
+            skills: [],
+            skillsByCategory: [],
+            education: [],
+            experiences: [],
+            projects: [],
+            certifications: [],
+            additionalInfo: [],
+          };
     }
     return loaded;
   },
@@ -2208,18 +2352,17 @@ export const Storage = {
   // Command Mapping Storage
   getCommandMappings: (): CommandMapping[] => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEYS.COMMAND_MAPPINGS);
-      if (!raw) {
-        localStorage.setItem(STORAGE_KEYS.COMMAND_MAPPINGS, JSON.stringify(DEFAULT_COMMAND_MAPPINGS));
+      const parsed = loadFromStorage<CommandMapping[] | null>(STORAGE_KEYS.COMMAND_MAPPINGS, null);
+      if (!parsed) {
+        saveToStorage(STORAGE_KEYS.COMMAND_MAPPINGS, DEFAULT_COMMAND_MAPPINGS);
         return DEFAULT_COMMAND_MAPPINGS;
       }
-      const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
         const existingIds = new Set(parsed.map((m: any) => m.id));
         const missing = DEFAULT_COMMAND_MAPPINGS.filter((d) => !existingIds.has(d.id));
         if (missing.length > 0) {
           const merged = [...parsed, ...missing];
-          localStorage.setItem(STORAGE_KEYS.COMMAND_MAPPINGS, JSON.stringify(merged));
+          saveToStorage(STORAGE_KEYS.COMMAND_MAPPINGS, merged);
           return merged;
         }
         return parsed;
@@ -2231,7 +2374,7 @@ export const Storage = {
   },
   setCommandMappings: (mappings: CommandMapping[]) => {
     try {
-      localStorage.setItem(STORAGE_KEYS.COMMAND_MAPPINGS, JSON.stringify(mappings));
+      saveToStorage(STORAGE_KEYS.COMMAND_MAPPINGS, mappings);
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('command-mappings-updated', { detail: { mappings } }));
         window.dispatchEvent(new CustomEvent('dashboard-data-updated', { detail: { module: 'command_mappings' } }));
@@ -2243,7 +2386,7 @@ export const Storage = {
 
   getScratchpad: (): string => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEYS.SCRATCHPAD);
+      const saved = loadFromStorage<string>(STORAGE_KEYS.SCRATCHPAD, '');
       if (!saved) return '';
       // Cleanse legacy default sample notes if present so user never loses their clean state
       if (
@@ -2256,7 +2399,7 @@ export const Storage = {
           .replace(/^- \n?$/g, '')
           .trim();
         const finalContent = (!cleaned || cleaned === '-') ? '' : cleaned;
-        localStorage.setItem(STORAGE_KEYS.SCRATCHPAD, finalContent);
+        saveToStorage(STORAGE_KEYS.SCRATCHPAD, finalContent);
         return finalContent;
       }
       return saved;
@@ -2266,7 +2409,7 @@ export const Storage = {
   },
   setScratchpad: (content: string) => {
     try {
-      localStorage.setItem(STORAGE_KEYS.SCRATCHPAD, content);
+      saveToStorage(STORAGE_KEYS.SCRATCHPAD, content);
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('scratchpad-updated', { detail: { content } }));
         window.dispatchEvent(new CustomEvent('dashboard-data-updated', { detail: { module: 'scratchpad' } }));
@@ -2519,6 +2662,20 @@ export const Storage = {
       const hasKnownKey = knownKeys.some((k) => k in data && data[k] !== undefined);
       if (!hasKnownKey) return false;
 
+      const activeEmail = getCustomWorkspaceEmail();
+      if (
+        data.profile?.contactEmail &&
+        activeEmail &&
+        activeEmail !== 'guest@workspace.local' &&
+        data.profile.contactEmail.toLowerCase().trim() !== activeEmail.toLowerCase().trim()
+      ) {
+        console.warn('[STORAGE_SECURITY] Ignored workspace payload for different user:', {
+          payloadEmail: data.profile.contactEmail,
+          activeEmail,
+        });
+        return false;
+      }
+
       const remoteMeta = data._meta || {};
       const remoteTimestamp = Number(remoteMeta.syncVersion || remoteMeta.clientTimestamp || 0);
 
@@ -2567,103 +2724,31 @@ export const Storage = {
         const currentProfile = Storage.getProfile();
         const incomingAvatar = data.profile.avatarUrl;
         const currentAvatar = currentProfile.avatarUrl;
-        const mergedProfile = {
-          ...currentProfile,
-          ...data.profile,
-        };
+        const isSameUser = Boolean(
+          currentProfile.contactEmail &&
+          data.profile.contactEmail &&
+          currentProfile.contactEmail.toLowerCase() === data.profile.contactEmail.toLowerCase()
+        );
+
+        const mergedProfile = isSameUser
+          ? { ...currentProfile, ...data.profile }
+          : { ...data.profile };
+
         if (incomingAvatar && !isDummyMockAvatar(incomingAvatar)) {
           mergedProfile.avatarUrl = incomingAvatar;
-        } else if (currentAvatar && !isDummyMockAvatar(currentAvatar)) {
+        } else if (isSameUser && currentAvatar && !isDummyMockAvatar(currentAvatar)) {
           mergedProfile.avatarUrl = currentAvatar;
         } else {
-          mergedProfile.avatarUrl = '';
+          mergedProfile.avatarUrl = incomingAvatar || '';
         }
         Storage.setProfile(mergedProfile);
       }
       if (data.todos) Storage.setTodos(data.todos);
       if (Array.isArray(data.habits)) {
-        const currentLocalHabits = Storage.getHabits();
-        const trash = Storage.getTrash().filter((t) => t.module === 'habits');
-        const trashedIds = new Set(trash.map((t) => t.data?.id || t.id).filter(Boolean));
-
-        if (data.habits.length === 0 && currentLocalHabits.length > 0) {
-          // Keep existing local habits when incoming cloud payload has an empty array
-        } else {
-          const habitMap = new Map<string, HabitItem>();
-          const localMap = new Map<string, HabitItem>();
-          currentLocalHabits.forEach((h) => {
-            if (h && h.id && !trashedIds.has(h.id)) {
-              localMap.set(h.id, h);
-            }
-          });
-
-          // 1. Cloud habits are authoritative; when timestamps are available, newer updates win
-          data.habits.forEach((cloudH: any) => {
-            if (cloudH && cloudH.id && !trashedIds.has(cloudH.id)) {
-              const localH = localMap.get(cloudH.id);
-              if (localH) {
-                const localUpdated = Number(localH.updatedAt || 0);
-                const cloudUpdated = Number(cloudH.updatedAt || 0);
-
-                if (localUpdated > 0 || cloudUpdated > 0 || remoteTimestamp > 0) {
-                  // Monotonic timestamp synchronization: newer habit state wins completely,
-                  // ensuring that de-clicking / untoggling days is preserved across devices
-                  if (localUpdated > cloudUpdated && localUpdated > remoteTimestamp) {
-                    habitMap.set(cloudH.id, localH);
-                  } else {
-                    habitMap.set(cloudH.id, cloudH);
-                  }
-                } else {
-                  // Legacy payload fallback when no timestamps are available
-                  const mergedCompletedDays = [0, 1, 2, 3, 4, 5, 6].map((i) => {
-                    return Boolean(localH.completedDays?.[i] || cloudH.completedDays?.[i]);
-                  });
-                  const mergedStreak = Math.max(localH.streak || 0, cloudH.streak || 0);
-                  habitMap.set(cloudH.id, {
-                    ...cloudH,
-                    ...localH,
-                    title: localH.title || cloudH.title,
-                    category: localH.category || cloudH.category,
-                    icon: localH.icon || cloudH.icon,
-                    color: localH.color || cloudH.color,
-                    completedDays: mergedCompletedDays,
-                    streak: mergedStreak,
-                  });
-                }
-              } else {
-                habitMap.set(cloudH.id, cloudH);
-              }
-            }
-          });
-
-          // 2. Preserve local habits when remote timestamp is absent or locally created after remote snapshot
-          localMap.forEach((localH, id) => {
-            if (!habitMap.has(id)) {
-              const localCreated = Number((localH as any).createdAt || 0);
-              if (remoteTimestamp === 0 || localCreated > remoteTimestamp) {
-                habitMap.set(id, localH);
-              }
-            }
-          });
-
-          Storage.setHabits(Array.from(habitMap.values()));
-        }
+        Storage.setHabits(data.habits);
       }
       if (Array.isArray(data.habitHistory)) {
-        const localHist = Storage.getHabitHistory();
-        if (data.habitHistory.length === 0 && localHist.length > 0) {
-          // Keep local history
-        } else {
-          const histMap = new Map<string, HabitWeekRecord>();
-          localHist.forEach((h) => { if (h && h.id) histMap.set(h.id, h); });
-          data.habitHistory.forEach((cloudH: any) => {
-            if (cloudH && cloudH.id) {
-              const localH = histMap.get(cloudH.id);
-              histMap.set(cloudH.id, localH ? { ...cloudH, ...localH } : cloudH);
-            }
-          });
-          Storage.setHabitHistory(Array.from(histMap.values()));
-        }
+        Storage.setHabitHistory(data.habitHistory);
       }
       if (typeof data.habitActiveWeek === 'string' && data.habitActiveWeek.trim()) {
         const localWeek = Storage.getHabitActiveWeek().replace(/^week-/, '').trim();
@@ -2763,11 +2848,14 @@ export const Storage = {
             return true;
           });
 
-          // Safely merge current local expenses with valid cloud expenses:
-          // Preserves newly logged local/SMS transactions and cloud transactions
-          // while strictly respecting deletions and preventing duplication.
-          const finalExpenses = Storage.mergeExpenseLists(currentLocal, validCloudExpenses);
-          Storage.setExpenses(finalExpenses);
+          if (validCloudExpenses.length === 0) {
+            // Cloud has 0 expenses for this user (e.g. newly initialized user)
+            // Strictly enforce clean empty expenses; NEVER inherit foreign expenses!
+            Storage.setExpenses([]);
+          } else {
+            const finalExpenses = Storage.mergeExpenseLists(currentLocal, validCloudExpenses);
+            Storage.setExpenses(finalExpenses);
+          }
         }
       }
       if (Array.isArray(data.excelImportLogs)) {
@@ -2788,20 +2876,20 @@ export const Storage = {
         Storage.setExcelImportLogs(Array.from(logMap.values()));
       }
 
-      if (data.journal) Storage.setJournal(data.journal);
-      if (data.media) Storage.setMedia(data.media);
-      if (data.achievements) Storage.setAchievements(data.achievements);
-      if (data.doodles) Storage.setDoodles(data.doodles);
-      if (data.timeline) Storage.setTimeline(data.timeline);
-      if (data.projects) Storage.setProjects(data.projects);
-      if (data.skills) Storage.setSkills(data.skills);
-      if (data.settings) Storage.setSettings(data.settings);
-      if (data.sections) Storage.setSections(data.sections);
-      if (data.photos) Storage.setPhotos(data.photos);
-      if (data.resume) Storage.setResume(data.resume);
-      if (data.quotes) Storage.setQuotes(data.quotes);
-      if (data.exams) Storage.setExams(data.exams);
-      if (data.schedule) Storage.setSchedule(data.schedule);
+      if (Array.isArray(data.journal)) Storage.setJournal(data.journal);
+      if (Array.isArray(data.media)) Storage.setMedia(data.media);
+      if (Array.isArray(data.achievements)) Storage.setAchievements(data.achievements);
+      if (Array.isArray(data.doodles)) Storage.setDoodles(data.doodles);
+      if (Array.isArray(data.timeline)) Storage.setTimeline(data.timeline);
+      if (Array.isArray(data.projects)) Storage.setProjects(data.projects);
+      if (Array.isArray(data.skills)) Storage.setSkills(data.skills);
+      if (data.settings && typeof data.settings === 'object') Storage.setSettings(data.settings);
+      if (Array.isArray(data.sections)) Storage.setSections(data.sections);
+      if (Array.isArray(data.photos)) Storage.setPhotos(data.photos);
+      if (data.resume && typeof data.resume === 'object') Storage.setResume(data.resume);
+      if (Array.isArray(data.quotes)) Storage.setQuotes(data.quotes);
+      if (Array.isArray(data.exams)) Storage.setExams(data.exams);
+      if (data.schedule && typeof data.schedule === 'object') Storage.setSchedule(data.schedule);
       if ('activeAlarm' in data) {
         Storage.setActiveAlarm(data.activeAlarm ?? null);
       }

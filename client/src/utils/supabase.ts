@@ -192,7 +192,7 @@ export interface CloudSyncResult {
 }
 
 const getInitialActiveUser = (): { id: string; email: string } => {
-  if (typeof window === 'undefined') return { id: 'user_gknayak_gmail_com', email: 'gknayak@gmail.com' };
+  if (typeof window === 'undefined') return { id: 'user_guest', email: 'guest@workspace.local' };
   try {
     const isSignedOut = localStorage.getItem('notion_os_auth_signed_out') === 'true';
     if (isSignedOut) {
@@ -210,7 +210,7 @@ const getInitialActiveUser = (): { id: string; email: string } => {
       }
     }
   } catch {}
-  return { id: 'user_gknayak_gmail_com', email: 'gknayak@gmail.com' };
+  return { id: 'user_guest', email: 'guest@workspace.local' };
 };
 
 const initialUser = getInitialActiveUser();
@@ -234,7 +234,7 @@ export const getCustomWorkspaceIdentifier = (): string => {
 };
 
 export const getCustomWorkspaceEmail = (): string => {
-  return activeUserEmail || 'user@workspace.app';
+  return activeUserEmail || 'guest@workspace.local';
 };
 
 export const WORKSPACE_USER_IDENTIFIER = 'user_guest';
@@ -268,6 +268,7 @@ let lastPushedTimestamp = 0;
 let autoSyncTimeout: any = null;
 let broadcastSyncTimeout: any = null;
 let reconnectRealtimeTimeout: any = null;
+let realtimeReconnectAttempts = 0;
 let activeRealtimeChannel: any = null;
 let currentSyncStatus: 'synced' | 'syncing' | 'error' | 'idle' = 'idle';
 
@@ -330,6 +331,10 @@ export const getAutoSyncStatus = () => currentSyncStatus;
  */
 export const broadcastWorkspaceUpdate = (enrichedPayload: any) => {
   if (!activeRealtimeChannel) return;
+  // Guard against sending before channel is joined to prevent REST fallback and HTTP 422
+  if (activeRealtimeChannel.state && activeRealtimeChannel.state !== 'joined') return;
+  const activeId = getCustomWorkspaceIdentifier();
+  if (activeId === 'user_guest' || activeId.startsWith('user_guest') || !activeUserEmail || activeUserEmail === 'guest@workspace.local') return;
   try {
     const serialized = JSON.stringify(enrichedPayload);
     // Supabase tenant broadcast payload limit is 250KB. Keep payload under 200KB for safety
@@ -428,8 +433,7 @@ export const testSupabaseConnection = async (): Promise<{
   try {
     const { data, error } = await client
       .from('user_workspaces')
-      .select('updated_at')
-      .eq('user_identifier', WORKSPACE_USER_IDENTIFIER)
+      .select('id')
       .limit(1);
 
     if (error) {
@@ -524,6 +528,14 @@ export const syncWorkspaceToSupabase = async (
     broadcastWorkspaceUpdate(enrichedPayload);
 
     const activeId = getCustomWorkspaceIdentifier();
+    if (activeId === 'user_guest' || activeId.startsWith('user_guest') || !activeUserEmail || activeUserEmail === 'guest@workspace.local') {
+      notifyStatus('idle');
+      return {
+        success: false,
+        message: 'Guest workspace is local-only. Sign in to sync with Supabase Cloud.',
+      };
+    }
+
     const resolvedEmail =
       activeUserEmail ||
       workspacePayload?.profile?.contactEmail ||
@@ -567,9 +579,15 @@ export const syncWorkspaceToSupabase = async (
     }
 
     if (!existing) {
-      const { error: insertError } = await client
+      let { error: insertError } = await client
         .from('user_workspaces')
         .insert(payloadToSave);
+
+      if (insertError && (insertError.code === '42703' || insertError.message?.includes('user_id'))) {
+        delete payloadToSave.user_id;
+        const retry = await client.from('user_workspaces').insert(payloadToSave);
+        insertError = retry.error;
+      }
 
       if (insertError) {
         // Another device may have created the row between our read and insert.
@@ -768,11 +786,22 @@ export const syncWorkspaceToSupabase = async (
         }
       }
 
-      const { data: updatedRows, error: updateError } = await client
+      let { data: updatedRows, error: updateError } = await client
         .from('user_workspaces')
         .update(payloadToSave)
         .eq('user_identifier', activeId)
         .select('updated_at');
+
+      if (updateError && (updateError.code === '42703' || updateError.message?.includes('user_id'))) {
+        delete payloadToSave.user_id;
+        const retryUpdate = await client
+          .from('user_workspaces')
+          .update(payloadToSave)
+          .eq('user_identifier', activeId)
+          .select('updated_at');
+        updatedRows = retryUpdate.data;
+        updateError = retryUpdate.error;
+      }
 
       if (updateError) {
         console.warn(
@@ -821,6 +850,10 @@ export const scheduleAutoSyncToSupabase = (
   delayMs = 600
 ) => {
   if (!isSupabaseConfigured()) return;
+  const activeId = getCustomWorkspaceIdentifier();
+  if (activeId === 'user_guest' || activeId.startsWith('user_guest') || !activeUserEmail || activeUserEmail === 'guest@workspace.local') {
+    return;
+  }
 
   // 1. Instant WebSocket broadcast to peer devices (zero perceptible lag)
   if (broadcastSyncTimeout) {
@@ -893,6 +926,9 @@ export const subscribeToRealtimeWorkspace = (
 
   try {
     const activeId = getCustomWorkspaceIdentifier();
+    if (activeId === 'user_guest' || activeId.startsWith('user_guest') || !activeUserEmail || activeUserEmail === 'guest@workspace.local') {
+      return () => {};
+    }
     const channelName = `realtime_workspace_${activeId}`;
 
     // Clean up any stale channel before subscribing to the new user workspace channel
@@ -1075,19 +1111,24 @@ export const subscribeToRealtimeWorkspace = (
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           notifyStatus('synced');
+          realtimeReconnectAttempts = 0;
         } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           console.warn('Realtime channel disconnected or timed out:', status);
           notifyStatus('idle');
           if (reconnectRealtimeTimeout) clearTimeout(reconnectRealtimeTimeout);
-          reconnectRealtimeTimeout = setTimeout(() => {
-            if (activeRealtimeChannel) {
-              try {
-                client.removeChannel(activeRealtimeChannel);
-              } catch {}
-              activeRealtimeChannel = null;
-            }
-            subscribeToRealtimeWorkspace(onRemoteChange, onDeviceRevoked);
-          }, 2500);
+          if (realtimeReconnectAttempts < 5) {
+            const delay = Math.min(30000, 3000 * Math.pow(1.5, realtimeReconnectAttempts));
+            realtimeReconnectAttempts++;
+            reconnectRealtimeTimeout = setTimeout(() => {
+              if (activeRealtimeChannel) {
+                try {
+                  client.removeChannel(activeRealtimeChannel);
+                } catch {}
+                activeRealtimeChannel = null;
+              }
+              subscribeToRealtimeWorkspace(onRemoteChange, onDeviceRevoked);
+            }, delay);
+          }
         }
       });
 
@@ -1123,6 +1164,13 @@ export const fetchWorkspaceFromSupabase = async (): Promise<CloudSyncResult> => 
 
   try {
     const activeId = getCustomWorkspaceIdentifier();
+    if (activeId === 'user_guest' || activeId.startsWith('user_guest') || !activeUserEmail || activeUserEmail === 'guest@workspace.local') {
+      return {
+        success: false,
+        message: 'Guest workspace is local-only.',
+      };
+    }
+
     const { data, error } = await client
       .from('user_workspaces')
       .select('workspace_data, updated_at')
@@ -1185,6 +1233,9 @@ export const checkHasNewerCloudWorkspace = async (): Promise<boolean> => {
 
   try {
     const activeId = getCustomWorkspaceIdentifier();
+    if (activeId === 'user_guest' || activeId.startsWith('user_guest') || !activeUserEmail || activeUserEmail === 'guest@workspace.local') {
+      return false;
+    }
     const { data, error } = await client
       .from('user_workspaces')
       .select('updated_at, workspace_data')

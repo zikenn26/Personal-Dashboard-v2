@@ -7,7 +7,7 @@ import {
   getCustomWorkspaceIdentifier,
 } from './supabase';
 import { hashPassword, verifyPasswordHash } from './crypto';
-import { Storage } from './storage';
+import { Storage, BLANK_PROFILE } from './storage';
 import { smsExpenseService } from '../services/smsExpenseService';
 
 const AUTH_STORAGE_KEY = 'notion_os_auth_user_v1';
@@ -189,32 +189,51 @@ export const ensureUserWorkspaceInitialized = async (client: any, user: AuthUser
       console.info('[AUTH_DIAGNOSTIC] Initializing new isolated user workspace:', workspaceKey);
       const nowMs = Date.now();
       const nowIso = new Date().toISOString();
-      await client.from('user_workspaces').upsert(
-        {
-          user_identifier: workspaceKey,
-          user_email: cleanEmail,
-          workspace_data: {
-            profile: {
-              name: user.name || cleanEmail.split('@')[0],
-              contactEmail: cleanEmail,
-              avatarUrl: user.avatarUrl || '',
-            },
-            todos: [],
-            habits: [],
-            habitHistory: [],
-            habitActivities: [],
-            goals: [],
-            expenses: [],
-            journal: [],
-            _meta: {
-              clientTimestamp: nowMs,
-              syncVersion: nowMs,
-            },
+      const derivedName = user.name || cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+      const blankPayload: Record<string, any> = {
+        user_identifier: workspaceKey,
+        user_email: cleanEmail,
+        workspace_data: {
+          profile: {
+            ...BLANK_PROFILE,
+            name: derivedName,
+            contactEmail: cleanEmail,
+            handle: `@${cleanId}`,
+            avatarUrl: user.avatarUrl || '',
           },
-          updated_at: nowIso,
+          todos: [],
+          habits: [],
+          habitHistory: [],
+          habitActivities: [],
+          goals: [],
+          expenses: [],
+          journal: [],
+          media: [],
+          achievements: [],
+          doodles: [],
+          timeline: [],
+          projects: [],
+          skills: [],
+          photos: [],
+          resume: null,
+          quotes: [],
+          exams: [],
+          schedule: { activities: [] },
+          _meta: {
+            clientTimestamp: nowMs,
+            syncVersion: nowMs,
+          },
         },
+        updated_at: nowIso,
+      };
+
+      const { error: upsertErr } = await client.from('user_workspaces').upsert(
+        blankPayload,
         { onConflict: 'user_identifier' }
       );
+      if (upsertErr) {
+        console.warn('[AUTH_DIAGNOSTIC] Notice on workspace upsert:', upsertErr);
+      }
     }
   } catch (wsErr) {
     console.warn('[AUTH_DIAGNOSTIC] Notice initializing workspace partition:', wsErr);
