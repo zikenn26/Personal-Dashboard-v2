@@ -406,14 +406,12 @@ export const Auth = {
       }
 
       if (isGknValid) {
-        // Also call Supabase Auth in background to record last_sign_in_at if online
+        // Record last_sign_in_at in Supabase Auth in background without blocking immediate sign-in
         if (client && isSupabaseConfigured()) {
-          try {
-            await client.auth.signInWithPassword({
-              email: 'gknayak@gmail.com',
-              password: cleanPass,
-            });
-          } catch {}
+          void client.auth.signInWithPassword({
+            email: 'gknayak@gmail.com',
+            password: cleanPass,
+          }).catch(() => {});
         }
 
         const gknUser: AuthUser = {
@@ -488,12 +486,10 @@ export const Auth = {
             provider: 'supabase',
           };
 
-          // Ensure workspace partition exists in user_workspaces
-          try {
-            await ensureUserWorkspaceInitialized(client, loggedInUser);
-          } catch (wsErr) {
+          // Ensure workspace partition exists in user_workspaces in background
+          void ensureUserWorkspaceInitialized(client, loggedInUser).catch((wsErr) => {
             console.warn('[AUTH_DIAGNOSTIC] Workspace initialization notice:', wsErr);
-          }
+          });
 
           // Cache credentials locally so subsequent offline/instant logins succeed
           await saveLocalCredential(loggedInUser.email, cleanPass, loggedInUser);
@@ -593,6 +589,8 @@ export const Auth = {
         errorMsg = 'Please confirm your email address before signing in.';
       } else if (lower.includes('too many') || supabaseAuthError.status === 429) {
         errorMsg = 'Too many login attempts. Please wait a moment and try again.';
+      } else if (lower.includes('invalid login credentials') || lower.includes('invalid credentials')) {
+        errorMsg = 'Invalid email or password.';
       } else if (supabaseAuthError.message) {
         errorMsg = supabaseAuthError.message;
       }
@@ -784,28 +782,26 @@ export const Auth = {
           { onConflict: 'user_identifier' }
         );
 
-        // D. Create GoTrue auth user if valid email address
+        // D. Create GoTrue auth user if valid email address in background
         if (cleanEmail.includes('@') && !cleanEmail.endsWith('@workspace.local')) {
-          try {
-            const { data: sbSignUp, error: sbSignUpErr } = await client.auth.signUp({
-              email: cleanEmail,
-              password: cleanPass,
-              options: {
-                data: {
-                  full_name: displayName,
-                  name: displayName,
-                },
+          void client.auth.signUp({
+            email: cleanEmail,
+            password: cleanPass,
+            options: {
+              data: {
+                full_name: displayName,
+                name: displayName,
               },
-            });
+            },
+          }).then(({ data: sbSignUp, error: sbSignUpErr }) => {
             if (sbSignUpErr) {
               console.warn('[AUTH_DIAGNOSTIC] Supabase GoTrue signUp notice:', sbSignUpErr.message);
             } else if (sbSignUp?.user) {
-              user.id = sbSignUp.user.id;
               console.info('[AUTH_DIAGNOSTIC] Supabase GoTrue user created:', sbSignUp.user.id);
             }
-          } catch (sbErr) {
+          }).catch((sbErr) => {
             console.warn('[AUTH_DIAGNOSTIC] Supabase GoTrue signUp exception:', sbErr);
-          }
+          });
         }
       } catch (err: any) {
         console.warn('Supabase sign up creation notice:', err?.message || err);

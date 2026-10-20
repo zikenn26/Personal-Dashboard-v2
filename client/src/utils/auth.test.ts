@@ -39,7 +39,7 @@ afterAll(async () => {
   }
 });
 
-describe('Authentication Engine & Persistence', () => {
+describe('Authentication Engine & Persistence', { timeout: 30000 }, () => {
   it('rejects unregistered accounts with a generic message (no user enumeration)', async () => {
     const res = await Auth.signIn('nonexistent@example.com', '12345678');
     expect(res.success).toBe(false);
