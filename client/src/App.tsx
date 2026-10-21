@@ -2232,15 +2232,15 @@ export default function App() {
     Storage.setExpenses(updated);
 
     try {
-      const rawImported = localStorage.getItem('lifeos_last_imported_sheet_expenses');
+      const rawImported = localStorage.getItem(getScopedKey('lifeos_last_imported_sheet_expenses'));
       if (rawImported) {
         const parsed = JSON.parse(rawImported);
         if (Array.isArray(parsed)) {
           const filtered = parsed.filter((e) => !idSet.has(String(e.id).trim()));
-          localStorage.setItem('lifeos_last_imported_sheet_expenses', JSON.stringify(filtered));
+          localStorage.setItem(getScopedKey('lifeos_last_imported_sheet_expenses'), JSON.stringify(filtered));
         }
       }
-      localStorage.setItem('lifeos_expenses_backup', JSON.stringify(updated));
+      localStorage.setItem(getScopedKey('lifeos_expenses_backup'), JSON.stringify(updated));
     } catch {}
 
     window.dispatchEvent(
@@ -2267,8 +2267,8 @@ export default function App() {
     setExcelImportLogs([]);
     Storage.setExcelImportLogs([]);
     try {
-      localStorage.removeItem(STORAGE_KEYS.EXPENSES);
-      localStorage.removeItem(STORAGE_KEYS.EXCEL_IMPORT_LOGS);
+      localStorage.removeItem(getScopedKey('lifeos_last_imported_sheet_expenses'));
+      localStorage.removeItem(getScopedKey('lifeos_expenses_backup'));
       localStorage.removeItem('lifeos_last_imported_sheet_expenses');
       localStorage.removeItem('lifeos_expenses_backup');
       localStorage.setItem(getScopedKey(STORAGE_KEYS.EXPENSES), '[]');

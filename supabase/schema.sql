@@ -13,6 +13,9 @@ CREATE TABLE IF NOT EXISTS public.user_workspaces (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- Ensure user_id column exists if table was previously created without it
+ALTER TABLE public.user_workspaces ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+
 -- Index for high-performance lookups
 CREATE INDEX IF NOT EXISTS idx_user_workspaces_user_id ON public.user_workspaces(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_workspaces_identifier ON public.user_workspaces(user_identifier);
@@ -35,7 +38,7 @@ FOR SELECT
 TO authenticated
 USING (
     auth.uid() = user_id
-    OR (user_id IS NULL AND user_email = auth.jwt()->>'email')
+    OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 );
 
 CREATE POLICY "Users can insert own workspace"
@@ -44,7 +47,7 @@ FOR INSERT
 TO authenticated
 WITH CHECK (
     auth.uid() = user_id
-    OR (user_id IS NULL AND user_email = auth.jwt()->>'email')
+    OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 );
 
 CREATE POLICY "Users can update own workspace"
@@ -53,11 +56,11 @@ FOR UPDATE
 TO authenticated
 USING (
     auth.uid() = user_id
-    OR (user_id IS NULL AND user_email = auth.jwt()->>'email')
+    OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 )
 WITH CHECK (
     auth.uid() = user_id
-    OR (user_id IS NULL AND user_email = auth.jwt()->>'email')
+    OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 );
 
 CREATE POLICY "Users can delete own workspace"
@@ -66,7 +69,7 @@ FOR DELETE
 TO authenticated
 USING (
     auth.uid() = user_id
-    OR (user_id IS NULL AND user_email = auth.jwt()->>'email')
+    OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 );
 
 -- 5. Realtime publication for multi-device sync

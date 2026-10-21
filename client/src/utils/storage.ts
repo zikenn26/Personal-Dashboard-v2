@@ -1,4 +1,5 @@
 import {
+  AuthUser,
   TodoItem,
   HabitItem,
   HabitWeekRecord,
@@ -1233,7 +1234,7 @@ export const INITIAL_SETTINGS: AppSettings = {
   groqModel: 'llama-3.3-70b-versatile',
 };
 
-import { getCustomWorkspaceIdentifier } from './supabase';
+import { getCustomWorkspaceIdentifier, getCustomWorkspaceEmail } from './supabase';
 
 // Helper to determine if current workspace is the mock demo account
 export const isDemoWorkspace = (): boolean => {
@@ -1447,6 +1448,7 @@ export const Storage = {
     const isGkn = cleanEmail === 'gknayak@gmail.com';
 
     const cleanProfile: UserProfile = {
+      ...BLANK_PROFILE,
       name: isGkn ? 'Gulshan Kumar Nayak' : cleanName,
       caption: isGkn ? 'Data & AI Engineer | Researcher | Problem Solver' : '',
       handle: isGkn ? '@gknayak' : `@${cleanEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '')}`,
@@ -1467,15 +1469,16 @@ export const Storage = {
       linkedin: isGkn ? 'linkedin.com/in/gknayak' : '',
       twitter: '',
       website: isGkn ? 'gknayak.dev' : '',
+      resumeAvailable: isGkn,
       educationRecords: isGkn ? INITIAL_EDUCATION_RECORDS : [],
       jobExperiences: isGkn ? INITIAL_JOB_EXPERIENCES : [],
       certifications: isGkn ? INITIAL_CERTIFICATIONS : [],
       hobbies: isGkn ? INITIAL_HOBBIES : [],
       languages: isGkn ? INITIAL_LANGUAGES : [],
-      services: [],
-      tools: [],
-      achievementsList: [],
-      publications: [],
+      services: isGkn ? INITIAL_PROFILE.services : [],
+      tools: isGkn ? INITIAL_PROFILE.tools : [],
+      achievementsList: isGkn ? INITIAL_ACHIEVEMENTS_LIST : [],
+      publications: isGkn ? INITIAL_PUBLICATIONS : [],
     };
 
     Storage.setProfile(cleanProfile);
@@ -1524,7 +1527,7 @@ export const Storage = {
     );
     Storage.setQuotes([]);
     Storage.setExams(isGkn ? INITIAL_USER_EXAMS : []);
-    Storage.setSchedule({ activities: [] });
+    Storage.setSchedule(INITIAL_SCHEDULE);
     Storage.setTrash([]);
     Storage.setDeletedExpenseIds([]);
     Storage.setDeletedSheetIds([]);
