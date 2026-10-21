@@ -50,7 +50,7 @@ import { normalizeExpenseDateKey, getLocalDateKey, mergeExpenseLists as mergeExp
 import { scratchpadWidgetService } from '../services/scratchpadWidgetService';
 import { spendingWidgetService } from '../services/spendingWidgetService';
 import { getLocalDateString, resolveCleanAppName } from './screenTimeCalculator';
-import { isDummyMockAvatar, getUserWorkspaceKey, isGulshanUser } from './userUtils';
+import { isDummyMockAvatar, getUserWorkspaceKey } from './userUtils';
 import { Capacitor } from '@capacitor/core';
 
 export const STORAGE_KEYS = {
@@ -1261,18 +1261,23 @@ export function loadFromStorage<T>(baseKey: string, fallback: T): T {
     if (raw !== null) {
       return JSON.parse(raw) as T;
     }
-    // Only migrate unscoped legacy key for primary legacy user (gknayak@gmail.com).
-    // NEVER migrate legacy unscoped keys into new or other user workspaces (prevents cross-account data leakage).
-    if (ws === 'user_gknayak_gmail_com' || ws === 'user_gulnayak1206_gmail_com') {
+    // If an unscoped legacy key exists, only migrate it if its profile contactEmail matches the current workspace's email.
+    // This strictly prevents legacy data from leaking into new or different user accounts without hardcoding emails.
+    const activeEmail = getCustomWorkspaceEmail();
+    if (activeEmail && activeEmail !== 'guest@workspace.local') {
       const legacyRaw = localStorage.getItem(baseKey);
       if (legacyRaw !== null) {
         try {
-          const parsed = JSON.parse(legacyRaw) as T;
-          localStorage.setItem(scopedKey, legacyRaw);
-          localStorage.removeItem(baseKey);
-          return parsed;
+          const legacyProfileRaw = localStorage.getItem(STORAGE_KEYS.PROFILE);
+          const legacyEmail = legacyProfileRaw ? JSON.parse(legacyProfileRaw)?.contactEmail : null;
+          if (legacyEmail && legacyEmail.toLowerCase().trim() === activeEmail.toLowerCase().trim()) {
+            const parsed = JSON.parse(legacyRaw) as T;
+            localStorage.setItem(scopedKey, legacyRaw);
+            localStorage.removeItem(baseKey);
+            return parsed;
+          }
         } catch {
-          localStorage.removeItem(baseKey);
+          // ignore
         }
       }
     }
@@ -1449,7 +1454,6 @@ export const Storage = {
     const cleanName =
       user.name ||
       cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-    const isGkn = isGulshanUser(cleanEmail);
 
     const wsKey = getUserWorkspaceKey(user);
     setCustomWorkspaceIdentifier(wsKey);
@@ -1457,17 +1461,15 @@ export const Storage = {
 
     const cleanProfile: UserProfile = {
       ...BLANK_PROFILE,
-      name: isGkn ? 'Gulshan Kumar Nayak' : cleanName,
-      caption: isGkn ? 'Data & AI Engineer | Researcher | Problem Solver' : '',
-      handle: isGkn ? '@gknayak' : `@${cleanEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '')}`,
-      title: isGkn ? 'Data & AI Engineer | Researcher | Problem Solver' : '',
-      bio: isGkn ? 'I build data-driven systems, AI applications and intelligent solutions to solve real-world problems.' : '',
-      location: isGkn ? 'San Francisco, CA' : '',
+      name: cleanName,
+      caption: '',
+      handle: `@${cleanEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+      title: '',
+      bio: '',
+      location: '',
       statusText: 'Active',
       statusEmoji: '✨',
-      avatarUrl: isGkn
-        ? 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp'
-        : (user.avatarUrl && !isDummyMockAvatar(user.avatarUrl) ? user.avatarUrl : ''),
+      avatarUrl: user.avatarUrl && !isDummyMockAvatar(user.avatarUrl) ? user.avatarUrl : '',
       avatarEnabled: true,
       bannerType: 'gradient',
       bannerBg: 'linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 50%, #FDF4FF 100%)',
@@ -1475,20 +1477,20 @@ export const Storage = {
       coverImageEnabled: true,
       contactEmail: cleanEmail,
       phone: '',
-      github: isGkn ? 'github.com/gknayak' : '',
-      linkedin: isGkn ? 'linkedin.com/in/gknayak' : '',
+      github: '',
+      linkedin: '',
       twitter: '',
-      website: isGkn ? 'gknayak.dev' : '',
-      resumeAvailable: isGkn,
-      educationRecords: isGkn ? INITIAL_EDUCATION_RECORDS : [],
-      jobExperiences: isGkn ? INITIAL_JOB_EXPERIENCES : [],
-      certifications: isGkn ? INITIAL_CERTIFICATIONS : [],
-      hobbies: isGkn ? INITIAL_HOBBIES : [],
-      languages: isGkn ? INITIAL_LANGUAGES : [],
-      services: isGkn ? INITIAL_PROFILE.services : [],
-      tools: isGkn ? INITIAL_PROFILE.tools : [],
-      achievementsList: isGkn ? INITIAL_ACHIEVEMENTS_LIST : [],
-      publications: isGkn ? INITIAL_PUBLICATIONS : [],
+      website: '',
+      resumeAvailable: false,
+      educationRecords: [],
+      jobExperiences: [],
+      certifications: [],
+      hobbies: [],
+      languages: [],
+      services: [],
+      tools: [],
+      achievementsList: [],
+      publications: [],
     };
 
     Storage.setProfile(cleanProfile);
@@ -1503,40 +1505,36 @@ export const Storage = {
     Storage.setMedia([]);
     Storage.setAchievements([]);
     Storage.setDoodles([]);
-    Storage.setTimeline(isGkn ? INITIAL_TIMELINE : []);
-    Storage.setProjects(isGkn ? INITIAL_PROJECTS : []);
-    Storage.setSkills(isGkn ? INITIAL_SKILLS : []);
+    Storage.setTimeline([]);
+    Storage.setProjects([]);
+    Storage.setSkills([]);
     Storage.setSettings(INITIAL_SETTINGS);
     Storage.setSections([]);
     Storage.setPhotos([]);
-    Storage.setResume(
-      isGkn
-        ? DEFAULT_ATS_RESUME
-        : {
-            fileName: 'Resume.pdf',
-            fileSize: '0 KB',
-            uploadedAt: '',
-            summary: '',
-            contact: {
-              name: cleanName,
-              phone: '',
-              email: cleanEmail,
-              github: '',
-              linkedin: '',
-              location: '',
-              portfolio: '',
-            },
-            skills: [],
-            skillsByCategory: [],
-            education: [],
-            experiences: [],
-            projects: [],
-            certifications: [],
-            additionalInfo: [],
-          }
-    );
+    Storage.setResume({
+      fileName: 'Resume.pdf',
+      fileSize: '0 KB',
+      uploadedAt: '',
+      summary: '',
+      contact: {
+        name: cleanName,
+        phone: '',
+        email: cleanEmail,
+        github: '',
+        linkedin: '',
+        location: '',
+        portfolio: '',
+      },
+      skills: [],
+      skillsByCategory: [],
+      education: [],
+      experiences: [],
+      projects: [],
+      certifications: [],
+      additionalInfo: [],
+    });
     Storage.setQuotes([]);
-    Storage.setExams(isGkn ? INITIAL_USER_EXAMS : []);
+    Storage.setExams([]);
     Storage.setSchedule(INITIAL_SCHEDULE);
     Storage.setTrash([]);
     Storage.setDeletedExpenseIds([]);
@@ -1925,15 +1923,9 @@ export const Storage = {
 
       const toAdd: ExpenseItem[] = [];
 
-      const ws = getCustomWorkspaceIdentifier();
-      const isGkn = ws === 'user_gknayak_gmail_com' || ws === 'user_gulnayak1206_gmail_com';
-
       // 1. Check user-scoped lifeos_last_imported_sheet_expenses backup
       try {
-        let rawImported = localStorage.getItem(getScopedKey('lifeos_last_imported_sheet_expenses'));
-        if (!rawImported && isGkn) {
-          rawImported = localStorage.getItem('lifeos_last_imported_sheet_expenses');
-        }
+        const rawImported = localStorage.getItem(getScopedKey('lifeos_last_imported_sheet_expenses'));
         if (rawImported) {
           const parsed = JSON.parse(rawImported);
           if (Array.isArray(parsed)) {
@@ -1955,10 +1947,7 @@ export const Storage = {
 
       // 2. Check user-scoped lifeos_expenses_backup
       try {
-        let rawBackup = localStorage.getItem(getScopedKey('lifeos_expenses_backup'));
-        if (!rawBackup && isGkn) {
-          rawBackup = localStorage.getItem('lifeos_expenses_backup');
-        }
+        const rawBackup = localStorage.getItem(getScopedKey('lifeos_expenses_backup'));
         if (rawBackup) {
           const parsed = JSON.parse(rawBackup);
           if (Array.isArray(parsed)) {
@@ -1994,118 +1983,55 @@ export const Storage = {
   setDoodles: (items: DoodleItem[]) => saveToStorage(STORAGE_KEYS.DOODLES, items),
 
   getTimeline: (): LifeMilestone[] => {
-    const ws = getCustomWorkspaceIdentifier();
-    const isGkn = ws === 'user_gknayak_gmail_com' || ws === 'user_gulnayak1206_gmail_com';
-    return loadFromStorage(STORAGE_KEYS.TIMELINE, isGkn ? INITIAL_TIMELINE : []);
+    return loadFromStorage(STORAGE_KEYS.TIMELINE, []);
   },
   setTimeline: (items: LifeMilestone[]) => saveToStorage(STORAGE_KEYS.TIMELINE, items),
 
   getProjects: (): PortfolioProject[] => {
-    const ws = getCustomWorkspaceIdentifier();
-    const isGkn = ws === 'user_gknayak_gmail_com' || ws === 'user_gulnayak1206_gmail_com';
-    const loaded = loadFromStorage(STORAGE_KEYS.PROJECTS, isGkn ? INITIAL_PROJECTS : []);
+    const loaded = loadFromStorage(STORAGE_KEYS.PROJECTS, []);
     if (!loaded || !Array.isArray(loaded)) {
-      return isGkn ? INITIAL_PROJECTS : [];
+      return [];
     }
     return loaded;
   },
   setProjects: (items: PortfolioProject[]) => saveToStorage(STORAGE_KEYS.PROJECTS, items),
 
   getSkills: (): SkillCategory[] => {
-    const ws = getCustomWorkspaceIdentifier();
-    const isGkn = ws === 'user_gknayak_gmail_com' || ws === 'user_gulnayak1206_gmail_com';
-    const loaded = loadFromStorage(STORAGE_KEYS.SKILLS, isGkn ? INITIAL_SKILLS : []);
+    const loaded = loadFromStorage(STORAGE_KEYS.SKILLS, []);
     if (!loaded || !Array.isArray(loaded)) {
-      return isGkn ? INITIAL_SKILLS : [];
+      return [];
     }
     return loaded;
   },
   setSkills: (items: SkillCategory[]) => saveToStorage(STORAGE_KEYS.SKILLS, items),
 
   getProfile: (): UserProfile => {
-    const ws = getCustomWorkspaceIdentifier();
-    const isGkn = isGulshanUser(ws);
-    const fallbackProfile: UserProfile = isGkn
-      ? JSON.parse(JSON.stringify(INITIAL_PROFILE))
-      : JSON.parse(JSON.stringify(BLANK_PROFILE));
+    const fallbackProfile: UserProfile = JSON.parse(JSON.stringify(BLANK_PROFILE));
     const rawData = loadFromStorage(STORAGE_KEYS.PROFILE, fallbackProfile);
     const data: UserProfile = { ...rawData };
     if (!data.name || !data.name.trim()) {
-      if (isGkn) {
-        data.name = INITIAL_PROFILE.name;
-        data.caption = INITIAL_PROFILE.caption;
-        data.handle = INITIAL_PROFILE.handle;
-        data.title = INITIAL_PROFILE.title;
-        data.bio = INITIAL_PROFILE.bio;
-        data.location = INITIAL_PROFILE.location;
-        data.contactEmail = INITIAL_PROFILE.contactEmail;
-        data.phone = INITIAL_PROFILE.phone;
-        data.github = INITIAL_PROFILE.github;
-        data.linkedin = INITIAL_PROFILE.linkedin;
-        data.website = INITIAL_PROFILE.website;
-        data.professionalSummary = INITIAL_PROFILE.professionalSummary;
+      const activeEmail = getCustomWorkspaceEmail();
+      if (activeEmail && activeEmail !== 'guest@workspace.local') {
+        const derivedName = activeEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+        data.name = derivedName;
+        data.contactEmail = activeEmail;
+        data.handle = `@${activeEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '')}`;
       } else {
-        const activeEmail = getCustomWorkspaceEmail();
-        if (activeEmail && activeEmail !== 'guest@workspace.local') {
-          const derivedName = activeEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-          data.name = derivedName;
-          data.contactEmail = activeEmail;
-          data.handle = `@${activeEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '')}`;
-        } else {
-          data.name = '';
-          data.contactEmail = '';
-          data.handle = '';
-        }
+        data.name = '';
+        data.contactEmail = '';
+        data.handle = '';
       }
     }
-    if (!isGkn && (data.avatarUrl?.includes('avatar_gknayak') || isDummyMockAvatar(data.avatarUrl))) {
-      data.avatarUrl = '';
-    } else if (!data.avatarUrl || isDummyMockAvatar(data.avatarUrl)) {
+    if (data.avatarUrl && isDummyMockAvatar(data.avatarUrl)) {
       data.avatarUrl = '';
     }
-    if (isGkn) {
-      if (!data.educationRecords || data.educationRecords.length === 0) {
-        data.educationRecords = INITIAL_EDUCATION_RECORDS;
-      } else {
-        data.educationRecords = data.educationRecords.map((edu) => {
-          if (
-            (edu.id === 'edu-nit-raipur' ||
-              edu.degree?.toLowerCase().includes('m.tech') ||
-              edu.institution?.toLowerCase().includes('raipur')) &&
-            (edu.score === '8.18 CGPA' || edu.score === '8.18')
-          ) {
-            return { ...edu, score: '8.55 CGPA' };
-          }
-          return edu;
-        });
-      }
-      if (!data.jobExperiences || data.jobExperiences.length === 0) {
-        data.jobExperiences = INITIAL_JOB_EXPERIENCES;
-      }
-      if (!data.hobbies || data.hobbies.length === 0) {
-        data.hobbies = INITIAL_HOBBIES;
-      }
-      if (!data.certifications || data.certifications.length === 0) {
-        data.certifications = INITIAL_CERTIFICATIONS;
-      }
-      if (!data.languages || data.languages.length === 0) {
-        data.languages = INITIAL_LANGUAGES;
-      }
-      if (!data.services || data.services.length === 0) {
-        data.services = INITIAL_PROFILE.services;
-      }
-      if (!data.tools || data.tools.length === 0) {
-        data.tools = INITIAL_PROFILE.tools;
-      }
-    } else {
-      if (!data.educationRecords) data.educationRecords = [];
-      if (!data.jobExperiences) data.jobExperiences = [];
-      if (!data.hobbies) data.hobbies = [];
-      if (!data.certifications) data.certifications = [];
-      if (!data.languages) data.languages = [];
-      if (!data.services) data.services = [];
-      if (!data.tools) data.tools = [];
-    }
+    if (!data.educationRecords) data.educationRecords = [];
+    if (!data.jobExperiences) data.jobExperiences = [];
+    if (!data.hobbies) data.hobbies = [];
+    if (!data.certifications) data.certifications = [];
+    if (!data.languages) data.languages = [];
+    if (!data.services) data.services = [];
+    if (!data.tools) data.tools = [];
     return data;
   },
   setProfile: (profile: UserProfile) => {
@@ -2208,39 +2134,38 @@ export const Storage = {
   setSections: (sections: DashboardSection[]) => saveToStorage(STORAGE_KEYS.SECTIONS, sections),
 
   getPhotos: (): Array<{ id: string; url: string; title: string; subtitle?: string; tag?: string }> =>
-    loadFromStorage(STORAGE_KEYS.PHOTOS, INITIAL_PHOTOS),
+    loadFromStorage(STORAGE_KEYS.PHOTOS, []),
   setPhotos: (photos: Array<{ id: string; url: string; title: string; subtitle?: string; tag?: string }>) =>
     saveToStorage(STORAGE_KEYS.PHOTOS, photos),
 
   getResume: (): ResumeDocument => {
-    const ws = getCustomWorkspaceIdentifier();
-    const isGkn = ws === 'user_gknayak_gmail_com' || ws === 'user_gulnayak1206_gmail_com';
     const loaded = loadFromStorage<ResumeDocument | null>(STORAGE_KEYS.RESUME, null);
     if (!loaded) {
-      return isGkn
-        ? DEFAULT_ATS_RESUME
-        : {
-            fileName: 'Resume.pdf',
-            fileSize: '0 KB',
-            uploadedAt: '',
-            summary: '',
-            contact: {
-              name: '',
-              phone: '',
-              email: '',
-              github: '',
-              linkedin: '',
-              location: '',
-              portfolio: '',
-            },
-            skills: [],
-            skillsByCategory: [],
-            education: [],
-            experiences: [],
-            projects: [],
-            certifications: [],
-            additionalInfo: [],
-          };
+      const activeEmail = getCustomWorkspaceEmail();
+      const cleanEmail = activeEmail && activeEmail !== 'guest@workspace.local' ? activeEmail : '';
+      const cleanName = cleanEmail ? cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : '';
+      return {
+        fileName: 'Resume.pdf',
+        fileSize: '0 KB',
+        uploadedAt: '',
+        summary: '',
+        contact: {
+          name: cleanName,
+          phone: '',
+          email: cleanEmail,
+          github: '',
+          linkedin: '',
+          location: '',
+          portfolio: '',
+        },
+        skills: [],
+        skillsByCategory: [],
+        education: [],
+        experiences: [],
+        projects: [],
+        certifications: [],
+        additionalInfo: [],
+      };
     }
     return loaded;
   },
@@ -2742,8 +2667,6 @@ export const Storage = {
         const currentProfile = Storage.getProfile();
         const incomingAvatar = data.profile.avatarUrl;
         const currentAvatar = currentProfile.avatarUrl;
-        const ws = getCustomWorkspaceIdentifier();
-        const isGkn = isGulshanUser(ws);
         const isSameUser = Boolean(
           currentProfile.contactEmail &&
           data.profile.contactEmail &&
@@ -2759,10 +2682,6 @@ export const Storage = {
         } else if (isSameUser && currentAvatar && !isDummyMockAvatar(currentAvatar)) {
           mergedProfile.avatarUrl = currentAvatar;
         } else {
-          mergedProfile.avatarUrl = incomingAvatar || '';
-        }
-
-        if (!isGkn && mergedProfile.avatarUrl?.includes('avatar_gknayak')) {
           mergedProfile.avatarUrl = '';
         }
 
@@ -3055,88 +2974,59 @@ export const Storage = {
   },
 
   resetToDefault: () => {
-    const ws = getCustomWorkspaceIdentifier();
-    const isGkn = isGulshanUser(ws);
     const activeEmail = getCustomWorkspaceEmail();
-    if (!isGkn && activeEmail && activeEmail !== 'guest@workspace.local') {
-      const cleanEmail = activeEmail.toLowerCase().trim();
-      const cleanName = cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-      Storage.setProfile({
-        ...BLANK_PROFILE,
-        name: cleanName,
-        contactEmail: cleanEmail,
-        handle: `@${cleanEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '')}`,
-        avatarUrl: '',
-      });
-      Storage.setTodos([]);
-      Storage.setHabits([]);
-      Storage.setHabitHistory([]);
-      Storage.setHabitActiveWeek('');
-      Storage.setHabitActivities([]);
-      Storage.setGoals([]);
-      localStorage.removeItem(getVaultStorageKey());
-      vaultCache = [];
-      Storage.setExpenses([]);
-      Storage.setJournal([]);
-      Storage.setMedia([]);
-      Storage.setAchievements([]);
-      Storage.setDoodles([]);
-      Storage.setTimeline([]);
-      Storage.setProjects([]);
-      Storage.setSkills([]);
-      Storage.setSettings(INITIAL_SETTINGS);
-      Storage.setSections([]);
-      Storage.setPhotos([]);
-      Storage.setResume({
-        fileName: 'Resume.pdf',
-        fileSize: '0 KB',
-        uploadedAt: '',
-        summary: '',
-        contact: {
-          name: cleanName,
-          phone: '',
-          email: cleanEmail,
-          github: '',
-          linkedin: '',
-          website: '',
-        },
-        experience: [],
-        education: [],
-        skills: [],
-        projects: [],
-        certifications: [],
-        achievements: [],
-        languages: [],
-      });
-      Storage.setQuotes([]);
-      Storage.setExams([]);
-      Storage.setSchedule({ activities: [] });
-      Storage.setCommandMappings(DEFAULT_COMMAND_MAPPINGS);
-      return;
-    }
-    Storage.setProfile(INITIAL_PROFILE);
-    Storage.setTodos(INITIAL_TODOS);
-    Storage.setHabits(INITIAL_HABITS);
+    const cleanEmail = activeEmail && activeEmail !== 'guest@workspace.local' ? activeEmail.toLowerCase().trim() : '';
+    const cleanName = cleanEmail ? cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : '';
+    Storage.setProfile({
+      ...BLANK_PROFILE,
+      name: cleanName,
+      contactEmail: cleanEmail,
+      handle: cleanEmail ? `@${cleanEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '')}` : '',
+      avatarUrl: '',
+    });
+    Storage.setTodos([]);
+    Storage.setHabits([]);
     Storage.setHabitHistory([]);
     Storage.setHabitActiveWeek('');
     Storage.setHabitActivities([]);
-    Storage.setGoals(INITIAL_GOALS);
+    Storage.setGoals([]);
     localStorage.removeItem(getVaultStorageKey());
     vaultCache = [];
-    Storage.setExpenses(INITIAL_EXPENSES);
-    Storage.setJournal(INITIAL_JOURNAL);
-    Storage.setMedia(INITIAL_MEDIA);
-    Storage.setAchievements(INITIAL_ACHIEVEMENTS);
+    Storage.setExpenses([]);
+    Storage.setJournal([]);
+    Storage.setMedia([]);
+    Storage.setAchievements([]);
     Storage.setDoodles([]);
-    Storage.setTimeline(INITIAL_TIMELINE);
-    Storage.setProjects(INITIAL_PROJECTS);
-    Storage.setSkills(INITIAL_SKILLS);
+    Storage.setTimeline([]);
+    Storage.setProjects([]);
+    Storage.setSkills([]);
     Storage.setSettings(INITIAL_SETTINGS);
-    Storage.setSections(INITIAL_SECTIONS);
-    Storage.setPhotos(INITIAL_PHOTOS);
-    Storage.setResume(INITIAL_RESUME);
-    Storage.setQuotes(INITIAL_QUOTES);
-    Storage.setExams(INITIAL_USER_EXAMS);
+    Storage.setSections([]);
+    Storage.setPhotos([]);
+    Storage.setResume({
+      fileName: 'Resume.pdf',
+      fileSize: '0 KB',
+      uploadedAt: '',
+      summary: '',
+      contact: {
+        name: cleanName,
+        phone: '',
+        email: cleanEmail,
+        github: '',
+        linkedin: '',
+        location: '',
+        portfolio: '',
+      },
+      skills: [],
+      skillsByCategory: [],
+      education: [],
+      experiences: [],
+      projects: [],
+      certifications: [],
+      additionalInfo: [],
+    });
+    Storage.setQuotes([]);
+    Storage.setExams([]);
     Storage.setSchedule(INITIAL_SCHEDULE);
     Storage.setCommandMappings(DEFAULT_COMMAND_MAPPINGS);
   },

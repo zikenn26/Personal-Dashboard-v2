@@ -70,8 +70,7 @@ import { AuthModal } from './components/AuthModal';
 import { AvatarPickerModal } from './components/AvatarPickerModal';
 import { BrandLogo } from './components/BrandLogo';
 import { UserAvatar } from './components/UserAvatar';
-import { isDummyMockAvatar, isGulshanUser } from './utils/userUtils';
-import { EXPENSE_CATEGORIES } from './components/ExpenseTracker';
+import { isDummyMockAvatar } from './utils/userUtils';
 import { STOCK_IMAGES } from './assets/stockImages';
 import LandingPage from './components/LandingPage';
 import { usePlatformMode } from './presentation/mobile/shell/usePlatformMode';
@@ -382,7 +381,6 @@ export default function App() {
     const current = Storage.getProfile();
     let updatedProfile = { ...current };
     let hasProfileChanges = false;
-    const isGkn = isGulshanUser(user.email);
 
     if (user.name && user.name !== current.name) {
       updatedProfile.name = user.name;
@@ -394,13 +392,7 @@ export default function App() {
         updatedProfile.avatarUrl = user.avatarUrl;
         hasProfileChanges = true;
       }
-    } else if (!user.avatarUrl) {
-      if (!isGkn && updatedProfile.avatarUrl) {
-        updatedProfile.avatarUrl = '';
-        hasProfileChanges = true;
-      }
-    }
-    if (!isGkn && updatedProfile.avatarUrl?.includes('avatar_gknayak')) {
+    } else if (current.avatarUrl && isDummyMockAvatar(current.avatarUrl)) {
       updatedProfile.avatarUrl = '';
       hasProfileChanges = true;
     }

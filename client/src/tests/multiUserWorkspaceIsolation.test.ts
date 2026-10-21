@@ -346,4 +346,62 @@ describe('Multi-User Workspace Isolation & Ownership Security Tests', { timeout:
     expect(guestFetch.success).toBe(false);
     expect(guestFetch.message).toContain('Guest workspace is local-only');
   });
+
+  it('12. ANY arbitrary new user gets an identical clean blank account with zero data leakage', () => {
+    const randomUser: AuthUser = {
+      id: 'usr_random_98765',
+      email: 'priya.patel@techcorp.in',
+      name: 'Priya Patel',
+      avatarUrl: '',
+      createdAt: Date.now(),
+      lastLoginAt: Date.now(),
+      provider: 'supabase',
+    };
+
+    Storage.clearMemoryCaches();
+    Auth.setCurrentUser(randomUser);
+    setCustomWorkspaceIdentifier(getUserWorkspaceKey(randomUser));
+    setCustomWorkspaceEmail(randomUser.email);
+
+    // If new user on device, initialize clean default workspace
+    if (!Storage.hasUserData(randomUser)) {
+      Storage.resetToCleanUserWorkspace(randomUser);
+    }
+
+    // Verify completely blank account
+    expect(Storage.getTodos()).toEqual([]);
+    expect(Storage.getHabits()).toEqual([]);
+    expect(Storage.getGoals()).toEqual([]);
+    expect(Storage.getExpenses()).toEqual([]);
+    expect(Storage.getJournal()).toEqual([]);
+    expect(Storage.getMedia()).toEqual([]);
+    expect(Storage.getAchievements()).toEqual([]);
+    expect(Storage.getTimeline()).toEqual([]);
+    expect(Storage.getProjects()).toEqual([]);
+    expect(Storage.getSkills()).toEqual([]);
+    expect(Storage.getPhotos()).toEqual([]);
+    expect(Storage.getQuotes()).toEqual([]);
+    expect(Storage.getExams()).toEqual([]);
+
+    const profile = Storage.getProfile();
+    expect(profile.name).toBe('Priya Patel');
+    expect(profile.contactEmail).toBe('priya.patel@techcorp.in');
+    expect(profile.handle).toBe('@priyapatel');
+    expect(profile.avatarUrl).toBe('');
+    expect(profile.educationRecords).toEqual([]);
+    expect(profile.jobExperiences).toEqual([]);
+    expect(profile.hobbies).toEqual([]);
+    expect(profile.certifications).toEqual([]);
+    expect(profile.services).toEqual([]);
+    expect(profile.tools).toEqual([]);
+    expect(profile.bio).toBe('');
+
+    // Calling resetToDefault also keeps the workspace completely blank for this user
+    Storage.resetToDefault();
+    expect(Storage.getProjects()).toEqual([]);
+    expect(Storage.getSkills()).toEqual([]);
+    expect(Storage.getExpenses()).toEqual([]);
+    expect(Storage.getProfile().name).toBe('Priya Patel');
+    expect(Storage.getProfile().avatarUrl).toBe('');
+  });
 });

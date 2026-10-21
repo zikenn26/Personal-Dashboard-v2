@@ -84,8 +84,8 @@ export const DEFAULT_GKN_USER: AuthUser = {
 
 const DEFAULT_GKN_PASS_HASH = '{"version":2,"algorithm":"PBKDF2-SHA256","iterations":210000,"salt":"hKX8naGtDOLD1akaKoa3JA==","hash":"S0LQqpogACGu4p46pxHDB/F8KyBX/HD4FySuUnk/6KY="}';
 
-import { getUserWorkspaceKey, isGulshanUser } from './userUtils';
-export { getUserWorkspaceKey, isGulshanUser };
+import { getUserWorkspaceKey, isDummyMockAvatar } from './userUtils';
+export { getUserWorkspaceKey };
 
 // Helper to store & retrieve credentials map securely in local browser storage only.
 // This is ONLY used as an offline fallback when Supabase is not configured; when Supabase

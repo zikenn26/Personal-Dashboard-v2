@@ -12,16 +12,6 @@ export function getUserWorkspaceKey(user: { id?: string; email?: string } | null
   return `user_${cleanEmail}`;
 }
 
-export function isGulshanUser(emailOrWs?: string | null): boolean {
-  if (!emailOrWs) return false;
-  const lower = emailOrWs.toLowerCase().trim();
-  return (
-    lower === 'gknayak@gmail.com' ||
-    lower === 'gulnayak1206@gmail.com' ||
-    lower === 'user_gknayak_gmail_com' ||
-    lower === 'user_gulnayak1206_gmail_com'
-  );
-}
 
 /**
  * Extracts the user's initials up to 2 alphabets.
