@@ -70,7 +70,7 @@ import { AuthModal } from './components/AuthModal';
 import { AvatarPickerModal } from './components/AvatarPickerModal';
 import { BrandLogo } from './components/BrandLogo';
 import { UserAvatar } from './components/UserAvatar';
-import { isDummyMockAvatar } from './utils/userUtils';
+import { isDummyMockAvatar, isGulshanUser } from './utils/userUtils';
 import { EXPENSE_CATEGORIES } from './components/ExpenseTracker';
 import { STOCK_IMAGES } from './assets/stockImages';
 import LandingPage from './components/LandingPage';
@@ -200,6 +200,9 @@ export default function App() {
     if (u) {
       setCustomWorkspaceIdentifier(getUserWorkspaceKey(u));
       setCustomWorkspaceEmail(u.email);
+    } else {
+      setCustomWorkspaceIdentifier('user_guest');
+      setCustomWorkspaceEmail('guest@workspace.local');
     }
     return u;
   });
@@ -379,13 +382,26 @@ export default function App() {
     const current = Storage.getProfile();
     let updatedProfile = { ...current };
     let hasProfileChanges = false;
+    const isGkn = isGulshanUser(user.email);
+
     if (user.name && user.name !== current.name) {
       updatedProfile.name = user.name;
       updatedProfile.contactEmail = user.email;
       hasProfileChanges = true;
     }
-    if (user.avatarUrl && !isDummyMockAvatar(user.avatarUrl) && (!current.avatarUrl || isDummyMockAvatar(current.avatarUrl) || user.avatarUrl !== current.avatarUrl)) {
-      updatedProfile.avatarUrl = user.avatarUrl;
+    if (user.avatarUrl && !isDummyMockAvatar(user.avatarUrl)) {
+      if (current.avatarUrl !== user.avatarUrl) {
+        updatedProfile.avatarUrl = user.avatarUrl;
+        hasProfileChanges = true;
+      }
+    } else if (!user.avatarUrl) {
+      if (!isGkn && updatedProfile.avatarUrl) {
+        updatedProfile.avatarUrl = '';
+        hasProfileChanges = true;
+      }
+    }
+    if (!isGkn && updatedProfile.avatarUrl?.includes('avatar_gknayak')) {
+      updatedProfile.avatarUrl = '';
       hasProfileChanges = true;
     }
     if (hasProfileChanges) {
@@ -448,7 +464,7 @@ export default function App() {
           const cleanEmail = (authUser.email || '').trim().toLowerCase();
           const isSignedOut = localStorage.getItem('notion_os_auth_signed_out') === 'true';
 
-          if (!isSignedOut && (!currentUser || currentUser.email.toLowerCase() !== cleanEmail)) {
+          if (!isSignedOut && (!currentUser || currentUser.email.toLowerCase() !== cleanEmail || currentUser.id !== authUser.id)) {
             const displayName =
               authUser.user_metadata?.full_name ||
               authUser.user_metadata?.name ||
@@ -458,7 +474,7 @@ export default function App() {
               id: authUser.id,
               email: cleanEmail,
               name: displayName,
-              avatarUrl: authUser.user_metadata?.avatar_url || authUser.user_metadata?.avatarUrl,
+              avatarUrl: authUser.user_metadata?.avatar_url || authUser.user_metadata?.avatarUrl || '',
               createdAt: authUser.created_at ? new Date(authUser.created_at).getTime() : Date.now(),
               lastLoginAt: Date.now(),
               provider: 'supabase',
@@ -476,7 +492,7 @@ export default function App() {
       if (!isSubscribed) return;
       if (data?.session?.user) {
         const isSignedOut = localStorage.getItem('notion_os_auth_signed_out') === 'true';
-        if (!isSignedOut && !currentUser) {
+        if (!isSignedOut && (!currentUser || currentUser.id !== data.session.user.id)) {
           const authUser = data.session.user;
           const cleanEmail = (authUser.email || '').trim().toLowerCase();
           const displayName =
@@ -488,7 +504,7 @@ export default function App() {
             id: authUser.id,
             email: cleanEmail,
             name: displayName,
-            avatarUrl: authUser.user_metadata?.avatar_url || authUser.user_metadata?.avatarUrl,
+            avatarUrl: authUser.user_metadata?.avatar_url || authUser.user_metadata?.avatarUrl || '',
             createdAt: authUser.created_at ? new Date(authUser.created_at).getTime() : Date.now(),
             lastLoginAt: Date.now(),
             provider: 'supabase',
@@ -806,7 +822,7 @@ export default function App() {
       } catch {
         // ignore background poll error
       }
-    }, 6000);
+    }, 60000);
 
     // 2. Realtime WebSocket channel for instant cross-device updates (<30ms delivery, no lag, no refresh)
     const unsubRealtime = subscribeToRealtimeWorkspace(

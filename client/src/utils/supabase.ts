@@ -1236,26 +1236,20 @@ export const checkHasNewerCloudWorkspace = async (): Promise<boolean> => {
     if (activeId === 'user_guest' || activeId.startsWith('user_guest') || !activeUserEmail || activeUserEmail === 'guest@workspace.local') {
       return false;
     }
+    // Egress optimization: ONLY select updated_at (tiny ~30-byte string), NEVER workspace_data (megabytes)!
     const { data, error } = await client
       .from('user_workspaces')
-      .select('updated_at, workspace_data')
+      .select('updated_at')
       .eq('user_identifier', activeId)
       .maybeSingle();
 
     if (error || !data) return false;
 
-    // Ignore if last update was made by this exact device session
-    if (data.workspace_data?._meta?.lastDeviceId === DEVICE_SESSION_ID) {
-      return false;
-    }
-
-    const remoteVersion = getPayloadSyncTimestamp(data.workspace_data, data.updated_at);
     const remoteUpdatedAt = data.updated_at || '';
-
     if (remoteUpdatedAt && remoteUpdatedAt !== lastAppliedRemoteUpdatedAt) {
       return true;
     }
-    return remoteVersion > lastAppliedRemoteVersion;
+    return false;
   } catch {
     return false;
   }
@@ -1363,7 +1357,9 @@ FOR SELECT
 TO authenticated
 USING (
     auth.uid() = user_id
-    OR (user_id IS NULL AND user_email = auth.jwt()->>'email')
+    OR auth.uid()::text = user_identifier
+    OR user_identifier = 'user_' || auth.uid()::text
+    OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 );
 
 CREATE POLICY "Users can insert own workspace"
@@ -1372,7 +1368,9 @@ FOR INSERT
 TO authenticated
 WITH CHECK (
     auth.uid() = user_id
-    OR (user_id IS NULL AND user_email = auth.jwt()->>'email')
+    OR auth.uid()::text = user_identifier
+    OR user_identifier = 'user_' || auth.uid()::text
+    OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 );
 
 CREATE POLICY "Users can update own workspace"
@@ -1381,11 +1379,15 @@ FOR UPDATE
 TO authenticated
 USING (
     auth.uid() = user_id
-    OR (user_id IS NULL AND user_email = auth.jwt()->>'email')
+    OR auth.uid()::text = user_identifier
+    OR user_identifier = 'user_' || auth.uid()::text
+    OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 )
 WITH CHECK (
     auth.uid() = user_id
-    OR (user_id IS NULL AND user_email = auth.jwt()->>'email')
+    OR auth.uid()::text = user_identifier
+    OR user_identifier = 'user_' || auth.uid()::text
+    OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 );
 
 CREATE POLICY "Users can delete own workspace"
@@ -1394,7 +1396,9 @@ FOR DELETE
 TO authenticated
 USING (
     auth.uid() = user_id
-    OR (user_id IS NULL AND user_email = auth.jwt()->>'email')
+    OR auth.uid()::text = user_identifier
+    OR user_identifier = 'user_' || auth.uid()::text
+    OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 );
 
 -- 5. Realtime publication for multi-device sync

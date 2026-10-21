@@ -38,6 +38,8 @@ FOR SELECT
 TO authenticated
 USING (
     auth.uid() = user_id
+    OR auth.uid()::text = user_identifier
+    OR user_identifier = 'user_' || auth.uid()::text
     OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 );
 
@@ -47,6 +49,8 @@ FOR INSERT
 TO authenticated
 WITH CHECK (
     auth.uid() = user_id
+    OR auth.uid()::text = user_identifier
+    OR user_identifier = 'user_' || auth.uid()::text
     OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 );
 
@@ -56,10 +60,14 @@ FOR UPDATE
 TO authenticated
 USING (
     auth.uid() = user_id
+    OR auth.uid()::text = user_identifier
+    OR user_identifier = 'user_' || auth.uid()::text
     OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 )
 WITH CHECK (
     auth.uid() = user_id
+    OR auth.uid()::text = user_identifier
+    OR user_identifier = 'user_' || auth.uid()::text
     OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 );
 
@@ -69,6 +77,8 @@ FOR DELETE
 TO authenticated
 USING (
     auth.uid() = user_id
+    OR auth.uid()::text = user_identifier
+    OR user_identifier = 'user_' || auth.uid()::text
     OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 );
 

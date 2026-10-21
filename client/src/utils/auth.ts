@@ -84,13 +84,8 @@ export const DEFAULT_GKN_USER: AuthUser = {
 
 const DEFAULT_GKN_PASS_HASH = '{"version":2,"algorithm":"PBKDF2-SHA256","iterations":210000,"salt":"hKX8naGtDOLD1akaKoa3JA==","hash":"S0LQqpogACGu4p46pxHDB/F8KyBX/HD4FySuUnk/6KY="}';
 
-// Generate safe user identifier for per-user cloud database workspace partition
-export const getUserWorkspaceKey = (user: AuthUser | null): string => {
-  if (!user) return 'user_guest';
-  // Normalize email to safe alphanumeric string
-  const cleanEmail = user.email.toLowerCase().replace(/[^a-z0-9]/g, '_');
-  return `user_${cleanEmail}`;
-};
+import { getUserWorkspaceKey, isGulshanUser } from './userUtils';
+export { getUserWorkspaceKey, isGulshanUser };
 
 // Helper to store & retrieve credentials map securely in local browser storage only.
 // This is ONLY used as an offline fallback when Supabase is not configured; when Supabase
@@ -175,8 +170,8 @@ const syncCloudAccountRecord = async (
 export const ensureUserWorkspaceInitialized = async (client: any, user: AuthUser): Promise<void> => {
   if (!client || !isSupabaseConfigured() || !user?.email) return;
   const cleanEmail = user.email.trim().toLowerCase();
+  const workspaceKey = getUserWorkspaceKey(user);
   const cleanId = cleanEmail.replace(/[^a-z0-9]/g, '_');
-  const workspaceKey = `user_${cleanId}`;
 
   try {
     const { data: existing, error: selectErr } = await client
@@ -191,6 +186,7 @@ export const ensureUserWorkspaceInitialized = async (client: any, user: AuthUser
       const nowIso = new Date().toISOString();
       const derivedName = user.name || cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
       const blankPayload: Record<string, any> = {
+        user_id: user.id,
         user_identifier: workspaceKey,
         user_email: cleanEmail,
         workspace_data: {
@@ -199,7 +195,7 @@ export const ensureUserWorkspaceInitialized = async (client: any, user: AuthUser
             name: derivedName,
             contactEmail: cleanEmail,
             handle: `@${cleanId}`,
-            avatarUrl: user.avatarUrl || '',
+            avatarUrl: user.avatarUrl && !isDummyMockAvatar(user.avatarUrl) ? user.avatarUrl : '',
           },
           todos: [],
           habits: [],
@@ -227,10 +223,18 @@ export const ensureUserWorkspaceInitialized = async (client: any, user: AuthUser
         updated_at: nowIso,
       };
 
-      const { error: upsertErr } = await client.from('user_workspaces').upsert(
+      let { error: upsertErr } = await client.from('user_workspaces').upsert(
         blankPayload,
         { onConflict: 'user_identifier' }
       );
+      if (upsertErr && (upsertErr.code === '42703' || upsertErr.message?.includes('user_id'))) {
+        delete blankPayload.user_id;
+        const retry = await client.from('user_workspaces').upsert(
+          blankPayload,
+          { onConflict: 'user_identifier' }
+        );
+        upsertErr = retry.error;
+      }
       if (upsertErr) {
         console.warn('[AUTH_DIAGNOSTIC] Notice on workspace upsert:', upsertErr);
       }

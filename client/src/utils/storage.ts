@@ -50,7 +50,7 @@ import { normalizeExpenseDateKey, getLocalDateKey, mergeExpenseLists as mergeExp
 import { scratchpadWidgetService } from '../services/scratchpadWidgetService';
 import { spendingWidgetService } from '../services/spendingWidgetService';
 import { getLocalDateString, resolveCleanAppName } from './screenTimeCalculator';
-import { isDummyMockAvatar } from './userUtils';
+import { isDummyMockAvatar, getUserWorkspaceKey, isGulshanUser } from './userUtils';
 import { Capacitor } from '@capacitor/core';
 
 export const STORAGE_KEYS = {
@@ -1234,7 +1234,12 @@ export const INITIAL_SETTINGS: AppSettings = {
   groqModel: 'llama-3.3-70b-versatile',
 };
 
-import { getCustomWorkspaceIdentifier, getCustomWorkspaceEmail } from './supabase';
+import {
+  getCustomWorkspaceIdentifier,
+  getCustomWorkspaceEmail,
+  setCustomWorkspaceIdentifier,
+  setCustomWorkspaceEmail,
+} from './supabase';
 
 // Helper to determine if current workspace is the mock demo account
 export const isDemoWorkspace = (): boolean => {
@@ -1429,8 +1434,7 @@ export const Storage = {
 
   hasUserData: (user: AuthUser | null): boolean => {
     if (!user || !user.email) return false;
-    const cleanEmail = user.email.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    const ws = `user_${cleanEmail}`;
+    const ws = getUserWorkspaceKey(user);
     return (
       localStorage.getItem(`${ws}_${STORAGE_KEYS.PROFILE}`) !== null ||
       localStorage.getItem(`${ws}_${STORAGE_KEYS.EXPENSES}`) !== null ||
@@ -1445,7 +1449,11 @@ export const Storage = {
     const cleanName =
       user.name ||
       cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-    const isGkn = cleanEmail === 'gknayak@gmail.com';
+    const isGkn = isGulshanUser(cleanEmail);
+
+    const wsKey = getUserWorkspaceKey(user);
+    setCustomWorkspaceIdentifier(wsKey);
+    setCustomWorkspaceEmail(cleanEmail);
 
     const cleanProfile: UserProfile = {
       ...BLANK_PROFILE,
@@ -1457,7 +1465,9 @@ export const Storage = {
       location: isGkn ? 'San Francisco, CA' : '',
       statusText: 'Active',
       statusEmoji: '✨',
-      avatarUrl: isGkn ? 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp' : (user.avatarUrl || ''),
+      avatarUrl: isGkn
+        ? 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp'
+        : (user.avatarUrl && !isDummyMockAvatar(user.avatarUrl) ? user.avatarUrl : ''),
       avatarEnabled: true,
       bannerType: 'gradient',
       bannerBg: 'linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 50%, #FDF4FF 100%)',
@@ -2014,9 +2024,12 @@ export const Storage = {
 
   getProfile: (): UserProfile => {
     const ws = getCustomWorkspaceIdentifier();
-    const isGkn = ws === 'user_gknayak_gmail_com' || ws === 'user_gulnayak1206_gmail_com';
-    const fallbackProfile: UserProfile = isGkn ? INITIAL_PROFILE : BLANK_PROFILE;
-    const data = loadFromStorage(STORAGE_KEYS.PROFILE, fallbackProfile);
+    const isGkn = isGulshanUser(ws);
+    const fallbackProfile: UserProfile = isGkn
+      ? JSON.parse(JSON.stringify(INITIAL_PROFILE))
+      : JSON.parse(JSON.stringify(BLANK_PROFILE));
+    const rawData = loadFromStorage(STORAGE_KEYS.PROFILE, fallbackProfile);
+    const data: UserProfile = { ...rawData };
     if (!data.name || !data.name.trim()) {
       if (isGkn) {
         data.name = INITIAL_PROFILE.name;
@@ -2045,7 +2058,9 @@ export const Storage = {
         }
       }
     }
-    if (!data.avatarUrl || isDummyMockAvatar(data.avatarUrl)) {
+    if (!isGkn && (data.avatarUrl?.includes('avatar_gknayak') || isDummyMockAvatar(data.avatarUrl))) {
+      data.avatarUrl = '';
+    } else if (!data.avatarUrl || isDummyMockAvatar(data.avatarUrl)) {
       data.avatarUrl = '';
     }
     if (isGkn) {
@@ -2727,6 +2742,8 @@ export const Storage = {
         const currentProfile = Storage.getProfile();
         const incomingAvatar = data.profile.avatarUrl;
         const currentAvatar = currentProfile.avatarUrl;
+        const ws = getCustomWorkspaceIdentifier();
+        const isGkn = isGulshanUser(ws);
         const isSameUser = Boolean(
           currentProfile.contactEmail &&
           data.profile.contactEmail &&
@@ -2744,11 +2761,70 @@ export const Storage = {
         } else {
           mergedProfile.avatarUrl = incomingAvatar || '';
         }
+
+        if (!isGkn && mergedProfile.avatarUrl?.includes('avatar_gknayak')) {
+          mergedProfile.avatarUrl = '';
+        }
+
         Storage.setProfile(mergedProfile);
       }
       if (data.todos) Storage.setTodos(data.todos);
       if (Array.isArray(data.habits)) {
-        Storage.setHabits(data.habits);
+        const localHabits = Storage.getHabits();
+        const trash = Storage.getTrash().filter((t) => t.module === 'habits');
+        const trashedIds = new Set<string>();
+        trash.forEach((t) => {
+          if (t.data?.id) trashedIds.add(String(t.data.id).trim());
+          if (typeof t.data === 'string' && t.data.trim()) trashedIds.add(t.data.trim());
+          if (t.id) trashedIds.add(String(t.id).trim());
+        });
+
+        // Filter out trashed habits from cloud
+        const validCloudHabits = data.habits.filter((h: any) => h && h.id && !trashedIds.has(String(h.id).trim()));
+
+        // Merge localHabits and validCloudHabits
+        const habitMap = new Map<string, HabitItem>();
+        // Add valid local habits that are not trashed
+        localHabits.forEach((h) => {
+          if (h && h.id && !trashedIds.has(String(h.id).trim())) {
+            habitMap.set(h.id, h);
+          }
+        });
+
+        // Merge cloud habits
+        validCloudHabits.forEach((ch: any) => {
+          if (!ch || !ch.id) return;
+          const existing = habitMap.get(ch.id);
+          if (existing) {
+            const localUpdated = Number(existing.updatedAt || 0);
+            const cloudUpdated = Number(ch.updatedAt || remoteTimestamp || 0);
+            if (cloudUpdated > localUpdated) {
+              // Newer cloud habit takes precedence for completion/streak, preserving local title/category if missing in cloud
+              habitMap.set(ch.id, {
+                ...existing,
+                ...ch,
+                title: ch.title || existing.title,
+                category: ch.category || existing.category,
+              });
+            } else {
+              // Local is newer or equal: preserve local edits and merge completedDays
+              const mergedDays = [false, false, false, false, false, false, false];
+              for (let i = 0; i < 7; i++) {
+                mergedDays[i] = Boolean(existing.completedDays?.[i] || ch.completedDays?.[i]);
+              }
+              habitMap.set(ch.id, {
+                ...ch,
+                ...existing,
+                completedDays: mergedDays,
+                streak: Math.max(existing.streak || 0, ch.streak || 0),
+              });
+            }
+          } else {
+            habitMap.set(ch.id, ch);
+          }
+        });
+
+        Storage.setHabits(Array.from(habitMap.values()));
       }
       if (Array.isArray(data.habitHistory)) {
         Storage.setHabitHistory(data.habitHistory);
@@ -2851,14 +2927,8 @@ export const Storage = {
             return true;
           });
 
-          if (validCloudExpenses.length === 0) {
-            // Cloud has 0 expenses for this user (e.g. newly initialized user)
-            // Strictly enforce clean empty expenses; NEVER inherit foreign expenses!
-            Storage.setExpenses([]);
-          } else {
-            const finalExpenses = Storage.mergeExpenseLists(currentLocal, validCloudExpenses);
-            Storage.setExpenses(finalExpenses);
-          }
+          const finalExpenses = Storage.mergeExpenseLists(currentLocal, validCloudExpenses);
+          Storage.setExpenses(finalExpenses);
         }
       }
       if (Array.isArray(data.excelImportLogs)) {
@@ -2985,6 +3055,65 @@ export const Storage = {
   },
 
   resetToDefault: () => {
+    const ws = getCustomWorkspaceIdentifier();
+    const isGkn = isGulshanUser(ws);
+    const activeEmail = getCustomWorkspaceEmail();
+    if (!isGkn && activeEmail && activeEmail !== 'guest@workspace.local') {
+      const cleanEmail = activeEmail.toLowerCase().trim();
+      const cleanName = cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+      Storage.setProfile({
+        ...BLANK_PROFILE,
+        name: cleanName,
+        contactEmail: cleanEmail,
+        handle: `@${cleanEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+        avatarUrl: '',
+      });
+      Storage.setTodos([]);
+      Storage.setHabits([]);
+      Storage.setHabitHistory([]);
+      Storage.setHabitActiveWeek('');
+      Storage.setHabitActivities([]);
+      Storage.setGoals([]);
+      localStorage.removeItem(getVaultStorageKey());
+      vaultCache = [];
+      Storage.setExpenses([]);
+      Storage.setJournal([]);
+      Storage.setMedia([]);
+      Storage.setAchievements([]);
+      Storage.setDoodles([]);
+      Storage.setTimeline([]);
+      Storage.setProjects([]);
+      Storage.setSkills([]);
+      Storage.setSettings(INITIAL_SETTINGS);
+      Storage.setSections([]);
+      Storage.setPhotos([]);
+      Storage.setResume({
+        fileName: 'Resume.pdf',
+        fileSize: '0 KB',
+        uploadedAt: '',
+        summary: '',
+        contact: {
+          name: cleanName,
+          phone: '',
+          email: cleanEmail,
+          github: '',
+          linkedin: '',
+          website: '',
+        },
+        experience: [],
+        education: [],
+        skills: [],
+        projects: [],
+        certifications: [],
+        achievements: [],
+        languages: [],
+      });
+      Storage.setQuotes([]);
+      Storage.setExams([]);
+      Storage.setSchedule({ activities: [] });
+      Storage.setCommandMappings(DEFAULT_COMMAND_MAPPINGS);
+      return;
+    }
     Storage.setProfile(INITIAL_PROFILE);
     Storage.setTodos(INITIAL_TODOS);
     Storage.setHabits(INITIAL_HABITS);
