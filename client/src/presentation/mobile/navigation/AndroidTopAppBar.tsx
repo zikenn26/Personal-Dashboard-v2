@@ -89,6 +89,7 @@ export const AndroidTopAppBar: React.FC<AndroidTopAppBarProps> = ({
             <UserAvatar
               avatarUrl={profile.avatarUrl}
               name={profile.name}
+              userEmail={profile.contactEmail}
               size="md"
               className="w-full h-full"
             />

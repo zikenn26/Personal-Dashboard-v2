@@ -66,6 +66,7 @@ export const AndroidProfileSheet: React.FC<AndroidProfileSheetProps> = ({
           <UserAvatar
             avatarUrl={profile.avatarUrl}
             name={profile.name}
+            userEmail={profile.contactEmail}
             size="lg"
             className="ring-2 ring-violet-500/50"
           />

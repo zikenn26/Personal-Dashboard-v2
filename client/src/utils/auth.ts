@@ -84,7 +84,7 @@ export const DEFAULT_GKN_USER: AuthUser = {
 
 const DEFAULT_GKN_PASS_HASH = '{"version":2,"algorithm":"PBKDF2-SHA256","iterations":210000,"salt":"hKX8naGtDOLD1akaKoa3JA==","hash":"S0LQqpogACGu4p46pxHDB/F8KyBX/HD4FySuUnk/6KY="}';
 
-import { getUserWorkspaceKey, isDummyMockAvatar } from './userUtils';
+import { getUserWorkspaceKey, isDummyMockAvatar, isAvatarMatchingUserEmailDomain } from './userUtils';
 export { getUserWorkspaceKey };
 
 // Helper to store & retrieve credentials map securely in local browser storage only.
@@ -371,9 +371,6 @@ export const Auth = {
     } catch {
       // ignore
     }
-    if (!list.some((a) => a.email.toLowerCase() === 'gknayak@gmail.com')) {
-      list.unshift(DEFAULT_GKN_USER);
-    }
     return list;
   },
 
@@ -443,7 +440,7 @@ export const Auth = {
         };
         await saveLocalCredential('gknayak@gmail.com', cleanPass, gknUser);
         Auth.setCurrentUser(gknUser);
-        setCustomWorkspaceIdentifier('user_gknayak_gmail_com');
+        setCustomWorkspaceIdentifier(getUserWorkspaceKey(gknUser));
         setCustomWorkspaceEmail('gknayak@gmail.com');
         recordLoginSuccess('gknayak@gmail.com');
         return { success: true, user: gknUser, message: 'Signed in successfully as Gulshan Kumar Nayak!' };
@@ -499,11 +496,14 @@ export const Auth = {
             sbUser.user_metadata?.display_name ||
             userEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
+          const rawSbAvatar = sbUser.user_metadata?.avatar_url || sbUser.user_metadata?.avatarUrl || '';
+          const userAvatar = isAvatarMatchingUserEmailDomain(rawSbAvatar, userEmail) ? rawSbAvatar : '';
+
           const loggedInUser: AuthUser = {
             id: sbUser.id,
             email: userEmail,
             name: displayName,
-            avatarUrl: sbUser.user_metadata?.avatar_url || sbUser.user_metadata?.avatarUrl,
+            avatarUrl: userAvatar,
             createdAt: sbUser.created_at ? new Date(sbUser.created_at).getTime() : Date.now(),
             lastLoginAt: Date.now(),
             provider: 'supabase',
@@ -518,7 +518,7 @@ export const Auth = {
           await saveLocalCredential(loggedInUser.email, cleanPass, loggedInUser);
 
           Auth.setCurrentUser(loggedInUser);
-          setCustomWorkspaceIdentifier(`user_${userCleanId}`);
+          setCustomWorkspaceIdentifier(getUserWorkspaceKey(loggedInUser));
           setCustomWorkspaceEmail(loggedInUser.email);
           recordLoginSuccess(raw);
           return {
@@ -569,7 +569,7 @@ export const Auth = {
               await saveLocalCredential(cloudUser.email, cleanPass, cloudUser);
 
               Auth.setCurrentUser(cloudUser);
-              setCustomWorkspaceIdentifier(`user_${cleanId}`);
+              setCustomWorkspaceIdentifier(getUserWorkspaceKey(cloudUser));
               setCustomWorkspaceEmail(cloudUser.email);
               recordLoginSuccess(raw);
               return { success: true, user: cloudUser, message: 'Signed in successfully via Cloud Account' };
@@ -767,7 +767,7 @@ export const Auth = {
         // B. Create isolated private workspace partition
         await client.from('user_workspaces').upsert(
           {
-            user_identifier: `user_${cleanId}`,
+            user_identifier: getUserWorkspaceKey(user),
             user_email: cleanEmail,
             workspace_data: {
               profile: {
@@ -837,7 +837,7 @@ export const Auth = {
       await saveLocalCredential(raw, cleanPass, user);
     }
     Auth.setCurrentUser(user);
-    setCustomWorkspaceIdentifier(`user_${cleanId}`);
+    setCustomWorkspaceIdentifier(getUserWorkspaceKey(user));
     setCustomWorkspaceEmail(cleanEmail);
 
     return {
@@ -1072,7 +1072,7 @@ export const Auth = {
       cleanId === 'gknayak_gmail_com' ||
       user.id === DEFAULT_GKN_USER.id
     ) {
-      setCustomWorkspaceIdentifier('user_gknayak_gmail_com');
+      setCustomWorkspaceIdentifier(getUserWorkspaceKey(user));
       setCustomWorkspaceEmail('gknayak@gmail.com');
       return true;
     }

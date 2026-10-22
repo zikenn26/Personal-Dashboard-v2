@@ -53,7 +53,7 @@ import {
   executeInteractiveOption,
   InteractiveOption,
 } from '../services/commandIntentEngine';
-import { Storage } from '../utils/storage';
+import { Storage, getScopedKey } from '../utils/storage';
 import { Sound } from '../utils/audio';
 import { GeminiLiveVoiceModal } from './GeminiLiveVoiceModal';
 import { WaveformVisualizer } from './WaveformVisualizer';
@@ -115,10 +115,21 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
 
-  // Chat Messages State
+  const DEFAULT_WELCOME_MSG: (ChatMessage | GeminiChatMessage)[] = [
+    {
+      id: 'welcome',
+      role: 'assistant',
+      content:
+        'Hello! I am your AI Secretary & Chief of Staff. You can speak to me using Live Voice, give voice commands, or type requests to manage your tasks, habits, and dashboard.',
+      timestamp: Date.now(),
+    },
+  ];
+
+  // Chat Messages State (strictly scoped to active user workspace)
   const [messages, setMessages] = useState<Array<ChatMessage | GeminiChatMessage>>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const scopedKey = getScopedKey(STORAGE_KEY);
+      const saved = localStorage.getItem(scopedKey);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -128,15 +139,7 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
     } catch {
       // ignore
     }
-    return [
-      {
-        id: 'welcome',
-        role: 'assistant',
-        content:
-          'Hello! I am your AI Secretary & Chief of Staff. You can speak to me using Live Voice, give voice commands, or type requests to manage your tasks, habits, and dashboard.',
-        timestamp: Date.now(),
-      },
-    ];
+    return DEFAULT_WELCOME_MSG;
   });
 
   const [inputPrompt, setInputPrompt] = useState('');
@@ -155,14 +158,40 @@ export const AISecretaryWidget: React.FC<AISecretaryWidgetProps> = ({
   const [groqTestStatus, setGroqTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [groqTestMsg, setGroqTestMsg] = useState('');
 
-  // Persist chat history
+  // Persist chat history into user-scoped storage
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-50)));
+      const scopedKey = getScopedKey(STORAGE_KEY);
+      localStorage.setItem(scopedKey, JSON.stringify(messages.slice(-50)));
     } catch {
       // ignore
     }
   }, [messages]);
+
+  // Listen for session hydration or workspace account switch to force reload messages
+  useEffect(() => {
+    const handleReloadScopedMessages = () => {
+      try {
+        const scopedKey = getScopedKey(STORAGE_KEY);
+        const saved = localStorage.getItem(scopedKey);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setMessages(parsed);
+            return;
+          }
+        }
+      } catch {}
+      setMessages(DEFAULT_WELCOME_MSG);
+    };
+
+    window.addEventListener('session-hydrated', handleReloadScopedMessages);
+    window.addEventListener('lifeos_chat_reset', handleReloadScopedMessages);
+    return () => {
+      window.removeEventListener('session-hydrated', handleReloadScopedMessages);
+      window.removeEventListener('lifeos_chat_reset', handleReloadScopedMessages);
+    };
+  }, []);
 
   // Scroll to bottom
   useEffect(() => {

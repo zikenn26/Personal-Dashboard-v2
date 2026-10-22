@@ -724,6 +724,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
               <UserAvatar
                 avatarUrl={profile?.avatarUrl}
                 name={profile?.name}
+                userEmail={profile?.contactEmail}
                 size="sm"
                 className="w-full h-full"
               />

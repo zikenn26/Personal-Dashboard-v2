@@ -7,9 +7,9 @@
  */
 
 export function getUserWorkspaceKey(user: { id?: string; email?: string } | null): string {
-  if (!user || !user.email) return 'user_guest';
-  const cleanEmail = user.email.toLowerCase().replace(/[^a-z0-9]/g, '_');
-  return `user_${cleanEmail}`;
+  if (!user || !user.id || user.id === 'guest') return 'user_guest';
+  // Workspace key generation explicitly depends only on the authenticated user's immutable UUID
+  return `user_${user.id}`;
 }
 
 
@@ -57,14 +57,33 @@ export function getUserInitials(name?: string | null): string {
 /**
  * Checks if a given avatar URL is a dummy mock or stock placeholder image
  * that should be suppressed in favor of user initials.
+ * Also protects non-Gulshan accounts from inheriting Gulshan's avatar.
  */
-export function isDummyMockAvatar(url?: string | null): boolean {
+export function isDummyMockAvatar(url?: string | null, userEmail?: string | null): boolean {
   if (!url || typeof url !== 'string') return true;
   const trimmed = url.trim();
   if (!trimmed) return true;
 
   // Detect local stock mock avatar asset
   if (trimmed.includes('avatar_profile_default')) return true;
+
+  // Cross-account leakage prevention:
+  // An avatar URL containing 'gknayak' or 'gulnayak' belongs strictly to Gulshan Kumar Nayak.
+  // It must NEVER be used for any other user, guest, or newly created account.
+  let activeEmail = (userEmail || '').toLowerCase().trim();
+  if (!activeEmail && typeof window !== 'undefined') {
+    try {
+      const rawUser = localStorage.getItem('notion_os_auth_user_v1');
+      if (rawUser) {
+        const parsed = JSON.parse(rawUser);
+        if (parsed?.email) activeEmail = parsed.email.toLowerCase().trim();
+      }
+    } catch {}
+  }
+  const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gulnayak1206@gmail.com';
+  if (!isGknUser && (trimmed.includes('gknayak') || trimmed.includes('gulnayak'))) {
+    return true;
+  }
 
   // Detect Unsplash headshot placeholder avatars
   if (
@@ -78,6 +97,7 @@ export function isDummyMockAvatar(url?: string | null): boolean {
   }
 
   // Detect third-party placeholder avatar services
+  // Detect third-party placeholder avatar services
   if (
     trimmed.includes('pravatar.cc') ||
     trimmed.includes('ui-avatars.com') ||
@@ -88,6 +108,89 @@ export function isDummyMockAvatar(url?: string | null): boolean {
   }
 
   return false;
+}
+
+/**
+ * Validates whether an avatar URL strictly matches the authenticated user's email domain and identity.
+ * Clears or rejects cached or local storage avatars if:
+ * 1. It is a mock, stock, or placeholder image (Unsplash, DiceBear, Pravatar, etc.).
+ * 2. It belongs to another account (e.g. gknayak or gulnayak for any user other than Gulshan).
+ * 3. It encodes another username or email domain (e.g. Supabase storage path avatar_<otheruser>_<domain>).
+ * 4. Its email domain does not match the authenticated user's email domain.
+ */
+export function isAvatarMatchingUserEmailDomain(url?: string | null, userEmail?: string | null): boolean {
+  if (!url || typeof url !== 'string') return false;
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+
+  let activeEmail = (userEmail || '').toLowerCase().trim();
+  if (!activeEmail && typeof window !== 'undefined') {
+    try {
+      const rawUser = localStorage.getItem('notion_os_auth_user_v1');
+      if (rawUser) {
+        const parsed = JSON.parse(rawUser);
+        if (parsed?.email) activeEmail = parsed.email.toLowerCase().trim();
+      }
+    } catch {}
+  }
+
+  // 1. First run dummy/mock/cross-account check
+  if (isDummyMockAvatar(trimmed, activeEmail)) {
+    return false;
+  }
+
+  // If no email available, accept if not dummy/mock
+  if (!activeEmail || !activeEmail.includes('@')) {
+    return true;
+  }
+
+  const [userLocalPart, userDomain] = activeEmail.split('@');
+  const userDomainSanitized = userDomain.replace(/[^a-z0-9]/g, '_');
+  const userLocalSanitized = userLocalPart.replace(/[^a-z0-9]/g, '_');
+
+  const lowerUrl = trimmed.toLowerCase();
+
+  // 2. Strict isolation for Gulshan's asset:
+  // If the URL contains 'gknayak' or 'gulnayak', it is only permitted if the email is Gulshan's
+  const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gulnayak1206@gmail.com';
+  if (!isGknUser && (lowerUrl.includes('gknayak') || lowerUrl.includes('gulnayak'))) {
+    return false;
+  }
+
+  // 3. If the URL contains an email domain identifier, ensure it matches the user's domain
+  // e.g., avatar_<user>_<domain>_<timestamp>
+  if (lowerUrl.includes('avatar_')) {
+    const commonDomains = [
+      'gmail_com',
+      'yahoo_com',
+      'outlook_com',
+      'hotmail_com',
+      'icloud_com',
+      'proton_me',
+      'workspace_local',
+    ];
+    for (const d of commonDomains) {
+      if (lowerUrl.includes(`_${d}`) && d !== userDomainSanitized) {
+        return false;
+      }
+    }
+
+    // Check if filename specifies a different local user handle
+    if (!lowerUrl.includes(userLocalSanitized)) {
+      if (lowerUrl.includes('gknayak') || lowerUrl.includes('gulnayak') || lowerUrl.includes('arpitapri125')) {
+        return false;
+      }
+    }
+  }
+
+  // 4. If URL has explicit email query param or path like ?email=... or /email/
+  if (lowerUrl.includes('@')) {
+    if (!lowerUrl.includes(`@${userDomain}`)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 /**

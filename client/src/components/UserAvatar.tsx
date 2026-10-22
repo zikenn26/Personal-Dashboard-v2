@@ -1,9 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { getUserInitials, isDummyMockAvatar, getInitialsColorClass } from '../utils/userUtils';
+import {
+  getUserInitials,
+  isDummyMockAvatar,
+  isAvatarMatchingUserEmailDomain,
+  getInitialsColorClass,
+} from '../utils/userUtils';
 
 export interface UserAvatarProps {
   avatarUrl?: string | null;
   name?: string | null;
+  userEmail?: string | null;
   className?: string;
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   showInitialsOnEmpty?: boolean;
@@ -12,6 +18,7 @@ export interface UserAvatarProps {
 export const UserAvatar: React.FC<UserAvatarProps> = ({
   avatarUrl,
   name,
+  userEmail,
   className = '',
   size = 'md',
 }) => {
@@ -22,8 +29,12 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
     setImageError(false);
   }, [avatarUrl]);
 
-  const isMock = isDummyMockAvatar(avatarUrl);
-  const showImage = Boolean(avatarUrl && !isMock && !imageError);
+  const isValidAvatar = Boolean(
+    avatarUrl &&
+      isAvatarMatchingUserEmailDomain(avatarUrl, userEmail) &&
+      !isDummyMockAvatar(avatarUrl, userEmail)
+  );
+  const showImage = Boolean(isValidAvatar && !imageError);
   const initials = getUserInitials(name);
   const palette = getInitialsColorClass(name);
 

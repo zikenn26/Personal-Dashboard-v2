@@ -193,6 +193,7 @@ export const HeaderBanner: React.FC<HeaderBannerProps> = ({
                 <UserAvatar
                   avatarUrl={profile.avatarUrl}
                   name={profile.name}
+                  userEmail={profile.contactEmail}
                   size="xl"
                   className="w-full h-full rounded-xl"
                 />

@@ -40,7 +40,6 @@ USING (
     auth.uid() = user_id
     OR auth.uid()::text = user_identifier
     OR user_identifier = 'user_' || auth.uid()::text
-    OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 );
 
 CREATE POLICY "Users can insert own workspace"
@@ -51,7 +50,6 @@ WITH CHECK (
     auth.uid() = user_id
     OR auth.uid()::text = user_identifier
     OR user_identifier = 'user_' || auth.uid()::text
-    OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 );
 
 CREATE POLICY "Users can update own workspace"
@@ -62,13 +60,11 @@ USING (
     auth.uid() = user_id
     OR auth.uid()::text = user_identifier
     OR user_identifier = 'user_' || auth.uid()::text
-    OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 )
 WITH CHECK (
     auth.uid() = user_id
     OR auth.uid()::text = user_identifier
     OR user_identifier = 'user_' || auth.uid()::text
-    OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 );
 
 CREATE POLICY "Users can delete own workspace"
@@ -79,7 +75,6 @@ USING (
     auth.uid() = user_id
     OR auth.uid()::text = user_identifier
     OR user_identifier = 'user_' || auth.uid()::text
-    OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 );
 
 -- 5. Realtime publication for multi-device sync

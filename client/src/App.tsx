@@ -70,7 +70,7 @@ import { AuthModal } from './components/AuthModal';
 import { AvatarPickerModal } from './components/AvatarPickerModal';
 import { BrandLogo } from './components/BrandLogo';
 import { UserAvatar } from './components/UserAvatar';
-import { isDummyMockAvatar } from './utils/userUtils';
+import { isDummyMockAvatar, isAvatarMatchingUserEmailDomain } from './utils/userUtils';
 import { STOCK_IMAGES } from './assets/stockImages';
 import LandingPage from './components/LandingPage';
 import { usePlatformMode } from './presentation/mobile/shell/usePlatformMode';
@@ -356,76 +356,294 @@ export default function App() {
   const isRemoteUpdating = useRef(false);
   const isCloudReady = useRef(false);
 
+  // Hydrate and reset all React useState hooks cleanly from user-scoped Storage
+  const handleHydrateAllFromStorage = (playEffects = false) => {
+    // 1. Core Profile & Task/Habit Collections
+    setProfile(Storage.getProfile());
+    setTodos(Storage.getTodos());
+    setHabits(Storage.getHabits());
+    setHabitHistory(Storage.getHabitHistory());
+    setHabitActiveWeek(Storage.getHabitActiveWeek());
+    setHabitActivities(Storage.getHabitActivities());
+    setGoals(Storage.getGoals());
+    void Storage.hydrateVault(Storage.getSettings().masterPin).then(setVault);
+
+    // 2. Expenses & Spreadsheets
+    const freshExpenses: ExpenseItem[] = Storage.getExpenses();
+    setExpenses(freshExpenses);
+    setSpendingSearchQuery('');
+    setExcelImportLogs(Storage.getExcelImportLogs());
+    setExpenseUndoToast(null);
+    setAtomicPendingDeletion(null);
+
+    // 3. Knowledge, Portfolio & Projects
+    setJournal(Storage.getJournal());
+    setMedia(Storage.getMedia());
+    setMilestones(Storage.getTimeline());
+    setProjects(Storage.getProjects());
+    setSkills(Storage.getSkills());
+    setAchievements(Storage.getAchievements());
+    setDoodles(Storage.getDoodles());
+    setTrash(Storage.getTrash());
+
+    // 4. Configuration & Layout
+    setSettings(Storage.getSettings());
+    setSections(Storage.getSections());
+    setPhotos(Storage.getPhotos());
+    setResume(Storage.getResume());
+    setQuotes(Storage.getQuotes());
+    setExams(Storage.getExams());
+    setSchedule(Storage.getSchedule());
+
+    // 5. Native Services & Subscriptions
+    const screenTime = Storage.getScreenTimeData();
+    if (screenTime) {
+      screenTimeService.notifyListeners(screenTime);
+    }
+    void scratchpadWidgetService.syncToNativeWidget(Storage.getScratchpad());
+    void spendingWidgetService.syncToNativeWidget(freshExpenses);
+
+    // 6. Force all active component subscriptions to re-fetch and clear stale cache
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('dashboard-data-updated', {
+          detail: { module: 'all', updatedExpenses: freshExpenses },
+        })
+      );
+      window.dispatchEvent(
+        new CustomEvent('session-hydrated', {
+          detail: { timestamp: Date.now() },
+        })
+      );
+      window.dispatchEvent(
+        new CustomEvent('lifeos_chat_reset', {
+          detail: {},
+        })
+      );
+      window.dispatchEvent(
+        new CustomEvent('screentime-updated', {
+          detail: { data: screenTime },
+        })
+      );
+      window.dispatchEvent(
+        new CustomEvent('alarm-data-updated', {
+          detail: { alarm: Storage.getActiveAlarm() },
+        })
+      );
+    }
+
+    if (playEffects) {
+      Sound.success(settings.soundEnabled);
+      triggerConfetti();
+    }
+  };
+
   // Handle successful login or account switch
-  const handleAuthenticated = (user: AuthUser) => {
-    // Clear any module in-memory caches from prior user immediately
+  const handleAuthenticated = async (user: AuthUser) => {
+    // 1. Immediately block auto-sync and mark remote updating to prevent in-memory cross-account contamination
+    isCloudReady.current = false;
+    isRemoteUpdating.current = true;
+
+    // 2. Clear module memory caches immediately
     Storage.clearMemoryCaches();
 
+    // 3. Set workspace partition identifier to user's immutable UUID key before any storage access
+    const wsKey = getUserWorkspaceKey(user);
+    setCustomWorkspaceIdentifier(wsKey);
+    setCustomWorkspaceEmail(user.email);
+
+    // 4. Reset transient UI modals, active menu overlays, and query states
     setCurrentUser(user);
     setIsAuthModalOpen(false);
-    setCustomWorkspaceIdentifier(getUserWorkspaceKey(user));
-    setCustomWorkspaceEmail(user.email);
-    
-    // Register active device session in cloud & storage
+    setIsAccountMenuOpen(false);
+    setIsAddMenuOpen(false);
+    setShowQuickCapture(false);
+    setIsZikennPopupOpen(false);
+    setIsGlobalVoiceModalOpen(false);
+    setIsCommandPaletteOpen(false);
+    setIsSettingsOpen(false);
+    setIsSmsModalOpen(false);
+    setIsApiKeyModalOpen(false);
+    setIsCommandMappingModalOpen(false);
+    setIsChangePasswordOpen(false);
+    setIsGlobalAvatarPickerOpen(false);
+    setIsMobileSidebarOpen(false);
+    setSpendingSearchQuery('');
+    setExpenseUndoToast(null);
+    setAtomicPendingDeletion(null);
+
+    // 5. Register active device session in cloud & storage
     registerCurrentDevice(user.email);
 
-    // If user has no existing local storage records on this device, initialize a clean default workspace
+    // 6. If user has no existing local storage records on this device, initialize a clean default workspace
     if (!Storage.hasUserData(user)) {
       Storage.resetToCleanUserWorkspace(user);
     }
 
-    // Immediately hydrate state from the user-scoped Storage
-    handleHydrateAllFromStorage(false);
+    const cleanEmail = (user.email || '').toLowerCase().trim();
+    const [userLocalPart] = cleanEmail.split('@');
 
-    // If user's name or avatar is customized on account, update profile state
+    // 7. Audit & Fetch user-specific profile fields directly from the authenticated Supabase user metadata immediately upon login
+    let metaAvatar = user.avatarUrl || '';
+    let metaName = user.name || '';
+    let metaBio = '';
+    let metaTitle = '';
+    let metaPhone = '';
+    let metaLocation = '';
+    let metaGithub = '';
+    let metaLinkedin = '';
+    let metaWebsite = '';
+
+    if (isSupabaseConfigured()) {
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const { data: authData } = await client.auth.getUser();
+          const sbUser = authData?.user;
+          if (sbUser && (sbUser.id === user.id || (sbUser.email && sbUser.email.toLowerCase() === cleanEmail))) {
+            const meta = sbUser.user_metadata || {};
+            const candidateName = meta.full_name || meta.name || meta.display_name;
+            if (candidateName) metaName = candidateName;
+
+            const rawMetaAvatar = meta.avatar_url || meta.avatarUrl || meta.picture || '';
+            if (rawMetaAvatar && isAvatarMatchingUserEmailDomain(rawMetaAvatar, cleanEmail)) {
+              metaAvatar = rawMetaAvatar;
+            } else {
+              metaAvatar = '';
+              // If Supabase user_metadata contained a contaminated avatar from an earlier session, sanitize it in Supabase
+              if (rawMetaAvatar) {
+                void client.auth.updateUser({ data: { avatar_url: '', avatarUrl: '' } }).catch(() => {});
+              }
+            }
+
+            if (meta.bio) metaBio = meta.bio;
+            if (meta.title || meta.headline) metaTitle = meta.title || meta.headline;
+            if (meta.phone) metaPhone = meta.phone;
+            if (meta.location) metaLocation = meta.location;
+            if (meta.github) metaGithub = meta.github;
+            if (meta.linkedin) metaLinkedin = meta.linkedin;
+            if (meta.website) metaWebsite = meta.website;
+          }
+        } catch (metaErr) {
+          console.warn('[AUTH_DIAGNOSTIC] Notice fetching user metadata from Supabase Auth:', metaErr);
+        }
+      }
+    }
+
+    // 8. Clear cached or local storage avatars if they do not match the currently authenticated user's email domain
     const current = Storage.getProfile();
     let updatedProfile = { ...current };
     let hasProfileChanges = false;
 
-    if (user.name && user.name !== current.name) {
-      updatedProfile.name = user.name;
-      updatedProfile.contactEmail = user.email;
-      hasProfileChanges = true;
-    }
-    if (user.avatarUrl && !isDummyMockAvatar(user.avatarUrl)) {
-      if (current.avatarUrl !== user.avatarUrl) {
-        updatedProfile.avatarUrl = user.avatarUrl;
-        hasProfileChanges = true;
-      }
-    } else if (current.avatarUrl && isDummyMockAvatar(current.avatarUrl)) {
+    // Clear mismatched cached avatar from local storage
+    if (updatedProfile.avatarUrl && !isAvatarMatchingUserEmailDomain(updatedProfile.avatarUrl, cleanEmail)) {
+      console.info('[AUTH_SECURITY] Cleared mismatched cached/local avatar for user:', cleanEmail);
       updatedProfile.avatarUrl = '';
       hasProfileChanges = true;
     }
+
+    // Apply metadata avatar if valid and matches user's email domain
+    if (metaAvatar && isAvatarMatchingUserEmailDomain(metaAvatar, cleanEmail)) {
+      if (updatedProfile.avatarUrl !== metaAvatar) {
+        updatedProfile.avatarUrl = metaAvatar;
+        hasProfileChanges = true;
+      }
+    } else if (updatedProfile.avatarUrl && !isAvatarMatchingUserEmailDomain(updatedProfile.avatarUrl, cleanEmail)) {
+      updatedProfile.avatarUrl = '';
+      hasProfileChanges = true;
+    }
+
+    // Apply user-specific profile fields fetched from Supabase user metadata
+    if (metaName && updatedProfile.name !== metaName) {
+      updatedProfile.name = metaName;
+      hasProfileChanges = true;
+    }
+    if (cleanEmail && updatedProfile.contactEmail !== cleanEmail) {
+      updatedProfile.contactEmail = cleanEmail;
+      updatedProfile.handle = `@${userLocalPart.replace(/[^a-z0-9]/g, '')}`;
+      hasProfileChanges = true;
+    }
+    if (metaBio && !updatedProfile.bio) {
+      updatedProfile.bio = metaBio;
+      hasProfileChanges = true;
+    }
+    if (metaTitle && !updatedProfile.title) {
+      updatedProfile.title = metaTitle;
+      hasProfileChanges = true;
+    }
+    if (metaPhone && !updatedProfile.phone) {
+      updatedProfile.phone = metaPhone;
+      hasProfileChanges = true;
+    }
+    if (metaLocation && !updatedProfile.location) {
+      updatedProfile.location = metaLocation;
+      hasProfileChanges = true;
+    }
+    if (metaGithub && !updatedProfile.github) {
+      updatedProfile.github = metaGithub;
+      hasProfileChanges = true;
+    }
+    if (metaLinkedin && !updatedProfile.linkedin) {
+      updatedProfile.linkedin = metaLinkedin;
+      hasProfileChanges = true;
+    }
+    if (metaWebsite && !updatedProfile.website) {
+      updatedProfile.website = metaWebsite;
+      hasProfileChanges = true;
+    }
+
     if (hasProfileChanges) {
       setProfile(updatedProfile);
       Storage.setProfile(updatedProfile);
     }
-    
-    // Re-fetch user workspace data from Supabase if configured
-    fetchWorkspaceFromSupabase().then((res) => {
+
+    // 9. Force a complete reset of all useState hooks from the user-scoped Storage BEFORE the next sync-cycle
+    handleHydrateAllFromStorage(false);
+
+    // 10. Re-fetch user workspace data from Supabase if configured
+    try {
+      const res = await fetchWorkspaceFromSupabase();
       if (res.success && res.data) {
         isRemoteUpdating.current = true;
         Storage.importAllDataPayload(res.data);
+
+        // Sanitize imported profile to guarantee no cross-account avatar was loaded from cloud row
+        const cloudImportedProfile = Storage.getProfile();
+        if (
+          cloudImportedProfile.avatarUrl &&
+          !isAvatarMatchingUserEmailDomain(cloudImportedProfile.avatarUrl, cleanEmail)
+        ) {
+          cloudImportedProfile.avatarUrl = '';
+          Storage.setProfile(cloudImportedProfile);
+        }
+
+        // Re-reset all useState hooks with the verified cloud payload
         handleHydrateAllFromStorage(false);
-        setTimeout(() => {
-          isRemoteUpdating.current = false;
-          isCloudReady.current = true;
-        }, 300);
-      } else {
-        isCloudReady.current = true;
       }
-    });
+    } catch (fetchErr) {
+      console.warn('[AUTH_DIAGNOSTIC] Notice during initial cloud workspace fetch:', fetchErr);
+    } finally {
+      setTimeout(() => {
+        isRemoteUpdating.current = false;
+        isCloudReady.current = true;
+      }, 300);
+    }
   };
 
   const handleSignOut = async () => {
+    isCloudReady.current = false;
+    isRemoteUpdating.current = true;
     Sound.click(settings.soundEnabled);
     await Auth.signOut();
     Storage.clearMemoryCaches();
-    setCurrentUser(null);
     setCustomWorkspaceIdentifier('user_guest');
     setCustomWorkspaceEmail('guest@workspace.local');
+    setCurrentUser(null);
     handleHydrateAllFromStorage(false);
     setIsAuthModalOpen(false);
+    setTimeout(() => {
+      isRemoteUpdating.current = false;
+    }, 200);
   };
 
   // Subscribe to live sync status changes for the UI
@@ -462,18 +680,19 @@ export default function App() {
               authUser.user_metadata?.name ||
               cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
+            const rawMetaAvatar = authUser.user_metadata?.avatar_url || authUser.user_metadata?.avatarUrl || '';
             const user: AuthUser = {
               id: authUser.id,
               email: cleanEmail,
               name: displayName,
-              avatarUrl: authUser.user_metadata?.avatar_url || authUser.user_metadata?.avatarUrl || '',
+              avatarUrl: isAvatarMatchingUserEmailDomain(rawMetaAvatar, cleanEmail) ? rawMetaAvatar : '',
               createdAt: authUser.created_at ? new Date(authUser.created_at).getTime() : Date.now(),
               lastLoginAt: Date.now(),
               provider: 'supabase',
             };
 
             Auth.setCurrentUser(user);
-            handleAuthenticated(user);
+            void handleAuthenticated(user);
           }
         }
       }
@@ -492,18 +711,19 @@ export default function App() {
             authUser.user_metadata?.name ||
             cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
+          const rawMetaAvatar = authUser.user_metadata?.avatar_url || authUser.user_metadata?.avatarUrl || '';
           const user: AuthUser = {
             id: authUser.id,
             email: cleanEmail,
             name: displayName,
-            avatarUrl: authUser.user_metadata?.avatar_url || authUser.user_metadata?.avatarUrl || '',
+            avatarUrl: isAvatarMatchingUserEmailDomain(rawMetaAvatar, cleanEmail) ? rawMetaAvatar : '',
             createdAt: authUser.created_at ? new Date(authUser.created_at).getTime() : Date.now(),
             lastLoginAt: Date.now(),
             provider: 'supabase',
           };
 
           Auth.setCurrentUser(user);
-          handleAuthenticated(user);
+          void handleAuthenticated(user);
         }
       }
     });
@@ -525,50 +745,6 @@ export default function App() {
     };
   }, [settings.masterPin]);
 
-  // Hydrate all React state cleanly from Storage
-  const handleHydrateAllFromStorage = (playEffects = false) => {
-    setProfile(Storage.getProfile());
-    setTodos(Storage.getTodos());
-    setHabits(Storage.getHabits());
-    setHabitHistory(Storage.getHabitHistory());
-    setHabitActiveWeek(Storage.getHabitActiveWeek());
-    setHabitActivities(Storage.getHabitActivities());
-    setGoals(Storage.getGoals());
-    void Storage.hydrateVault(Storage.getSettings().masterPin).then(setVault);
-
-    // Hydrate expenses cleanly from Storage to keep state in sync
-    const freshExpenses: ExpenseItem[] = Storage.getExpenses();
-    setExpenses(freshExpenses);
-    window.dispatchEvent(
-      new CustomEvent('dashboard-data-updated', {
-        detail: { module: 'expenses', updatedExpenses: freshExpenses },
-      })
-    );
-
-    setExcelImportLogs(Storage.getExcelImportLogs());
-    setJournal(Storage.getJournal());
-    setMedia(Storage.getMedia());
-    setMilestones(Storage.getTimeline());
-    setProjects(Storage.getProjects());
-    setAchievements(Storage.getAchievements());
-    setDoodles(Storage.getDoodles());
-    setSettings(Storage.getSettings());
-    setSections(Storage.getSections());
-    setPhotos(Storage.getPhotos());
-    setResume(Storage.getResume());
-    setQuotes(Storage.getQuotes());
-    setExams(Storage.getExams());
-    setSchedule(Storage.getSchedule());
-    const screenTime = Storage.getScreenTimeData();
-    if (screenTime) {
-      screenTimeService.notifyListeners(screenTime);
-    }
-    if (playEffects) {
-      Sound.success(settings.soundEnabled);
-      triggerConfetti();
-    }
-  };
-
   // Sync state in real-time whenever AI Secretary or dashboard operations perform CRUD updates
   useEffect(() => {
     const handleDashboardDataUpdated = (e?: Event) => {
@@ -584,7 +760,7 @@ export default function App() {
       }
 
       // Update expenses state reactively when expenses module changes
-      if (!customEvt?.detail?.module || customEvt.detail.module === 'expenses') {
+      if (!customEvt?.detail?.module || customEvt.detail.module === 'expenses' || customEvt.detail.module === 'all') {
         const incoming =
           customEvt?.detail?.updatedExpenses &&
           Array.isArray(customEvt.detail.updatedExpenses)
@@ -595,7 +771,7 @@ export default function App() {
         setExpenses(incoming);
       }
 
-      // Refresh the other dashboard modules from local storage.
+      // Refresh all dashboard modules from local storage.
       setProfile(Storage.getProfile());
       setTodos(Storage.getTodos());
       setHabits(Storage.getHabits());
@@ -613,8 +789,10 @@ export default function App() {
       setMedia(Storage.getMedia());
       setMilestones(Storage.getTimeline());
       setProjects(Storage.getProjects());
+      setSkills(Storage.getSkills());
       setAchievements(Storage.getAchievements());
       setDoodles(Storage.getDoodles());
+      setTrash(Storage.getTrash());
       setSettings(Storage.getSettings());
       setSections(Storage.getSections());
       setPhotos(Storage.getPhotos());
@@ -3160,6 +3338,7 @@ export default function App() {
                 <UserAvatar
                   avatarUrl={profile.avatarUrl}
                   name={profile.name || currentUser?.name}
+                  userEmail={profile.contactEmail || currentUser?.email}
                   size="sm"
                   className="w-full h-full"
                 />
@@ -3176,6 +3355,7 @@ export default function App() {
                       <UserAvatar
                         avatarUrl={profile.avatarUrl}
                         name={profile.name || currentUser?.name}
+                        userEmail={profile.contactEmail || currentUser?.email}
                         size="md"
                       />
                       <div className="min-w-0 flex-1">

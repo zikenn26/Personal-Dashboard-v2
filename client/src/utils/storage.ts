@@ -50,7 +50,7 @@ import { normalizeExpenseDateKey, getLocalDateKey, mergeExpenseLists as mergeExp
 import { scratchpadWidgetService } from '../services/scratchpadWidgetService';
 import { spendingWidgetService } from '../services/spendingWidgetService';
 import { getLocalDateString, resolveCleanAppName } from './screenTimeCalculator';
-import { isDummyMockAvatar, getUserWorkspaceKey } from './userUtils';
+import { isDummyMockAvatar, isAvatarMatchingUserEmailDomain, getUserWorkspaceKey } from './userUtils';
 import { Capacitor } from '@capacitor/core';
 
 export const STORAGE_KEYS = {
@@ -1255,31 +1255,10 @@ export function getScopedKey(baseKey: string): string {
 // Safe Generic Storage Helpers
 export function loadFromStorage<T>(baseKey: string, fallback: T): T {
   try {
-    const ws = getCustomWorkspaceIdentifier();
     const scopedKey = getScopedKey(baseKey);
     const raw = localStorage.getItem(scopedKey);
     if (raw !== null) {
       return JSON.parse(raw) as T;
-    }
-    // If an unscoped legacy key exists, only migrate it if its profile contactEmail matches the current workspace's email.
-    // This strictly prevents legacy data from leaking into new or different user accounts without hardcoding emails.
-    const activeEmail = getCustomWorkspaceEmail();
-    if (activeEmail && activeEmail !== 'guest@workspace.local') {
-      const legacyRaw = localStorage.getItem(baseKey);
-      if (legacyRaw !== null) {
-        try {
-          const legacyProfileRaw = localStorage.getItem(STORAGE_KEYS.PROFILE);
-          const legacyEmail = legacyProfileRaw ? JSON.parse(legacyProfileRaw)?.contactEmail : null;
-          if (legacyEmail && legacyEmail.toLowerCase().trim() === activeEmail.toLowerCase().trim()) {
-            const parsed = JSON.parse(legacyRaw) as T;
-            localStorage.setItem(scopedKey, legacyRaw);
-            localStorage.removeItem(baseKey);
-            return parsed;
-          }
-        } catch {
-          // ignore
-        }
-      }
     }
     return fallback;
   } catch (err) {
@@ -1469,7 +1448,7 @@ export const Storage = {
       location: '',
       statusText: 'Active',
       statusEmoji: '✨',
-      avatarUrl: user.avatarUrl && !isDummyMockAvatar(user.avatarUrl) ? user.avatarUrl : '',
+      avatarUrl: user.avatarUrl && isAvatarMatchingUserEmailDomain(user.avatarUrl, cleanEmail) ? user.avatarUrl : '',
       avatarEnabled: true,
       bannerType: 'gradient',
       bannerBg: 'linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 50%, #FDF4FF 100%)',
@@ -2022,7 +2001,12 @@ export const Storage = {
         data.handle = '';
       }
     }
-    if (data.avatarUrl && isDummyMockAvatar(data.avatarUrl)) {
+    const activeEmail = getCustomWorkspaceEmail();
+    if (
+      data.avatarUrl &&
+      (!isAvatarMatchingUserEmailDomain(data.avatarUrl, activeEmail) ||
+        isDummyMockAvatar(data.avatarUrl, activeEmail))
+    ) {
       data.avatarUrl = '';
     }
     if (!data.educationRecords) data.educationRecords = [];
@@ -2036,7 +2020,12 @@ export const Storage = {
   },
   setProfile: (profile: UserProfile) => {
     const cleanProfile = { ...profile };
-    if (isDummyMockAvatar(cleanProfile.avatarUrl)) {
+    const activeEmail = getCustomWorkspaceEmail();
+    if (
+      cleanProfile.avatarUrl &&
+      (!isAvatarMatchingUserEmailDomain(cleanProfile.avatarUrl, activeEmail) ||
+        isDummyMockAvatar(cleanProfile.avatarUrl, activeEmail))
+    ) {
       cleanProfile.avatarUrl = '';
     }
     return saveToStorage(STORAGE_KEYS.PROFILE, cleanProfile);
@@ -2677,9 +2666,10 @@ export const Storage = {
           ? { ...currentProfile, ...data.profile }
           : { ...data.profile };
 
-        if (incomingAvatar && !isDummyMockAvatar(incomingAvatar)) {
+        const targetEmail = data.profile.contactEmail || activeEmail || '';
+        if (incomingAvatar && isAvatarMatchingUserEmailDomain(incomingAvatar, targetEmail)) {
           mergedProfile.avatarUrl = incomingAvatar;
-        } else if (isSameUser && currentAvatar && !isDummyMockAvatar(currentAvatar)) {
+        } else if (isSameUser && currentAvatar && isAvatarMatchingUserEmailDomain(currentAvatar, targetEmail)) {
           mergedProfile.avatarUrl = currentAvatar;
         } else {
           mergedProfile.avatarUrl = '';

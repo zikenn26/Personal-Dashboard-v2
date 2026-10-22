@@ -387,6 +387,7 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
                 <UserAvatar
                   avatarUrl={profile.avatarUrl}
                   name={profile.name}
+                  userEmail={profile.contactEmail}
                   size="md"
                   className="w-full h-full"
                 />

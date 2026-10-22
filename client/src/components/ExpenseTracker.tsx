@@ -361,64 +361,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     if (propImportLogs && Array.isArray(propImportLogs)) {
       return propImportLogs;
     }
-    // If the storage key explicitly exists in localStorage (even if empty []), use it directly
-    const rawStored = localStorage.getItem(STORAGE_KEYS.EXCEL_IMPORT_LOGS);
-    if (rawStored !== null) {
-      try {
-        const parsed = JSON.parse(rawStored);
-        if (Array.isArray(parsed)) return parsed;
-      } catch {}
-    }
-
-    // Only synthesize on initial migration if user had legacy uploaded sheet
-    const synthLogs: ExcelImportLog[] = [];
-    const lastMeta = localStorage.getItem('last_uploaded_expense_sheet');
-    if (lastMeta) {
-      try {
-        const p = JSON.parse(lastMeta);
-        synthLogs.push({
-          id: p.batchId || `sheet_init_${Date.now()}`,
-          fileName: p.fileName || 'Money_Manager_Export.xlsx',
-          uploadDate: new Date().toISOString(),
-          addedCount: p.count || 0,
-          skippedCount: 0,
-          totalRowsInSheet: p.count || 0,
-          totalAmountAdded: p.totalAmount || 0,
-          status: 'active',
-        });
-      } catch {}
-    }
-
-    // Also check if any expenses in tracker have a sourceFile not in synthLogs
-    const fileMap = new Map<string, { count: number; amount: number; batchId?: string }>();
-    for (const exp of expenses) {
-      if (exp.sourceFile && !Storage.isSheetDeleted(exp.sourceFile) && !Storage.isSheetDeleted(exp.importBatchId)) {
-        const entry = fileMap.get(exp.sourceFile) || { count: 0, amount: 0, batchId: exp.importBatchId };
-        entry.count += 1;
-        entry.amount += exp.amount;
-        fileMap.set(exp.sourceFile, entry);
-      }
-    }
-
-    for (const [fName, data] of fileMap.entries()) {
-      if (!Storage.isSheetDeleted(fName) && !synthLogs.some((l) => l.fileName === fName)) {
-        synthLogs.push({
-          id: data.batchId || `sheet_${Date.now()}_${synthLogs.length}`,
-          fileName: fName,
-          uploadDate: new Date().toISOString(),
-          addedCount: data.count,
-          skippedCount: 0,
-          totalRowsInSheet: data.count,
-          totalAmountAdded: Math.round(data.amount),
-          status: 'active',
-        });
-      }
-    }
-
-    if (synthLogs.length > 0) {
-      Storage.setExcelImportLogs(synthLogs);
-    }
-    return synthLogs;
+    return Storage.getExcelImportLogs();
   });
 
   // Keep spreadsheet import logs automatically synchronized across devices
@@ -428,9 +371,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       return;
     }
     const current = Storage.getExcelImportLogs();
-    if (current && current.length > 0) {
-      setImportLogs(current);
-    }
+    setImportLogs(Array.isArray(current) ? current : []);
   }, [propImportLogs, expenses]);
 
   // Optional active filter to view spendings exclusively from a specific sheet

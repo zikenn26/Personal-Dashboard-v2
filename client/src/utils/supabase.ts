@@ -201,11 +201,10 @@ const getInitialActiveUser = (): { id: string; email: string } => {
     const raw = localStorage.getItem('notion_os_auth_user_v1');
     if (raw) {
       const user = JSON.parse(raw);
-      if (user && user.email) {
-        const cleanEmail = user.email.toLowerCase().replace(/[^a-z0-9]/g, '_');
+      if (user && user.id && user.id !== 'guest') {
         return {
-          id: `user_${cleanEmail}`,
-          email: user.email.trim().toLowerCase(),
+          id: `user_${user.id}`,
+          email: user.email ? user.email.trim().toLowerCase() : 'guest@workspace.local',
         };
       }
     }
@@ -230,10 +229,43 @@ export const setCustomWorkspaceEmail = (email: string) => {
 };
 
 export const getCustomWorkspaceIdentifier = (): string => {
+  if (!activeUserIdentifier || activeUserIdentifier === 'user_guest') {
+    if (typeof window !== 'undefined') {
+      try {
+        const isSignedOut = localStorage.getItem('notion_os_auth_signed_out') === 'true';
+        if (!isSignedOut) {
+          const raw = localStorage.getItem('notion_os_auth_user_v1');
+          if (raw) {
+            const user = JSON.parse(raw);
+            if (user && user.id && user.id !== 'guest') {
+              activeUserIdentifier = `user_${user.id}`;
+              if (user.email) activeUserEmail = user.email.trim().toLowerCase();
+            }
+          }
+        }
+      } catch {}
+    }
+  }
   return activeUserIdentifier || 'user_guest';
 };
 
 export const getCustomWorkspaceEmail = (): string => {
+  if (!activeUserEmail || activeUserEmail === 'guest@workspace.local') {
+    if (typeof window !== 'undefined') {
+      try {
+        const isSignedOut = localStorage.getItem('notion_os_auth_signed_out') === 'true';
+        if (!isSignedOut) {
+          const raw = localStorage.getItem('notion_os_auth_user_v1');
+          if (raw) {
+            const user = JSON.parse(raw);
+            if (user && user.email) {
+              activeUserEmail = user.email.trim().toLowerCase();
+            }
+          }
+        }
+      } catch {}
+    }
+  }
   return activeUserEmail || 'guest@workspace.local';
 };
 
@@ -1171,11 +1203,26 @@ export const fetchWorkspaceFromSupabase = async (): Promise<CloudSyncResult> => 
       };
     }
 
-    const { data, error } = await client
+    let { data, error } = await client
       .from('user_workspaces')
       .select('workspace_data, updated_at')
       .eq('user_identifier', activeId)
       .maybeSingle();
+
+    // Migration fallback for existing accounts: check if existing workspace exists under user_email
+    if (!error && (!data || !data.workspace_data) && activeUserEmail) {
+      const { data: legacyRow, error: legacyErr } = await client
+        .from('user_workspaces')
+        .select('workspace_data, updated_at, user_identifier')
+        .eq('user_email', activeUserEmail)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!legacyErr && legacyRow && legacyRow.workspace_data && !legacyRow.user_identifier.startsWith('account_')) {
+        data = legacyRow;
+      }
+    }
 
     if (error) {
       return {
@@ -1359,7 +1406,6 @@ USING (
     auth.uid() = user_id
     OR auth.uid()::text = user_identifier
     OR user_identifier = 'user_' || auth.uid()::text
-    OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 );
 
 CREATE POLICY "Users can insert own workspace"
@@ -1370,7 +1416,6 @@ WITH CHECK (
     auth.uid() = user_id
     OR auth.uid()::text = user_identifier
     OR user_identifier = 'user_' || auth.uid()::text
-    OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 );
 
 CREATE POLICY "Users can update own workspace"
@@ -1381,13 +1426,11 @@ USING (
     auth.uid() = user_id
     OR auth.uid()::text = user_identifier
     OR user_identifier = 'user_' || auth.uid()::text
-    OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 )
 WITH CHECK (
     auth.uid() = user_id
     OR auth.uid()::text = user_identifier
     OR user_identifier = 'user_' || auth.uid()::text
-    OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 );
 
 CREATE POLICY "Users can delete own workspace"
@@ -1398,7 +1441,6 @@ USING (
     auth.uid() = user_id
     OR auth.uid()::text = user_identifier
     OR user_identifier = 'user_' || auth.uid()::text
-    OR (user_id IS NULL AND (user_email = auth.jwt()->>'email' OR user_identifier = 'user_' || replace(replace(auth.jwt()->>'email', '@', '_'), '.', '_')))
 );
 
 -- 5. Realtime publication for multi-device sync

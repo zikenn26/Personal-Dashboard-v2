@@ -78,7 +78,7 @@ describe('Supabase Auth & Dashboard Redirect Hardening Tests', { timeout: 30000 
     const storedUser = Auth.getCurrentUser();
     expect(storedUser).not.toBeNull();
     expect(storedUser?.email).toBe('gknayak@gmail.com');
-    expect(getCustomWorkspaceIdentifier()).toBe('user_gknayak_gmail_com');
+    expect(getCustomWorkspaceIdentifier()).toBe(getUserWorkspaceKey(res.user!));
   });
 
   it('4. verifyCurrentSession does NOT falsely log out users when workspace partition is lazy-initialized', async () => {
