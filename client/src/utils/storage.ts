@@ -2740,11 +2740,17 @@ export const Storage = {
           ? { ...data.profile, ...currentProfile }
           : { ...data.profile };
 
-        // Retain customized user name if current profile has a non-empty name
-        // and do not allow an older snapshot with "Gknayak" or empty to revert it
-        if (currentProfile.name && currentProfile.name.trim() && currentProfile.name !== 'User') {
+        const isGenericHandle = (str?: string | null) => {
+          if (!str) return true;
+          const s = str.trim().toLowerCase();
+          return s === 'gknayak' || s === 'user' || s === 'guest' || s === '' || s === 'admin';
+        };
+
+        // Retain customized user name if current profile has a real non-generic name
+        // and do not allow an older snapshot with "gknayak" or empty to revert it
+        if (currentProfile.name && !isGenericHandle(currentProfile.name)) {
           mergedProfile.name = currentProfile.name.trim();
-        } else if (data.profile.name && data.profile.name.trim()) {
+        } else if (data.profile.name && !isGenericHandle(data.profile.name)) {
           mergedProfile.name = data.profile.name.trim();
         } else if (isGknUser) {
           mergedProfile.name = 'Gulshan Kumar Nayak';

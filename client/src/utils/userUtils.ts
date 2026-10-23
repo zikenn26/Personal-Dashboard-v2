@@ -84,9 +84,32 @@ export function isDummyMockAvatar(url?: string | null, userEmail?: string | null
         if (parsed?.email) activeEmail = parsed.email.toLowerCase().trim();
       }
     } catch {}
+    if (!activeEmail) {
+      try {
+        const storedProfile = localStorage.getItem('lifeos_profile_v2');
+        if (storedProfile) {
+          const parsedProf = JSON.parse(storedProfile);
+          if (parsedProf?.contactEmail) activeEmail = parsedProf.contactEmail.toLowerCase().trim();
+        }
+      } catch {}
+    }
   }
-  const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gulnayak1206@gmail.com';
-  if (!isGknUser && (trimmed.includes('gknayak') || trimmed.includes('gulnayak'))) {
+
+  const isGknUser =
+    activeEmail === 'gknayak@gmail.com' ||
+    activeEmail === 'gulnayak1206@gmail.com' ||
+    activeEmail === 'gknayak' ||
+    activeEmail === 'gulnayak';
+
+  // Only reject Gulshan assets if this is an explicitly DIFFERENT authenticated account (e.g. arpitapri125@gmail.com)
+  const isDifferentUser = Boolean(
+    activeEmail &&
+    activeEmail.includes('@') &&
+    activeEmail !== 'guest@workspace.local' &&
+    !isGknUser
+  );
+
+  if (isDifferentUser && (trimmed.includes('gknayak') || trimmed.includes('gulnayak'))) {
     return true;
   }
 
@@ -136,6 +159,15 @@ export function isAvatarMatchingUserEmailDomain(url?: string | null, userEmail?:
         if (parsed?.email) activeEmail = parsed.email.toLowerCase().trim();
       }
     } catch {}
+    if (!activeEmail) {
+      try {
+        const storedProfile = localStorage.getItem('lifeos_profile_v2');
+        if (storedProfile) {
+          const parsedProf = JSON.parse(storedProfile);
+          if (parsedProf?.contactEmail) activeEmail = parsedProf.contactEmail.toLowerCase().trim();
+        }
+      } catch {}
+    }
   }
 
   // 1. First run dummy/mock/cross-account check
@@ -148,17 +180,31 @@ export function isAvatarMatchingUserEmailDomain(url?: string | null, userEmail?:
     return true;
   }
 
-  const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gulnayak1206@gmail.com';
+  const isGknUser =
+    activeEmail === 'gknayak@gmail.com' ||
+    activeEmail === 'gulnayak1206@gmail.com' ||
+    activeEmail === 'gknayak' ||
+    activeEmail === 'gulnayak';
+
+  const isDifferentUser = Boolean(
+    activeEmail &&
+    activeEmail.includes('@') &&
+    activeEmail !== 'guest@workspace.local' &&
+    !isGknUser
+  );
+
   const lowerUrl = trimmed.toLowerCase();
 
   // 2. Strict isolation for Gulshan's asset:
-  // If the URL contains 'gknayak' or 'gulnayak', it is only permitted if the email is Gulshan's
-  if (!isGknUser && (lowerUrl.includes('gknayak') || lowerUrl.includes('gulnayak'))) {
+  if (isDifferentUser && (lowerUrl.includes('gknayak') || lowerUrl.includes('gulnayak'))) {
     return false;
   }
 
-  // If the authenticated user is Gulshan (either gknayak@gmail.com or gulnayak1206@gmail.com),
-  // Gulshan's authentic uploaded and stored avatars are always accepted
+  // If user is Gulshan or guest / default portfolio, Gulshan's authentic avatar is always accepted
+  if (!isDifferentUser && (lowerUrl.includes('gknayak') || lowerUrl.includes('gulnayak'))) {
+    return true;
+  }
+
   if (isGknUser) {
     return true;
   }

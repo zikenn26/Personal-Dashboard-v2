@@ -137,8 +137,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSaveName = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSaveName = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     const clean = displayName.trim();
     if (clean && onUpdateUserName) {
       Sound.success(settings.soundEnabled);
@@ -146,6 +146,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setNameSaved(true);
       setTimeout(() => setNameSaved(false), 2500);
     }
+  };
+
+  const handleDone = () => {
+    const clean = displayName.trim();
+    if (clean && clean !== userName && onUpdateUserName) {
+      onUpdateUserName(clean);
+    }
+    onClose();
   };
 
   const executeRevoke = async (device: DeviceSession) => {
@@ -337,7 +345,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleDone}
             className="text-[#9CA3AF] hover:text-[#111827] dark:hover:text-white p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-sm cursor-pointer transition-colors"
           >
             ✕
@@ -362,6 +370,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <UserAvatar
                       avatarUrl={avatarUrl}
                       name={userName}
+                      userEmail={activeEmail}
                       size="lg"
                       className="w-full h-full rounded-xl"
                     />
@@ -792,7 +801,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleDone}
             className="px-5 py-2 rounded-xl text-xs font-bold bg-[#111827] dark:bg-white text-white dark:text-[#111827] hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
           >
             Done

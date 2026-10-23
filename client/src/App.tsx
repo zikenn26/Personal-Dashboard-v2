@@ -503,7 +503,14 @@ export default function App() {
           if (sbUser && (sbUser.id === user.id || (sbUser.email && sbUser.email.toLowerCase() === cleanEmail))) {
             const meta = sbUser.user_metadata || {};
             const candidateName = meta.full_name || meta.name || meta.display_name;
-            if (candidateName && candidateName !== 'Gknayak') metaName = candidateName;
+            const isGenericHandle = (str?: string | null) => {
+              if (!str) return true;
+              const s = str.trim().toLowerCase();
+              return s === 'gknayak' || s === 'user' || s === 'guest' || s === '' || s === 'admin';
+            };
+            if (candidateName && !isGenericHandle(candidateName)) {
+              metaName = candidateName;
+            }
 
             const isGknUser = cleanEmail === 'gknayak@gmail.com' || cleanEmail === 'gulnayak1206@gmail.com';
             const defaultGknAvatar = 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp';
@@ -534,6 +541,12 @@ export default function App() {
       }
     }
 
+    const isGenericHandle = (str?: string | null) => {
+      if (!str) return true;
+      const s = str.trim().toLowerCase();
+      return s === 'gknayak' || s === 'user' || s === 'guest' || s === '' || s === 'admin';
+    };
+
     // 8. Clear cached or local storage avatars if they do not match the currently authenticated user's email domain
     const current = Storage.getProfile();
     let updatedProfile = { ...current };
@@ -557,13 +570,27 @@ export default function App() {
       hasProfileChanges = true;
     }
 
+    const isGknUserAccount = cleanEmail === 'gknayak@gmail.com' || cleanEmail === 'gulnayak1206@gmail.com';
+    const defaultGknAvatarUrl = 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp';
+
+    // Ensure owner account never has empty avatar or falls back to initials
+    if (isGknUserAccount && (!updatedProfile.avatarUrl || isDummyMockAvatar(updatedProfile.avatarUrl, cleanEmail))) {
+      updatedProfile.avatarUrl = defaultGknAvatarUrl;
+      hasProfileChanges = true;
+    }
+
     // Apply user-specific profile fields fetched from Supabase user metadata
-    if (metaName && metaName !== 'Gknayak' && updatedProfile.name !== metaName) {
+    if (metaName && !isGenericHandle(metaName) && updatedProfile.name !== metaName) {
       updatedProfile.name = metaName;
       hasProfileChanges = true;
-    } else if (metaName && !updatedProfile.name) {
-      updatedProfile.name = metaName;
-      hasProfileChanges = true;
+    } else if (!updatedProfile.name || isGenericHandle(updatedProfile.name)) {
+      if (isGknUserAccount) {
+        updatedProfile.name = 'Gulshan Kumar Nayak';
+        hasProfileChanges = true;
+      } else if (metaName && !isGenericHandle(metaName)) {
+        updatedProfile.name = metaName;
+        hasProfileChanges = true;
+      }
     }
     if (cleanEmail && updatedProfile.contactEmail !== cleanEmail) {
       updatedProfile.contactEmail = cleanEmail;

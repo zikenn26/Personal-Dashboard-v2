@@ -213,6 +213,7 @@ export const ResumeView: React.FC<ResumeViewProps> = ({
             <UserAvatar
               avatarUrl={profile.avatarUrl}
               name={displayName}
+              userEmail={profile.contactEmail}
               size="lg"
               className="w-16 h-16 sm:w-20 sm:h-20 rounded-full border-2 border-white shadow-sm ring-1 ring-gray-200"
             />

@@ -10,6 +10,9 @@ android {
         versionCode 1
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'
+        }
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
@@ -18,29 +21,41 @@ android {
     }
     signingConfigs {
         debug {
-            v1SigningEnabled true
-            v2SigningEnabled true
+            if (file('release-key.jks').exists()) {
+                storeFile file('release-key.jks')
+                storePassword 'zikenn12345'
+                keyAlias 'zikenn-key'
+                keyPassword 'zikenn12345'
+                v1SigningEnabled true
+                v2SigningEnabled true
+                v3SigningEnabled true
+                v4SigningEnabled false
+            } else {
+                v1SigningEnabled true
+                v2SigningEnabled true
+                v3SigningEnabled true
+                v4SigningEnabled false
+            }
         }
         release {
             if (file('release-key.jks').exists()) {
                 storeFile file('release-key.jks')
-                def sPassword = System.getenv('RELEASE_KEYSTORE_PASSWORD') ?: project.findProperty('RELEASE_KEYSTORE_PASSWORD')
+                def sPassword = System.getenv('RELEASE_KEYSTORE_PASSWORD') ?: (project.findProperty('RELEASE_KEYSTORE_PASSWORD') ?: 'zikenn12345')
                 def kAlias = System.getenv('RELEASE_KEY_ALIAS') ?: (project.findProperty('RELEASE_KEY_ALIAS') ?: 'zikenn-key')
-                def kPassword = System.getenv('RELEASE_KEY_PASSWORD') ?: project.findProperty('RELEASE_KEY_PASSWORD')
-                if (sPassword && kPassword) {
-                    storePassword sPassword
-                    keyAlias kAlias
-                    keyPassword kPassword
-                    v1SigningEnabled true
-                    v2SigningEnabled true
-                }
+                def kPassword = System.getenv('RELEASE_KEY_PASSWORD') ?: (project.findProperty('RELEASE_KEY_PASSWORD') ?: 'zikenn12345')
+                storePassword sPassword
+                keyAlias kAlias
+                keyPassword kPassword
+                v1SigningEnabled true
+                v2SigningEnabled true
+                v3SigningEnabled true
+                v4SigningEnabled false
             } else {
-                // When release-key.jks is not present, fall back to debug signing configuration.
-                // This guarantees standalone shareable APKs (shared via WhatsApp, Files, etc.)
-                // are always properly signed with v1 & v2 signatures and avoid "App not installed" errors.
                 initWith(signingConfigs.debug)
                 v1SigningEnabled true
                 v2SigningEnabled true
+                v3SigningEnabled true
+                v4SigningEnabled false
             }
         }
     }

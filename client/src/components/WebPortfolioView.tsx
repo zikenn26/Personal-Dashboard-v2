@@ -347,6 +347,7 @@ export const WebPortfolioView: React.FC<WebPortfolioViewProps> = ({
               <UserAvatar
                 avatarUrl={profile.avatarUrl}
                 name={displayName}
+                userEmail={profile.contactEmail}
                 size="xl"
                 className="w-48 sm:w-56 md:w-64 h-64 sm:h-72 md:h-80 object-cover object-top rounded-3xl shadow-md border-4 border-white text-4xl"
               />

@@ -229,5 +229,62 @@ describe('User Profile Name, Avatar and Habits Persistence Tests', () => {
     const saved = Storage.getProfile();
     expect(saved.avatarUrl).toBe(cdnUrl);
   });
+
+  it('8. Lowercase "gknayak" incoming snapshot never reverts "Gulshan Kumar Nayak", and avatar is preserved', () => {
+    setCustomWorkspaceEmail('gknayak@gmail.com');
+    const prof = Storage.getProfile();
+    Storage.setProfile({ ...prof, name: 'Gulshan Kumar Nayak' });
+
+    // Incoming snapshot with lowercase "gknayak"
+    Storage.importAllDataPayload({
+      profile: {
+        name: 'gknayak',
+        contactEmail: 'gknayak@gmail.com',
+      },
+    });
+
+    // Name must stay Gulshan Kumar Nayak
+    expect(Storage.getProfile().name).toBe('Gulshan Kumar Nayak');
+
+    // Avatar check for handle 'gknayak' without full email
+    const cdnUrl = 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp';
+    expect(isAvatarMatchingUserEmailDomain(cdnUrl, 'gknayak')).toBe(true);
+    expect(isDummyMockAvatar(cdnUrl, 'gknayak')).toBe(false);
+
+    // Guest / Unauthenticated view also accepts owner avatar
+    expect(isAvatarMatchingUserEmailDomain(cdnUrl, null)).toBe(true);
+    expect(isDummyMockAvatar(cdnUrl, null)).toBe(false);
+  });
+
+  it('9. Android APK structure supports universal APK sharing without "App not installed" errors', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+
+    // 1. Permanent standalone keystore exists
+    const keystorePath = path.resolve(__dirname, '../../../android/app/release-key.jks');
+    expect(fs.existsSync(keystorePath)).toBe(true);
+
+    // 2. AndroidManifest.xml has android:extractNativeLibs="true" for WhatsApp/ShareIt APK transfers
+    const manifestPath = path.resolve(__dirname, '../../../android/app/src/main/AndroidManifest.xml');
+    const manifest = fs.readFileSync(manifestPath, 'utf-8');
+    expect(manifest.includes('android:extractNativeLibs="true"')).toBe(true);
+    expect(manifest.includes('android:permission="android.permission.BROADCAST_SMS"')).toBe(true);
+
+    // 3. variables.gradle targets SDK 35 (Android 15) for maximum device compatibility
+    const variablesPath = path.resolve(__dirname, '../../../android/variables.gradle');
+    const variables = fs.readFileSync(variablesPath, 'utf-8');
+    expect(variables.includes('compileSdkVersion = 35')).toBe(true);
+    expect(variables.includes('targetSdkVersion = 35')).toBe(true);
+
+    // 4. build.gradle configures universal ndk abiFilters and v1 + v2 + v3 signing
+    const buildGradlePath = path.resolve(__dirname, '../../../android/app/build.gradle');
+    const buildGradle = fs.readFileSync(buildGradlePath, 'utf-8');
+    expect(buildGradle.includes("abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'")).toBe(true);
+    expect(buildGradle.includes('v1SigningEnabled true')).toBe(true);
+    expect(buildGradle.includes('v2SigningEnabled true')).toBe(true);
+    expect(buildGradle.includes('v3SigningEnabled true')).toBe(true);
+    expect(buildGradle.includes('v4SigningEnabled false')).toBe(true);
+  });
 });
+
 
