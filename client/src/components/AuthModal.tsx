@@ -320,7 +320,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder={mode === 'forgot' ? 'your.email@example.com' : 'e.g. gknayak@gmail.com or username'}
+                    placeholder={mode === 'forgot' ? 'name@example.com' : 'Enter username or email'}
                     className="w-full pl-10 pr-3.5 py-2.5 bg-neutral-50 dark:bg-neutral-800/80 border border-neutral-200 dark:border-neutral-700 rounded-xl text-sm text-neutral-900 dark:text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>

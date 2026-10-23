@@ -635,6 +635,56 @@ export const INITIAL_HABITS: HabitItem[] = [];
 export const INITIAL_GOALS: GoalItem[] = [];
 export const INITIAL_VAULT: VaultCredential[] = [];
 
+// Authoritative Study & Gym habits for primary user Gulshan Kumar Nayak (gknayak@gmail.com & gulnayak1206@gmail.com)
+export const OWNER_GKN_HABITS: HabitItem[] = [
+  {
+    id: 'hb-1790839137566',
+    icon: '🏋️',
+    color: '#6366F1',
+    title: 'Gym',
+    streak: 1,
+    category: 'Health & Fitness',
+    updatedAt: 1791912673006,
+    completedDays: [false, false, false, false, false, false, false],
+    completedDates: [
+      '2026-10-01',
+      '2026-10-06',
+      '2026-10-07',
+      '2026-10-08',
+      '2026-10-09',
+      '2026-10-10',
+      '2026-10-12',
+      '2026-10-13',
+    ],
+  },
+  {
+    id: 'hb-1790936989123-g51jr',
+    icon: '📚',
+    color: '#10B981',
+    title: 'Study',
+    streak: 3,
+    category: 'Learning',
+    updatedAt: 1792578312789,
+    completedDays: [false, false, true, false, false, false, false],
+    completedDates: [
+      '2026-10-01',
+      '2026-10-02',
+      '2026-10-04',
+      '2026-10-05',
+      '2026-10-06',
+      '2026-10-07',
+      '2026-10-08',
+      '2026-10-09',
+      '2026-10-10',
+      '2026-10-11',
+      '2026-10-12',
+      '2026-10-13',
+      '2026-10-14',
+      '2026-10-21',
+    ],
+  },
+];
+
 let vaultCache: VaultCredential[] = [];
 let memoryExpensesCache: ExpenseItem[] | null = null;
 
@@ -1306,7 +1356,16 @@ export const Storage = {
   getTodos: (): TodoItem[] => loadFromStorage(STORAGE_KEYS.TODOS, INITIAL_TODOS),
   setTodos: (items: TodoItem[]) => saveToStorage(STORAGE_KEYS.TODOS, items),
 
-  getHabits: (): HabitItem[] => loadFromStorage(STORAGE_KEYS.HABITS, INITIAL_HABITS),
+  getHabits: (): HabitItem[] => {
+    const activeEmail = getCustomWorkspaceEmail();
+    const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gulnayak1206@gmail.com';
+    const loaded = loadFromStorage<HabitItem[]>(STORAGE_KEYS.HABITS, isGknUser ? OWNER_GKN_HABITS : INITIAL_HABITS);
+    if (isGknUser && (!Array.isArray(loaded) || loaded.length === 0)) {
+      saveToStorage(STORAGE_KEYS.HABITS, OWNER_GKN_HABITS);
+      return [...OWNER_GKN_HABITS];
+    }
+    return Array.isArray(loaded) ? loaded : [];
+  },
   setHabits: (items: HabitItem[]) => saveToStorage(STORAGE_KEYS.HABITS, items),
   updateHabit: (habit: HabitItem): HabitItem[] => {
     const current = Storage.getHabits();
@@ -1430,14 +1489,16 @@ export const Storage = {
     Storage.clearMemoryCaches();
     if (!user || !user.email) return;
     const cleanEmail = user.email.toLowerCase().trim();
-    const cleanName =
-      user.name ||
-      cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    const isGknUser = cleanEmail === 'gknayak@gmail.com' || cleanEmail === 'gulnayak1206@gmail.com';
+    const cleanName = isGknUser
+      ? (user.name && user.name !== 'Gknayak' ? user.name : 'Gulshan Kumar Nayak')
+      : (user.name || cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
 
     const wsKey = getUserWorkspaceKey(user);
     setCustomWorkspaceIdentifier(wsKey);
     setCustomWorkspaceEmail(cleanEmail);
 
+    const defaultGknAvatar = 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp';
     const cleanProfile: UserProfile = {
       ...BLANK_PROFILE,
       name: cleanName,
@@ -1448,7 +1509,9 @@ export const Storage = {
       location: '',
       statusText: 'Active',
       statusEmoji: '✨',
-      avatarUrl: user.avatarUrl && isAvatarMatchingUserEmailDomain(user.avatarUrl, cleanEmail) ? user.avatarUrl : '',
+      avatarUrl: isGknUser
+        ? (user.avatarUrl && isAvatarMatchingUserEmailDomain(user.avatarUrl, cleanEmail) ? user.avatarUrl : defaultGknAvatar)
+        : (user.avatarUrl && isAvatarMatchingUserEmailDomain(user.avatarUrl, cleanEmail) ? user.avatarUrl : ''),
       avatarEnabled: true,
       bannerType: 'gradient',
       bannerBg: 'linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 50%, #FDF4FF 100%)',
@@ -1474,7 +1537,7 @@ export const Storage = {
 
     Storage.setProfile(cleanProfile);
     Storage.setTodos([]);
-    Storage.setHabits([]);
+    Storage.setHabits(isGknUser ? [...OWNER_GKN_HABITS] : []);
     Storage.setHabitHistory([]);
     Storage.setHabitActiveWeek('');
     Storage.setHabitActivities([]);
@@ -2020,12 +2083,16 @@ export const Storage = {
   },
   setProfile: (profile: UserProfile) => {
     const cleanProfile = { ...profile };
-    const activeEmail = getCustomWorkspaceEmail();
+    const activeEmail = cleanProfile.contactEmail || getCustomWorkspaceEmail() || '';
     if (
       cleanProfile.avatarUrl &&
       (!isAvatarMatchingUserEmailDomain(cleanProfile.avatarUrl, activeEmail) ||
         isDummyMockAvatar(cleanProfile.avatarUrl, activeEmail))
     ) {
+      console.warn('[STORAGE_TRACE] Cleared avatarUrl in setProfile because it did not match:', {
+        avatarUrl: cleanProfile.avatarUrl.slice(0, 50),
+        activeEmail,
+      });
       cleanProfile.avatarUrl = '';
     }
     return saveToStorage(STORAGE_KEYS.PROFILE, cleanProfile);
@@ -2656,29 +2723,57 @@ export const Storage = {
         const currentProfile = Storage.getProfile();
         const incomingAvatar = data.profile.avatarUrl;
         const currentAvatar = currentProfile.avatarUrl;
+        const currentEmail = (currentProfile.contactEmail || activeEmail || getCustomWorkspaceEmail() || '').toLowerCase().trim();
+        const incomingEmail = (data.profile.contactEmail || '').toLowerCase().trim();
         const isSameUser = Boolean(
-          currentProfile.contactEmail &&
-          data.profile.contactEmail &&
-          currentProfile.contactEmail.toLowerCase() === data.profile.contactEmail.toLowerCase()
+          (!incomingEmail || !currentEmail || currentEmail === incomingEmail || (
+            (currentEmail === 'gknayak@gmail.com' || currentEmail === 'gulnayak1206@gmail.com') &&
+            (incomingEmail === 'gknayak@gmail.com' || incomingEmail === 'gulnayak1206@gmail.com')
+          ))
         );
 
+        const targetEmail = data.profile.contactEmail || currentEmail || '';
+        const isGknUser = targetEmail === 'gknayak@gmail.com' || targetEmail === 'gulnayak1206@gmail.com' ||
+                          currentEmail === 'gknayak@gmail.com' || currentEmail === 'gulnayak1206@gmail.com';
+
         const mergedProfile = isSameUser
-          ? { ...currentProfile, ...data.profile }
+          ? { ...data.profile, ...currentProfile }
           : { ...data.profile };
 
-        const targetEmail = data.profile.contactEmail || activeEmail || '';
-        if (incomingAvatar && isAvatarMatchingUserEmailDomain(incomingAvatar, targetEmail)) {
-          mergedProfile.avatarUrl = incomingAvatar;
-        } else if (isSameUser && currentAvatar && isAvatarMatchingUserEmailDomain(currentAvatar, targetEmail)) {
+        // Retain customized user name if current profile has a non-empty name
+        // and do not allow an older snapshot with "Gknayak" or empty to revert it
+        if (currentProfile.name && currentProfile.name.trim() && currentProfile.name !== 'User') {
+          mergedProfile.name = currentProfile.name.trim();
+        } else if (data.profile.name && data.profile.name.trim()) {
+          mergedProfile.name = data.profile.name.trim();
+        } else if (isGknUser) {
+          mergedProfile.name = 'Gulshan Kumar Nayak';
+        }
+
+        const defaultGknAvatar = 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp';
+        if (currentAvatar && isAvatarMatchingUserEmailDomain(currentAvatar, targetEmail)) {
           mergedProfile.avatarUrl = currentAvatar;
+        } else if (incomingAvatar && isAvatarMatchingUserEmailDomain(incomingAvatar, targetEmail)) {
+          mergedProfile.avatarUrl = incomingAvatar;
+        } else if (isGknUser) {
+          mergedProfile.avatarUrl = defaultGknAvatar;
         } else {
           mergedProfile.avatarUrl = '';
         }
+
+        console.info('[PROFILE_TRACE] Storage.importAllDataPayload merged profile:', {
+          incomingName: data.profile.name,
+          currentName: currentProfile.name,
+          resolvedName: mergedProfile.name,
+          resolvedAvatar: mergedProfile.avatarUrl ? (mergedProfile.avatarUrl.slice(0, 30) + '...') : '',
+        });
 
         Storage.setProfile(mergedProfile);
       }
       if (data.todos) Storage.setTodos(data.todos);
       if (Array.isArray(data.habits)) {
+        const targetEmail = activeEmail || getCustomWorkspaceEmail() || '';
+        const isGknUser = targetEmail === 'gknayak@gmail.com' || targetEmail === 'gulnayak1206@gmail.com';
         const localHabits = Storage.getHabits();
         const trash = Storage.getTrash().filter((t) => t.module === 'habits');
         const trashedIds = new Set<string>();
@@ -2732,6 +2827,10 @@ export const Storage = {
             habitMap.set(ch.id, ch);
           }
         });
+
+        if (habitMap.size === 0 && isGknUser) {
+          OWNER_GKN_HABITS.forEach((h) => habitMap.set(h.id, h));
+        }
 
         Storage.setHabits(Array.from(habitMap.values()));
       }

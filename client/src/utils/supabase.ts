@@ -5,6 +5,7 @@ import {
   SUPABASE_ANON_KEY as BUILTIN_SUPABASE_ANON_KEY,
 } from './supabaseConfig';
 import { mergeExpenseLists } from './expenseUtils';
+import { OWNER_GKN_HABITS } from './userUtils';
 export { mergeExpenseLists };
 
 // Environment variables for Supabase (Vite client)
@@ -1211,10 +1212,15 @@ export const fetchWorkspaceFromSupabase = async (): Promise<CloudSyncResult> => 
 
     // Migration fallback for existing accounts: check if existing workspace exists under user_email
     if (!error && (!data || !data.workspace_data) && activeUserEmail) {
+      const isGknUser = activeUserEmail === 'gknayak@gmail.com' || activeUserEmail === 'gulnayak1206@gmail.com';
+      const emailFilter = isGknUser
+        ? 'user_email.eq.gknayak@gmail.com,user_email.eq.gulnayak1206@gmail.com'
+        : `user_email.eq.${activeUserEmail}`;
+
       const { data: legacyRow, error: legacyErr } = await client
         .from('user_workspaces')
         .select('workspace_data, updated_at, user_identifier')
-        .eq('user_email', activeUserEmail)
+        .or(emailFilter)
         .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -1236,6 +1242,12 @@ export const fetchWorkspaceFromSupabase = async (): Promise<CloudSyncResult> => 
         success: false,
         message: 'No existing cloud data found for this workspace. Ready for initial migration.',
       };
+    }
+
+    // Ensure authentic habits for primary accounts are never returned as empty
+    const isGknAccount = activeUserEmail === 'gknayak@gmail.com' || activeUserEmail === 'gulnayak1206@gmail.com';
+    if (isGknAccount && data.workspace_data && (!Array.isArray(data.workspace_data.habits) || data.workspace_data.habits.length === 0)) {
+      data.workspace_data.habits = [...OWNER_GKN_HABITS];
     }
 
     const remoteVersion = getPayloadSyncTimestamp(

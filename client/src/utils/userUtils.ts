@@ -67,6 +67,11 @@ export function isDummyMockAvatar(url?: string | null, userEmail?: string | null
   // Detect local stock mock avatar asset
   if (trimmed.includes('avatar_profile_default')) return true;
 
+  // Allow custom data URLs and blob URLs uploaded directly by the user (not a dummy mock)
+  if (trimmed.startsWith('data:image/') || trimmed.startsWith('blob:')) {
+    return false;
+  }
+
   // Cross-account leakage prevention:
   // An avatar URL containing 'gknayak' or 'gulnayak' belongs strictly to Gulshan Kumar Nayak.
   // It must NEVER be used for any other user, guest, or newly created account.
@@ -96,7 +101,6 @@ export function isDummyMockAvatar(url?: string | null, userEmail?: string | null
     return true;
   }
 
-  // Detect third-party placeholder avatar services
   // Detect third-party placeholder avatar services
   if (
     trimmed.includes('pravatar.cc') ||
@@ -139,6 +143,26 @@ export function isAvatarMatchingUserEmailDomain(url?: string | null, userEmail?:
     return false;
   }
 
+  // Allow custom data URLs and blob URLs uploaded directly by the user
+  if (trimmed.startsWith('data:image/') || trimmed.startsWith('blob:')) {
+    return true;
+  }
+
+  const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gulnayak1206@gmail.com';
+  const lowerUrl = trimmed.toLowerCase();
+
+  // 2. Strict isolation for Gulshan's asset:
+  // If the URL contains 'gknayak' or 'gulnayak', it is only permitted if the email is Gulshan's
+  if (!isGknUser && (lowerUrl.includes('gknayak') || lowerUrl.includes('gulnayak'))) {
+    return false;
+  }
+
+  // If the authenticated user is Gulshan (either gknayak@gmail.com or gulnayak1206@gmail.com),
+  // Gulshan's authentic uploaded and stored avatars are always accepted
+  if (isGknUser) {
+    return true;
+  }
+
   // If no email available, accept if not dummy/mock
   if (!activeEmail || !activeEmail.includes('@')) {
     return true;
@@ -147,15 +171,6 @@ export function isAvatarMatchingUserEmailDomain(url?: string | null, userEmail?:
   const [userLocalPart, userDomain] = activeEmail.split('@');
   const userDomainSanitized = userDomain.replace(/[^a-z0-9]/g, '_');
   const userLocalSanitized = userLocalPart.replace(/[^a-z0-9]/g, '_');
-
-  const lowerUrl = trimmed.toLowerCase();
-
-  // 2. Strict isolation for Gulshan's asset:
-  // If the URL contains 'gknayak' or 'gulnayak', it is only permitted if the email is Gulshan's
-  const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gulnayak1206@gmail.com';
-  if (!isGknUser && (lowerUrl.includes('gknayak') || lowerUrl.includes('gulnayak'))) {
-    return false;
-  }
 
   // 3. If the URL contains an email domain identifier, ensure it matches the user's domain
   // e.g., avatar_<user>_<domain>_<timestamp>
@@ -243,3 +258,55 @@ export function getInitialsColorClass(name?: string | null): {
   const index = Math.abs(hash) % palettes.length;
   return palettes[index];
 }
+
+import type { HabitItem } from '../types';
+
+// Authoritative Study & Gym habits for primary user Gulshan Kumar Nayak (gknayak@gmail.com & gulnayak1206@gmail.com)
+export const OWNER_GKN_HABITS: HabitItem[] = [
+  {
+    id: 'hb-1790839137566',
+    icon: '🏋️',
+    color: '#6366F1',
+    title: 'Gym',
+    streak: 1,
+    category: 'Health & Fitness',
+    updatedAt: 1791912673006,
+    completedDays: [false, false, false, false, false, false, false],
+    completedDates: [
+      '2026-10-01',
+      '2026-10-06',
+      '2026-10-07',
+      '2026-10-08',
+      '2026-10-09',
+      '2026-10-10',
+      '2026-10-12',
+      '2026-10-13',
+    ],
+  },
+  {
+    id: 'hb-1790936989123-g51jr',
+    icon: '📚',
+    color: '#10B981',
+    title: 'Study',
+    streak: 3,
+    category: 'Learning',
+    updatedAt: 1792578312789,
+    completedDays: [false, false, true, false, false, false, false],
+    completedDates: [
+      '2026-10-01',
+      '2026-10-02',
+      '2026-10-04',
+      '2026-10-05',
+      '2026-10-06',
+      '2026-10-07',
+      '2026-10-08',
+      '2026-10-09',
+      '2026-10-10',
+      '2026-10-11',
+      '2026-10-12',
+      '2026-10-13',
+      '2026-10-14',
+      '2026-10-21',
+    ],
+  },
+];

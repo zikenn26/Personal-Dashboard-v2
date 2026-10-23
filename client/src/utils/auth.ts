@@ -77,14 +77,14 @@ export const DEFAULT_GKN_USER: AuthUser = {
   name: 'Gulshan Kumar Nayak',
   email: 'gknayak@gmail.com',
   provider: 'supabase',
-  avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1790759646967.webp',
+  avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
   createdAt: 1788945035065,
   lastLoginAt: 1791114446905,
 };
 
 const DEFAULT_GKN_PASS_HASH = '{"version":2,"algorithm":"PBKDF2-SHA256","iterations":210000,"salt":"hKX8naGtDOLD1akaKoa3JA==","hash":"S0LQqpogACGu4p46pxHDB/F8KyBX/HD4FySuUnk/6KY="}';
 
-import { getUserWorkspaceKey, isDummyMockAvatar, isAvatarMatchingUserEmailDomain } from './userUtils';
+import { getUserWorkspaceKey, isDummyMockAvatar, isAvatarMatchingUserEmailDomain, OWNER_GKN_HABITS } from './userUtils';
 export { getUserWorkspaceKey };
 
 // Helper to store & retrieve credentials map securely in local browser storage only.
@@ -102,6 +102,16 @@ const getLocalCredentialsMap = (): Record<string, { user: AuthUser; pass: string
   if (!map['gknayak@gmail.com']) {
     map['gknayak@gmail.com'] = {
       user: DEFAULT_GKN_USER,
+      pass: DEFAULT_GKN_PASS_HASH,
+    };
+  }
+  if (!map['gulnayak1206@gmail.com']) {
+    map['gulnayak1206@gmail.com'] = {
+      user: {
+        ...DEFAULT_GKN_USER,
+        id: 'usr_gulnayak1206_gmail_com',
+        email: 'gulnayak1206@gmail.com',
+      },
       pass: DEFAULT_GKN_PASS_HASH,
     };
   }
@@ -184,7 +194,15 @@ export const ensureUserWorkspaceInitialized = async (client: any, user: AuthUser
       console.info('[AUTH_DIAGNOSTIC] Initializing new isolated user workspace:', workspaceKey);
       const nowMs = Date.now();
       const nowIso = new Date().toISOString();
-      const derivedName = user.name || cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+      const isGknUser = cleanEmail === 'gknayak@gmail.com' || cleanEmail === 'gulnayak1206@gmail.com';
+      const derivedName = isGknUser
+        ? (user.name && user.name !== 'Gknayak' ? user.name : 'Gulshan Kumar Nayak')
+        : (user.name || cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
+      const defaultGknAvatar = 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp';
+      const userAvatar = isGknUser
+        ? (user.avatarUrl && isAvatarMatchingUserEmailDomain(user.avatarUrl, cleanEmail) ? user.avatarUrl : defaultGknAvatar)
+        : (user.avatarUrl && isAvatarMatchingUserEmailDomain(user.avatarUrl, cleanEmail) ? user.avatarUrl : '');
+
       const blankPayload: Record<string, any> = {
         user_id: user.id,
         user_identifier: workspaceKey,
@@ -195,10 +213,10 @@ export const ensureUserWorkspaceInitialized = async (client: any, user: AuthUser
             name: derivedName,
             contactEmail: cleanEmail,
             handle: `@${cleanId}`,
-            avatarUrl: user.avatarUrl && !isDummyMockAvatar(user.avatarUrl) ? user.avatarUrl : '',
+            avatarUrl: userAvatar,
           },
           todos: [],
-          habits: [],
+          habits: isGknUser ? [...OWNER_GKN_HABITS] : [],
           habitHistory: [],
           habitActivities: [],
           goals: [],
@@ -961,16 +979,23 @@ export const Auth = {
       }
     }
 
-    // Update in saved users list
-    try {
-      const stored = localStorage.getItem(SAVED_USERS_KEY);
-      if (stored) {
-        const list: AuthUser[] = JSON.parse(stored);
-        const updatedList = list.map((u) => (u.email.toLowerCase() === user.email.toLowerCase() ? updatedUser : u));
-        localStorage.setItem(SAVED_USERS_KEY, JSON.stringify(updatedList));
+    // Update Supabase auth user_metadata if available
+    const client = getSupabaseClient();
+    if (client && isSupabaseConfigured()) {
+      try {
+        const { data: authData } = await client.auth.getUser();
+        if (authData?.user) {
+          await client.auth.updateUser({
+            data: {
+              full_name: cleanName,
+              name: cleanName,
+              display_name: cleanName,
+            },
+          });
+        }
+      } catch (err) {
+        console.warn('Supabase updateUser name notice:', err);
       }
-    } catch {
-      // ignore
     }
 
     return updatedUser;
@@ -1015,11 +1040,18 @@ export const Auth = {
 
     // Update Supabase auth user_metadata if available
     const client = getSupabaseClient();
-    if (client && isSupabaseConfigured() && user.provider === 'supabase') {
+    if (client && isSupabaseConfigured()) {
       try {
-        await client.auth.updateUser({
-          data: { avatar_url: avatarUrl },
-        });
+        const { data: authData } = await client.auth.getUser();
+        if (authData?.user) {
+          await client.auth.updateUser({
+            data: {
+              avatar_url: avatarUrl,
+              avatarUrl: avatarUrl,
+              picture: avatarUrl,
+            },
+          });
+        }
       } catch (err) {
         console.warn('Supabase updateUser avatar notice:', err);
       }

@@ -503,15 +503,19 @@ export default function App() {
           if (sbUser && (sbUser.id === user.id || (sbUser.email && sbUser.email.toLowerCase() === cleanEmail))) {
             const meta = sbUser.user_metadata || {};
             const candidateName = meta.full_name || meta.name || meta.display_name;
-            if (candidateName) metaName = candidateName;
+            if (candidateName && candidateName !== 'Gknayak') metaName = candidateName;
 
+            const isGknUser = cleanEmail === 'gknayak@gmail.com' || cleanEmail === 'gulnayak1206@gmail.com';
+            const defaultGknAvatar = 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp';
             const rawMetaAvatar = meta.avatar_url || meta.avatarUrl || meta.picture || '';
             if (rawMetaAvatar && isAvatarMatchingUserEmailDomain(rawMetaAvatar, cleanEmail)) {
               metaAvatar = rawMetaAvatar;
+            } else if (isGknUser) {
+              metaAvatar = defaultGknAvatar;
             } else {
               metaAvatar = '';
-              // If Supabase user_metadata contained a contaminated avatar from an earlier session, sanitize it in Supabase
-              if (rawMetaAvatar) {
+              // If Supabase user_metadata contained a contaminated cross-account avatar, sanitize it in Supabase
+              if (rawMetaAvatar && !isGknUser) {
                 void client.auth.updateUser({ data: { avatar_url: '', avatarUrl: '' } }).catch(() => {});
               }
             }
@@ -554,7 +558,10 @@ export default function App() {
     }
 
     // Apply user-specific profile fields fetched from Supabase user metadata
-    if (metaName && updatedProfile.name !== metaName) {
+    if (metaName && metaName !== 'Gknayak' && updatedProfile.name !== metaName) {
+      updatedProfile.name = metaName;
+      hasProfileChanges = true;
+    } else if (metaName && !updatedProfile.name) {
       updatedProfile.name = metaName;
       hasProfileChanges = true;
     }
@@ -945,6 +952,7 @@ export default function App() {
       try {
         const result = await fetchWorkspaceFromSupabase();
         if (result.success && result.data && isMounted) {
+          console.info('[PROFILE_TRACE] autoSyncFromCloud applying snapshot. Incoming name:', result.data.profile?.name);
           isRemoteUpdating.current = true;
           Storage.importAllDataPayload(result.data);
 
@@ -998,6 +1006,7 @@ export default function App() {
     const unsubRealtime = subscribeToRealtimeWorkspace(
       (remoteData) => {
         if (remoteData && isMounted) {
+          console.info('[PROFILE_TRACE] Realtime workspace event applying snapshot. Incoming name:', remoteData.profile?.name);
           isRemoteUpdating.current = true;
           Storage.importAllDataPayload(remoteData);
           handleHydrateAllFromStorage(false);
@@ -1338,31 +1347,69 @@ export default function App() {
 
   // Profile Handlers
   const handleUpdateProfile = (updated: UserProfile) => {
-    setProfile(updated);
+    console.info('[PROFILE_TRACE] handleUpdateProfile called with:', {
+      name: updated.name,
+      avatarUrl: updated.avatarUrl ? (updated.avatarUrl.slice(0, 40) + '...') : '',
+      contactEmail: updated.contactEmail,
+    });
+
+    // 1. Immediately persist to Storage
     Storage.setProfile(updated);
 
-    // If avatar was updated, keep currentUser and account credentials in sync
-    if (updated.avatarUrl && updated.avatarUrl !== currentUser?.avatarUrl) {
-      void Auth.updateCurrentUserAvatar(updated.avatarUrl).then((updatedUser) => {
+    // 2. Re-hydrate immediately from Storage to guarantee single source of truth
+    const freshProfile = Storage.getProfile();
+    setProfile(freshProfile);
+
+    // 3. Keep currentUser and account credentials in sync
+    if (freshProfile.name && freshProfile.name.trim() && freshProfile.name.trim() !== currentUser?.name) {
+      void Auth.updateCurrentUserName(freshProfile.name.trim()).then((updatedUser) => {
         if (updatedUser) setCurrentUser(updatedUser);
       });
     }
 
-    // Immediately flush auto-sync to Supabase Cloud so all peer devices receive the update in real time (<30ms)
-    void flushAutoSyncImmediately(Storage.getAllDataPayload());
+    // If avatar was updated, keep currentUser and account credentials in sync
+    if (freshProfile.avatarUrl !== undefined && freshProfile.avatarUrl !== currentUser?.avatarUrl) {
+      void Auth.updateCurrentUserAvatar(freshProfile.avatarUrl).then((updatedUser) => {
+        if (updatedUser) setCurrentUser(updatedUser);
+      });
+    }
+
+    // 4. Immediately flush auto-sync to Supabase Cloud so all peer devices receive the update in real time (<30ms)
+    void flushAutoSyncImmediately({
+      ...Storage.getAllDataPayload(),
+      profile: freshProfile,
+    });
+
+    console.info('[PROFILE_TRACE] handleUpdateProfile successfully persisted and hydrated:', {
+      name: freshProfile.name,
+      avatarUrl: freshProfile.avatarUrl ? (freshProfile.avatarUrl.slice(0, 40) + '...') : '',
+    });
   };
 
   const handleUpdateUserName = async (newName: string) => {
     const clean = newName.trim();
     if (!clean) return;
-    const updatedProfile = { ...profile, name: clean };
-    setProfile(updatedProfile);
+    console.info('[PROFILE_TRACE] handleUpdateUserName called with:', clean);
+
+    const current = Storage.getProfile();
+    const updatedProfile = { ...current, name: clean };
     Storage.setProfile(updatedProfile);
+
+    const freshProfile = Storage.getProfile();
+    setProfile(freshProfile);
 
     const updatedUser = await Auth.updateCurrentUserName(clean);
     if (updatedUser) {
       setCurrentUser(updatedUser);
     }
+
+    // Immediately flush auto-sync to Supabase Cloud with updated profile so background cloud sync never reverts to old name
+    await flushAutoSyncImmediately({
+      ...Storage.getAllDataPayload(),
+      profile: freshProfile,
+    });
+
+    console.info('[PROFILE_TRACE] handleUpdateUserName successfully persisted and synced:', freshProfile.name);
   };
 
   // Sections Handlers
