@@ -264,9 +264,10 @@ describe('User Profile Name, Avatar and Habits Persistence Tests', () => {
     const keystorePath = path.resolve(__dirname, '../../../android/app/release-key.jks');
     expect(fs.existsSync(keystorePath)).toBe(true);
 
-    // 2. AndroidManifest.xml has android:extractNativeLibs="true" for WhatsApp/ShareIt APK transfers
+    // 2. AndroidManifest.xml has android:extractNativeLibs="true" and android:installLocation="auto" for WhatsApp/ShareIt APK transfers
     const manifestPath = path.resolve(__dirname, '../../../android/app/src/main/AndroidManifest.xml');
     const manifest = fs.readFileSync(manifestPath, 'utf-8');
+    expect(manifest.includes('android:installLocation="auto"')).toBe(true);
     expect(manifest.includes('android:extractNativeLibs="true"')).toBe(true);
     expect(manifest.includes('android:permission="android.permission.BROADCAST_SMS"')).toBe(true);
 

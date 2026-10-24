@@ -612,6 +612,25 @@ export const syncWorkspaceToSupabase = async (
     }
 
     if (!existing) {
+      if (
+        payloadToSave.workspace_data &&
+        (!Array.isArray(payloadToSave.workspace_data.expenses) || payloadToSave.workspace_data.expenses.length === 0)
+      ) {
+        try {
+          const activeEmail = (activeUserEmail || '').toLowerCase().trim();
+          const cachedRaw =
+            (activeEmail ? localStorage.getItem(`${activeEmail}_offline_expenses_cache`) : null) ||
+            localStorage.getItem('lifeos_offline_expenses_cache') ||
+            localStorage.getItem('lifeos_expenses_backup');
+          if (cachedRaw) {
+            const parsed = JSON.parse(cachedRaw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              payloadToSave.workspace_data.expenses = parsed;
+            }
+          }
+        } catch {}
+      }
+
       let { error: insertError } = await client
         .from('user_workspaces')
         .insert(payloadToSave);
@@ -716,9 +735,25 @@ export const syncWorkspaceToSupabase = async (
       const remoteExpenses = Array.isArray(existing.workspace_data?.expenses)
         ? existing.workspace_data.expenses
         : [];
-      const localExpenses = Array.isArray(payloadToSave.workspace_data?.expenses)
+      let localExpenses = Array.isArray(payloadToSave.workspace_data?.expenses)
         ? payloadToSave.workspace_data.expenses
         : [];
+
+      if (localExpenses.length === 0) {
+        try {
+          const activeEmail = (activeUserEmail || '').toLowerCase().trim();
+          const cachedRaw =
+            (activeEmail ? localStorage.getItem(`${activeEmail}_offline_expenses_cache`) : null) ||
+            localStorage.getItem('lifeos_offline_expenses_cache') ||
+            localStorage.getItem('lifeos_expenses_backup');
+          if (cachedRaw) {
+            const parsed = JSON.parse(cachedRaw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              localExpenses = parsed;
+            }
+          }
+        } catch {}
+      }
 
       if (payloadToSave.workspace_data) {
         // Safely reconcile local and remote expenses

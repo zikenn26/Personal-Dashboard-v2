@@ -12,7 +12,7 @@ import {
   isCreditTransaction,
   compareExpensesByDateTimeDesc,
 } from '../utils/expenseUtils';
-import { getCustomWorkspaceIdentifier, setCustomWorkspaceIdentifier } from '../utils/supabase';
+import { getCustomWorkspaceIdentifier, setCustomWorkspaceIdentifier, setCustomWorkspaceEmail } from '../utils/supabase';
 
 function setupMockLocalStorage() {
   if (typeof globalThis.window === 'undefined') {
@@ -67,10 +67,13 @@ function setupMockLocalStorage() {
 describe('P0 — SMS Rescan Selection & Detected Transactions Visibility', () => {
   beforeEach(() => {
     setupMockLocalStorage();
+    localStorage.clear();
+    Storage.clearMemoryCaches();
+    setCustomWorkspaceIdentifier('user_gulnayak1206@gmail.com');
+    setCustomWorkspaceEmail('gulnayak1206@gmail.com');
     Storage.setExpenses([]);
     Storage.setSmsAutoTrackingEnabled(true);
     Storage.clearProcessedSmsFingerprints();
-    setCustomWorkspaceIdentifier('user_gulnayak1206@gmail.com');
 
     // Setup realistic SMS inbox reader for manual rescan tests
     smsExpenseService.setInboxReaderForTesting(async (opts) => {

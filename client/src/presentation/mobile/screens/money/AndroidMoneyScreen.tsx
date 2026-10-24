@@ -40,6 +40,8 @@ import {
   compareExpensesByDateTimeDesc,
   getTransactionDisplayTitle,
   isCreditTransaction,
+  normalizeExpenseDateKey,
+  getLocalDateKey,
 } from '../../../../utils/expenseUtils';
 import { SmsTransaction } from '../../../../services/smsExpenseService';
 import { Capacitor } from '@capacitor/core';
@@ -79,22 +81,6 @@ const MONTH_ABBR = [
 ];
 
 const pad2 = (value: number): string => String(value).padStart(2, '0');
-
-const getLocalDateKey = (date: Date = new Date()): string =>
-  `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
-
-const normalizeExpenseDateKey = (value?: string | null): string => {
-  if (!value) return '';
-
-  const raw = String(value).trim();
-  if (!raw) return '';
-
-  const dateOnlyMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (dateOnlyMatch) return dateOnlyMatch[1];
-
-  const parsed = new Date(raw);
-  return Number.isNaN(parsed.getTime()) ? '' : getLocalDateKey(parsed);
-};
 
 const getMondayDateKey = (date: Date): string => {
   const monday = new Date(date);
@@ -383,6 +369,29 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
     });
     return Array.from(monthSet).sort().reverse();
   }, [activeExpenses, currentMonthPrefix]);
+
+  // If currently selected month has zero items, but active expenses exist in other available months,
+  // automatically select the most recent month containing transactions so the screen is never blank.
+  useEffect(() => {
+    if (activeExpenses.length > 0 && availableMonths.length > 0) {
+      const hasSelectedMonthExpenses = activeExpenses.some((e) => {
+        const k = normalizeExpenseDateKey(e.date);
+        return Boolean(k && k.startsWith(selectedMonthPrefix));
+      });
+
+      if (!hasSelectedMonthExpenses) {
+        const monthWithData = availableMonths.find((m) =>
+          activeExpenses.some((e) => {
+            const k = normalizeExpenseDateKey(e.date);
+            return Boolean(k && k.startsWith(m));
+          })
+        );
+        if (monthWithData) {
+          setSelectedMonthPrefix(monthWithData);
+        }
+      }
+    }
+  }, [activeExpenses, availableMonths, selectedMonthPrefix]);
 
   // Spending totals are debit-only
   const {

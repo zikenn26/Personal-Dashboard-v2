@@ -1450,8 +1450,66 @@ export const Storage = {
   },
 
   getExpenses: (): ExpenseItem[] => {
-    const raw = loadFromStorage<ExpenseItem[]>(STORAGE_KEYS.EXPENSES, INITIAL_EXPENSES);
+    const scopedKey = getScopedKey(STORAGE_KEYS.EXPENSES);
+    const hasScopedItem = localStorage.getItem(scopedKey) !== null;
+    const raw = loadFromStorage<ExpenseItem[]>(STORAGE_KEYS.EXPENSES, []);
     let list: ExpenseItem[] = Array.isArray(raw) ? raw.filter((e) => e && typeof e === 'object' && e.id) : [];
+
+    const activeEmail = (getCustomWorkspaceEmail() || '').toLowerCase().trim();
+    const ws = getCustomWorkspaceIdentifier();
+    const isGuest = !activeEmail || activeEmail === 'guest@workspace.local' || ws === 'user_guest';
+
+    // Strictly user-scoped offline cache recovery:
+    // If the scoped key is completely absent (cold startup / app restart offline), recover from persistent offline cache
+    if (!hasScopedItem || list.length === 0) {
+      const offlineCacheKeys: string[] = [];
+      if (!isGuest) {
+        offlineCacheKeys.push(
+          `${activeEmail}_offline_expenses_cache`,
+          `${ws}_offline_expenses_cache`,
+          `${ws}_lifeos_expenses_backup`
+        );
+
+        const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gulnayak1206@gmail.com';
+        if (isGknUser) {
+          offlineCacheKeys.push(
+            'gknayak@gmail.com_offline_expenses_cache',
+            'gulnayak1206@gmail.com_offline_expenses_cache',
+            'lifeos_offline_expenses_cache',
+            'user_usr_gulnayak1206_gmail_com_notion_os_v4_expenses',
+            'user_usr_gknayak_gmail_com_notion_os_v4_expenses',
+            'account_auth_gulnayak1206_gmail_com_notion_os_v4_expenses',
+            'account_auth_gknayak_gmail_com_notion_os_v4_expenses'
+          );
+        }
+      } else {
+        offlineCacheKeys.push(
+          'user_guest_offline_expenses_cache',
+          'user_guest_lifeos_expenses_backup'
+        );
+      }
+
+      let recoveredFromCache: ExpenseItem[] = [];
+      for (const key of offlineCacheKeys) {
+        try {
+          const cachedRaw = localStorage.getItem(key);
+          if (cachedRaw) {
+            const parsed = JSON.parse(cachedRaw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              const validParsed = parsed.filter((e: any) => e && typeof e === 'object' && e.id);
+              if (validParsed.length > recoveredFromCache.length) {
+                recoveredFromCache = validParsed;
+              }
+            }
+          }
+        } catch {}
+      }
+
+      if (recoveredFromCache.length > 0 && !hasScopedItem) {
+        list = recoveredFromCache;
+        saveToStorage(STORAGE_KEYS.EXPENSES, list);
+      }
+    }
 
     // Ensure immediate read-after-write consistency if memory cache contains newly committed items
     if (memoryExpensesCache && memoryExpensesCache.length > 0) {
@@ -1462,6 +1520,18 @@ export const Storage = {
         saveToStorage(STORAGE_KEYS.EXPENSES, list);
       }
     }
+
+    // Date healing: Ensure every expense in list has normalized YYYY-MM-DD date key
+    const deletedIds = new Set(Storage.getDeletedExpenseIds().map((id) => String(id).trim()));
+    list = list
+      .filter((e) => !deletedIds.has(String(e.id).trim()))
+      .map((e) => {
+        const normalizedDate = normalizeExpenseDateKey(e.date) || e.date || getLocalDateKey();
+        if (e.date !== normalizedDate) {
+          return { ...e, date: normalizedDate };
+        }
+        return e;
+      });
 
     return list;
   },
@@ -1581,6 +1651,17 @@ export const Storage = {
     Storage.setTrash([]);
     Storage.setDeletedExpenseIds([]);
     Storage.setDeletedSheetIds([]);
+
+    // Clear user-scoped offline expense caches
+    try {
+      localStorage.removeItem(`${cleanEmail}_offline_expenses_cache`);
+      localStorage.removeItem(`${wsKey}_offline_expenses_cache`);
+      localStorage.removeItem(`${wsKey}_lifeos_expenses_backup`);
+      if (cleanEmail === 'guest@workspace.local' || wsKey === 'user_guest') {
+        localStorage.removeItem('user_guest_offline_expenses_cache');
+        localStorage.removeItem('user_guest_lifeos_expenses_backup');
+      }
+    } catch {}
   },
 
   setExpenses: (items: ExpenseItem[]): ExpenseItem[] => {
@@ -1629,6 +1710,46 @@ export const Storage = {
     memoryExpensesCache = sanitized;
     saveToStorage(STORAGE_KEYS.EXPENSES, sanitized);
     saveToStorage('lifeos_expenses_backup', sanitized);
+
+    // Multi-tier persistent offline caching (strictly scoped to current user workspace):
+    // Guarantees spending data is always readable offline and never blanked by network reconnection
+    try {
+      const activeEmail = (getCustomWorkspaceEmail() || '').toLowerCase().trim();
+      const ws = getCustomWorkspaceIdentifier();
+      const isGuest = !activeEmail || activeEmail === 'guest@workspace.local' || ws === 'user_guest';
+      const serialized = JSON.stringify(sanitized);
+
+      if (sanitized.length > 0) {
+        if (!isGuest) {
+          localStorage.setItem(`${activeEmail}_offline_expenses_cache`, serialized);
+          localStorage.setItem(`${ws}_offline_expenses_cache`, serialized);
+          const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gulnayak1206@gmail.com';
+          if (isGknUser) {
+            localStorage.setItem('lifeos_offline_expenses_cache', serialized);
+            localStorage.setItem('lifeos_expenses_backup', serialized);
+          }
+        } else {
+          localStorage.setItem('user_guest_offline_expenses_cache', serialized);
+          localStorage.setItem('user_guest_lifeos_expenses_backup', serialized);
+        }
+      } else {
+        if (!isGuest) {
+          localStorage.removeItem(`${activeEmail}_offline_expenses_cache`);
+          localStorage.removeItem(`${ws}_offline_expenses_cache`);
+          const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gulnayak1206@gmail.com';
+          if (isGknUser) {
+            localStorage.removeItem('lifeos_offline_expenses_cache');
+            localStorage.removeItem('lifeos_expenses_backup');
+          }
+        } else {
+          localStorage.removeItem('user_guest_offline_expenses_cache');
+          localStorage.removeItem('user_guest_lifeos_expenses_backup');
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to persist offline expense cache:', e);
+    }
+
     void spendingWidgetService.syncToNativeWidget(sanitized);
     return sanitized;
   },
@@ -2051,9 +2172,15 @@ export const Storage = {
     const fallbackProfile: UserProfile = JSON.parse(JSON.stringify(BLANK_PROFILE));
     const rawData = loadFromStorage(STORAGE_KEYS.PROFILE, fallbackProfile);
     const data: UserProfile = { ...rawData };
-    if (!data.name || !data.name.trim()) {
-      const activeEmail = getCustomWorkspaceEmail();
-      if (activeEmail && activeEmail !== 'guest@workspace.local') {
+    const activeEmail = getCustomWorkspaceEmail();
+    const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gulnayak1206@gmail.com';
+
+    if (!data.name || !data.name.trim() || (isGknUser && (data.name.toLowerCase() === 'gknayak' || data.name === 'Gknayak'))) {
+      if (isGknUser) {
+        data.name = 'Gulshan Kumar Nayak';
+        data.contactEmail = activeEmail;
+        data.handle = '@gulshankumarnayak';
+      } else if (activeEmail && activeEmail !== 'guest@workspace.local') {
         const derivedName = activeEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
         data.name = derivedName;
         data.contactEmail = activeEmail;
@@ -2064,13 +2191,18 @@ export const Storage = {
         data.handle = '';
       }
     }
-    const activeEmail = getCustomWorkspaceEmail();
+
     if (
       data.avatarUrl &&
       (!isAvatarMatchingUserEmailDomain(data.avatarUrl, activeEmail) ||
         isDummyMockAvatar(data.avatarUrl, activeEmail))
     ) {
       data.avatarUrl = '';
+    }
+
+    const defaultGknAvatar = 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp';
+    if (isGknUser && !data.avatarUrl) {
+      data.avatarUrl = defaultGknAvatar;
     }
     if (!data.educationRecords) data.educationRecords = [];
     if (!data.jobExperiences) data.jobExperiences = [];

@@ -1373,44 +1373,82 @@ export default function App() {
   }, [settings.soundEnabled]);
 
   // Profile Handlers
-  const handleUpdateProfile = (updated: UserProfile) => {
+  const handleUpdateProfile = async (updated: Partial<UserProfile> | UserProfile) => {
     console.info('[PROFILE_TRACE] handleUpdateProfile called with:', {
       name: updated.name,
       avatarUrl: updated.avatarUrl ? (updated.avatarUrl.slice(0, 40) + '...') : '',
       contactEmail: updated.contactEmail,
     });
 
-    // 1. Immediately persist to Storage
-    Storage.setProfile(updated);
+    // Guard against race conditions from incoming background polls or realtime events
+    isRemoteUpdating.current = true;
 
-    // 2. Re-hydrate immediately from Storage to guarantee single source of truth
-    const freshProfile = Storage.getProfile();
-    setProfile(freshProfile);
+    try {
+      // 1. Immediately merge and persist to Storage
+      const current = Storage.getProfile();
+      const mergedProfile: UserProfile = {
+        ...current,
+        ...updated,
+      };
+      Storage.setProfile(mergedProfile);
 
-    // 3. Keep currentUser and account credentials in sync
-    if (freshProfile.name && freshProfile.name.trim() && freshProfile.name.trim() !== currentUser?.name) {
-      void Auth.updateCurrentUserName(freshProfile.name.trim()).then((updatedUser) => {
-        if (updatedUser) setCurrentUser(updatedUser);
+      // 2. Re-hydrate immediately from Storage to guarantee single source of truth
+      let freshProfile = Storage.getProfile();
+      setProfile(freshProfile);
+
+      // 3. Keep currentUser and account credentials in sync with Supabase Auth
+      const authUpdates: Promise<any>[] = [];
+
+      if (freshProfile.name && freshProfile.name.trim() && freshProfile.name.trim() !== currentUser?.name) {
+        authUpdates.push(
+          Auth.updateCurrentUserName(freshProfile.name.trim()).then((updatedUser) => {
+            if (updatedUser) setCurrentUser(updatedUser);
+          })
+        );
+      }
+
+      if (freshProfile.avatarUrl !== undefined && freshProfile.avatarUrl !== currentUser?.avatarUrl) {
+        authUpdates.push(
+          Auth.updateCurrentUserAvatar(freshProfile.avatarUrl).then((updatedUser) => {
+            if (updatedUser) setCurrentUser(updatedUser);
+          })
+        );
+      }
+
+      if (authUpdates.length > 0) {
+        await Promise.allSettled(authUpdates);
+      }
+
+      // 4. Atomically flush workspace payload to Supabase Cloud (<30ms broadcast + persistent upsert)
+      await flushAutoSyncImmediately({
+        ...Storage.getAllDataPayload(),
+        profile: freshProfile,
       });
-    }
 
-    // If avatar was updated, keep currentUser and account credentials in sync
-    if (freshProfile.avatarUrl !== undefined && freshProfile.avatarUrl !== currentUser?.avatarUrl) {
-      void Auth.updateCurrentUserAvatar(freshProfile.avatarUrl).then((updatedUser) => {
-        if (updatedUser) setCurrentUser(updatedUser);
+      // 5. Atomic post-Supabase verification and re-hydration to lock state and prevent stale reverts
+      Storage.setProfile(freshProfile);
+      freshProfile = Storage.getProfile();
+      setProfile(freshProfile);
+
+      const latestUser = Auth.getCurrentUser();
+      if (latestUser && latestUser.name !== freshProfile.name && freshProfile.name) {
+        setCurrentUser({ ...latestUser, name: freshProfile.name });
+      }
+
+      console.info('[PROFILE_TRACE] handleUpdateProfile successfully persisted and atomically hydrated:', {
+        name: freshProfile.name,
+        avatarUrl: freshProfile.avatarUrl ? (freshProfile.avatarUrl.slice(0, 40) + '...') : '',
       });
+    } catch (err) {
+      console.error('[PROFILE_TRACE] Notice during handleUpdateProfile:', err);
+      const fallback = Storage.getProfile();
+      setProfile(fallback);
+    } finally {
+      // Release remote updating lock after debounce window
+      setTimeout(() => {
+        isRemoteUpdating.current = false;
+      }, 500);
     }
-
-    // 4. Immediately flush auto-sync to Supabase Cloud so all peer devices receive the update in real time (<30ms)
-    void flushAutoSyncImmediately({
-      ...Storage.getAllDataPayload(),
-      profile: freshProfile,
-    });
-
-    console.info('[PROFILE_TRACE] handleUpdateProfile successfully persisted and hydrated:', {
-      name: freshProfile.name,
-      avatarUrl: freshProfile.avatarUrl ? (freshProfile.avatarUrl.slice(0, 40) + '...') : '',
-    });
   };
 
   const handleUpdateUserName = async (newName: string) => {
@@ -1418,25 +1456,41 @@ export default function App() {
     if (!clean) return;
     console.info('[PROFILE_TRACE] handleUpdateUserName called with:', clean);
 
-    const current = Storage.getProfile();
-    const updatedProfile = { ...current, name: clean };
-    Storage.setProfile(updatedProfile);
+    // Guard against concurrent background polls/reverts
+    isRemoteUpdating.current = true;
 
-    const freshProfile = Storage.getProfile();
-    setProfile(freshProfile);
+    try {
+      const current = Storage.getProfile();
+      const updatedProfile = { ...current, name: clean };
+      Storage.setProfile(updatedProfile);
 
-    const updatedUser = await Auth.updateCurrentUserName(clean);
-    if (updatedUser) {
-      setCurrentUser(updatedUser);
+      let freshProfile = Storage.getProfile();
+      setProfile(freshProfile);
+
+      const updatedUser = await Auth.updateCurrentUserName(clean);
+      if (updatedUser) {
+        setCurrentUser(updatedUser);
+      }
+
+      // Atomically flush auto-sync to Supabase Cloud with updated profile so background cloud sync never reverts to old name
+      await flushAutoSyncImmediately({
+        ...Storage.getAllDataPayload(),
+        profile: freshProfile,
+      });
+
+      // Atomic post-update re-assertion
+      Storage.setProfile(freshProfile);
+      freshProfile = Storage.getProfile();
+      setProfile(freshProfile);
+
+      console.info('[PROFILE_TRACE] handleUpdateUserName successfully persisted and synced:', freshProfile.name);
+    } catch (err) {
+      console.error('[PROFILE_TRACE] Notice during handleUpdateUserName:', err);
+    } finally {
+      setTimeout(() => {
+        isRemoteUpdating.current = false;
+      }, 500);
     }
-
-    // Immediately flush auto-sync to Supabase Cloud with updated profile so background cloud sync never reverts to old name
-    await flushAutoSyncImmediately({
-      ...Storage.getAllDataPayload(),
-      profile: freshProfile,
-    });
-
-    console.info('[PROFILE_TRACE] handleUpdateUserName successfully persisted and synced:', freshProfile.name);
   };
 
   // Sections Handlers

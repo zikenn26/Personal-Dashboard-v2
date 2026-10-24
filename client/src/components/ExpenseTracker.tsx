@@ -77,6 +77,8 @@ import {
   isCreditTransaction,
   getTransactionDisplayTitle,
   compareExpensesByDateTimeDesc,
+  normalizeExpenseDateKey,
+  getLocalDateKey,
 } from '../utils/expenseUtils';
 import { downloadExpenseExcel, downloadExpenseCSV } from '../utils/expenseExport';
 
@@ -207,24 +209,6 @@ const MONTH_ABBR = [
  * because UTC conversion can move an expense across midnight.
  */
 const pad2 = (value: number): string => String(value).padStart(2, '0');
-
-const getLocalDateKey = (date = new Date()): string =>
-  `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
-
-const normalizeExpenseDateKey = (value?: string | null): string => {
-  if (!value) return '';
-  const raw = String(value).trim();
-  if (!raw) return '';
-
-  // Stored Excel/manual dates are normally YYYY-MM-DD. Preserve the
-  // calendar day exactly; do not parse it through UTC.
-  const dateOnly = raw.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (dateOnly) return dateOnly[1];
-
-  // Only fall back to Date parsing for genuinely timestamp-like values.
-  const parsed = new Date(raw);
-  return Number.isNaN(parsed.getTime()) ? '' : getLocalDateKey(parsed);
-};
 
 const getYesterdayDateKey = (from = new Date()): string => {
   const date = new Date(from.getFullYear(), from.getMonth(), from.getDate());

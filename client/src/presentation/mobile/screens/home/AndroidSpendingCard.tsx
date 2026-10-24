@@ -3,41 +3,20 @@ import { CreditCard, ArrowRight, Plus } from 'lucide-react';
 import { ExpenseItem } from '../../../../types';
 import { nativeService } from '../../../../services/nativeService';
 import { CARD_SURFACE_CLASSES, CARD_HEADER_CLASSES, CARD_TITLE_CLASSES, CARD_BODY_CLASSES } from '../../design-system/materialYou';
-import { compareExpensesByDateTimeDesc, getTransactionDisplayTitle, isCreditTransaction } from '../../../../utils/expenseUtils';
+import {
+  compareExpensesByDateTimeDesc,
+  getTransactionDisplayTitle,
+  isCreditTransaction,
+  normalizeExpenseDateKey,
+  getLocalDateKey,
+} from '../../../../utils/expenseUtils';
 
 const MONTH_ABBR = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
 
-/**
- * Expense dates are calendar dates in the user's local timezone.
- *
- * IMPORTANT:
- * Do not use `toISOString().split('T')[0]` for these values.
- * `toISOString()` converts the Date to UTC first, which can shift a
- * local calendar date to the previous/next day.
- */
-const pad2 = (value: number): string => String(value).padStart(2, '0');
-
-const getLocalDateKey = (date: Date = new Date()): string =>
-  `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
-
-const normalizeExpenseDateKey = (value?: string | null): string => {
-  if (!value) return '';
-
-  const raw = String(value).trim();
-  if (!raw) return '';
-
-  // Expense records normally use YYYY-MM-DD. Preserve that calendar date
-  // exactly rather than parsing it as a UTC timestamp.
-  const dateOnlyMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (dateOnlyMatch) return dateOnlyMatch[1];
-
-  // Fallback for legacy values containing a full timestamp.
-  const parsed = new Date(raw);
-  return Number.isNaN(parsed.getTime()) ? '' : getLocalDateKey(parsed);
-};
+const pad2 = (val: number): string => String(val).padStart(2, '0');
 
 export interface AndroidSpendingCardProps {
   expenses: ExpenseItem[];
