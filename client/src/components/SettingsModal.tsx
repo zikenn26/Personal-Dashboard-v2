@@ -17,6 +17,9 @@ import {
   Sparkle,
   Sparkles,
   ExternalLink,
+  Cloud,
+  CloudOff,
+  WifiOff,
 } from 'lucide-react';
 import { AppSettings, AuthUser, DeviceSession } from '../types';
 import { Sound } from '../utils/audio';
@@ -564,6 +567,78 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 );
               })}
+            </div>
+          </div>
+
+          {/* SECTION: WORK OFFLINE & CLOUD SYNC */}
+          <div className="space-y-2.5 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">
+            <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold block">
+              Network &amp; Sync Control
+            </span>
+
+            <div className="p-3.5 rounded-xl border border-[#E5E7EB] dark:border-[#1F2937] bg-[#F9FAFB] dark:bg-[#1F2937]/40 flex items-center justify-between gap-3">
+              <div className="flex items-start gap-3 min-w-0">
+                <div
+                  className={`p-2 rounded-xl shrink-0 transition-colors ${
+                    settings.workOffline
+                      ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
+                      : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                  }`}
+                >
+                  {settings.workOffline ? (
+                    <CloudOff className="w-4 h-4" />
+                  ) : (
+                    <Cloud className="w-4 h-4" />
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-[#111827] dark:text-white">
+                      Work Offline
+                    </span>
+                    {settings.workOffline ? (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                        Offline Active
+                      </span>
+                    ) : (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                        Cloud Sync Active
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-[#6B7280] dark:text-[#9CA3AF] mt-0.5 leading-relaxed">
+                    Pause auto-sync to Supabase. All spending records, tasks, and notes remain saved safely in local offline cache.
+                  </p>
+                </div>
+              </div>
+
+              {/* Toggle switch */}
+              <button
+                type="button"
+                id="toggle-work-offline-btn"
+                role="switch"
+                aria-checked={!!settings.workOffline}
+                onClick={() => {
+                  Sound.toggle(settings.soundEnabled);
+                  const updatedOffline = !settings.workOffline;
+                  onUpdateSettings({
+                    ...settings,
+                    workOffline: updatedOffline,
+                  });
+                }}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 ${
+                  settings.workOffline ? 'bg-amber-500' : 'bg-gray-300 dark:bg-gray-600'
+                }`}
+                title={settings.workOffline ? 'Disable Work Offline (Resume Sync)' : 'Enable Work Offline (Stop Sync)'}
+              >
+                <span className="sr-only">Toggle Work Offline</span>
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                    settings.workOffline ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
             </div>
           </div>
 

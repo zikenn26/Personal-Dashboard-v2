@@ -104,6 +104,7 @@ import {
   setCustomWorkspaceIdentifier,
   setCustomWorkspaceEmail,
   checkHasNewerCloudWorkspace,
+  setWorkOfflineMode,
 } from './utils/supabase';
 import { nativeService } from './services/nativeService';
 import { normalizeExpenseDateKey, getLocalDateKey } from './utils/expenseUtils';
@@ -162,6 +163,7 @@ import {
   Radio,
   AlertTriangle,
   Smartphone,
+  WifiOff,
 } from 'lucide-react';
 
 // Framer Motion Page Transition Variants for Main Content View Area
@@ -1297,9 +1299,15 @@ export default function App() {
     if (newSettings.masterPin !== settings.masterPin && vault.length > 0) {
       void Storage.setVault(vault, newSettings.masterPin);
     }
+    setWorkOfflineMode(!!newSettings.workOffline);
     setSettings(newSettings);
     Storage.setSettings(newSettings);
   };
+
+  // Synchronize Supabase auto-sync offline suppression state with app settings
+  useEffect(() => {
+    setWorkOfflineMode(!!settings.workOffline);
+  }, [settings.workOffline]);
 
   const handleToggleDarkMode = () => {
     Sound.toggle(settings.soundEnabled);
@@ -3270,6 +3278,24 @@ export default function App() {
 
           {/* Right: Quick Add (+), Search, Theme, Settings, Auth & Profile */}
           <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+            {/* Offline Mode Indicator Badge */}
+            {settings.workOffline && (
+              <button
+                type="button"
+                id="navbar-offline-badge"
+                onClick={() => {
+                  Sound.click(settings.soundEnabled);
+                  setIsSettingsOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-semibold bg-amber-500/10 dark:bg-amber-400/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 dark:border-amber-400/20 hover:bg-amber-500/15 cursor-pointer transition-all shrink-0 animate-in fade-in duration-200"
+                title="Working Offline: Auto-sync to Supabase is paused. Click to open Settings."
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-400 animate-pulse" />
+                <WifiOff className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-600 dark:text-amber-400" />
+                <span>Offline</span>
+              </button>
+            )}
+
             {/* Top Quick Add Dropdown Menu (+) */}
             <div className="relative">
               <button

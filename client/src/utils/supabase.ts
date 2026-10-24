@@ -909,6 +909,46 @@ export const syncWorkspaceToSupabase = async (
   }
 };
 
+let workOfflineEnabled = false;
+
+/**
+ * Set the offline working mode.
+ * When enabled, halts scheduleAutoSyncToSupabase and flushAutoSyncImmediately.
+ */
+export const setWorkOfflineMode = (enabled: boolean) => {
+  workOfflineEnabled = !!enabled;
+  if (workOfflineEnabled) {
+    if (broadcastSyncTimeout) {
+      clearTimeout(broadcastSyncTimeout);
+      broadcastSyncTimeout = null;
+    }
+    if (autoSyncTimeout) {
+      clearTimeout(autoSyncTimeout);
+      autoSyncTimeout = null;
+    }
+    notifyStatus('idle');
+  }
+};
+
+/**
+ * Check if the workspace is currently in offline mode.
+ */
+export const isWorkOfflineMode = (): boolean => {
+  if (workOfflineEnabled) return true;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem('notion_os_v4_settings');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.workOffline) return true;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return false;
+};
+
 /**
  * Schedule high-speed auto-sync to Supabase.
  * Broadcasts to connected devices within 150ms and persists to PostgreSQL within 600ms.
@@ -917,6 +957,7 @@ export const scheduleAutoSyncToSupabase = (
   payloadGetter: () => any,
   delayMs = 600
 ) => {
+  if (isWorkOfflineMode()) return;
   if (!isSupabaseConfigured()) return;
   const activeId = getCustomWorkspaceIdentifier();
   if (activeId === 'user_guest' || activeId.startsWith('user_guest') || !activeUserEmail || activeUserEmail === 'guest@workspace.local') {
@@ -967,6 +1008,7 @@ export const scheduleAutoSyncToSupabase = (
  * Flush any pending auto-sync immediately (e.g. before tab switch or page close).
  */
 export const flushAutoSyncImmediately = async (payload: any) => {
+  if (isWorkOfflineMode()) return;
   if (!isSupabaseConfigured() || !payload) return;
   if (broadcastSyncTimeout) {
     clearTimeout(broadcastSyncTimeout);

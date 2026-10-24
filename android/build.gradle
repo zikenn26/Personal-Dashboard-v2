@@ -17,6 +17,13 @@ buildscript {
 
 apply from: "variables.gradle"
 
+// Root project common SDK versions
+ext {
+    compileSdkVersion = 36
+    targetSdkVersion = 36
+    minSdkVersion = 24
+}
+
 allprojects {
     repositories {
         google()

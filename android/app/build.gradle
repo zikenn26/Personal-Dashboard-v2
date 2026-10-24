@@ -28,13 +28,9 @@ android {
                 keyPassword 'zikenn12345'
                 v1SigningEnabled true
                 v2SigningEnabled true
-                v3SigningEnabled true
-                v4SigningEnabled false
             } else {
                 v1SigningEnabled true
                 v2SigningEnabled true
-                v3SigningEnabled true
-                v4SigningEnabled false
             }
         }
         release {
@@ -48,14 +44,10 @@ android {
                 keyPassword kPassword
                 v1SigningEnabled true
                 v2SigningEnabled true
-                v3SigningEnabled true
-                v4SigningEnabled false
             } else {
                 initWith(signingConfigs.debug)
                 v1SigningEnabled true
                 v2SigningEnabled true
-                v3SigningEnabled true
-                v4SigningEnabled false
             }
         }
     }
@@ -79,23 +71,25 @@ repositories {
 
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
-    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
-    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
-    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation "androidx.appcompat:appcompat:$rootProject.ext.androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$rootProject.ext.androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core:$rootProject.ext.androidxCoreVersion"
+    implementation "androidx.core:core-splashscreen:$rootProject.ext.coreSplashScreenVersion"
+    implementation "androidx.activity:activity:$rootProject.ext.androidxActivityVersion"
     implementation project(':capacitor-android')
-    testImplementation "junit:junit:$junitVersion"
-    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
-    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    testImplementation "junit:junit:$rootProject.ext.junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$rootProject.ext.androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$rootProject.ext.androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
 }
 
 apply from: 'capacitor.build.gradle'
 
-try {
-    def servicesJSON = file('google-services.json')
-    if (servicesJSON.text) {
+def servicesJSON = file('google-services.json')
+if (servicesJSON.exists() && servicesJSON.length() > 0) {
+    try {
         apply plugin: 'com.google.gms.google-services'
+    } catch(Exception e) {
+        logger.info("google-services plugin could not be applied: " + e.message)
     }
-} catch(Exception e) {
-    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
 }
