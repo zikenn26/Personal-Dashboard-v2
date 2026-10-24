@@ -1358,16 +1358,60 @@ export const Storage = {
   setTodos: (items: TodoItem[]) => saveToStorage(STORAGE_KEYS.TODOS, items),
 
   getHabits: (): HabitItem[] => {
-    const activeEmail = getCustomWorkspaceEmail();
+    const activeEmail = (getCustomWorkspaceEmail() || '').toLowerCase().trim();
+    const ws = getCustomWorkspaceIdentifier();
     const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gulnayak1206@gmail.com';
-    const loaded = loadFromStorage<HabitItem[]>(STORAGE_KEYS.HABITS, isGknUser ? OWNER_GKN_HABITS : INITIAL_HABITS);
+    const scopedKey = getScopedKey(STORAGE_KEYS.HABITS);
+    const hasScopedKey = localStorage.getItem(scopedKey) !== null;
+    let loaded = loadFromStorage<HabitItem[]>(STORAGE_KEYS.HABITS, []);
+
+    // Multi-tier offline recovery for habits: only if scoped key is absent (cold start/data loss)
+    if (!hasScopedKey && (!Array.isArray(loaded) || loaded.length === 0)) {
+      try {
+        const cachedRaw =
+          localStorage.getItem(`${activeEmail}_offline_habits_cache`) ||
+          localStorage.getItem(`${ws}_offline_habits_cache`) ||
+          (isGknUser ? localStorage.getItem('gknayak@gmail.com_offline_habits_cache') : null);
+        if (cachedRaw) {
+          const parsed = JSON.parse(cachedRaw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            loaded = parsed;
+            saveToStorage(STORAGE_KEYS.HABITS, loaded);
+          }
+        }
+      } catch {}
+    }
+
     if (isGknUser && (!Array.isArray(loaded) || loaded.length === 0)) {
       saveToStorage(STORAGE_KEYS.HABITS, OWNER_GKN_HABITS);
       return [...OWNER_GKN_HABITS];
     }
-    return Array.isArray(loaded) ? loaded : [];
+    return Array.isArray(loaded) && loaded.length > 0 ? loaded : (hasScopedKey ? [] : (isGknUser ? [...OWNER_GKN_HABITS] : INITIAL_HABITS));
   },
-  setHabits: (items: HabitItem[]) => saveToStorage(STORAGE_KEYS.HABITS, items),
+  setHabits: (items: HabitItem[]) => {
+    saveToStorage(STORAGE_KEYS.HABITS, items);
+    try {
+      const activeEmail = (getCustomWorkspaceEmail() || '').toLowerCase().trim();
+      const ws = getCustomWorkspaceIdentifier();
+      const isGuest = !activeEmail || activeEmail === 'guest@workspace.local' || ws === 'user_guest';
+      if (Array.isArray(items) && items.length > 0) {
+        const serialized = JSON.stringify(items);
+        if (!isGuest) {
+          localStorage.setItem(`${activeEmail}_offline_habits_cache`, serialized);
+          localStorage.setItem(`${ws}_offline_habits_cache`, serialized);
+        } else {
+          localStorage.setItem('user_guest_offline_habits_cache', serialized);
+        }
+      } else if (Array.isArray(items) && items.length === 0) {
+        if (!isGuest) {
+          localStorage.removeItem(`${activeEmail}_offline_habits_cache`);
+          localStorage.removeItem(`${ws}_offline_habits_cache`);
+        } else {
+          localStorage.removeItem('user_guest_offline_habits_cache');
+        }
+      }
+    } catch {}
+  },
   updateHabit: (habit: HabitItem): HabitItem[] => {
     const current = Storage.getHabits();
     const updated = current.map((h) => (h.id === habit.id ? { ...h, ...habit } : h));
@@ -1376,7 +1420,23 @@ export const Storage = {
   },
 
   getHabitHistory: (): HabitWeekRecord[] => {
-    const raw = loadFromStorage<HabitWeekRecord[]>(STORAGE_KEYS.HABIT_HISTORY, []);
+    let raw = loadFromStorage<HabitWeekRecord[]>(STORAGE_KEYS.HABIT_HISTORY, []);
+    if (!Array.isArray(raw) || raw.length === 0) {
+      try {
+        const activeEmail = (getCustomWorkspaceEmail() || '').toLowerCase().trim();
+        const ws = getCustomWorkspaceIdentifier();
+        const cachedRaw =
+          localStorage.getItem(`${activeEmail}_offline_habit_history_cache`) ||
+          localStorage.getItem(`${ws}_offline_habit_history_cache`);
+        if (cachedRaw) {
+          const parsed = JSON.parse(cachedRaw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            raw = parsed;
+            saveToStorage(STORAGE_KEYS.HABIT_HISTORY, raw);
+          }
+        }
+      } catch {}
+    }
     if (!Array.isArray(raw)) return [];
     const currentMonday = getMondayOfWeek();
     const currentWeekId = getWeekId(currentMonday);
@@ -1391,7 +1451,23 @@ export const Storage = {
       return !isSameId && !isSameStart && !isSameLabel;
     });
   },
-  setHabitHistory: (items: HabitWeekRecord[]) => saveToStorage(STORAGE_KEYS.HABIT_HISTORY, items),
+  setHabitHistory: (items: HabitWeekRecord[]) => {
+    saveToStorage(STORAGE_KEYS.HABIT_HISTORY, items);
+    try {
+      const activeEmail = (getCustomWorkspaceEmail() || '').toLowerCase().trim();
+      const ws = getCustomWorkspaceIdentifier();
+      const isGuest = !activeEmail || activeEmail === 'guest@workspace.local' || ws === 'user_guest';
+      if (Array.isArray(items) && items.length > 0) {
+        const serialized = JSON.stringify(items);
+        if (!isGuest) {
+          localStorage.setItem(`${activeEmail}_offline_habit_history_cache`, serialized);
+          localStorage.setItem(`${ws}_offline_habit_history_cache`, serialized);
+        } else {
+          localStorage.setItem('user_guest_offline_habit_history_cache', serialized);
+        }
+      }
+    } catch {}
+  },
 
   getHabitActiveWeek: (): string => loadFromStorage(STORAGE_KEYS.HABIT_ACTIVE_WEEK, ''),
   setHabitActiveWeek: (weekId: string) => saveToStorage(STORAGE_KEYS.HABIT_ACTIVE_WEEK, weekId),
@@ -1461,54 +1537,66 @@ export const Storage = {
     const isGuest = !activeEmail || activeEmail === 'guest@workspace.local' || ws === 'user_guest';
 
     // Strictly user-scoped offline cache recovery:
-    // If the scoped key is completely absent (cold startup / app restart offline), recover from persistent offline cache
-    if (!hasScopedItem || list.length === 0) {
-      const offlineCacheKeys: string[] = [];
-      if (!isGuest) {
-        offlineCacheKeys.push(
-          `${activeEmail}_offline_expenses_cache`,
-          `${ws}_offline_expenses_cache`,
-          `${ws}_lifeos_expenses_backup`
-        );
+    // Gather all persistent offline caches to ensure spending data is always readable offline and never blanked
+    const offlineCacheKeys: string[] = [];
+    if (!isGuest) {
+      offlineCacheKeys.push(
+        `${activeEmail}_offline_expenses_cache`,
+        `${ws}_offline_expenses_cache`,
+        `${ws}_lifeos_expenses_backup`
+      );
 
-        const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gulnayak1206@gmail.com';
-        if (isGknUser) {
-          offlineCacheKeys.push(
-            'gknayak@gmail.com_offline_expenses_cache',
-            'gulnayak1206@gmail.com_offline_expenses_cache',
-            'lifeos_offline_expenses_cache',
-            'user_usr_gulnayak1206_gmail_com_notion_os_v4_expenses',
-            'user_usr_gknayak_gmail_com_notion_os_v4_expenses',
-            'account_auth_gulnayak1206_gmail_com_notion_os_v4_expenses',
-            'account_auth_gknayak_gmail_com_notion_os_v4_expenses'
-          );
-        }
-      } else {
+      const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gulnayak1206@gmail.com';
+      if (isGknUser) {
         offlineCacheKeys.push(
-          'user_guest_offline_expenses_cache',
-          'user_guest_lifeos_expenses_backup'
+          'gknayak@gmail.com_offline_expenses_cache',
+          'gulnayak1206@gmail.com_offline_expenses_cache',
+          'lifeos_offline_expenses_cache',
+          'user_usr_gulnayak1206_gmail_com_notion_os_v4_expenses',
+          'user_usr_gknayak_gmail_com_notion_os_v4_expenses',
+          'account_auth_gulnayak1206_gmail_com_notion_os_v4_expenses',
+          'account_auth_gknayak_gmail_com_notion_os_v4_expenses',
+          'lifeos_expenses_backup'
         );
       }
+    } else {
+      offlineCacheKeys.push(
+        'user_guest_offline_expenses_cache',
+        'user_guest_lifeos_expenses_backup',
+        'lifeos_offline_expenses_cache',
+        'lifeos_expenses_backup'
+      );
+    }
 
-      let recoveredFromCache: ExpenseItem[] = [];
-      for (const key of offlineCacheKeys) {
-        try {
-          const cachedRaw = localStorage.getItem(key);
-          if (cachedRaw) {
-            const parsed = JSON.parse(cachedRaw);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              const validParsed = parsed.filter((e: any) => e && typeof e === 'object' && e.id);
-              if (validParsed.length > recoveredFromCache.length) {
-                recoveredFromCache = validParsed;
-              }
+    let recoveredFromCache: ExpenseItem[] = [];
+    for (const key of offlineCacheKeys) {
+      try {
+        const cachedRaw = localStorage.getItem(key);
+        if (cachedRaw) {
+          const parsed = JSON.parse(cachedRaw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const validParsed = parsed.filter((e: any) => e && typeof e === 'object' && e.id);
+            if (validParsed.length > recoveredFromCache.length) {
+              recoveredFromCache = validParsed;
             }
           }
-        } catch {}
-      }
+        }
+      } catch {}
+    }
 
-      if (recoveredFromCache.length > 0 && !hasScopedItem) {
+    if (recoveredFromCache.length > 0) {
+      if (list.length === 0) {
+        // Cold start or cleared scoped storage: recover completely from persistent offline cache
         list = recoveredFromCache;
         saveToStorage(STORAGE_KEYS.EXPENSES, list);
+      } else {
+        // If list contains some items (e.g. today's new transactions), merge in any missing historical items from cache
+        const listIds = new Set(list.map((e) => String(e.id).trim()));
+        const missingFromList = recoveredFromCache.filter((e) => !listIds.has(String(e.id).trim()));
+        if (missingFromList.length > 0) {
+          list = Storage.mergeExpenseLists(list, missingFromList);
+          saveToStorage(STORAGE_KEYS.EXPENSES, list);
+        }
       }
     }
 
@@ -1721,14 +1809,11 @@ export const Storage = {
       const serialized = JSON.stringify(sanitized);
 
       if (sanitized.length > 0) {
+        localStorage.setItem('lifeos_offline_expenses_cache', serialized);
+        localStorage.setItem('lifeos_expenses_backup', serialized);
         if (!isGuest) {
           localStorage.setItem(`${activeEmail}_offline_expenses_cache`, serialized);
           localStorage.setItem(`${ws}_offline_expenses_cache`, serialized);
-          const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gulnayak1206@gmail.com';
-          if (isGknUser) {
-            localStorage.setItem('lifeos_offline_expenses_cache', serialized);
-            localStorage.setItem('lifeos_expenses_backup', serialized);
-          }
         } else {
           localStorage.setItem('user_guest_offline_expenses_cache', serialized);
           localStorage.setItem('user_guest_lifeos_expenses_backup', serialized);
@@ -2941,16 +3026,18 @@ export const Storage = {
           if (existing) {
             const localUpdated = Number(existing.updatedAt || 0);
             const cloudUpdated = Number(ch.updatedAt || remoteTimestamp || 0);
+            const mergedDates = Array.from(new Set([...(existing.completedDates || []), ...(ch.completedDates || [])])).sort();
             if (cloudUpdated > localUpdated) {
               // Newer cloud habit takes precedence for completion/streak, preserving local title/category if missing in cloud
               habitMap.set(ch.id, {
                 ...existing,
                 ...ch,
+                completedDates: mergedDates,
                 title: ch.title || existing.title,
                 category: ch.category || existing.category,
               });
             } else {
-              // Local is newer or equal: preserve local edits and merge completedDays
+              // Local is newer or equal: preserve local edits and merge completedDays and completedDates
               const mergedDays = [false, false, false, false, false, false, false];
               for (let i = 0; i < 7; i++) {
                 mergedDays[i] = Boolean(existing.completedDays?.[i] || ch.completedDays?.[i]);
@@ -2959,6 +3046,7 @@ export const Storage = {
                 ...ch,
                 ...existing,
                 completedDays: mergedDays,
+                completedDates: mergedDates,
                 streak: Math.max(existing.streak || 0, ch.streak || 0),
               });
             }
