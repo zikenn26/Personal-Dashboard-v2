@@ -3,6 +3,7 @@ import { normalizeExpenseDateKey, getLocalDateKey } from '../utils/expenseUtils'
 
 export interface ExpenseRepository {
   init(): Promise<void>;
+  setWorkspace(workspaceKey: string): Promise<void>;
   getAll(): Promise<ExpenseItem[]>;
   getById(id: string): Promise<ExpenseItem | null>;
   save(expense: ExpenseItem): Promise<ExpenseItem>;
@@ -15,10 +16,12 @@ export interface ExpenseRepository {
   enqueueMutation(mutation: Omit<OutboxMutation, 'id' | 'timestamp' | 'retryCount'>): Promise<OutboxMutation>;
   getPendingOutbox(): Promise<OutboxMutation[]>;
   dequeueMutation(mutationId: string): Promise<void>;
+  dequeueMutations(mutationIds: string[]): Promise<void>;
   clearOutbox(): Promise<void>;
 
   // Tombstones
   recordTombstone(id: string): Promise<void>;
+  recordTombstones(ids: string[]): Promise<void>;
   getTombstones(): Promise<Set<string>>;
   isTombstoned(id: string): Promise<boolean>;
 
@@ -27,7 +30,7 @@ export interface ExpenseRepository {
   setSyncStatus(status: Partial<ExpenseSyncStatus>): Promise<void>;
 }
 
-const DB_NAME = 'lifeos_local_first_db';
+const DEFAULT_DB_NAME = 'lifeos_local_first_db';
 const DB_VERSION = 1;
 const STORE_EXPENSES = 'expenses';
 const STORE_OUTBOX = 'expense_outbox';
@@ -38,8 +41,19 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
   private db: IDBDatabase | null = null;
   private isInitialized = false;
   private initPromise: Promise<void> | null = null;
+  private workspaceKey: string = 'default';
 
   // In-memory fallback / mirror for synchronous read-after-write & non-IDB environments (Node/SSR/Vitest)
+  private memoryWorkspaces: Map<
+    string,
+    {
+      expenses: Map<string, ExpenseItem>;
+      outbox: Map<string, OutboxMutation>;
+      tombstones: Set<string>;
+      syncStatus: ExpenseSyncStatus;
+    }
+  > = new Map();
+
   private memoryExpenses: Map<string, ExpenseItem> = new Map();
   private memoryOutbox: Map<string, OutboxMutation> = new Map();
   private memoryTombstones: Set<string> = new Set();
@@ -49,6 +63,63 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
     lastSyncedAt: Date.now(),
     lastError: null,
   };
+
+  private getEffectiveDbName(): string {
+    if (!this.workspaceKey || this.workspaceKey === 'default') {
+      return DEFAULT_DB_NAME;
+    }
+    const sanitized = this.workspaceKey.replace(/[^a-zA-Z0-9_-]/g, '_');
+    return `lifeos_expenses_${sanitized}`;
+  }
+
+  private saveCurrentToPartition(): void {
+    this.memoryWorkspaces.set(this.workspaceKey, {
+      expenses: new Map(this.memoryExpenses),
+      outbox: new Map(this.memoryOutbox),
+      tombstones: new Set(this.memoryTombstones),
+      syncStatus: { ...this.memorySyncStatus },
+    });
+  }
+
+  private loadFromPartition(key: string): void {
+    const partition = this.memoryWorkspaces.get(key);
+    if (partition) {
+      this.memoryExpenses = new Map(partition.expenses);
+      this.memoryOutbox = new Map(partition.outbox);
+      this.memoryTombstones = new Set(partition.tombstones);
+      this.memorySyncStatus = { ...partition.syncStatus };
+    } else {
+      this.memoryExpenses = new Map();
+      this.memoryOutbox = new Map();
+      this.memoryTombstones = new Set();
+      this.memorySyncStatus = {
+        state: 'synced',
+        pendingCount: 0,
+        lastSyncedAt: Date.now(),
+        lastError: null,
+      };
+    }
+  }
+
+  public async setWorkspace(workspaceKey: string): Promise<void> {
+    const cleanKey = (workspaceKey || 'default').trim();
+    if (this.workspaceKey === cleanKey && this.isInitialized) return;
+
+    this.saveCurrentToPartition();
+
+    if (this.db) {
+      try {
+        this.db.close();
+      } catch {}
+      this.db = null;
+    }
+
+    this.workspaceKey = cleanKey;
+    this.isInitialized = false;
+    this.initPromise = null;
+    this.loadFromPartition(cleanKey);
+    await this.init();
+  }
 
   public async init(): Promise<void> {
     if (this.isInitialized && this.db) return;
@@ -62,8 +133,9 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
       }
 
       try {
+        const targetDbName = this.getEffectiveDbName();
         this.db = await new Promise<IDBDatabase>((resolve, reject) => {
-          const req = window.indexedDB.open(DB_NAME, DB_VERSION);
+          const req = window.indexedDB.open(targetDbName, DB_VERSION);
 
           req.onupgradeneeded = (e) => {
             const db = (e.target as IDBOpenDBRequest).result;
@@ -443,6 +515,30 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
     }
   }
 
+  public async dequeueMutations(mutationIds: string[]): Promise<void> {
+    if (!Array.isArray(mutationIds) || mutationIds.length === 0) return;
+    await this.init();
+    mutationIds.forEach((id) => this.memoryOutbox.delete(id));
+    this.memorySyncStatus.pendingCount = this.memoryOutbox.size;
+    if (this.memoryOutbox.size === 0 && this.memorySyncStatus.state === 'pending') {
+      this.memorySyncStatus.state = 'synced';
+    }
+
+    if (this.db) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const tx = this.db!.transaction(STORE_OUTBOX, 'readwrite');
+          const store = tx.objectStore(STORE_OUTBOX);
+          mutationIds.forEach((id) => store.delete(id));
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+        });
+      } catch (err) {
+        console.warn('[EXPENSE_REPO] dequeueMutations IDB notice:', err);
+      }
+    }
+  }
+
   public async clearOutbox(): Promise<void> {
     await this.init();
     this.memoryOutbox.clear();
@@ -479,6 +575,37 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
           tx.onerror = () => reject(tx.error);
         });
       } catch {}
+    }
+  }
+
+  public async recordTombstones(ids: string[]): Promise<void> {
+    if (!Array.isArray(ids) || ids.length === 0) return;
+    await this.init();
+    const cleanIds = ids.map((id) => String(id).trim()).filter(Boolean);
+    if (cleanIds.length === 0) return;
+
+    cleanIds.forEach((id) => {
+      this.memoryTombstones.add(id);
+      this.memoryExpenses.delete(id);
+    });
+
+    if (this.db) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const tx = this.db!.transaction([STORE_EXPENSES, STORE_TOMBSTONES], 'readwrite');
+          const expStore = tx.objectStore(STORE_EXPENSES);
+          const tombStore = tx.objectStore(STORE_TOMBSTONES);
+          const now = Date.now();
+          cleanIds.forEach((id) => {
+            expStore.delete(id);
+            tombStore.put({ id, deletedAt: now });
+          });
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+        });
+      } catch (err) {
+        console.warn('[EXPENSE_REPO] recordTombstones IDB notice:', err);
+      }
     }
   }
 

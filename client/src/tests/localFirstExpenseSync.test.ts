@@ -244,4 +244,126 @@ describe('Local-First Expense Storage & Reliable Sync Test Suite', () => {
     expect(inRepo.some((e) => e.id === 'legacy-1')).toBe(true);
     expect(inRepo.some((e) => e.id === 'legacy-2')).toBe(true);
   });
+
+  it('6. In-flight mutation dequeue safety preserves newly enqueued mutations during sync push', async () => {
+    // 1. First mutation queued before sync
+    const mut1 = await expenseRepo.enqueueMutation({
+      expenseId: 'exp-inflight-1',
+      action: 'create',
+      data: {
+        id: 'exp-inflight-1',
+        name: 'In-Flight Pre-Sync',
+        amount: 300,
+        category: 'Food',
+        date: '2026-03-29',
+        active: true,
+      },
+    });
+
+    const pendingInitial = await expenseRepo.getPendingOutbox();
+    expect(pendingInitial.length).toBe(1);
+    expect(pendingInitial[0].id).toBe(mut1.id);
+
+    // 2. While network push is in-flight, user adds another mutation
+    const mut2 = await expenseRepo.enqueueMutation({
+      expenseId: 'exp-inflight-2',
+      action: 'create',
+      data: {
+        id: 'exp-inflight-2',
+        name: 'In-Flight During-Sync',
+        amount: 850,
+        category: 'Shopping',
+        date: '2026-03-29',
+        active: true,
+      },
+    });
+
+    const pendingDuring = await expenseRepo.getPendingOutbox();
+    expect(pendingDuring.length).toBe(2);
+
+    // 3. Dequeue ONLY mut1 (the one that finished network push)
+    await expenseRepo.dequeueMutations([mut1.id]);
+
+    // 4. mut2 MUST remain in the outbox!
+    const pendingAfter = await expenseRepo.getPendingOutbox();
+    expect(pendingAfter.length).toBe(1);
+    expect(pendingAfter[0].id).toBe(mut2.id);
+    expect(pendingAfter[0].expenseId).toBe('exp-inflight-2');
+
+    const status = await expenseRepo.getSyncStatus();
+    expect(status.pendingCount).toBe(1);
+    expect(status.state).toBe('pending');
+  });
+
+  it('7. Remote tombstone ingestion deletes local item and prevents resurrection', async () => {
+    // 1. Create and persist local expense
+    const expense: ExpenseItem = {
+      id: 'exp-to-be-deleted-remotely',
+      name: 'To Be Deleted Remotely',
+      amount: 999,
+      category: 'Electronics',
+      date: '2026-03-29',
+      active: true,
+    };
+    await expenseRepo.save(expense);
+
+    const saved = await expenseRepo.getById('exp-to-be-deleted-remotely');
+    expect(saved).not.toBeNull();
+
+    // 2. Peer device deletes it remotely: remote tombstone arrives
+    await expenseRepo.recordTombstones(['exp-to-be-deleted-remotely']);
+
+    // 3. Item must be removed from repo and marked tombstoned
+    const afterTombstone = await expenseRepo.getById('exp-to-be-deleted-remotely');
+    expect(afterTombstone).toBeNull();
+
+    const isTomb = await expenseRepo.isTombstoned('exp-to-be-deleted-remotely');
+    expect(isTomb).toBe(true);
+
+    // 4. If remote array still has the old record, mergeExpenseLists must NOT resurrect it
+    const staleRemoteList: ExpenseItem[] = [expense];
+    const tombstones = await expenseRepo.getTombstones();
+    const merged = mergeExpenseLists([], staleRemoteList, tombstones);
+    expect(merged.length).toBe(0);
+  });
+
+  it('8. Workspace partitioning isolates data between user workspaces', async () => {
+    // Workspace A
+    await expenseRepo.setWorkspace('workspace_alpha');
+    await expenseRepo.save({
+      id: 'exp-alpha-1',
+      name: 'Alpha Expense',
+      amount: 100,
+      category: 'Work',
+      date: '2026-03-29',
+      active: true,
+    });
+
+    const alphaItems = await expenseRepo.getAll();
+    expect(alphaItems.some((e) => e.id === 'exp-alpha-1')).toBe(true);
+
+    // Workspace B
+    await expenseRepo.setWorkspace('workspace_beta');
+    const betaItemsBefore = await expenseRepo.getAll();
+    expect(betaItemsBefore.some((e) => e.id === 'exp-alpha-1')).toBe(false);
+
+    await expenseRepo.save({
+      id: 'exp-beta-1',
+      name: 'Beta Expense',
+      amount: 250,
+      category: 'Personal',
+      date: '2026-03-29',
+      active: true,
+    });
+
+    const betaItems = await expenseRepo.getAll();
+    expect(betaItems.some((e) => e.id === 'exp-beta-1')).toBe(true);
+    expect(betaItems.some((e) => e.id === 'exp-alpha-1')).toBe(false);
+
+    // Switch back to Workspace A
+    await expenseRepo.setWorkspace('workspace_alpha');
+    const alphaItemsRestored = await expenseRepo.getAll();
+    expect(alphaItemsRestored.some((e) => e.id === 'exp-alpha-1')).toBe(true);
+    expect(alphaItemsRestored.some((e) => e.id === 'exp-beta-1')).toBe(false);
+  });
 });

@@ -188,51 +188,81 @@ class ExpenseSyncService {
         clientTimestamp: Date.now(),
       };
 
+      // Track the specific mutation IDs in-flight for this sync pass
+      const inFlightMutationIds = outbox.map((m) => m.id);
+
       const syncResult = await syncWorkspaceToSupabase(payloadToSync, !isManual);
 
       if (syncResult.success) {
-        // Successfully pushed to Supabase: clear resolved outbox mutations
-        pushedCount = outbox.length;
-        await expenseRepo.clearOutbox();
+        // Successfully pushed to Supabase: dequeue ONLY the mutations that were in flight
+        pushedCount = inFlightMutationIds.length;
+        if (inFlightMutationIds.length > 0) {
+          await expenseRepo.dequeueMutations(inFlightMutationIds);
+        }
       } else {
         throw new Error(syncResult.message || 'Failed to sync with Supabase Cloud');
       }
 
       // 2. PULL PHASE: Safe remote reconciliation
       const remoteFetch = await fetchWorkspaceFromSupabase();
-      if (remoteFetch.success && remoteFetch.data && Array.isArray(remoteFetch.data.expenses)) {
-        const remoteExpenses: ExpenseItem[] = remoteFetch.data.expenses;
-        const currentTombstones = await expenseRepo.getTombstones();
+      if (remoteFetch.success && remoteFetch.data) {
+        // Absorb remote deletion tombstones from remote payload
+        const remoteTombstoneIds: string[] = [
+          ...(Array.isArray(remoteFetch.data._meta?.deletedExpenseIds) ? remoteFetch.data._meta.deletedExpenseIds : []),
+          ...(Array.isArray(remoteFetch.data.deletedExpenseIds) ? remoteFetch.data.deletedExpenseIds : []),
+        ];
 
-        // Filter out any remote expenses that have been deleted locally (tombstoned)
-        const validRemote = remoteExpenses.filter((e) => {
-          if (!e || !e.id) return false;
-          return !currentTombstones.has(String(e.id).trim());
-        });
+        if (Array.isArray(remoteFetch.data.trash)) {
+          remoteFetch.data.trash.forEach((t: any) => {
+            if (t && (t.module === 'expenses' || !t.module)) {
+              if (t.data?.id) remoteTombstoneIds.push(String(t.data.id).trim());
+              if (typeof t.data === 'string' && t.data.trim()) remoteTombstoneIds.push(t.data.trim());
+              if (t.id) remoteTombstoneIds.push(String(t.id).trim());
+            }
+          });
+        }
 
-        // Current fresh local items
-        const freshLocal = await expenseRepo.getAll();
-        const merged = mergeExpenseLists(freshLocal, validRemote, currentTombstones);
+        if (remoteTombstoneIds.length > 0) {
+          await expenseRepo.recordTombstones(remoteTombstoneIds);
+          await expenseRepo.deleteBatch(remoteTombstoneIds);
+        }
 
-        // Preserve any newly committed local additions
-        await expenseRepo.saveBatch(merged);
-        pulledCount = validRemote.length;
+        if (Array.isArray(remoteFetch.data.expenses)) {
+          const remoteExpenses: ExpenseItem[] = remoteFetch.data.expenses;
+          const currentTombstones = await expenseRepo.getTombstones();
 
-        // Keep Storage memory mirror and local caches synchronized
-        Storage.setExpenses(merged);
+          // Filter out any remote expenses that have been deleted locally or remotely
+          const validRemote = remoteExpenses.filter((e) => {
+            if (!e || !e.id) return false;
+            const id = String(e.id).trim();
+            return !currentTombstones.has(id) && (e as any).is_deleted !== true && (e as any).isDeleted !== true;
+          });
 
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(
-            new CustomEvent('dashboard-data-updated', {
-              detail: { module: 'expenses', updatedExpenses: merged },
-            })
-          );
+          // Current fresh local items
+          const freshLocal = await expenseRepo.getAll();
+          const merged = mergeExpenseLists(freshLocal, validRemote, currentTombstones);
+
+          // Preserve any newly committed local additions
+          await expenseRepo.saveBatch(merged);
+          pulledCount = validRemote.length;
+
+          // Keep Storage memory mirror and local caches synchronized
+          Storage.setExpenses(merged);
+
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(
+              new CustomEvent('dashboard-data-updated', {
+                detail: { module: 'expenses', updatedExpenses: merged },
+              })
+            );
+          }
         }
       }
 
+      const remainingOutbox = await expenseRepo.getPendingOutbox();
       this.updateStatus({
-        state: 'synced',
-        pendingCount: 0,
+        state: remainingOutbox.length > 0 ? 'pending' : 'synced',
+        pendingCount: remainingOutbox.length,
         lastSyncedAt: Date.now(),
         lastError: null,
       });

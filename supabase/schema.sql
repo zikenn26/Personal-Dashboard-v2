@@ -136,3 +136,95 @@ CREATE POLICY "Public can view portfolio assets"
 ON storage.objects FOR SELECT 
 TO public 
 USING (bucket_id IN ('avatars', 'covers'));
+
+-- =========================================================================
+-- 7. DEDICATED EXPENSES TABLE FOR INDIVIDUAL MUTATION SYNCHRONIZATION (OPTION A)
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS public.user_expenses (
+    id TEXT PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    workspace_identifier TEXT NOT NULL,
+    user_email TEXT,
+    name TEXT NOT NULL,
+    amount NUMERIC(12, 2) NOT NULL,
+    category TEXT NOT NULL,
+    date TEXT NOT NULL,
+    time TEXT,
+    direction TEXT NOT NULL DEFAULT 'DEBIT',
+    payment_method TEXT,
+    billing_cycle TEXT,
+    notes TEXT,
+    bank_name TEXT,
+    masked_account TEXT,
+    account_last4 TEXT,
+    reference_id TEXT,
+    sms_reference_id TEXT,
+    upi_reference TEXT,
+    raw_sms_text TEXT,
+    merchant TEXT,
+    payee TEXT,
+    source TEXT,
+    source_file TEXT,
+    import_batch_id TEXT,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    client_updated_at BIGINT NOT NULL DEFAULT 0,
+    version BIGINT NOT NULL DEFAULT 1
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_expenses_workspace ON public.user_expenses(workspace_identifier);
+CREATE INDEX IF NOT EXISTS idx_user_expenses_user_id ON public.user_expenses(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_expenses_date ON public.user_expenses(workspace_identifier, date);
+CREATE INDEX IF NOT EXISTS idx_user_expenses_updated_at ON public.user_expenses(workspace_identifier, updated_at);
+CREATE INDEX IF NOT EXISTS idx_user_expenses_ref ON public.user_expenses(workspace_identifier, sms_reference_id);
+
+ALTER TABLE public.user_expenses ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can read own expenses" ON public.user_expenses;
+DROP POLICY IF EXISTS "Users can insert own expenses" ON public.user_expenses;
+DROP POLICY IF EXISTS "Users can update own expenses" ON public.user_expenses;
+DROP POLICY IF EXISTS "Users can delete own expenses" ON public.user_expenses;
+
+CREATE POLICY "Users can read own expenses"
+ON public.user_expenses FOR SELECT TO authenticated
+USING (
+    auth.uid() = user_id 
+    OR workspace_identifier = 'user_' || auth.uid()::text
+    OR workspace_identifier = auth.uid()::text
+);
+
+CREATE POLICY "Users can insert own expenses"
+ON public.user_expenses FOR INSERT TO authenticated
+WITH CHECK (
+    auth.uid() = user_id 
+    OR workspace_identifier = 'user_' || auth.uid()::text
+    OR workspace_identifier = auth.uid()::text
+);
+
+CREATE POLICY "Users can update own expenses"
+ON public.user_expenses FOR UPDATE TO authenticated
+USING (
+    auth.uid() = user_id 
+    OR workspace_identifier = 'user_' || auth.uid()::text
+    OR workspace_identifier = auth.uid()::text
+)
+WITH CHECK (
+    auth.uid() = user_id 
+    OR workspace_identifier = 'user_' || auth.uid()::text
+    OR workspace_identifier = auth.uid()::text
+);
+
+CREATE POLICY "Users can delete own expenses"
+ON public.user_expenses FOR DELETE TO authenticated
+USING (
+    auth.uid() = user_id 
+    OR workspace_identifier = 'user_' || auth.uid()::text
+    OR workspace_identifier = auth.uid()::text
+);
+
+ALTER PUBLICATION supabase_realtime ADD TABLE public.user_expenses;
+

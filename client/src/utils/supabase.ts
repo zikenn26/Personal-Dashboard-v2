@@ -854,21 +854,70 @@ export const syncWorkspaceToSupabase = async (
         }
       }
 
-      let { data: updatedRows, error: updateError } = await client
+      // Optimistic Concurrency Control (OCC): ensure we don't clobber a concurrent remote update
+      let updateQuery = client
         .from('user_workspaces')
         .update(payloadToSave)
-        .eq('user_identifier', activeId)
-        .select('updated_at');
+        .eq('user_identifier', activeId);
+
+      if (existing && existing.updated_at) {
+        updateQuery = updateQuery.eq('updated_at', existing.updated_at);
+      }
+
+      let { data: updatedRows, error: updateError } = await updateQuery.select('updated_at');
 
       if (updateError && (updateError.code === '42703' || updateError.message?.includes('user_id'))) {
         delete payloadToSave.user_id;
-        const retryUpdate = await client
+        let retryQuery = client
           .from('user_workspaces')
           .update(payloadToSave)
-          .eq('user_identifier', activeId)
-          .select('updated_at');
+          .eq('user_identifier', activeId);
+        if (existing && existing.updated_at) {
+          retryQuery = retryQuery.eq('updated_at', existing.updated_at);
+        }
+        const retryUpdate = await retryQuery.select('updated_at');
         updatedRows = retryUpdate.data;
         updateError = retryUpdate.error;
+      }
+
+      // If OCC conflict detected (0 rows updated because remote row was modified concurrently)
+      if (!updateError && existing && existing.updated_at && (!updatedRows || updatedRows.length === 0)) {
+        console.warn('[SUPABASE_SYNC] OCC conflict detected: remote workspace updated concurrently. Re-fetching and merging...');
+        const { data: freshRemote } = await client
+          .from('user_workspaces')
+          .select('id, user_identifier, workspace_data, updated_at')
+          .eq('user_identifier', activeId)
+          .maybeSingle();
+
+        if (freshRemote && freshRemote.workspace_data) {
+          const freshRemoteExpenses = Array.isArray(freshRemote.workspace_data.expenses) ? freshRemote.workspace_data.expenses : [];
+          const curExpenses = Array.isArray(payloadToSave.workspace_data?.expenses) ? payloadToSave.workspace_data.expenses : [];
+          const reconciledExpenses = mergeExpenseLists(curExpenses, freshRemoteExpenses, trashedExpenseIds);
+          if (payloadToSave.workspace_data) {
+            payloadToSave.workspace_data.expenses = reconciledExpenses;
+          }
+          const freshVersion = getPayloadSyncTimestamp(freshRemote.workspace_data, freshRemote.updated_at);
+          syncTimestampMs = Math.max(syncTimestampMs, freshVersion + 1000);
+          now = new Date(syncTimestampMs).toISOString();
+          payloadToSave.updated_at = now;
+          if (payloadToSave.workspace_data?._meta) {
+            payloadToSave.workspace_data._meta.syncVersion = syncTimestampMs;
+            payloadToSave.workspace_data._meta.clientTimestamp = syncTimestampMs;
+          }
+
+          const occRetry = await client
+            .from('user_workspaces')
+            .update(payloadToSave)
+            .eq('user_identifier', activeId)
+            .eq('updated_at', freshRemote.updated_at)
+            .select('updated_at');
+
+          if (!occRetry.error) {
+            updatedRows = occRetry.data;
+          } else {
+            updateError = occRetry.error;
+          }
+        }
       }
 
       if (updateError) {
