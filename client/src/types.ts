@@ -1020,10 +1020,14 @@ export interface OutboxMutation {
 }
 
 export type ExpenseSyncStatusState = 'synced' | 'pending' | 'syncing' | 'offline' | 'error';
+export type ExpenseSyncMode = 'dedicated_table' | 'workspace_jsonb_fallback' | 'offline_local_first';
+export type ExpenseMigrationState = 'pending' | 'in_progress' | 'completed' | 'fallback_mode' | 'failed';
 
 export interface ExpenseSyncStatus {
   state: ExpenseSyncStatusState;
   pendingCount: number;
   lastSyncedAt: number | null;
   lastError: string | null;
+  syncMode?: ExpenseSyncMode;
+  migrationState?: ExpenseMigrationState;
 }

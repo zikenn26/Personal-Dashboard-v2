@@ -1542,15 +1542,24 @@ export const pushExpenseMutationsToDedicatedTable = async (
     if (mut.action === 'delete') {
       const delId = String(mut.expenseId || mut.payload?.id || '').trim();
       if (!delId) continue;
+      const targetExp = (mut.data || mut.payload?.expense || {}) as Partial<ExpenseItem>;
       recordsToUpsert.push({
         id: delId,
         user_id: authenticatedUserId || undefined,
         workspace_identifier: activeId,
         user_email: resolvedEmail,
-        name: 'Deleted Expense',
-        amount: 0,
-        category: 'Other',
-        date: getLocalDateKey(),
+        name: (targetExp.name || 'Expense').trim(),
+        amount: Number(targetExp.amount) || 0,
+        category: (targetExp.category || 'Other').trim(),
+        date: targetExp.date || getLocalDateKey(),
+        time: targetExp.time || null,
+        direction: targetExp.direction || 'DEBIT',
+        payment_method: targetExp.paymentMethod || null,
+        bank_name: targetExp.bankName || targetExp.bankOrAccount || null,
+        account_last4: targetExp.accountLast4 || null,
+        reference_id: targetExp.referenceId || null,
+        sms_reference_id: targetExp.smsReferenceId || null,
+        active: false,
         is_deleted: true,
         deleted_at: new Date().toISOString(),
         client_updated_at: mut.timestamp || Date.now(),
@@ -1559,18 +1568,33 @@ export const pushExpenseMutationsToDedicatedTable = async (
       });
     } else if (mut.action === 'batch_delete') {
       const ids: string[] = Array.isArray(mut.payload?.ids) ? mut.payload.ids : [mut.expenseId];
+      const itemsMap = new Map<string, Partial<ExpenseItem>>();
+      if (Array.isArray(mut.payload?.expenses)) {
+        mut.payload.expenses.forEach((e: any) => {
+          if (e && e.id) itemsMap.set(String(e.id).trim(), e);
+        });
+      }
       ids.forEach((delId) => {
         const cleanId = String(delId).trim();
         if (!cleanId) return;
+        const targetExp = itemsMap.get(cleanId) || {};
         recordsToUpsert.push({
           id: cleanId,
           user_id: authenticatedUserId || undefined,
           workspace_identifier: activeId,
           user_email: resolvedEmail,
-          name: 'Deleted Expense',
-          amount: 0,
-          category: 'Other',
-          date: getLocalDateKey(),
+          name: (targetExp.name || 'Expense').trim(),
+          amount: Number(targetExp.amount) || 0,
+          category: (targetExp.category || 'Other').trim(),
+          date: targetExp.date || getLocalDateKey(),
+          time: targetExp.time || null,
+          direction: targetExp.direction || 'DEBIT',
+          payment_method: targetExp.paymentMethod || null,
+          bank_name: targetExp.bankName || targetExp.bankOrAccount || null,
+          account_last4: targetExp.accountLast4 || null,
+          reference_id: targetExp.referenceId || null,
+          sms_reference_id: targetExp.smsReferenceId || null,
+          active: false,
           is_deleted: true,
           deleted_at: new Date().toISOString(),
           client_updated_at: mut.timestamp || Date.now(),
@@ -2027,4 +2051,173 @@ CREATE POLICY "Public can view portfolio assets"
 ON storage.objects FOR SELECT 
 TO public 
 USING (bucket_id IN ('avatars', 'covers'));
+
+-- =========================================================================
+-- 7. DEDICATED EXPENSES TABLE FOR INDIVIDUAL MUTATION SYNCHRONIZATION
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS public.user_expenses (
+    id TEXT PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    workspace_identifier TEXT NOT NULL,
+    user_email TEXT,
+    name TEXT NOT NULL,
+    amount NUMERIC(12, 2) NOT NULL,
+    category TEXT NOT NULL,
+    date TEXT NOT NULL,
+    time TEXT,
+    direction TEXT NOT NULL DEFAULT 'DEBIT',
+    payment_method TEXT,
+    billing_cycle TEXT,
+    notes TEXT,
+    bank_name TEXT,
+    masked_account TEXT,
+    account_last4 TEXT,
+    reference_id TEXT,
+    sms_reference_id TEXT,
+    upi_reference TEXT,
+    raw_sms_text TEXT,
+    merchant TEXT,
+    payee TEXT,
+    source TEXT,
+    source_file TEXT,
+    import_batch_id TEXT,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    client_updated_at BIGINT NOT NULL DEFAULT 0,
+    version BIGINT NOT NULL DEFAULT 1
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_expenses_workspace ON public.user_expenses(workspace_identifier);
+CREATE INDEX IF NOT EXISTS idx_user_expenses_user_id ON public.user_expenses(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_expenses_date ON public.user_expenses(workspace_identifier, date);
+CREATE INDEX IF NOT EXISTS idx_user_expenses_updated_at ON public.user_expenses(workspace_identifier, updated_at);
+CREATE INDEX IF NOT EXISTS idx_user_expenses_ref ON public.user_expenses(workspace_identifier, sms_reference_id);
+
+ALTER TABLE public.user_expenses ENABLE ROW LEVEL SECURITY;
+
+CREATE OR REPLACE FUNCTION public.is_authorized_workspace(ws_id TEXT)
+RETURNS BOOLEAN AS $$
+BEGIN
+    IF ws_id IS NULL THEN
+        RETURN FALSE;
+    END IF;
+    IF ws_id = 'user_' || auth.uid()::text OR ws_id = auth.uid()::text THEN
+        RETURN TRUE;
+    END IF;
+    RETURN EXISTS (
+        SELECT 1 FROM public.user_workspaces w
+        WHERE w.user_identifier = ws_id
+          AND (w.user_id = auth.uid() OR w.user_identifier = 'user_' || auth.uid()::text OR w.user_identifier = auth.uid()::text)
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+
+DROP POLICY IF EXISTS "Users can read own expenses" ON public.user_expenses;
+DROP POLICY IF EXISTS "Users can insert own expenses" ON public.user_expenses;
+DROP POLICY IF EXISTS "Users can update own expenses" ON public.user_expenses;
+DROP POLICY IF EXISTS "Users can delete own expenses" ON public.user_expenses;
+
+CREATE POLICY "Users can read own expenses"
+ON public.user_expenses FOR SELECT TO authenticated
+USING (
+    public.is_authorized_workspace(workspace_identifier)
+    AND (user_id IS NULL OR user_id = auth.uid())
+);
+
+CREATE POLICY "Users can insert own expenses"
+ON public.user_expenses FOR INSERT TO authenticated
+WITH CHECK (
+    public.is_authorized_workspace(workspace_identifier)
+    AND (user_id IS NULL OR user_id = auth.uid())
+    AND (user_email IS NULL OR lower(user_email) = lower(COALESCE(auth.jwt() ->> 'email', '')))
+);
+
+CREATE POLICY "Users can update own expenses"
+ON public.user_expenses FOR UPDATE TO authenticated
+USING (
+    public.is_authorized_workspace(workspace_identifier)
+    AND (user_id IS NULL OR user_id = auth.uid())
+)
+WITH CHECK (
+    public.is_authorized_workspace(workspace_identifier)
+    AND (user_id IS NULL OR user_id = auth.uid())
+    AND (user_email IS NULL OR lower(user_email) = lower(COALESCE(auth.jwt() ->> 'email', '')))
+);
+
+CREATE POLICY "Users can delete own expenses"
+ON public.user_expenses FOR DELETE TO authenticated
+USING (
+    public.is_authorized_workspace(workspace_identifier)
+    AND (user_id IS NULL OR user_id = auth.uid())
+);
+
+-- =========================================================================
+-- 8. SERVER-ENFORCED OPTIMISTIC CONCURRENCY, ANTI-RESURRECTION & SOFT-DELETE
+-- =========================================================================
+
+CREATE OR REPLACE FUNCTION public.handle_user_expense_upsert()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF (TG_OP = 'UPDATE') THEN
+        IF (OLD.is_deleted = TRUE AND NEW.is_deleted = FALSE AND COALESCE(NEW.client_updated_at, 0) <= COALESCE(OLD.client_updated_at, 0)) THEN
+            RETURN OLD;
+        END IF;
+
+        IF (COALESCE(NEW.client_updated_at, 0) < COALESCE(OLD.client_updated_at, 0)) THEN
+            RETURN OLD;
+        END IF;
+
+        IF (NEW.client_updated_at = OLD.client_updated_at AND NEW.is_deleted = OLD.is_deleted AND NEW.amount = OLD.amount AND NEW.name = OLD.name) THEN
+            RETURN OLD;
+        END IF;
+
+        IF (NEW.is_deleted = TRUE) THEN
+            IF (NEW.amount = 0 AND OLD.amount > 0) THEN
+                NEW.amount := OLD.amount;
+            END IF;
+            IF ((NEW.name IS NULL OR NEW.name = '' OR NEW.name = 'Deleted Expense') AND (OLD.name IS NOT NULL AND OLD.name <> 'Deleted Expense')) THEN
+                NEW.name := OLD.name;
+            END IF;
+            IF ((NEW.category IS NULL OR NEW.category = '' OR NEW.category = 'Other') AND (OLD.category IS NOT NULL AND OLD.category <> 'Other')) THEN
+                NEW.category := OLD.category;
+            END IF;
+            IF (NEW.date IS NULL OR NEW.date = '') THEN
+                NEW.date := OLD.date;
+            END IF;
+            IF (NEW.direction IS NULL) THEN
+                NEW.direction := OLD.direction;
+            END IF;
+            IF (NEW.bank_name IS NULL) THEN
+                NEW.bank_name := OLD.bank_name;
+            END IF;
+            IF (NEW.account_last4 IS NULL) THEN
+                NEW.account_last4 := OLD.account_last4;
+            END IF;
+            IF (NEW.reference_id IS NULL) THEN
+                NEW.reference_id := OLD.reference_id;
+            END IF;
+            IF (NEW.sms_reference_id IS NULL) THEN
+                NEW.sms_reference_id := OLD.sms_reference_id;
+            END IF;
+            NEW.deleted_at := COALESCE(NEW.deleted_at, timezone('utc'::text, now()));
+        END IF;
+
+        NEW.version := COALESCE(OLD.version, 1) + 1;
+        NEW.updated_at := timezone('utc'::text, now());
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_user_expenses_upsert ON public.user_expenses;
+CREATE TRIGGER trg_user_expenses_upsert
+BEFORE UPDATE ON public.user_expenses
+FOR EACH ROW EXECUTE FUNCTION public.handle_user_expense_upsert();
+
+ALTER PUBLICATION supabase_realtime ADD TABLE public.user_expenses;
 `;

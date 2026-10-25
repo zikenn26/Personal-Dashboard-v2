@@ -1,4 +1,10 @@
-import { ExpenseItem, ExpenseSyncStatus, OutboxMutation } from '../types';
+import {
+  ExpenseItem,
+  ExpenseSyncStatus,
+  OutboxMutation,
+  ExpenseSyncMode,
+  ExpenseMigrationState,
+} from '../types';
 import { expenseRepo } from '../repositories/expenseRepository';
 import {
   isSupabaseConfigured,
@@ -22,16 +28,22 @@ export interface SyncExpensesResult {
   pendingCount: number;
   message: string;
   error?: string;
+  syncMode?: ExpenseSyncMode;
 }
 
 type SyncStatusListener = (status: ExpenseSyncStatus) => void;
 
 class ExpenseSyncService {
+  private syncMode: ExpenseSyncMode = 'offline_local_first';
+  private migrationState: ExpenseMigrationState = 'pending';
+
   private currentStatus: ExpenseSyncStatus = {
     state: 'synced',
     pendingCount: 0,
     lastSyncedAt: Date.now(),
     lastError: null,
+    syncMode: 'offline_local_first',
+    migrationState: 'pending',
   };
   private listeners: Set<SyncStatusListener> = new Set();
   private isSyncing = false;
@@ -40,6 +52,14 @@ class ExpenseSyncService {
 
   constructor() {
     this.initLifecycle();
+  }
+
+  public getSyncMode(): ExpenseSyncMode {
+    return this.syncMode;
+  }
+
+  public getMigrationState(): ExpenseMigrationState {
+    return this.migrationState;
   }
 
   private initLifecycle() {
@@ -62,15 +82,37 @@ class ExpenseSyncService {
     window.addEventListener('work-offline-toggled', () => {
       this.updateStatus({
         state: isWorkOfflineMode() ? 'offline' : (this.currentStatus.pendingCount > 0 ? 'pending' : 'synced'),
+        syncMode: isWorkOfflineMode() ? 'offline_local_first' : this.syncMode,
       });
     });
 
     // Opportunistically run idempotent migration in background
     setTimeout(() => {
       if (!isWorkOfflineMode() && isSupabaseConfigured()) {
-        void migrateJsonbExpensesToDedicatedTable().catch(() => {});
+        void this.runMigration();
       }
-    }, 2000);
+    }, 1500);
+  }
+
+  public async runMigration(): Promise<void> {
+    if (isWorkOfflineMode() || !isSupabaseConfigured()) return;
+    this.migrationState = 'in_progress';
+    this.updateStatus({ migrationState: 'in_progress' });
+    try {
+      const res = await migrateJsonbExpensesToDedicatedTable();
+      if (res.success) {
+        this.migrationState = 'completed';
+        this.syncMode = 'dedicated_table';
+        this.updateStatus({ migrationState: 'completed', syncMode: 'dedicated_table' });
+      } else {
+        this.migrationState = 'fallback_mode';
+        this.syncMode = 'workspace_jsonb_fallback';
+        this.updateStatus({ migrationState: 'fallback_mode', syncMode: 'workspace_jsonb_fallback' });
+      }
+    } catch {
+      this.migrationState = 'failed';
+      this.updateStatus({ migrationState: 'failed' });
+    }
   }
 
   public getExpenseSyncStatus(): ExpenseSyncStatus {
@@ -311,20 +353,31 @@ class ExpenseSyncService {
         }
       }
 
+      if (dedicatedPushSuccessful || dedicatedPullSuccessful) {
+        this.syncMode = 'dedicated_table';
+      } else if (needsWorkspaceFallback) {
+        this.syncMode = 'workspace_jsonb_fallback';
+      }
+
       const remainingOutbox = await expenseRepo.getPendingOutbox();
       this.updateStatus({
         state: remainingOutbox.length > 0 ? 'pending' : 'synced',
         pendingCount: remainingOutbox.length,
         lastSyncedAt: Date.now(),
         lastError: null,
+        syncMode: this.syncMode,
       });
 
       return {
         success: true,
         pushedCount,
         pulledCount,
-        pendingCount: 0,
-        message: 'Spending successfully synchronized with Supabase Cloud',
+        pendingCount: remainingOutbox.length,
+        syncMode: this.syncMode,
+        message:
+          this.syncMode === 'dedicated_table'
+            ? 'Spending successfully synchronized with dedicated table (public.user_expenses)'
+            : 'Spending successfully synchronized with Supabase Cloud (workspace fallback mode)',
       };
     } catch (err: any) {
       console.warn('[EXPENSE_SYNC] Sync error notice:', err);

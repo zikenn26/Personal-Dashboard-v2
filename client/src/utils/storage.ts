@@ -1569,6 +1569,9 @@ export const Storage = {
     }
 
     let recoveredFromCache: ExpenseItem[] = [];
+    // Always include device-level fallbacks
+    offlineCacheKeys.push('lifeos_offline_expenses_cache', 'lifeos_expenses_backup');
+
     for (const key of offlineCacheKeys) {
       try {
         const cachedRaw = localStorage.getItem(key);
@@ -1584,10 +1587,16 @@ export const Storage = {
       } catch {}
     }
 
-    if (!hasScopedItem && recoveredFromCache.length > 0) {
-      if (list.length === 0) {
-        // Cold start (uninitialized scoped storage): recover completely from persistent offline cache
-        list = recoveredFromCache;
+    if ((!hasScopedItem || list.length === 0) && recoveredFromCache.length > 0) {
+      // Cold start or blank scoped storage: recover completely from persistent offline cache
+      list = recoveredFromCache;
+      saveToStorage(STORAGE_KEYS.EXPENSES, list);
+    } else if (list.length > 0 && recoveredFromCache.length > 0) {
+      // Merge historical expenses present in offline cache but absent from current scoped partition
+      const existingIds = new Set(list.map((e) => e.id));
+      const missingHistorical = recoveredFromCache.filter((e) => !existingIds.has(e.id));
+      if (missingHistorical.length > 0) {
+        list = [...list, ...missingHistorical];
         saveToStorage(STORAGE_KEYS.EXPENSES, list);
       }
     }
@@ -1805,13 +1814,11 @@ export const Storage = {
       }
 
       if (sanitized.length > 0) {
+        localStorage.setItem('lifeos_expenses_backup', serialized);
+        localStorage.setItem('lifeos_offline_expenses_cache', serialized);
         if (!isGuest) {
           localStorage.setItem(`${activeEmail}_offline_expenses_cache`, serialized);
           localStorage.setItem(`${ws}_offline_expenses_cache`, serialized);
-          if (isGknUser) {
-            localStorage.setItem('lifeos_offline_expenses_cache', serialized);
-            localStorage.setItem('lifeos_expenses_backup', serialized);
-          }
         } else {
           localStorage.setItem('user_guest_offline_expenses_cache', serialized);
           localStorage.setItem('user_guest_lifeos_expenses_backup', serialized);
@@ -1981,7 +1988,8 @@ export const Storage = {
       void expenseRepo.enqueueMutation({
         expenseId: id,
         action: 'delete',
-        payload: { id },
+        payload: { id, expense: target },
+        data: target,
       }).then(() => {
         void expenseRepo.getPendingOutbox().then((outbox) => {
           expenseSyncService.notifyMutationEnqueued(outbox.length);
@@ -2009,7 +2017,8 @@ export const Storage = {
       void expenseRepo.enqueueMutation({
         expenseId: ids[0] || 'batch-delete',
         action: 'batch_delete',
-        payload: { ids },
+        payload: { ids, expenses: toDelete },
+        data: toDelete,
       }).then(() => {
         void expenseRepo.getPendingOutbox().then((outbox) => {
           expenseSyncService.notifyMutationEnqueued(outbox.length);
