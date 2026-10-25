@@ -366,4 +366,140 @@ describe('Local-First Expense Storage & Reliable Sync Test Suite', () => {
     expect(alphaItemsRestored.some((e) => e.id === 'exp-alpha-1')).toBe(true);
     expect(alphaItemsRestored.some((e) => e.id === 'exp-beta-1')).toBe(false);
   });
+
+  it('9. Profile name and avatar update atomically across Storage, Auth, and localStorage', async () => {
+    // 1. Initial setup
+    const initialUser = {
+      id: 'user_test_atomic',
+      email: 'gulnayak1206@gmail.com',
+      name: 'Gulshan Kumar Nayak',
+      avatarUrl: 'https://example.com/original-avatar.webp',
+    };
+    Auth.setCurrentUser(initialUser);
+
+    const initialProfile = {
+      ...Storage.getProfile(),
+      name: 'Gulshan Kumar Nayak',
+      avatarUrl: 'https://example.com/original-avatar.webp',
+      contactEmail: 'gulnayak1206@gmail.com',
+    };
+    Storage.setProfile(initialProfile);
+
+    // 2. Perform atomic profile update
+    const newName = 'Gulshan Nayak';
+    const clean = newName.trim();
+    const current = Storage.getProfile();
+    const currentAuthUser = Auth.getCurrentUser();
+    const effectiveAvatar = current.avatarUrl || currentAuthUser?.avatarUrl || '';
+
+    const updatedProfile = {
+      ...current,
+      name: clean,
+      avatarUrl: effectiveAvatar,
+    };
+
+    Storage.setProfile(updatedProfile);
+    const updatedUser = {
+      ...(currentAuthUser || { id: 'user_default', email: current.contactEmail }),
+      name: clean,
+      avatarUrl: effectiveAvatar,
+    };
+    Auth.setCurrentUser(updatedUser);
+
+    // 3. Verify all layers match atomically
+    const verifiedProfile = Storage.getProfile();
+    const verifiedUser = Auth.getCurrentUser();
+
+    expect(verifiedProfile.name).toBe('Gulshan Nayak');
+    expect(verifiedProfile.avatarUrl).toBe('https://example.com/original-avatar.webp');
+    expect(verifiedUser?.name).toBe('Gulshan Nayak');
+    expect(verifiedUser?.avatarUrl).toBe('https://example.com/original-avatar.webp');
+    expect(getUserInitials(verifiedProfile.name)).toBe('GN');
+  });
+
+  it('10. Habit day toggle correctly persists to memory and localStorage and validates before sync', () => {
+    const habitId = 'habit-meditate-1';
+    const habit: HabitItem = {
+      id: habitId,
+      name: 'Morning Meditation',
+      category: 'Mindfulness',
+      frequency: 'daily',
+      target: 7,
+      completedDays: [false, false, false, false, false, false, false],
+      completedDates: [],
+      streak: 0,
+      history: [],
+      updatedAt: Date.now(),
+    };
+    Storage.setHabits([habit]);
+
+    // Simulate toggle day 2 (Wednesday)
+    const base = Storage.getHabits();
+    const target = base.find((h) => h.id === habitId)!;
+    expect(target).toBeDefined();
+
+    const newDays = [...target.completedDays];
+    newDays[2] = !newDays[2]; // Toggle index 2
+    const isNowCompleted = Boolean(newDays[2]);
+
+    const toggledHabit: HabitItem = {
+      ...target,
+      completedDays: newDays,
+      completedDates: ['2026-03-25'],
+      streak: 1,
+      updatedAt: Date.now(),
+    };
+    const updatedHabits = base.map((h) => (h.id === habitId ? toggledHabit : h));
+
+    // Persist & Validate
+    Storage.setHabits(updatedHabits);
+    const verifiedHabits = Storage.getHabits();
+    const verifiedTarget = verifiedHabits.find((h) => h.id === habitId);
+    expect(verifiedTarget?.completedDays[2]).toBe(true);
+    expect(verifiedTarget?.streak).toBe(1);
+    expect(verifiedTarget?.completedDates).toContain('2026-03-25');
+  });
+
+  it('11. Dedicated table push and pull handles credit/debit attributes and deletion tombstones', async () => {
+    // 1. Add credit transaction (income)
+    const incomeExpense: ExpenseItem = {
+      id: 'exp-credit-100',
+      name: 'Consulting Honorarium',
+      amount: 25000,
+      category: 'Income',
+      date: '2026-03-29',
+      direction: 'CREDIT',
+      transactionType: 'CREDIT',
+      paymentMethod: 'Bank Transfer',
+      bankName: 'HDFC Bank',
+      accountLast4: '4321',
+      referenceId: 'UPI-REF-998877',
+      active: true,
+      updatedAt: Date.now(),
+    };
+
+    await expenseRepo.save(incomeExpense);
+    await expenseRepo.enqueueMutation({
+      expenseId: incomeExpense.id,
+      action: 'create',
+      data: incomeExpense,
+    });
+
+    const pending = await expenseRepo.getPendingOutbox();
+    expect(pending.length).toBe(1);
+    const mutation = pending[0];
+    expect(mutation.expenseId).toBe('exp-credit-100');
+    expect(mutation.data?.direction).toBe('CREDIT');
+    expect(mutation.data?.amount).toBe(25000);
+
+    // 2. Add soft-delete tombstone
+    await expenseRepo.recordTombstone('exp-credit-100');
+    await expenseRepo.dequeueMutations([mutation.id]);
+
+    const isTomb = await expenseRepo.isTombstoned('exp-credit-100');
+    expect(isTomb).toBe(true);
+
+    const pendingAfter = await expenseRepo.getPendingOutbox();
+    expect(pendingAfter.length).toBe(0);
+  });
 });

@@ -1012,6 +1012,7 @@ export interface OutboxMutation {
   expenseId: string; // primary expense ID (or batch identifier)
   action: OutboxMutationAction;
   payload?: any;
+  data?: any;
   timestamp: number;
   retryCount: number;
   lastError?: string;

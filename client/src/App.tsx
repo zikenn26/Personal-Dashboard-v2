@@ -1477,26 +1477,55 @@ export default function App() {
 
     try {
       const current = Storage.getProfile();
-      const updatedProfile = { ...current, name: clean };
+      const currentAuthUser = Auth.getCurrentUser();
+      const effectiveAvatar = current.avatarUrl || currentAuthUser?.avatarUrl || '';
+
+      const updatedProfile = {
+        ...current,
+        name: clean,
+        avatarUrl: effectiveAvatar,
+      };
+
+      // 1. Synchronously commit updated profile to localStorage and memory caches
       Storage.setProfile(updatedProfile);
+      setProfile(updatedProfile);
 
-      let freshProfile = Storage.getProfile();
-      setProfile(freshProfile);
+      // 2. Synchronously update current authenticated user session in localStorage and React state
+      const defaultUserFallback: AuthUser = {
+        id: 'user_default',
+        email: current.contactEmail || 'user@workspace.app',
+        name: clean,
+        avatarUrl: effectiveAvatar,
+        createdAt: Date.now(),
+        lastLoginAt: Date.now(),
+        provider: 'local',
+      };
+      const updatedUser: AuthUser = currentAuthUser
+        ? {
+            ...currentAuthUser,
+            name: clean,
+            avatarUrl: effectiveAvatar,
+          }
+        : defaultUserFallback;
+      Auth.setCurrentUser(updatedUser);
+      setCurrentUser(updatedUser);
 
-      const updatedUser = await Auth.updateCurrentUserName(clean);
-      if (updatedUser) {
-        setCurrentUser(updatedUser);
+      // 3. Atomically update credentials cache and Supabase Auth user metadata
+      try {
+        await Auth.updateCurrentUserName(clean);
+      } catch (authErr) {
+        console.warn('[PROFILE_TRACE] Supabase metadata update notice:', authErr);
       }
 
-      // Atomically flush auto-sync to Supabase Cloud with updated profile so background cloud sync never reverts to old name
+      // 4. Atomically flush auto-sync to Supabase Cloud with updated profile so background cloud sync never reverts to old name
       await flushAutoSyncImmediately({
         ...Storage.getAllDataPayload(),
-        profile: freshProfile,
+        profile: updatedProfile,
       });
 
-      // Atomic post-update re-assertion
-      Storage.setProfile(freshProfile);
-      freshProfile = Storage.getProfile();
+      // 5. Atomic post-update re-assertion
+      Storage.setProfile(updatedProfile);
+      const freshProfile = Storage.getProfile();
       setProfile(freshProfile);
 
       console.info('[PROFILE_TRACE] handleUpdateUserName successfully persisted and synced:', freshProfile.name);
@@ -1770,6 +1799,9 @@ export default function App() {
     const target = base.find((h) => h.id === habitId);
     if (!target) return;
 
+    // 1. Guard against concurrent background sync or Realtime incoming polls while toggling
+    isRemoteUpdating.current = true;
+
     const newDays = [...target.completedDays];
     newDays[dayIndex] = !newDays[dayIndex];
     const isNowCompleted = Boolean(newDays[dayIndex]);
@@ -1793,9 +1825,23 @@ export default function App() {
     };
 
     const updatedHabits = base.map((h) => (h.id === habitId ? toggledHabit : h));
-    setHabits(updatedHabits);
+
+    // 2. Persist state to memory cache and localStorage
     Storage.setHabits(updatedHabits);
     Storage.setHabitActiveWeek(currentWeekId);
+
+    // 3. Validate persistence before triggering cloud sync
+    const verifiedHabits = Storage.getHabits();
+    const verifiedTarget = verifiedHabits.find((h) => h.id === habitId);
+    const isValidated = Boolean(verifiedTarget && Boolean(verifiedTarget.completedDays[dayIndex]) === isNowCompleted);
+
+    if (!isValidated) {
+      console.warn('[HABIT_VALIDATION] Re-persisting habit toggle state:', habitId);
+      Storage.setHabits(updatedHabits);
+    }
+
+    // 4. Update UI state with validated habits
+    setHabits(isValidated && verifiedHabits.length > 0 ? verifiedHabits : updatedHabits);
 
     // Record or update the discrete habit activity log
     if (dayInfo) {
@@ -1829,8 +1875,13 @@ export default function App() {
       }
     }
 
+    // 5. Trigger cloud sync ONLY after the local state change is validated
     isCloudReady.current = true;
-    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
+    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 350);
+
+    setTimeout(() => {
+      isRemoteUpdating.current = false;
+    }, 500);
   };
 
   const handleToggleHabitDate = (habitId: string, dateStr: string) => {
@@ -1840,14 +1891,30 @@ export default function App() {
     const target = base.find((h) => h.id === habitId);
     if (!target) return;
 
+    // 1. Guard against background sync reverts while user is toggling
+    isRemoteUpdating.current = true;
+
     const currentMonday = getMondayOfWeek();
     const toggled = toggleHabitDate(target, dateStr, currentMonday);
     const updatedHabits = base.map((h) => (h.id === habitId ? toggled : h));
-    setHabits(updatedHabits);
+
+    // 2. Persist to memory and localStorage
     Storage.setHabits(updatedHabits);
 
-    // Record or update discrete activity log
+    // 3. Validate persistence
+    const verifiedHabits = Storage.getHabits();
     const isNowCompleted = isHabitDateCompleted(toggled, dateStr, currentMonday);
+    const verifiedTarget = verifiedHabits.find((h) => h.id === habitId);
+    const isValidated = Boolean(verifiedTarget && isHabitDateCompleted(verifiedTarget, dateStr, currentMonday) === isNowCompleted);
+
+    if (!isValidated) {
+      Storage.setHabits(updatedHabits);
+    }
+
+    // 4. Update UI state with validated habits
+    setHabits(isValidated && verifiedHabits.length > 0 ? verifiedHabits : updatedHabits);
+
+    // Record or update discrete activity log
     const currentActs = Storage.getHabitActivities();
     if (isNowCompleted) {
       const d = parseIsoDate(dateStr);
@@ -1879,8 +1946,13 @@ export default function App() {
       Storage.setHabitActivities(nextActs);
     }
 
+    // 5. Trigger cloud sync ONLY after validation
     isCloudReady.current = true;
-    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
+    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 350);
+
+    setTimeout(() => {
+      isRemoteUpdating.current = false;
+    }, 500);
   };
 
   const handleUpdateHabit = (updatedHabit: HabitItem) => {

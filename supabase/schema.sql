@@ -195,6 +195,7 @@ USING (
     auth.uid() = user_id 
     OR workspace_identifier = 'user_' || auth.uid()::text
     OR workspace_identifier = auth.uid()::text
+    OR (user_email IS NOT NULL AND auth.jwt() ->> 'email' = user_email)
 );
 
 CREATE POLICY "Users can insert own expenses"
@@ -203,6 +204,7 @@ WITH CHECK (
     auth.uid() = user_id 
     OR workspace_identifier = 'user_' || auth.uid()::text
     OR workspace_identifier = auth.uid()::text
+    OR (user_email IS NOT NULL AND auth.jwt() ->> 'email' = user_email)
 );
 
 CREATE POLICY "Users can update own expenses"
@@ -211,11 +213,13 @@ USING (
     auth.uid() = user_id 
     OR workspace_identifier = 'user_' || auth.uid()::text
     OR workspace_identifier = auth.uid()::text
+    OR (user_email IS NOT NULL AND auth.jwt() ->> 'email' = user_email)
 )
 WITH CHECK (
     auth.uid() = user_id 
     OR workspace_identifier = 'user_' || auth.uid()::text
     OR workspace_identifier = auth.uid()::text
+    OR (user_email IS NOT NULL AND auth.jwt() ->> 'email' = user_email)
 );
 
 CREATE POLICY "Users can delete own expenses"
@@ -224,6 +228,7 @@ USING (
     auth.uid() = user_id 
     OR workspace_identifier = 'user_' || auth.uid()::text
     OR workspace_identifier = auth.uid()::text
+    OR (user_email IS NOT NULL AND auth.jwt() ->> 'email' = user_email)
 );
 
 ALTER PUBLICATION supabase_realtime ADD TABLE public.user_expenses;

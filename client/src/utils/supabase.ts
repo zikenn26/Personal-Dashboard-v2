@@ -4,8 +4,9 @@ import {
   SUPABASE_URL as BUILTIN_SUPABASE_URL,
   SUPABASE_ANON_KEY as BUILTIN_SUPABASE_ANON_KEY,
 } from './supabaseConfig';
-import { mergeExpenseLists } from './expenseUtils';
+import { mergeExpenseLists, normalizeExpenseDateKey, getLocalDateKey } from './expenseUtils';
 import { OWNER_GKN_HABITS } from './userUtils';
+import { ExpenseItem, OutboxMutation } from '../types';
 export { mergeExpenseLists };
 
 // Environment variables for Supabase (Vite client)
@@ -1498,6 +1499,393 @@ export const uploadFileToSupabaseStorage = async (
     return {
       url: null,
       error: err?.message || 'Unknown storage upload error',
+    };
+  }
+};
+
+/**
+ * Pushes individual expense mutations to the dedicated `public.user_expenses` table.
+ * Supports creates, updates, and soft-delete tombstones.
+ */
+export const pushExpenseMutationsToDedicatedTable = async (
+  mutations: OutboxMutation[]
+): Promise<{ success: boolean; pushedIds: string[]; error?: string; isFallbackNeeded?: boolean }> => {
+  if (!mutations || mutations.length === 0) {
+    return { success: true, pushedIds: [] };
+  }
+
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, pushedIds: [], error: 'Supabase client not configured', isFallbackNeeded: true };
+  }
+
+  const activeId = getCustomWorkspaceIdentifier();
+  const resolvedEmail = activeUserEmail || 'user@workspace.app';
+
+  let authenticatedUserId: string | null = null;
+  try {
+    const { data: authData } = await client.auth.getUser();
+    if (authData?.user?.id) {
+      authenticatedUserId = authData.user.id;
+    }
+  } catch {
+    // Offline or session unavailable
+  }
+
+  const recordsToUpsert: any[] = [];
+  const inFlightMutationIds: string[] = [];
+
+  for (const mut of mutations) {
+    if (!mut) continue;
+    inFlightMutationIds.push(mut.id);
+
+    if (mut.action === 'delete') {
+      const delId = String(mut.expenseId || mut.payload?.id || '').trim();
+      if (!delId) continue;
+      recordsToUpsert.push({
+        id: delId,
+        user_id: authenticatedUserId || undefined,
+        workspace_identifier: activeId,
+        user_email: resolvedEmail,
+        name: 'Deleted Expense',
+        amount: 0,
+        category: 'Other',
+        date: getLocalDateKey(),
+        is_deleted: true,
+        deleted_at: new Date().toISOString(),
+        client_updated_at: mut.timestamp || Date.now(),
+        updated_at: new Date().toISOString(),
+        version: 1,
+      });
+    } else if (mut.action === 'batch_delete') {
+      const ids: string[] = Array.isArray(mut.payload?.ids) ? mut.payload.ids : [mut.expenseId];
+      ids.forEach((delId) => {
+        const cleanId = String(delId).trim();
+        if (!cleanId) return;
+        recordsToUpsert.push({
+          id: cleanId,
+          user_id: authenticatedUserId || undefined,
+          workspace_identifier: activeId,
+          user_email: resolvedEmail,
+          name: 'Deleted Expense',
+          amount: 0,
+          category: 'Other',
+          date: getLocalDateKey(),
+          is_deleted: true,
+          deleted_at: new Date().toISOString(),
+          client_updated_at: mut.timestamp || Date.now(),
+          updated_at: new Date().toISOString(),
+          version: 1,
+        });
+      });
+    } else {
+      // create or update
+      const item = (mut.data || mut.payload) as ExpenseItem;
+      if (!item || !item.id) continue;
+      const cleanId = String(item.id).trim();
+
+      const isCredit =
+        item.direction === 'CREDIT' ||
+        item.transactionType === 'CREDIT' ||
+        item.transactionType === 'income' ||
+        (item as any).type === 'income' ||
+        (item as any).type === 'CREDIT';
+      const direction: 'DEBIT' | 'CREDIT' = isCredit ? 'CREDIT' : 'DEBIT';
+
+      const rawAmount = Number(item.amount);
+      const safeAmount = Number.isFinite(rawAmount) ? Math.round(Math.abs(rawAmount) * 100) / 100 : 0;
+
+      recordsToUpsert.push({
+        id: cleanId,
+        user_id: authenticatedUserId || undefined,
+        workspace_identifier: activeId,
+        user_email: resolvedEmail,
+        name: (item.name || 'Expense').trim() || 'Expense',
+        amount: safeAmount,
+        category: (item.category || 'Other').trim() || 'Other',
+        date: normalizeExpenseDateKey(item.date) || getLocalDateKey(),
+        time: item.time || null,
+        direction,
+        payment_method: item.paymentMethod || null,
+        billing_cycle: item.billingCycle || null,
+        notes: item.notes || null,
+        bank_name: item.bankName || item.bankOrAccount || null,
+        masked_account: item.maskedAccount || null,
+        account_last4: item.accountLast4 || null,
+        reference_id: item.referenceId || null,
+        sms_reference_id: item.smsReferenceId || null,
+        upi_reference: item.upiReference || null,
+        raw_sms_text: item.rawSmsText || null,
+        merchant: item.merchant || null,
+        payee: item.payee || null,
+        source: item.source || 'manual',
+        source_file: item.sourceFile || null,
+        import_batch_id: item.importBatchId || null,
+        active: item.active !== false,
+        is_deleted: false,
+        deleted_at: null,
+        client_updated_at: Number(item.updatedAt) || Date.now(),
+        updated_at: new Date().toISOString(),
+        version: 1,
+      });
+    }
+  }
+
+  if (recordsToUpsert.length === 0) {
+    return { success: true, pushedIds: inFlightMutationIds };
+  }
+
+  try {
+    let { error } = await client
+      .from('user_expenses')
+      .upsert(recordsToUpsert, { onConflict: 'id' });
+
+    // Handle column / schema variations gracefully (e.g. if user_id column is omitted or restricted)
+    if (error && (error.code === '42703' || error.message?.includes('user_id'))) {
+      const recordsWithoutUserId = recordsToUpsert.map((r) => {
+        const copy = { ...r };
+        delete copy.user_id;
+        return copy;
+      });
+      const retry = await client
+        .from('user_expenses')
+        .upsert(recordsWithoutUserId, { onConflict: 'id' });
+      error = retry.error;
+    }
+
+    if (error) {
+      const isMissingTable = error.code === '42P01' || error.message?.includes('relation "public.user_expenses" does not exist');
+      console.warn('[EXPENSE_DEDICATED_SYNC] Table write error:', error.message);
+      return {
+        success: false,
+        pushedIds: [],
+        error: error.message,
+        isFallbackNeeded: isMissingTable,
+      };
+    }
+
+    return {
+      success: true,
+      pushedIds: inFlightMutationIds,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      pushedIds: [],
+      error: err?.message || 'Network failure',
+      isFallbackNeeded: false,
+    };
+  }
+};
+
+/**
+ * Fetches expenses and tombstones directly from `public.user_expenses`.
+ */
+export const fetchExpensesFromDedicatedTable = async (): Promise<{
+  success: boolean;
+  data: ExpenseItem[];
+  tombstones: string[];
+  error?: string;
+  isFallbackNeeded?: boolean;
+}> => {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, data: [], tombstones: [], error: 'Supabase client not configured', isFallbackNeeded: true };
+  }
+
+  const activeId = getCustomWorkspaceIdentifier();
+  if (activeId === 'user_guest' || !activeUserEmail || activeUserEmail === 'guest@workspace.local') {
+    return { success: false, data: [], tombstones: [], error: 'Guest workspace is local-only', isFallbackNeeded: false };
+  }
+
+  try {
+    let query = client.from('user_expenses').select('*');
+
+    if (activeUserEmail) {
+      query = query.or(`workspace_identifier.eq.${activeId},user_email.eq.${activeUserEmail}`);
+    } else {
+      query = query.eq('workspace_identifier', activeId);
+    }
+
+    const { data: rows, error } = await query;
+
+    if (error) {
+      const isMissingTable = error.code === '42P01' || error.message?.includes('relation "public.user_expenses" does not exist');
+      console.warn('[EXPENSE_DEDICATED_SYNC] Table fetch notice:', error.message);
+      return {
+        success: false,
+        data: [],
+        tombstones: [],
+        error: error.message,
+        isFallbackNeeded: isMissingTable,
+      };
+    }
+
+    if (!Array.isArray(rows)) {
+      return { success: true, data: [], tombstones: [] };
+    }
+
+    const activeExpenses: ExpenseItem[] = [];
+    const tombstones: string[] = [];
+
+    for (const r of rows) {
+      if (!r || !r.id) continue;
+      const idStr = String(r.id).trim();
+
+      if (r.is_deleted === true) {
+        tombstones.push(idStr);
+        continue;
+      }
+
+      const item: ExpenseItem = {
+        id: idStr,
+        name: r.name || 'Expense',
+        amount: Number(r.amount) || 0,
+        category: r.category || 'Other',
+        date: r.date || getLocalDateKey(),
+        time: r.time || undefined,
+        direction: r.direction === 'CREDIT' ? 'CREDIT' : 'DEBIT',
+        transactionType: r.direction === 'CREDIT' ? 'CREDIT' : 'DEBIT',
+        paymentMethod: r.payment_method || undefined,
+        billingCycle: r.billing_cycle || undefined,
+        notes: r.notes || undefined,
+        bankName: r.bank_name || undefined,
+        bankOrAccount: r.bank_name || undefined,
+        maskedAccount: r.masked_account || undefined,
+        accountLast4: r.account_last4 || undefined,
+        referenceId: r.reference_id || undefined,
+        smsReferenceId: r.sms_reference_id || undefined,
+        upiReference: r.upi_reference || undefined,
+        rawSmsText: r.raw_sms_text || undefined,
+        merchant: r.merchant || undefined,
+        payee: r.payee || undefined,
+        source: r.source || 'manual',
+        sourceFile: r.source_file || undefined,
+        importBatchId: r.import_batch_id || undefined,
+        active: r.active !== false,
+        createdAt: r.created_at ? new Date(r.created_at).getTime() : undefined,
+        updatedAt: r.client_updated_at ? Number(r.client_updated_at) : (r.updated_at ? new Date(r.updated_at).getTime() : Date.now()),
+      };
+
+      activeExpenses.push(item);
+    }
+
+    return {
+      success: true,
+      data: activeExpenses,
+      tombstones,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      data: [],
+      tombstones: [],
+      error: err?.message || 'Network failure',
+      isFallbackNeeded: false,
+    };
+  }
+};
+
+/**
+ * Safe, idempotent migration of legacy JSONB workspace expenses into `public.user_expenses`.
+ */
+export const migrateJsonbExpensesToDedicatedTable = async (
+  options?: { force?: boolean }
+): Promise<{ migratedCount: number; success: boolean; message: string }> => {
+  const activeId = getCustomWorkspaceIdentifier();
+  const migrationKey = `lifeos_expenses_migrated_${activeId}`;
+
+  if (!options?.force && typeof localStorage !== 'undefined' && localStorage.getItem(migrationKey)) {
+    return { success: true, migratedCount: 0, message: 'Expenses already migrated to dedicated table' };
+  }
+
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, migratedCount: 0, message: 'Supabase client not configured' };
+  }
+
+  try {
+    const remoteWorkspace = await fetchWorkspaceFromSupabase();
+    const remoteExpenses: ExpenseItem[] = remoteWorkspace.success && Array.isArray(remoteWorkspace.data?.expenses)
+      ? remoteWorkspace.data.expenses
+      : [];
+
+    const localRaw = typeof localStorage !== 'undefined' ? localStorage.getItem('notion_os_expenses_v1') : null;
+    let localExpenses: ExpenseItem[] = [];
+    if (localRaw) {
+      try {
+        const parsed = JSON.parse(localRaw);
+        if (Array.isArray(parsed)) localExpenses = parsed;
+      } catch {}
+    }
+
+    const combinedMap = new Map<string, ExpenseItem>();
+    localExpenses.forEach((e) => {
+      if (e && e.id) combinedMap.set(String(e.id).trim(), e);
+    });
+    remoteExpenses.forEach((e) => {
+      if (e && e.id) {
+        const cleanId = String(e.id).trim();
+        const existing = combinedMap.get(cleanId);
+        if (!existing || Number(e.updatedAt || 0) >= Number(existing.updatedAt || 0)) {
+          combinedMap.set(cleanId, e);
+        }
+      }
+    });
+
+    const itemsToMigrate = Array.from(combinedMap.values());
+    if (itemsToMigrate.length === 0) {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(migrationKey, JSON.stringify({ timestamp: Date.now(), count: 0 }));
+      }
+      return { success: true, migratedCount: 0, message: 'No existing JSONB expenses to migrate' };
+    }
+
+    const batchSize = 50;
+    let totalMigrated = 0;
+
+    for (let i = 0; i < itemsToMigrate.length; i += batchSize) {
+      const slice = itemsToMigrate.slice(i, i + batchSize);
+      const fakeMutations: OutboxMutation[] = slice.map((item) => ({
+        id: `mig-${item.id}`,
+        expenseId: item.id,
+        action: 'create',
+        data: item,
+        timestamp: Number(item.updatedAt) || Date.now(),
+        retryCount: 0,
+      }));
+
+      const pushRes = await pushExpenseMutationsToDedicatedTable(fakeMutations);
+      if (!pushRes.success && pushRes.isFallbackNeeded) {
+        return {
+          success: false,
+          migratedCount: totalMigrated,
+          message: 'Dedicated table not available; remaining in JSONB workspace mode.',
+        };
+      }
+      if (pushRes.success) {
+        totalMigrated += slice.length;
+      }
+    }
+
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(
+        migrationKey,
+        JSON.stringify({ timestamp: Date.now(), count: totalMigrated })
+      );
+    }
+
+    console.info(`[EXPENSE_MIGRATION] Successfully migrated ${totalMigrated} expenses to dedicated table`);
+    return {
+      success: true,
+      migratedCount: totalMigrated,
+      message: `Successfully migrated ${totalMigrated} expenses to public.user_expenses`,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      migratedCount: 0,
+      message: `Migration error: ${err?.message || 'Unknown error'}`,
     };
   }
 };
