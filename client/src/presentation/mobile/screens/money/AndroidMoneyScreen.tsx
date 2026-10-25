@@ -54,6 +54,8 @@ import {
   getApkDevice,
 } from '../../../../utils/devices';
 import { Auth } from '../../../../utils/auth';
+import { expenseSyncService } from '../../../../services/expenseSyncService';
+import { ExpenseSyncStatus } from '../../../../types';
 
 export interface AndroidMoneyScreenProps {
   expenses: ExpenseItem[];
@@ -273,6 +275,35 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
       window.removeEventListener('dashboard-data-updated', handleDashboardUpdated);
     };
   }, [currentMonthPrefix]);
+
+  const [expenseSyncStatus, setExpenseSyncStatus] = useState<ExpenseSyncStatus>(() =>
+    expenseSyncService.getExpenseSyncStatus()
+  );
+
+  useEffect(() => {
+    return expenseSyncService.onSyncStatusChange((status) => {
+      setExpenseSyncStatus(status);
+    });
+  }, []);
+
+  const handleManualSyncNow = async () => {
+    void nativeService.triggerHaptic('impactMedium');
+    const loadingToast = toast.loading('Syncing spending with cloud...');
+    try {
+      const res = await expenseSyncService.syncExpenses({ manual: true });
+      toast.dismiss(loadingToast);
+      if (res.success) {
+        toast.success(res.message || 'Synced with Supabase Cloud', {
+          description: `${res.pushedCount} pushed, ${res.pulledCount} pulled`,
+        });
+      } else {
+        toast.error(res.message || 'Sync failed. Local data remains safe.');
+      }
+    } catch (err: any) {
+      toast.dismiss(loadingToast);
+      toast.error(err?.message || 'Sync error. Local data remains safe.');
+    }
+  };
 
   const activeExpenses = useMemo(() => {
     const source = localExpenses && localExpenses.length > 0 ? localExpenses : expenses;
@@ -778,6 +809,53 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         {/* Compact Top Actions Bar (Horizontal Scroll / Compact layout) */}
         <div className="flex items-center justify-between gap-1.5 overflow-x-auto no-scrollbar pt-0.5">
           <div className="flex items-center gap-1.5 shrink-0">
+            {/* Sync Now / Cloud Status Button */}
+            <button
+              type="button"
+              id="btn-android-expense-sync-now"
+              onClick={handleManualSyncNow}
+              disabled={expenseSyncStatus.state === 'syncing'}
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border active:scale-95 transition-all cursor-pointer ${
+                expenseSyncStatus.state === 'syncing'
+                  ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300'
+                  : expenseSyncStatus.state === 'error'
+                  ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300'
+                  : expenseSyncStatus.state === 'offline'
+                  ? 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'
+                  : expenseSyncStatus.pendingCount > 0
+                  ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300'
+                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200'
+              }`}
+              title="Sync Now: Reconcile local database with Supabase Cloud"
+            >
+              <RotateCw
+                className={`w-3 h-3 ${
+                  expenseSyncStatus.state === 'syncing'
+                    ? 'animate-spin text-blue-600 dark:text-blue-400'
+                    : expenseSyncStatus.pendingCount > 0
+                    ? 'text-amber-600 dark:text-amber-400'
+                    : 'text-emerald-600 dark:text-emerald-400'
+                }`}
+              />
+              <span>
+                {expenseSyncStatus.state === 'syncing'
+                  ? 'Syncing'
+                  : expenseSyncStatus.state === 'error'
+                  ? 'Retry Sync'
+                  : expenseSyncStatus.state === 'offline'
+                  ? 'Offline'
+                  : expenseSyncStatus.pendingCount > 0
+                  ? `${expenseSyncStatus.pendingCount} Pending`
+                  : 'Sync Now'}
+              </span>
+              {expenseSyncStatus.pendingCount > 0 && (
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+              )}
+              {expenseSyncStatus.state === 'synced' && expenseSyncStatus.pendingCount === 0 && (
+                <span className="w-1 h-1 rounded-full bg-emerald-500" />
+              )}
+            </button>
+
             {/* Export Button */}
             <button
               type="button"

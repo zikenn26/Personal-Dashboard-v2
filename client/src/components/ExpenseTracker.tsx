@@ -45,7 +45,11 @@ import {
   Download,
   Eye,
   ArrowLeft,
+  RefreshCw,
 } from 'lucide-react';
+import { toast } from 'sonner';
+import { expenseSyncService } from '../services/expenseSyncService';
+import { ExpenseSyncStatus } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ResponsiveContainer,
@@ -307,6 +311,36 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     window.addEventListener('sms_tracking_toggled', handleSmsToggle);
     return () => window.removeEventListener('sms_tracking_toggled', handleSmsToggle);
   }, []);
+
+  const [expenseSyncStatus, setExpenseSyncStatus] = useState<ExpenseSyncStatus>(() =>
+    expenseSyncService.getExpenseSyncStatus()
+  );
+
+  useEffect(() => {
+    return expenseSyncService.onSyncStatusChange((status) => {
+      setExpenseSyncStatus(status);
+    });
+  }, []);
+
+  const handleManualSyncNow = async () => {
+    Sound.click(soundEnabled);
+    const toastId = toast.loading('Syncing expenses with Supabase Cloud...');
+    try {
+      const res = await expenseSyncService.syncExpenses({ manual: true });
+      toast.dismiss(toastId);
+      if (res.success) {
+        Sound.success(soundEnabled);
+        toast.success(res.message || 'Synced with Supabase Cloud', {
+          description: `${res.pushedCount} pushed, ${res.pulledCount} pulled`,
+        });
+      } else {
+        toast.error(res.message || 'Sync failed. Local data remains safe.');
+      }
+    } catch (err: any) {
+      toast.dismiss(toastId);
+      toast.error(err?.message || 'Sync network error. Local data remains safe.');
+    }
+  };
 
   // Custom useEffect hooks that monitor the 'expenses' prop and listen for 'dashboard-data-updated'
   // and 'storage' events to force an immediate re-render whenever an item is removed or modified.
@@ -1351,8 +1385,59 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
           </span>
         </div>
 
-        {/* Right: Export, Excel, + Add Expense */}
+        {/* Right: Sync Now, Export, Excel, + Add Expense */}
         <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          {/* Sync Now / Cloud Status Button */}
+          <button
+            type="button"
+            id="btn-expense-sync-now"
+            onClick={handleManualSyncNow}
+            disabled={expenseSyncStatus.state === 'syncing'}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold shadow-2xs transition-all cursor-pointer ${
+              expenseSyncStatus.state === 'syncing'
+                ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300'
+                : expenseSyncStatus.state === 'error'
+                ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300'
+                : expenseSyncStatus.state === 'offline'
+                ? 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'
+                : expenseSyncStatus.pendingCount > 0
+                ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300'
+                : 'bg-white dark:bg-[#1A202C] hover:bg-gray-50 dark:hover:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200'
+            }`}
+            title={`Local-First Spending Sync: ${
+              expenseSyncStatus.state === 'syncing'
+                ? 'Synchronizing with Supabase...'
+                : expenseSyncStatus.state === 'error'
+                ? `Sync error: ${expenseSyncStatus.lastError || 'Retry'}`
+                : expenseSyncStatus.pendingCount > 0
+                ? `${expenseSyncStatus.pendingCount} pending local changes to sync`
+                : 'All expenses synchronized with Supabase'
+            }`}
+          >
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${
+                expenseSyncStatus.state === 'syncing' ? 'animate-spin text-blue-600 dark:text-blue-400' : ''
+              }`}
+            />
+            <span>
+              {expenseSyncStatus.state === 'syncing'
+                ? 'Syncing...'
+                : expenseSyncStatus.state === 'error'
+                ? 'Retry Sync'
+                : expenseSyncStatus.state === 'offline'
+                ? 'Offline'
+                : expenseSyncStatus.pendingCount > 0
+                ? `${expenseSyncStatus.pendingCount} Pending`
+                : 'Sync Now'}
+            </span>
+            {expenseSyncStatus.pendingCount > 0 && (
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+            )}
+            {expenseSyncStatus.state === 'synced' && expenseSyncStatus.pendingCount === 0 && (
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            )}
+          </button>
+
           {/* Export Button */}
           <div className="relative" ref={exportMenuRef}>
             <button

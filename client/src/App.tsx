@@ -53,6 +53,7 @@ import { smsExpenseService } from './services/smsExpenseService';
 import { screenTimeService } from './services/screenTimeService';
 import { scratchpadWidgetService } from './services/scratchpadWidgetService';
 import { spendingWidgetService } from './services/spendingWidgetService';
+import { expenseSyncService } from './services/expenseSyncService';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { QuickCaptureBar } from './components/QuickCaptureBar';
 import { BackupRestoreView } from './components/BackupRestoreView';
@@ -581,16 +582,13 @@ export default function App() {
       hasProfileChanges = true;
     }
 
-    // Apply user-specific profile fields fetched from Supabase user metadata
-    if (metaName && !isGenericHandle(metaName) && updatedProfile.name !== metaName) {
-      updatedProfile.name = metaName;
-      hasProfileChanges = true;
-    } else if (!updatedProfile.name || isGenericHandle(updatedProfile.name)) {
-      if (isGknUserAccount) {
-        updatedProfile.name = 'Gulshan Kumar Nayak';
-        hasProfileChanges = true;
-      } else if (metaName && !isGenericHandle(metaName)) {
+    // Apply user-specific profile fields fetched from Supabase user metadata ONLY if current profile has no custom name
+    if (!updatedProfile.name || isGenericHandle(updatedProfile.name)) {
+      if (metaName && !isGenericHandle(metaName)) {
         updatedProfile.name = metaName;
+        hasProfileChanges = true;
+      } else if (isGknUserAccount) {
+        updatedProfile.name = 'Gulshan Kumar Nayak';
         hasProfileChanges = true;
       }
     }
@@ -918,6 +916,16 @@ export default function App() {
   useEffect(() => {
     void spendingWidgetService.syncToNativeWidget(expenses);
   }, [expenses]);
+
+  // Local-First Durable IndexedDB Expense Database: Initialize and reconcile pending sync on startup
+  useEffect(() => {
+    void Storage.initLocalExpenseDb().then((loadedExpenses) => {
+      if (Array.isArray(loadedExpenses) && loadedExpenses.length > 0) {
+        setExpenses(loadedExpenses);
+      }
+      void expenseSyncService.syncExpenses({ background: true });
+    });
+  }, []);
 
   // Listen for Native Screen Time Android Widget Tap Actions
   useEffect(() => {

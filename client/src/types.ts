@@ -1005,5 +1005,24 @@ export interface ScreenTimeData {
   error?: string;
   message?: string;
 }
+export type OutboxMutationAction = 'create' | 'update' | 'delete' | 'batch_create' | 'batch_delete';
 
+export interface OutboxMutation {
+  id: string; // unique UUID / mutation id
+  expenseId: string; // primary expense ID (or batch identifier)
+  action: OutboxMutationAction;
+  payload?: any;
+  timestamp: number;
+  retryCount: number;
+  lastError?: string;
+  clientDeviceId?: string;
+}
 
+export type ExpenseSyncStatusState = 'synced' | 'pending' | 'syncing' | 'offline' | 'error';
+
+export interface ExpenseSyncStatus {
+  state: ExpenseSyncStatusState;
+  pendingCount: number;
+  lastSyncedAt: number | null;
+  lastError: string | null;
+}

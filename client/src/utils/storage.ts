@@ -52,6 +52,8 @@ import { spendingWidgetService } from '../services/spendingWidgetService';
 import { getLocalDateString, resolveCleanAppName } from './screenTimeCalculator';
 import { isDummyMockAvatar, isAvatarMatchingUserEmailDomain, getUserWorkspaceKey } from './userUtils';
 import { Capacitor } from '@capacitor/core';
+import { expenseRepo } from '../repositories/expenseRepository';
+import { expenseSyncService } from '../services/expenseSyncService';
 
 export const STORAGE_KEYS = {
   TODOS: 'notion_os_v4_todos',
@@ -1562,9 +1564,7 @@ export const Storage = {
     } else {
       offlineCacheKeys.push(
         'user_guest_offline_expenses_cache',
-        'user_guest_lifeos_expenses_backup',
-        'lifeos_offline_expenses_cache',
-        'lifeos_expenses_backup'
+        'user_guest_lifeos_expenses_backup'
       );
     }
 
@@ -1584,19 +1584,11 @@ export const Storage = {
       } catch {}
     }
 
-    if (recoveredFromCache.length > 0) {
+    if (!hasScopedItem && recoveredFromCache.length > 0) {
       if (list.length === 0) {
-        // Cold start or cleared scoped storage: recover completely from persistent offline cache
+        // Cold start (uninitialized scoped storage): recover completely from persistent offline cache
         list = recoveredFromCache;
         saveToStorage(STORAGE_KEYS.EXPENSES, list);
-      } else {
-        // If list contains some items (e.g. today's new transactions), merge in any missing historical items from cache
-        const listIds = new Set(list.map((e) => String(e.id).trim()));
-        const missingFromList = recoveredFromCache.filter((e) => !listIds.has(String(e.id).trim()));
-        if (missingFromList.length > 0) {
-          list = Storage.mergeExpenseLists(list, missingFromList);
-          saveToStorage(STORAGE_KEYS.EXPENSES, list);
-        }
       }
     }
 
@@ -1798,7 +1790,6 @@ export const Storage = {
 
     memoryExpensesCache = sanitized;
     saveToStorage(STORAGE_KEYS.EXPENSES, sanitized);
-    saveToStorage('lifeos_expenses_backup', sanitized);
 
     // Multi-tier persistent offline caching (strictly scoped to current user workspace):
     // Guarantees spending data is always readable offline and never blanked by network reconnection
@@ -1806,14 +1797,21 @@ export const Storage = {
       const activeEmail = (getCustomWorkspaceEmail() || '').toLowerCase().trim();
       const ws = getCustomWorkspaceIdentifier();
       const isGuest = !activeEmail || activeEmail === 'guest@workspace.local' || ws === 'user_guest';
+      const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gulnayak1206@gmail.com';
       const serialized = JSON.stringify(sanitized);
 
+      if (isGknUser) {
+        saveToStorage('lifeos_expenses_backup', sanitized);
+      }
+
       if (sanitized.length > 0) {
-        localStorage.setItem('lifeos_offline_expenses_cache', serialized);
-        localStorage.setItem('lifeos_expenses_backup', serialized);
         if (!isGuest) {
           localStorage.setItem(`${activeEmail}_offline_expenses_cache`, serialized);
           localStorage.setItem(`${ws}_offline_expenses_cache`, serialized);
+          if (isGknUser) {
+            localStorage.setItem('lifeos_offline_expenses_cache', serialized);
+            localStorage.setItem('lifeos_expenses_backup', serialized);
+          }
         } else {
           localStorage.setItem('user_guest_offline_expenses_cache', serialized);
           localStorage.setItem('user_guest_lifeos_expenses_backup', serialized);
@@ -1837,6 +1835,10 @@ export const Storage = {
     }
 
     void spendingWidgetService.syncToNativeWidget(sanitized);
+    // Commit to local-first durable repository (IndexedDB / SQLite)
+    void expenseRepo.saveBatch(sanitized).catch((err) => {
+      console.warn('[STORAGE] Failed to commit expenses to local database:', err);
+    });
     return sanitized;
   },
   getDeletedExpenseIds: (): string[] => loadFromStorage<string[]>(STORAGE_KEYS.DELETED_EXPENSE_IDS, []),
@@ -1930,6 +1932,21 @@ export const Storage = {
     }
     Storage.setExpenses(updated);
 
+    // Commit to local-first database and enqueue outbox mutation
+    void expenseRepo.save(expenseWithTimestamps).then(() => {
+      void expenseRepo.enqueueMutation({
+        expenseId: expenseWithTimestamps.id,
+        action: existingIndex >= 0 ? 'update' : 'create',
+        payload: expenseWithTimestamps,
+      }).then(() => {
+        void expenseRepo.getPendingOutbox().then((outbox) => {
+          expenseSyncService.notifyMutationEnqueued(outbox.length);
+        });
+      });
+    }).catch((err) => {
+      console.warn('[STORAGE] Local DB save notice for addExpense:', err);
+    });
+
     // Immediate persistence verification
     const verified = Storage.getExpenses();
     const cleanRefUpper = cleanRef.toUpperCase();
@@ -1956,6 +1973,24 @@ export const Storage = {
     }
     const updated = current.filter((e) => e.id !== id);
     Storage.setExpenses(updated);
+    Storage.recordDeletedExpenseId(id);
+
+    // Commit delete to local database & outbox
+    void expenseRepo.delete(id).then(() => {
+      void expenseRepo.recordTombstone(id);
+      void expenseRepo.enqueueMutation({
+        expenseId: id,
+        action: 'delete',
+        payload: { id },
+      }).then(() => {
+        void expenseRepo.getPendingOutbox().then((outbox) => {
+          expenseSyncService.notifyMutationEnqueued(outbox.length);
+        });
+      });
+    }).catch((err) => {
+      console.warn('[STORAGE] Local DB delete notice:', err);
+    });
+
     return updated;
   },
   deleteExpenses: (ids: string[]): ExpenseItem[] => {
@@ -1967,21 +2002,83 @@ export const Storage = {
     });
     const updated = current.filter((e) => !idSet.has(String(e.id).trim()));
     Storage.setExpenses(updated);
+    Storage.recordDeletedExpenseId(ids);
+
+    void expenseRepo.deleteBatch(ids).then(() => {
+      ids.forEach((id) => void expenseRepo.recordTombstone(id));
+      void expenseRepo.enqueueMutation({
+        expenseId: ids[0] || 'batch-delete',
+        action: 'batch_delete',
+        payload: { ids },
+      }).then(() => {
+        void expenseRepo.getPendingOutbox().then((outbox) => {
+          expenseSyncService.notifyMutationEnqueued(outbox.length);
+        });
+      });
+    }).catch((err) => {
+      console.warn('[STORAGE] Local DB batch delete notice:', err);
+    });
+
     return updated;
   },
   clearAllExpenses: (): void => {
     const current = Storage.getExpenses();
+    const allIds = current.map((e) => e.id);
     current.forEach((target) => {
       Storage.moveToTrash('expenses', target, `${target.name} (₹${Number(target.amount).toLocaleString()})`);
     });
     Storage.setExpenses([]);
     Storage.setExcelImportLogs([]);
+    Storage.recordDeletedExpenseId(allIds);
     try {
       localStorage.removeItem(getScopedKey('lifeos_last_imported_sheet_expenses'));
       localStorage.removeItem(getScopedKey('lifeos_expenses_backup'));
       localStorage.removeItem('lifeos_last_imported_sheet_expenses');
       localStorage.removeItem('lifeos_expenses_backup');
     } catch {}
+
+    void expenseRepo.clear().then(() => {
+      allIds.forEach((id) => void expenseRepo.recordTombstone(id));
+      void expenseRepo.enqueueMutation({
+        expenseId: 'all-cleared',
+        action: 'batch_delete',
+        payload: { ids: allIds, clearedAll: true },
+      }).then(() => {
+        void expenseRepo.getPendingOutbox().then((outbox) => {
+          expenseSyncService.notifyMutationEnqueued(outbox.length);
+        });
+      });
+    }).catch((err) => {
+      console.warn('[STORAGE] Local DB clear notice:', err);
+    });
+  },
+
+  initLocalExpenseDb: async (): Promise<ExpenseItem[]> => {
+    try {
+      await expenseRepo.init();
+      const existingInDb = await expenseRepo.getAll();
+      const local = Storage.getExpenses();
+
+      if (existingInDb.length > 0) {
+        if (local.length === 0) {
+          Storage.setExpenses(existingInDb);
+          return existingInDb;
+        } else {
+          const merged = Storage.mergeExpenseLists(local, existingInDb);
+          Storage.setExpenses(merged);
+          await expenseRepo.saveBatch(merged);
+          return merged;
+        }
+      } else if (local.length > 0) {
+        // Safe, non-destructive initial migration from localStorage / offline cache into IndexedDB
+        await expenseRepo.saveBatch(local);
+        return local;
+      }
+      return local;
+    } catch (err) {
+      console.warn('[STORAGE] initLocalExpenseDb notice:', err);
+      return Storage.getExpenses();
+    }
   },
 
   getExcelImportLogs: (): ExcelImportLog[] => {
@@ -3025,29 +3122,44 @@ export const Storage = {
           const existing = habitMap.get(ch.id);
           if (existing) {
             const localUpdated = Number(existing.updatedAt || 0);
-            const cloudUpdated = Number(ch.updatedAt || remoteTimestamp || 0);
+            const cloudUpdated = Number(ch.updatedAt || 0);
             const mergedDates = Array.from(new Set([...(existing.completedDates || []), ...(ch.completedDates || [])])).sort();
+
+            const mergedDays = [false, false, false, false, false, false, false];
+            for (let i = 0; i < 7; i++) {
+              if (cloudUpdated > localUpdated) {
+                // Cloud is strictly newer: cloud state takes precedence
+                mergedDays[i] = Boolean(ch.completedDays?.[i]);
+              } else if (localUpdated > cloudUpdated) {
+                // Local is strictly newer: local state takes precedence
+                mergedDays[i] = Boolean(existing.completedDays?.[i]);
+              } else {
+                // Equal / no timestamps: preserve completions from either side so progress is never lost
+                mergedDays[i] = Boolean(existing.completedDays?.[i] || ch.completedDays?.[i]);
+              }
+            }
+
             if (cloudUpdated > localUpdated) {
-              // Newer cloud habit takes precedence for completion/streak, preserving local title/category if missing in cloud
+              // Newer cloud habit takes precedence for title/category/streak, with merged days
               habitMap.set(ch.id, {
                 ...existing,
                 ...ch,
+                completedDays: mergedDays,
                 completedDates: mergedDates,
+                updatedAt: cloudUpdated,
+                streak: Number.isFinite(ch.streak) ? ch.streak : (existing.streak || 0),
                 title: ch.title || existing.title,
                 category: ch.category || existing.category,
               });
             } else {
-              // Local is newer or equal: preserve local edits and merge completedDays and completedDates
-              const mergedDays = [false, false, false, false, false, false, false];
-              for (let i = 0; i < 7; i++) {
-                mergedDays[i] = Boolean(existing.completedDays?.[i] || ch.completedDays?.[i]);
-              }
+              // Local is newer or equal: preserve local edits and completions
               habitMap.set(ch.id, {
                 ...ch,
                 ...existing,
                 completedDays: mergedDays,
                 completedDates: mergedDates,
-                streak: Math.max(existing.streak || 0, ch.streak || 0),
+                updatedAt: localUpdated || Date.now(),
+                streak: Number.isFinite(existing.streak) ? existing.streak : (ch.streak || 0),
               });
             }
           } else {
