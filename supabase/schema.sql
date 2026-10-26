@@ -186,7 +186,11 @@ ALTER TABLE public.user_expenses ENABLE ROW LEVEL SECURITY;
 
 -- Helper function to verify workspace ownership securely
 CREATE OR REPLACE FUNCTION public.is_authorized_workspace(ws_id TEXT)
-RETURNS BOOLEAN AS $$
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+STABLE AS $$
 BEGIN
     IF ws_id IS NULL THEN
         RETURN FALSE;
@@ -202,7 +206,10 @@ BEGIN
           AND (w.user_id = auth.uid() OR w.user_identifier = 'user_' || auth.uid()::text OR w.user_identifier = auth.uid()::text)
     );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+$$;
+
+REVOKE ALL ON FUNCTION public.is_authorized_workspace(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_authorized_workspace(TEXT) TO authenticated;
 
 DROP POLICY IF EXISTS "Users can read own expenses" ON public.user_expenses;
 DROP POLICY IF EXISTS "Users can insert own expenses" ON public.user_expenses;
@@ -249,7 +256,11 @@ USING (
 -- =========================================================================
 
 CREATE OR REPLACE FUNCTION public.handle_user_expense_upsert()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
 BEGIN
     IF (TG_OP = 'UPDATE') THEN
         -- 1. Anti-resurrection: A stale update (is_deleted = false) must NEVER revive a deleted record if incoming timestamp is <= deletion timestamp

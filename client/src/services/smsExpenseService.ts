@@ -586,6 +586,30 @@ class SmsExpenseService {
     const hasReferenceId = cleanRef.length > 0;
 
     if (hasReferenceId) {
+      // Check if reference is tombstoned (actively deleted by user)
+      if (Storage.isRefTombstoned(cleanRef)) {
+        return {
+          isDuplicate: true,
+          reason: `Duplicate: Transaction with Reference ID ${parsed.referenceId} was previously deleted by user`,
+        };
+      }
+
+      const trashExpenses = Storage.getTrash().filter((t) => !t.module || t.module === 'expenses');
+      const matchInTrash = trashExpenses.find((t) => {
+        const d: any = t.data;
+        return (
+          (d?.smsReferenceId && String(d.smsReferenceId).trim().toUpperCase() === cleanRef) ||
+          (d?.referenceId && String(d.referenceId).trim().toUpperCase() === cleanRef) ||
+          (d?.upiReference && String(d.upiReference).trim().toUpperCase() === cleanRef)
+        );
+      });
+      if (matchInTrash) {
+        return {
+          isDuplicate: true,
+          reason: `Duplicate: Transaction with Reference ID ${parsed.referenceId} was deleted by user`,
+        };
+      }
+
       const refKey = `ref_id_${cleanRef}`;
 
       // Check if this exact Reference ID was already processed in fingerprint history
@@ -648,16 +672,26 @@ class SmsExpenseService {
     // =========================================================================
     // A. Protection against identical raw SMS delivery repeats
     if (rawBody && rawBody.trim()) {
-      const rawHash = `raw_sms_${rawBody.trim().toLowerCase().replace(/\s+/g, ' ')}`;
+      const rawLower = rawBody.trim().toLowerCase();
+      const rawHash = `raw_sms_${rawLower.replace(/\s+/g, ' ')}`;
       if (processedFingerprints.includes(rawHash)) {
         return { isDuplicate: true, reason: 'Duplicate: Identical raw SMS payload already processed' };
       }
 
       const matchByRawText = existingExpenses.find(
-        (e) => e.rawSmsText && e.rawSmsText.trim().toLowerCase() === rawBody.trim().toLowerCase()
+        (e) => e.rawSmsText && e.rawSmsText.trim().toLowerCase() === rawLower
       );
       if (matchByRawText) {
         return { isDuplicate: true, reason: 'Duplicate: Identical raw SMS text already logged in Spending' };
+      }
+
+      const trashExpenses = Storage.getTrash().filter((t) => !t.module || t.module === 'expenses');
+      const matchTrashByRaw = trashExpenses.find((t) => {
+        const d: any = t.data;
+        return d?.rawSmsText && String(d.rawSmsText).trim().toLowerCase() === rawLower;
+      });
+      if (matchTrashByRaw) {
+        return { isDuplicate: true, reason: 'Duplicate: Transaction was previously deleted by user' };
       }
     }
 
@@ -1584,25 +1618,56 @@ class SmsExpenseService {
       let existingMatchTitle: string | undefined;
 
       if (cleanRef) {
-        const found = currentExpenses.find(
-          (e) =>
-            (e.smsReferenceId && e.smsReferenceId.trim().toUpperCase() === cleanRef) ||
-            (e.referenceId && e.referenceId.trim().toUpperCase() === cleanRef) ||
-            (e.notes && e.notes.toUpperCase().includes(cleanRef))
-        );
-        if (found) {
+        if (Storage.isRefTombstoned(cleanRef)) {
           isExisting = true;
-          existingMatchTitle = found.name;
+          existingMatchTitle = 'Previously deleted transaction';
+        } else {
+          const found = currentExpenses.find(
+            (e) =>
+              (e.smsReferenceId && e.smsReferenceId.trim().toUpperCase() === cleanRef) ||
+              (e.referenceId && e.referenceId.trim().toUpperCase() === cleanRef) ||
+              (e.notes && e.notes.toUpperCase().includes(cleanRef))
+          );
+          if (found) {
+            isExisting = true;
+            existingMatchTitle = found.name;
+          } else {
+            const matchTrashByRef = Storage.getTrash().find((t) => {
+              if (t.module && t.module !== 'expenses') return false;
+              const d: any = t.data;
+              return (
+                (d?.smsReferenceId && String(d.smsReferenceId).trim().toUpperCase() === cleanRef) ||
+                (d?.referenceId && String(d.referenceId).trim().toUpperCase() === cleanRef) ||
+                (d?.upiReference && String(d.upiReference).trim().toUpperCase() === cleanRef) ||
+                (d?.notes && String(d.notes).toUpperCase().includes(cleanRef))
+              );
+            });
+            if (matchTrashByRef) {
+              isExisting = true;
+              existingMatchTitle = `Deleted: ${matchTrashByRef.label || (matchTrashByRef.data as any)?.name || 'Expense'}`;
+            }
+          }
         }
       }
 
       if (!isExisting) {
+        const msgBodyTrimmed = msg.body.trim().toLowerCase();
         const matchByRaw = currentExpenses.find(
-          (e) => e.rawSmsText && e.rawSmsText.trim().toLowerCase() === msg.body.trim().toLowerCase()
+          (e) => e.rawSmsText && e.rawSmsText.trim().toLowerCase() === msgBodyTrimmed
         );
         if (matchByRaw) {
           isExisting = true;
           existingMatchTitle = matchByRaw.name;
+        } else {
+          const matchTrashByRaw = Storage.getTrash().find((t) => {
+            if (t.module && t.module !== 'expenses') return false;
+            const d: any = t.data;
+            return d?.rawSmsText && String(d.rawSmsText).trim().toLowerCase() === msgBodyTrimmed;
+          });
+          if (matchTrashByRaw) {
+            isExisting = true;
+            existingMatchTitle = `Deleted: ${matchTrashByRaw.label || (matchTrashByRaw.data as any)?.name || 'Expense'}`;
+          }
         }
       }
 

@@ -96,6 +96,7 @@ export const STORAGE_KEYS = {
   SCREEN_TIME: 'notion_os_v4_screentime',
   SCREEN_TIME_HISTORY: 'notion_os_v4_screentime_history',
   SMS_WRITE_RETRY_QUEUE: 'notion_os_v4_sms_write_retry_queue',
+  TOMBSTONED_REFS: 'notion_os_v4_tombstoned_refs',
 };
 
 export const DEFAULT_COMMAND_MAPPINGS: CommandMapping[] = [
@@ -1568,9 +1569,20 @@ export const Storage = {
       );
     }
 
+    const deletedIds = new Set(Storage.getDeletedExpenseIds().map((id) => String(id).trim()));
+    const trash = Storage.getTrash().filter((t) => t.module === 'expenses');
+    trash.forEach((t) => {
+      if (t.data?.id) deletedIds.add(String(t.data.id).trim());
+      if (typeof t.data === 'string' && t.data.trim()) deletedIds.add(t.data.trim());
+      if (t.id) deletedIds.add(String(t.id).trim());
+    });
+
+    const isExplicitlyDeleted = (id: string) => {
+      const clean = String(id).trim();
+      return deletedIds.has(clean) || Storage.isExpenseDeleted(clean);
+    };
+
     let recoveredFromCache: ExpenseItem[] = [];
-    // Always include device-level fallbacks
-    offlineCacheKeys.push('lifeos_offline_expenses_cache', 'lifeos_expenses_backup');
 
     for (const key of offlineCacheKeys) {
       try {
@@ -1578,7 +1590,9 @@ export const Storage = {
         if (cachedRaw) {
           const parsed = JSON.parse(cachedRaw);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            const validParsed = parsed.filter((e: any) => e && typeof e === 'object' && e.id);
+            const validParsed = parsed.filter(
+              (e: any) => e && typeof e === 'object' && e.id && !isExplicitlyDeleted(e.id)
+            );
             if (validParsed.length > recoveredFromCache.length) {
               recoveredFromCache = validParsed;
             }
@@ -1587,18 +1601,10 @@ export const Storage = {
       } catch {}
     }
 
-    if ((!hasScopedItem || list.length === 0) && recoveredFromCache.length > 0) {
-      // Cold start or blank scoped storage: recover completely from persistent offline cache
-      list = recoveredFromCache;
+    if (!hasScopedItem && recoveredFromCache.length > 0) {
+      // Cold start with uninitialized scoped storage: recover completely from persistent offline cache
+      list = recoveredFromCache.filter((e) => !isExplicitlyDeleted(e.id));
       saveToStorage(STORAGE_KEYS.EXPENSES, list);
-    } else if (list.length > 0 && recoveredFromCache.length > 0) {
-      // Merge historical expenses present in offline cache but absent from current scoped partition
-      const existingIds = new Set(list.map((e) => e.id));
-      const missingHistorical = recoveredFromCache.filter((e) => !existingIds.has(e.id));
-      if (missingHistorical.length > 0) {
-        list = [...list, ...missingHistorical];
-        saveToStorage(STORAGE_KEYS.EXPENSES, list);
-      }
     }
 
     // Ensure immediate read-after-write consistency if memory cache contains newly committed items
@@ -1612,7 +1618,6 @@ export const Storage = {
     }
 
     // Date healing: Ensure every expense in list has normalized YYYY-MM-DD date key
-    const deletedIds = new Set(Storage.getDeletedExpenseIds().map((id) => String(id).trim()));
     list = list
       .filter((e) => !deletedIds.has(String(e.id).trim()))
       .map((e) => {
@@ -1869,6 +1874,24 @@ export const Storage = {
     const current = Storage.getDeletedExpenseIds();
     return current.some((d) => String(d).trim() === clean);
   },
+  getTombstonedRefs: (): string[] => loadFromStorage<string[]>(STORAGE_KEYS.TOMBSTONED_REFS, []),
+  setTombstonedRefs: (refs: string[]) => saveToStorage(STORAGE_KEYS.TOMBSTONED_REFS, refs),
+  recordTombstonedRefs: (refOrRefs: string | string[]): void => {
+    const toAdd = Array.isArray(refOrRefs) ? refOrRefs : [refOrRefs];
+    const clean = toAdd.map((r) => String(r || '').trim().toUpperCase()).filter((r) => r.length >= 3);
+    if (clean.length === 0) return;
+    const current = Storage.getTombstonedRefs();
+    const set = new Set(current.map((r) => r.toUpperCase()));
+    clean.forEach((r) => set.add(r));
+    Storage.setTombstonedRefs(Array.from(set).slice(-2000));
+  },
+  isRefTombstoned: (ref?: string | null): boolean => {
+    if (!ref) return false;
+    const clean = String(ref).trim().toUpperCase();
+    if (clean.length < 3) return false;
+    const current = Storage.getTombstonedRefs();
+    return current.some((r) => r.toUpperCase() === clean);
+  },
   /**
    * Safely merges two expense lists by ID while preserving local transaction IDs,
    * deduping by primary ID and secondary transaction/SMS references, and strictly
@@ -1977,6 +2000,8 @@ export const Storage = {
     const target = current.find((e) => e.id === id);
     if (target) {
       Storage.moveToTrash('expenses', target, `${target.name} (₹${Number(target.amount).toLocaleString()})`);
+      const refs = [target.referenceId, target.smsReferenceId, target.upiReference].filter(Boolean) as string[];
+      if (refs.length > 0) Storage.recordTombstonedRefs(refs);
     }
     const updated = current.filter((e) => e.id !== id);
     Storage.setExpenses(updated);
@@ -2005,9 +2030,14 @@ export const Storage = {
     const idSet = new Set(ids.map((id) => String(id).trim()));
     const current = Storage.getExpenses();
     const toDelete = current.filter((e) => idSet.has(String(e.id).trim()));
+    const allRefs: string[] = [];
     toDelete.forEach((target) => {
       Storage.moveToTrash('expenses', target, `${target.name} (₹${Number(target.amount).toLocaleString()})`);
+      if (target.referenceId) allRefs.push(target.referenceId);
+      if (target.smsReferenceId) allRefs.push(target.smsReferenceId);
+      if (target.upiReference) allRefs.push(target.upiReference);
     });
+    if (allRefs.length > 0) Storage.recordTombstonedRefs(allRefs);
     const updated = current.filter((e) => !idSet.has(String(e.id).trim()));
     Storage.setExpenses(updated);
     Storage.recordDeletedExpenseId(ids);
@@ -2033,9 +2063,14 @@ export const Storage = {
   clearAllExpenses: (): void => {
     const current = Storage.getExpenses();
     const allIds = current.map((e) => e.id);
+    const allRefs: string[] = [];
     current.forEach((target) => {
       Storage.moveToTrash('expenses', target, `${target.name} (₹${Number(target.amount).toLocaleString()})`);
+      if (target.referenceId) allRefs.push(target.referenceId);
+      if (target.smsReferenceId) allRefs.push(target.smsReferenceId);
+      if (target.upiReference) allRefs.push(target.upiReference);
     });
+    if (allRefs.length > 0) Storage.recordTombstonedRefs(allRefs);
     Storage.setExpenses([]);
     Storage.setExcelImportLogs([]);
     Storage.recordDeletedExpenseId(allIds);

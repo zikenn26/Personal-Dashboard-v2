@@ -350,7 +350,12 @@ class ExpenseSyncService {
               );
             }
           }
+        } else if (!remoteFetch.success) {
+          throw new Error(remoteFetch.message || 'Failed to fetch from fallback workspace in Supabase Cloud');
         }
+      } else if (!dedicatedPullSuccessful && !dedicatedFetch.success) {
+        // Dedicated fetch failed with a non-fallback error (e.g. quota exceeded or network disconnect)
+        throw new Error(dedicatedFetch.error || 'Failed to retrieve expenses from Supabase dedicated table');
       }
 
       if (dedicatedPushSuccessful || dedicatedPullSuccessful) {

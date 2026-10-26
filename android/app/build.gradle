@@ -26,12 +26,9 @@ android {
                 storePassword 'zikenn12345'
                 keyAlias 'zikenn-key'
                 keyPassword 'zikenn12345'
-                v1SigningEnabled true
-                v2SigningEnabled true
-            } else {
-                v1SigningEnabled true
-                v2SigningEnabled true
             }
+            v1SigningEnabled true
+            v2SigningEnabled true
         }
         release {
             if (file('release-key.jks').exists()) {
@@ -45,7 +42,12 @@ android {
                 v1SigningEnabled true
                 v2SigningEnabled true
             } else {
-                initWith(signingConfigs.debug)
+                // If release-key.jks is not present, configure debug signing credentials so the resulting APK
+                // is always cryptographically signed with v1 & v2 schemes and never rejected as corrupt
+                storeFile file("${System.getProperty('user.home')}/.android/debug.keystore")
+                storePassword 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
                 v1SigningEnabled true
                 v2SigningEnabled true
             }
@@ -53,7 +55,7 @@ android {
     }
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            signingConfig (file('release-key.jks').exists() ? signingConfigs.release : signingConfigs.debug)
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

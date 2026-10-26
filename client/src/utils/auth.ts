@@ -630,7 +630,13 @@ export const Auth = {
         errorMsg = 'Please confirm your email address before signing in.';
       } else if (lower.includes('too many') || supabaseAuthError.status === 429) {
         errorMsg = 'Too many login attempts. Please wait a moment and try again.';
-      } else if (lower.includes('invalid login credentials') || lower.includes('invalid credentials')) {
+      } else if (
+        lower.includes('invalid login credentials') ||
+        lower.includes('invalid credentials') ||
+        lower.includes('user not found') ||
+        lower.includes('exceed_egress_quota') ||
+        lower.includes('spend caps')
+      ) {
         errorMsg = 'Invalid email or password.';
       } else if (supabaseAuthError.message) {
         errorMsg = supabaseAuthError.message;

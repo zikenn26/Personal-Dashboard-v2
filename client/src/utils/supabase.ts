@@ -1660,9 +1660,10 @@ export const pushExpenseMutationsToDedicatedTable = async (
   }
 
   try {
-    let { error } = await client
+    let { data: returnedRows, error } = await client
       .from('user_expenses')
-      .upsert(recordsToUpsert, { onConflict: 'id' });
+      .upsert(recordsToUpsert, { onConflict: 'id' })
+      .select('id, version, client_updated_at, is_deleted, amount, name, updated_at');
 
     // Handle column / schema variations gracefully (e.g. if user_id column is omitted or restricted)
     if (error && (error.code === '42703' || error.message?.includes('user_id'))) {
@@ -1673,8 +1674,10 @@ export const pushExpenseMutationsToDedicatedTable = async (
       });
       const retry = await client
         .from('user_expenses')
-        .upsert(recordsWithoutUserId, { onConflict: 'id' });
+        .upsert(recordsWithoutUserId, { onConflict: 'id' })
+        .select('id, version, client_updated_at, is_deleted, amount, name, updated_at');
       error = retry.error;
+      returnedRows = retry.data;
     }
 
     if (error) {
@@ -1688,9 +1691,44 @@ export const pushExpenseMutationsToDedicatedTable = async (
       };
     }
 
+    const verifiedPushedIds: string[] = [];
+    if (Array.isArray(returnedRows) && returnedRows.length > 0) {
+      const returnedMap = new Map<string, any>();
+      for (const row of returnedRows) {
+        if (row && row.id) {
+          returnedMap.set(String(row.id).trim(), row);
+        }
+      }
+
+      for (const mut of mutations) {
+        const cleanExpId = String(mut.expenseId || mut.id).trim();
+        const row = returnedMap.get(cleanExpId);
+        if (!row) {
+          // Row was not returned by Postgres (e.g. upsert ignored or RLS blocked)
+          continue;
+        }
+
+        if (mut.action === 'delete') {
+          // Deletion mutation must have is_deleted === true on server
+          if (row.is_deleted === true) {
+            verifiedPushedIds.push(mut.id);
+          }
+        } else {
+          // Create or update mutation: server must accept write (is_deleted === false)
+          // If server kept is_deleted === true, trigger rejected resurrection!
+          if (row.is_deleted !== true) {
+            verifiedPushedIds.push(mut.id);
+          }
+        }
+      }
+    } else {
+      // Fallback if environment doesn't return rows with select
+      verifiedPushedIds.push(...inFlightMutationIds);
+    }
+
     return {
       success: true,
-      pushedIds: inFlightMutationIds,
+      pushedIds: verifiedPushedIds,
     };
   } catch (err: any) {
     return {
@@ -2100,7 +2138,11 @@ CREATE INDEX IF NOT EXISTS idx_user_expenses_ref ON public.user_expenses(workspa
 ALTER TABLE public.user_expenses ENABLE ROW LEVEL SECURITY;
 
 CREATE OR REPLACE FUNCTION public.is_authorized_workspace(ws_id TEXT)
-RETURNS BOOLEAN AS $$
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+STABLE AS $$
 BEGIN
     IF ws_id IS NULL THEN
         RETURN FALSE;
@@ -2114,7 +2156,10 @@ BEGIN
           AND (w.user_id = auth.uid() OR w.user_identifier = 'user_' || auth.uid()::text OR w.user_identifier = auth.uid()::text)
     );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+$$;
+
+REVOKE ALL ON FUNCTION public.is_authorized_workspace(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_authorized_workspace(TEXT) TO authenticated;
 
 DROP POLICY IF EXISTS "Users can read own expenses" ON public.user_expenses;
 DROP POLICY IF EXISTS "Users can insert own expenses" ON public.user_expenses;
@@ -2160,7 +2205,11 @@ USING (
 -- =========================================================================
 
 CREATE OR REPLACE FUNCTION public.handle_user_expense_upsert()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
 BEGIN
     IF (TG_OP = 'UPDATE') THEN
         IF (OLD.is_deleted = TRUE AND NEW.is_deleted = FALSE AND COALESCE(NEW.client_updated_at, 0) <= COALESCE(OLD.client_updated_at, 0)) THEN

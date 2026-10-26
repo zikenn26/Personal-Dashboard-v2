@@ -1794,8 +1794,8 @@ export default function App() {
     const days = getWeekDaysInfo(currentMonday);
     const dayInfo = days[dayIndex];
 
-    const currentStored = Storage.getHabits();
-    const base = habits.length > 0 ? habits : currentStored;
+    // Always read authoritative state directly from Storage to avoid stale React closures
+    const base = Storage.getHabits();
     const target = base.find((h) => h.id === habitId);
     if (!target) return;
 
@@ -1826,22 +1826,31 @@ export default function App() {
 
     const updatedHabits = base.map((h) => (h.id === habitId ? toggledHabit : h));
 
-    // 2. Persist state to memory cache and localStorage
+    // 2. Explicitly commit to local storage and active week
     Storage.setHabits(updatedHabits);
     Storage.setHabitActiveWeek(currentWeekId);
 
-    // 3. Validate persistence before triggering cloud sync
-    const verifiedHabits = Storage.getHabits();
+    // 3. Verified verification: re-read from Storage to ensure persistence committed cleanly
+    let verifiedHabits = Storage.getHabits();
     const verifiedTarget = verifiedHabits.find((h) => h.id === habitId);
     const isValidated = Boolean(verifiedTarget && Boolean(verifiedTarget.completedDays[dayIndex]) === isNowCompleted);
 
     if (!isValidated) {
       console.warn('[HABIT_VALIDATION] Re-persisting habit toggle state:', habitId);
       Storage.setHabits(updatedHabits);
+      verifiedHabits = Storage.getHabits();
     }
 
-    // 4. Update UI state with validated habits
-    setHabits(isValidated && verifiedHabits.length > 0 ? verifiedHabits : updatedHabits);
+    // 4. Update UI state immediately with verified habits
+    const finalHabits = verifiedHabits.length > 0 ? verifiedHabits : updatedHabits;
+    setHabits(finalHabits);
+
+    // Explicitly notify all active UI views (overview, widgets, habit tracker)
+    window.dispatchEvent(
+      new CustomEvent('dashboard-data-updated', {
+        detail: { module: 'habits', updatedHabits: finalHabits },
+      })
+    );
 
     // Record or update the discrete habit activity log
     if (dayInfo) {
@@ -1886,8 +1895,8 @@ export default function App() {
 
   const handleToggleHabitDate = (habitId: string, dateStr: string) => {
     Sound.click(settings.soundEnabled);
-    const currentStored = Storage.getHabits();
-    const base = habits.length > 0 ? habits : currentStored;
+    // Always read authoritative state directly from Storage
+    const base = Storage.getHabits();
     const target = base.find((h) => h.id === habitId);
     if (!target) return;
 
@@ -1898,21 +1907,29 @@ export default function App() {
     const toggled = toggleHabitDate(target, dateStr, currentMonday);
     const updatedHabits = base.map((h) => (h.id === habitId ? toggled : h));
 
-    // 2. Persist to memory and localStorage
+    // 2. Explicitly commit to local storage
     Storage.setHabits(updatedHabits);
 
-    // 3. Validate persistence
-    const verifiedHabits = Storage.getHabits();
+    // 3. Validate persistence with verified verification
+    let verifiedHabits = Storage.getHabits();
     const isNowCompleted = isHabitDateCompleted(toggled, dateStr, currentMonday);
     const verifiedTarget = verifiedHabits.find((h) => h.id === habitId);
     const isValidated = Boolean(verifiedTarget && isHabitDateCompleted(verifiedTarget, dateStr, currentMonday) === isNowCompleted);
 
     if (!isValidated) {
       Storage.setHabits(updatedHabits);
+      verifiedHabits = Storage.getHabits();
     }
 
-    // 4. Update UI state with validated habits
-    setHabits(isValidated && verifiedHabits.length > 0 ? verifiedHabits : updatedHabits);
+    // 4. Update UI state with verified habits
+    const finalHabits = verifiedHabits.length > 0 ? verifiedHabits : updatedHabits;
+    setHabits(finalHabits);
+
+    window.dispatchEvent(
+      new CustomEvent('dashboard-data-updated', {
+        detail: { module: 'habits', updatedHabits: finalHabits },
+      })
+    );
 
     // Record or update discrete activity log
     const currentActs = Storage.getHabitActivities();
@@ -2415,39 +2432,18 @@ export default function App() {
   };
 
   const executeAtomicExpenseDeletion = (itemsToDelete: ExpenseItem[]) => {
-    const deleteIds = new Set(itemsToDelete.map((e) => String(e.id).trim()));
-    const currentStored = Storage.getExpenses();
+    const targetIds = itemsToDelete.map((e) => String(e.id).trim()).filter(Boolean);
+    if (targetIds.length === 0) return;
 
-    const nextStored = currentStored.filter((e) => !deleteIds.has(String(e.id).trim()));
-
-    // 1. Immediately persist synchronously to user-scoped localStorage
-    Storage.setExpenses(nextStored);
-    try {
-      localStorage.setItem(getScopedKey(STORAGE_KEYS.EXPENSES), JSON.stringify(nextStored));
-    } catch {}
-
-    // Clean up local backups so deleted items cannot be restored by stale local storage caches
-    try {
-      const rawImported = localStorage.getItem(getScopedKey('lifeos_last_imported_sheet_expenses'));
-      if (rawImported) {
-        const parsed = JSON.parse(rawImported);
-        if (Array.isArray(parsed)) {
-          const filtered = parsed.filter((e) => !deleteIds.has(String(e.id).trim()));
-          localStorage.setItem(getScopedKey('lifeos_last_imported_sheet_expenses'), JSON.stringify(filtered));
-        }
-      }
-      localStorage.setItem(getScopedKey('lifeos_expenses_backup'), JSON.stringify(nextStored));
-    } catch {}
+    // 1. Route deletion through single mutation pipeline:
+    // Storage.deleteExpenses atomically moves to Trash, records durable tombstones,
+    // deletes in IndexedDB/SQLite, enqueues delete outbox mutation, and clears offline caches.
+    const nextStored = Storage.deleteExpenses(targetIds);
 
     // 2. Clean up spreadsheet logs if all expenses cleared
     if (nextStored.length === 0) {
       Storage.setExcelImportLogs([]);
     }
-
-    // 2b. Move each deleted expense into Trash (recoverable for 30 days)
-    itemsToDelete.forEach((item) => {
-      Storage.moveToTrash('expenses', item, `${item.name} (₹${Number(item.amount).toLocaleString()})`);
-    });
     setTrash(Storage.getTrash());
 
     // 3. Immediately update React state with fresh array reference
@@ -2462,13 +2458,12 @@ export default function App() {
     );
 
     // 5. Flush auto sync immediately to Supabase
-    const deletedIdsList = itemsToDelete.map((i) => String(i.id).trim());
     flushAutoSyncImmediately({
       ...Storage.getAllDataPayload(),
       expenses: nextStored,
       trash: Storage.getTrash(),
       _meta: {
-        deletedExpenseIds: deletedIdsList,
+        deletedExpenseIds: targetIds,
         lastDeletedAt: Date.now(),
       },
     });
@@ -2479,7 +2474,7 @@ export default function App() {
     }
     const primaryItem = itemsToDelete[0];
     if (primaryItem) {
-      const itemIndex = currentStored.findIndex((e) => String(e.id) === String(primaryItem.id));
+      const itemIndex = expenses.findIndex((e) => String(e.id) === String(primaryItem.id));
       setExpenseUndoToast({
         item: primaryItem,
         index: itemIndex >= 0 ? itemIndex : 0,
@@ -2519,13 +2514,9 @@ export default function App() {
     }
 
     if (itemsToDelete.length === 0) {
-      // Even if item object wasn't found in memory, purge the IDs from storage directly
-      const nextStored = currentStored.filter((e) => !idSet.has(String(e.id).trim()));
-      Storage.setExpenses(nextStored);
-      setExpenses(nextStored);
-      targetIds.forEach((id) => {
-        Storage.moveToTrash('expenses', { id, name: 'Deleted Expense', amount: 0, category: 'Others', date: '' } as any, `Expense ID ${id}`);
-      });
+      // Even if item object wasn't found in memory, purge through the single mutation pipeline
+      const nextStored = Storage.deleteExpenses(targetIds);
+      setExpenses([...nextStored]);
       setTrash(Storage.getTrash());
       setAtomicPendingDeletion(null);
       window.dispatchEvent(
@@ -2533,13 +2524,12 @@ export default function App() {
           detail: { module: 'expenses', updatedExpenses: nextStored },
         })
       );
-      const deletedIdsList = targetIds.map((id) => String(id).trim());
       flushAutoSyncImmediately({
         ...Storage.getAllDataPayload(),
         expenses: nextStored,
         trash: Storage.getTrash(),
         _meta: {
-          deletedExpenseIds: deletedIdsList,
+          deletedExpenseIds: targetIds,
           lastDeletedAt: Date.now(),
         },
       });
@@ -2621,70 +2611,49 @@ export default function App() {
 
   const handleDeleteBatchExpenses = (ids: string[]) => {
     Sound.click(settings.soundEnabled);
-    const idSet = new Set(ids.map((id) => String(id).trim()));
-    const currentStored = Storage.getExpenses();
-    const toDelete = currentStored.filter((e) => idSet.has(String(e.id).trim()));
-    toDelete.forEach((item) => {
-      Storage.moveToTrash('expenses', item, `${item.name} (₹${Number(item.amount).toLocaleString()})`);
-    });
+    const targetIds = ids.map((id) => String(id).trim()).filter(Boolean);
+    if (targetIds.length === 0) return;
+
+    // Single mutation pipeline: Storage.deleteExpenses commits to local DB, records tombstones,
+    // enqueues outbox mutation, and updates trash
+    const updated = Storage.deleteExpenses(targetIds);
     setTrash(Storage.getTrash());
-
-    const updated = currentStored.filter((e) => !idSet.has(String(e.id).trim()));
-    setExpenses(updated);
-    Storage.setExpenses(updated);
-
-    try {
-      const rawImported = localStorage.getItem(getScopedKey('lifeos_last_imported_sheet_expenses'));
-      if (rawImported) {
-        const parsed = JSON.parse(rawImported);
-        if (Array.isArray(parsed)) {
-          const filtered = parsed.filter((e) => !idSet.has(String(e.id).trim()));
-          localStorage.setItem(getScopedKey('lifeos_last_imported_sheet_expenses'), JSON.stringify(filtered));
-        }
-      }
-      localStorage.setItem(getScopedKey('lifeos_expenses_backup'), JSON.stringify(updated));
-    } catch {}
+    setExpenses([...updated]);
 
     window.dispatchEvent(
       new CustomEvent('dashboard-data-updated', {
-        detail: { module: 'expenses', updatedExpenses: updated },
+        detail: { module: 'expenses', updatedExpenses: updated, deletedCount: targetIds.length },
       })
     );
     flushAutoSyncImmediately({
       ...Storage.getAllDataPayload(),
       expenses: updated,
+      trash: Storage.getTrash(),
+      _meta: {
+        deletedExpenseIds: targetIds,
+        lastDeletedAt: Date.now(),
+      },
     });
   };
 
   const handleClearAllExpenses = () => {
     Sound.click(settings.soundEnabled);
-    const currentStored = Storage.getExpenses();
-    currentStored.forEach((item) => {
-      Storage.moveToTrash('expenses', item, `${item.name} (₹${Number(item.amount).toLocaleString()})`);
-    });
+    // Single mutation pipeline for clear-all
+    Storage.clearAllExpenses();
     setTrash(Storage.getTrash());
-
     setExpenses([]);
-    Storage.setExpenses([]);
     setExcelImportLogs([]);
-    Storage.setExcelImportLogs([]);
-    try {
-      localStorage.removeItem(getScopedKey('lifeos_last_imported_sheet_expenses'));
-      localStorage.removeItem(getScopedKey('lifeos_expenses_backup'));
-      localStorage.removeItem('lifeos_last_imported_sheet_expenses');
-      localStorage.removeItem('lifeos_expenses_backup');
-      localStorage.setItem(getScopedKey(STORAGE_KEYS.EXPENSES), '[]');
-      localStorage.setItem(getScopedKey(STORAGE_KEYS.EXCEL_IMPORT_LOGS), '[]');
-    } catch {}
+
     window.dispatchEvent(
       new CustomEvent('dashboard-data-updated', {
-        detail: { module: 'expenses', updatedExpenses: [] },
+        detail: { module: 'expenses', updatedExpenses: [], clearedAll: true },
       })
     );
     flushAutoSyncImmediately({
       ...Storage.getAllDataPayload(),
       expenses: [],
       excelImportLogs: [],
+      trash: Storage.getTrash(),
       _meta: {
         clearedAllExpenses: true,
         clearedAt: Date.now(),

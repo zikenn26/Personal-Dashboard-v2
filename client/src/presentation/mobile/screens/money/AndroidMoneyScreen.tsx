@@ -297,11 +297,27 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
           description: `${res.pushedCount} pushed, ${res.pulledCount} pulled`,
         });
       } else {
-        toast.error(res.message || 'Sync failed. Local data remains safe.');
+        const isQuota = res.message?.includes('egress') || res.message?.includes('quota') || res.message?.includes('exhausted');
+        if (isQuota) {
+          toast.warning('Cloud sync paused (Supabase quota limit)', {
+            description: 'All local spending records and deletions are 100% safely preserved offline on device.',
+            duration: 6000,
+          });
+        } else {
+          toast.error(res.message || 'Sync failed. Local data remains safe.');
+        }
       }
     } catch (err: any) {
       toast.dismiss(loadingToast);
-      toast.error(err?.message || 'Sync error. Local data remains safe.');
+      const isQuota = err?.message?.includes('egress') || err?.message?.includes('quota') || err?.message?.includes('exhausted');
+      if (isQuota) {
+        toast.warning('Cloud sync paused (Supabase quota limit)', {
+          description: 'All transactions are safely saved on device and will sync when quota resets.',
+          duration: 6000,
+        });
+      } else {
+        toast.error(err?.message || 'Sync error. Local data remains safe.');
+      }
     }
   };
 

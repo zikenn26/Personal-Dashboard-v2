@@ -334,11 +334,27 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
           description: `${res.pushedCount} pushed, ${res.pulledCount} pulled`,
         });
       } else {
-        toast.error(res.message || 'Sync failed. Local data remains safe.');
+        const isQuota = res.message?.includes('egress') || res.message?.includes('quota') || res.message?.includes('exhausted');
+        if (isQuota) {
+          toast.warning('Cloud sync paused (Supabase quota limit)', {
+            description: 'All local spending records and deletions are 100% safely preserved offline in device database. Cloud sync will resume once quota resets.',
+            duration: 6000,
+          });
+        } else {
+          toast.error(res.message || 'Sync failed. Local data remains safe.');
+        }
       }
     } catch (err: any) {
       toast.dismiss(toastId);
-      toast.error(err?.message || 'Sync network error. Local data remains safe.');
+      const isQuota = err?.message?.includes('egress') || err?.message?.includes('quota') || err?.message?.includes('exhausted');
+      if (isQuota) {
+        toast.warning('Cloud sync paused (Supabase quota limit)', {
+          description: 'All local spending records are safely preserved offline in device database. Cloud sync will resume once quota resets.',
+          duration: 6000,
+        });
+      } else {
+        toast.error(err?.message || 'Sync network error. Local data remains safe.');
+      }
     }
   };
 
