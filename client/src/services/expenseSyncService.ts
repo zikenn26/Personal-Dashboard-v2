@@ -236,7 +236,24 @@ class ExpenseSyncService {
         if (dedicatedRes.success) {
           dedicatedPushSuccessful = true;
           pushedCount = dedicatedRes.pushedIds.length;
-          await expenseRepo.dequeueMutations(dedicatedRes.pushedIds);
+
+          // Dequeue ONLY verified acknowledged mutations
+          if (dedicatedRes.pushedIds.length > 0) {
+            await expenseRepo.dequeueMutations(dedicatedRes.pushedIds);
+          }
+
+          // If server rejected mutations because records are tombstoned on server, enforce local tombstones
+          if (dedicatedRes.serverTombstonedIds && dedicatedRes.serverTombstonedIds.length > 0) {
+            console.warn('[TOMBSTONE_DIAGNOSTIC] Server confirmed tombstones for:', dedicatedRes.serverTombstonedIds);
+            await expenseRepo.recordTombstones(dedicatedRes.serverTombstonedIds);
+            await expenseRepo.deleteBatch(dedicatedRes.serverTombstonedIds);
+            Storage.deleteExpenses(dedicatedRes.serverTombstonedIds);
+          }
+
+          // Dequeue mutations that were rejected due to server tombstone conflict so they don't loop
+          if (dedicatedRes.conflictRejectedMutationIds && dedicatedRes.conflictRejectedMutationIds.length > 0) {
+            await expenseRepo.dequeueMutations(dedicatedRes.conflictRejectedMutationIds);
+          }
         } else if (dedicatedRes.isFallbackNeeded) {
           needsWorkspaceFallback = true;
         } else {

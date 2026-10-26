@@ -20,30 +20,19 @@ android {
         }
     }
     signingConfigs {
-        debug {
-            if (file('release-key.jks').exists()) {
-                storeFile file('release-key.jks')
-                storePassword 'zikenn12345'
-                keyAlias 'zikenn-key'
-                keyPassword 'zikenn12345'
-            }
-            v1SigningEnabled true
-            v2SigningEnabled true
-        }
         release {
-            if (file('release-key.jks').exists()) {
-                storeFile file('release-key.jks')
-                def sPassword = System.getenv('RELEASE_KEYSTORE_PASSWORD') ?: (project.findProperty('RELEASE_KEYSTORE_PASSWORD') ?: 'zikenn12345')
-                def kAlias = System.getenv('RELEASE_KEY_ALIAS') ?: (project.findProperty('RELEASE_KEY_ALIAS') ?: 'zikenn-key')
-                def kPassword = System.getenv('RELEASE_KEY_PASSWORD') ?: (project.findProperty('RELEASE_KEY_PASSWORD') ?: 'zikenn12345')
-                storePassword sPassword
-                keyAlias kAlias
-                keyPassword kPassword
+            def keystorePath = System.getenv('RELEASE_KEYSTORE_PATH') ?: (project.findProperty('RELEASE_KEYSTORE_PATH') ?: 'release-key.jks')
+            def keystoreFile = file(keystorePath)
+            if (keystoreFile.exists()) {
+                storeFile keystoreFile
+                storePassword System.getenv('RELEASE_KEYSTORE_PASSWORD') ?: (project.findProperty('RELEASE_KEYSTORE_PASSWORD') ?: 'zikenn12345')
+                keyAlias System.getenv('RELEASE_KEY_ALIAS') ?: (project.findProperty('RELEASE_KEY_ALIAS') ?: 'zikenn-key')
+                keyPassword System.getenv('RELEASE_KEY_PASSWORD') ?: (project.findProperty('RELEASE_KEY_PASSWORD') ?: 'zikenn12345')
                 v1SigningEnabled true
                 v2SigningEnabled true
             } else {
-                // If release-key.jks is not present, configure debug signing credentials so the resulting APK
-                // is always cryptographically signed with v1 & v2 schemes and never rejected as corrupt
+                // When dedicated release keystore is not provisioned on this environment,
+                // fall back to debug signing config so development builds remain functional
                 storeFile file("${System.getProperty('user.home')}/.android/debug.keystore")
                 storePassword 'android'
                 keyAlias 'androiddebugkey'
@@ -52,10 +41,14 @@ android {
                 v2SigningEnabled true
             }
         }
+        debug {
+            v1SigningEnabled true
+            v2SigningEnabled true
+        }
     }
     buildTypes {
         release {
-            signingConfig (file('release-key.jks').exists() ? signingConfigs.release : signingConfigs.debug)
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

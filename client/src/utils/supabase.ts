@@ -1509,7 +1509,14 @@ export const uploadFileToSupabaseStorage = async (
  */
 export const pushExpenseMutationsToDedicatedTable = async (
   mutations: OutboxMutation[]
-): Promise<{ success: boolean; pushedIds: string[]; error?: string; isFallbackNeeded?: boolean }> => {
+): Promise<{
+  success: boolean;
+  pushedIds: string[];
+  serverTombstonedIds?: string[];
+  conflictRejectedMutationIds?: string[];
+  error?: string;
+  isFallbackNeeded?: boolean;
+}> => {
   if (!mutations || mutations.length === 0) {
     return { success: true, pushedIds: [] };
   }
@@ -1692,6 +1699,9 @@ export const pushExpenseMutationsToDedicatedTable = async (
     }
 
     const verifiedPushedIds: string[] = [];
+    const serverTombstonedIds: string[] = [];
+    const conflictRejectedMutationIds: string[] = [];
+
     if (Array.isArray(returnedRows) && returnedRows.length > 0) {
       const returnedMap = new Map<string, any>();
       for (const row of returnedRows) {
@@ -1704,7 +1714,7 @@ export const pushExpenseMutationsToDedicatedTable = async (
         const cleanExpId = String(mut.expenseId || mut.id).trim();
         const row = returnedMap.get(cleanExpId);
         if (!row) {
-          // Row was not returned by Postgres (e.g. upsert ignored or RLS blocked)
+          console.warn('[EXPENSE_DEDICATED_SYNC] Mutation unacknowledged by server:', { mutationId: mut.id, expenseId: cleanExpId });
           continue;
         }
 
@@ -1712,12 +1722,18 @@ export const pushExpenseMutationsToDedicatedTable = async (
           // Deletion mutation must have is_deleted === true on server
           if (row.is_deleted === true) {
             verifiedPushedIds.push(mut.id);
+          } else {
+            console.warn('[EXPENSE_DEDICATED_SYNC] Deletion mutation unconfirmed (server has is_deleted=false):', cleanExpId);
           }
         } else {
           // Create or update mutation: server must accept write (is_deleted === false)
           // If server kept is_deleted === true, trigger rejected resurrection!
           if (row.is_deleted !== true) {
             verifiedPushedIds.push(mut.id);
+          } else {
+            console.warn('[TOMBSTONE_DIAGNOSTIC] Server rejected resurrection: expense was deleted on server. Tombstone enforced:', cleanExpId);
+            serverTombstonedIds.push(cleanExpId);
+            conflictRejectedMutationIds.push(mut.id);
           }
         }
       }
@@ -1729,6 +1745,8 @@ export const pushExpenseMutationsToDedicatedTable = async (
     return {
       success: true,
       pushedIds: verifiedPushedIds,
+      serverTombstonedIds,
+      conflictRejectedMutationIds,
     };
   } catch (err: any) {
     return {

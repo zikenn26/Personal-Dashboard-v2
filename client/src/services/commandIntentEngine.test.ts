@@ -36,6 +36,10 @@ function setupMockStorage() {
 }
 
 function seedTestData() {
+  if (typeof globalThis.localStorage !== 'undefined' && typeof globalThis.localStorage.clear === 'function') {
+    globalThis.localStorage.clear();
+  }
+  Storage.clearMemoryCaches();
   const todayStr = getTodayDateString();
   const yestStr = getYesterdayDateString();
 

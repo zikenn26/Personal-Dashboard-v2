@@ -1565,7 +1565,9 @@ export const Storage = {
     } else {
       offlineCacheKeys.push(
         'user_guest_offline_expenses_cache',
-        'user_guest_lifeos_expenses_backup'
+        'user_guest_lifeos_expenses_backup',
+        'lifeos_offline_expenses_cache',
+        'lifeos_expenses_backup'
       );
     }
 
@@ -1601,10 +1603,21 @@ export const Storage = {
       } catch {}
     }
 
-    if (!hasScopedItem && recoveredFromCache.length > 0) {
-      // Cold start with uninitialized scoped storage: recover completely from persistent offline cache
+    if ((!hasScopedItem || list.length === 0) && recoveredFromCache.length > 0) {
+      // Cold start or blank scoped storage: recover completely from persistent offline cache
       list = recoveredFromCache.filter((e) => !isExplicitlyDeleted(e.id));
       saveToStorage(STORAGE_KEYS.EXPENSES, list);
+    } else if (list.length > 0 && recoveredFromCache.length > 0) {
+      // Merge historical expenses present in offline cache but absent from current scoped partition,
+      // strictly excluding deleted items
+      const existingIds = new Set(list.map((e) => e.id));
+      const missingHistorical = recoveredFromCache.filter(
+        (e) => !existingIds.has(e.id) && !isExplicitlyDeleted(e.id)
+      );
+      if (missingHistorical.length > 0) {
+        list = [...list, ...missingHistorical];
+        saveToStorage(STORAGE_KEYS.EXPENSES, list);
+      }
     }
 
     // Ensure immediate read-after-write consistency if memory cache contains newly committed items
@@ -1819,20 +1832,23 @@ export const Storage = {
       }
 
       if (sanitized.length > 0) {
-        localStorage.setItem('lifeos_expenses_backup', serialized);
-        localStorage.setItem('lifeos_offline_expenses_cache', serialized);
         if (!isGuest) {
           localStorage.setItem(`${activeEmail}_offline_expenses_cache`, serialized);
           localStorage.setItem(`${ws}_offline_expenses_cache`, serialized);
+          if (isGknUser) {
+            localStorage.setItem('lifeos_expenses_backup', serialized);
+            localStorage.setItem('lifeos_offline_expenses_cache', serialized);
+          }
         } else {
           localStorage.setItem('user_guest_offline_expenses_cache', serialized);
           localStorage.setItem('user_guest_lifeos_expenses_backup', serialized);
+          localStorage.setItem('lifeos_offline_expenses_cache', serialized);
+          localStorage.setItem('lifeos_expenses_backup', serialized);
         }
       } else {
         if (!isGuest) {
           localStorage.removeItem(`${activeEmail}_offline_expenses_cache`);
           localStorage.removeItem(`${ws}_offline_expenses_cache`);
-          const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gulnayak1206@gmail.com';
           if (isGknUser) {
             localStorage.removeItem('lifeos_offline_expenses_cache');
             localStorage.removeItem('lifeos_expenses_backup');
@@ -1840,6 +1856,8 @@ export const Storage = {
         } else {
           localStorage.removeItem('user_guest_offline_expenses_cache');
           localStorage.removeItem('user_guest_lifeos_expenses_backup');
+          localStorage.removeItem('lifeos_offline_expenses_cache');
+          localStorage.removeItem('lifeos_expenses_backup');
         }
       }
     } catch (e) {

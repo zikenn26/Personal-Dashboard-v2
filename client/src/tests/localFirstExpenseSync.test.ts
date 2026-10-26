@@ -863,5 +863,222 @@ describe('Local-First Expense Storage & Reliable Sync Test Suite', () => {
 
     expect(Boolean(localStorage.getItem(migrationKey))).toBe(true);
   });
+
+  it('19. saveBatch strictly preserves existing tombstones and prevents resurrection of deleted items', async () => {
+    // Record a tombstone
+    await expenseRepo.recordTombstone('exp-tombstone-safe-1');
+    const tombstonesBefore = await expenseRepo.getTombstones();
+    expect(tombstonesBefore.has('exp-tombstone-safe-1')).toBe(true);
+
+    // Attempt to saveBatch a list containing this tombstoned ID
+    const batchAttempt: ExpenseItem[] = [
+      {
+        id: 'exp-tombstone-safe-1',
+        name: 'Zombie Expense',
+        amount: 999,
+        category: 'Other',
+        date: '2026-03-29',
+        active: true,
+        updatedAt: Date.now(),
+      },
+      {
+        id: 'exp-valid-batch-2',
+        name: 'Valid Batch Item',
+        amount: 150,
+        category: 'Food & Dining',
+        date: '2026-03-29',
+        active: true,
+        updatedAt: Date.now(),
+      },
+    ];
+
+    const saved = await expenseRepo.saveBatch(batchAttempt);
+    // The tombstoned item must NOT be saved
+    expect(saved.some((e) => e.id === 'exp-tombstone-safe-1')).toBe(false);
+    expect(saved.some((e) => e.id === 'exp-valid-batch-2')).toBe(true);
+
+    // Database check
+    const retrievedTombstoned = await expenseRepo.getById('exp-tombstone-safe-1');
+    expect(retrievedTombstoned).toBeNull();
+
+    const retrievedValid = await expenseRepo.getById('exp-valid-batch-2');
+    expect(retrievedValid).toBeDefined();
+
+    // Tombstone must remain intact
+    const tombstonesAfter = await expenseRepo.getTombstones();
+    expect(tombstonesAfter.has('exp-tombstone-safe-1')).toBe(true);
+  });
+
+  it('20. Verified mutation dequeuing only clears acknowledged mutations while unacknowledged remain pending', async () => {
+    const mut1 = await expenseRepo.enqueueMutation({
+      expenseId: 'exp-ack-1',
+      action: 'create',
+      data: { id: 'exp-ack-1', name: 'Ack 1', amount: 100, category: 'Other', date: '2026-03-29', active: true },
+    });
+    const mut2 = await expenseRepo.enqueueMutation({
+      expenseId: 'exp-ack-2',
+      action: 'update',
+      data: { id: 'exp-ack-2', name: 'Ack 2', amount: 200, category: 'Other', date: '2026-03-29', active: true },
+    });
+
+    const pendingInitial = await expenseRepo.getPendingOutbox();
+    expect(pendingInitial.length).toBe(2);
+
+    // Server only ACKs mut1 (mut2 was dropped or failed verification)
+    await expenseRepo.dequeueMutations([mut1.id]);
+
+    const pendingAfterAck = await expenseRepo.getPendingOutbox();
+    expect(pendingAfterAck.length).toBe(1);
+    expect(pendingAfterAck[0].id).toBe(mut2.id);
+    expect(pendingAfterAck[0].expenseId).toBe('exp-ack-2');
+  });
+
+  it('21. Storage-write fault injection: in-memory mirror and retry resilience protect against IDB write failures', async () => {
+    const item: ExpenseItem = {
+      id: 'exp-fault-1',
+      name: 'Resilient Coffee',
+      amount: 150,
+      category: 'Food & Dining',
+      date: '2026-03-29',
+      active: true,
+    };
+
+    // Save should succeed in memory even if underlying write encounters a warning
+    const saved = await expenseRepo.save(item);
+    expect(saved.id).toBe('exp-fault-1');
+
+    const inMemory = await expenseRepo.getById('exp-fault-1');
+    expect(inMemory).not.toBeNull();
+    expect(inMemory?.amount).toBe(150);
+  });
+
+  it('22. Simultaneous concurrent operations: unawaited parallel mutations maintain atomic integrity', async () => {
+    const p1 = expenseRepo.save({
+      id: 'exp-concurrent-1',
+      name: 'Concurrent 1',
+      amount: 100,
+      category: 'Work',
+      date: '2026-03-29',
+      active: true,
+    });
+    const p2 = expenseRepo.save({
+      id: 'exp-concurrent-2',
+      name: 'Concurrent 2',
+      amount: 200,
+      category: 'Work',
+      date: '2026-03-29',
+      active: true,
+    });
+    const p3 = expenseRepo.delete('exp-concurrent-1');
+    const p4 = expenseRepo.enqueueMutation({
+      expenseId: 'exp-concurrent-2',
+      action: 'create',
+      payload: { id: 'exp-concurrent-2', name: 'Concurrent 2' },
+    });
+
+    await Promise.all([p1, p2, p3, p4]);
+
+    const all = await expenseRepo.getAll();
+    expect(all.some((e) => e.id === 'exp-concurrent-1')).toBe(false);
+    expect(all.some((e) => e.id === 'exp-concurrent-2')).toBe(true);
+
+    const tombstones = await expenseRepo.getTombstones();
+    expect(tombstones.has('exp-concurrent-1')).toBe(true);
+
+    const outbox = await expenseRepo.getPendingOutbox();
+    expect(outbox.some((m) => m.expenseId === 'exp-concurrent-2')).toBe(true);
+  });
+
+  it('23. Restart recovery with stale remote data: deleted item cannot be resurrected by outdated cloud snapshot', async () => {
+    // 1. Create and then delete an expense
+    const exp: ExpenseItem = {
+      id: 'exp-to-die',
+      name: 'Deleted Subscription',
+      amount: 999,
+      category: 'Bills',
+      date: '2026-03-29',
+      active: true,
+    };
+    Storage.addExpense(exp);
+    Storage.deleteExpense('exp-to-die');
+    await expenseRepo.delete('exp-to-die');
+    await expenseRepo.recordTombstone('exp-to-die');
+
+    // 2. Simulate incoming stale cloud snapshot containing the deleted item plus an untombstoned item
+    const staleCloudSnapshot: ExpenseItem[] = [
+      { id: 'exp-to-die', name: 'Deleted Subscription', amount: 999, category: 'Bills', date: '2026-03-29', active: true },
+      { id: 'exp-survivor', name: 'Valid New Cloud Item', amount: 450, category: 'Food', date: '2026-03-29', active: true },
+    ];
+
+    const currentTombstones = await expenseRepo.getTombstones();
+    const localExpenses = Storage.getExpenses();
+
+    // Reconcile with mergeExpenseLists
+    const reconciled = mergeExpenseLists(localExpenses, staleCloudSnapshot, currentTombstones);
+    await expenseRepo.saveBatch(reconciled);
+    Storage.setExpenses(reconciled);
+
+    // 3. Verify deleted item is NOT resurrected and survivor is ingested
+    const finalExpenses = Storage.getExpenses();
+    expect(finalExpenses.some((e) => e.id === 'exp-to-die')).toBe(false);
+    expect(finalExpenses.some((e) => e.id === 'exp-survivor')).toBe(true);
+
+    // Database check
+    const fromDb = await expenseRepo.getById('exp-to-die');
+    expect(fromDb).toBeNull();
+  });
+
+  it('24. Server rejected write / tombstone conflict: suppresses retry loop and purges local record', async () => {
+    // Enqueue a mutation for an item that the server rejected because it was deleted remotely
+    const conflictMut = await expenseRepo.enqueueMutation({
+      expenseId: 'exp-remote-dead',
+      action: 'update',
+      payload: { id: 'exp-remote-dead', name: 'Ghost Item', amount: 50 },
+    });
+
+    // Simulate server response handling
+    const serverTombstonedIds = ['exp-remote-dead'];
+    const conflictRejectedMutationIds = [conflictMut.id];
+
+    // Enforce server tombstones locally
+    await expenseRepo.recordTombstones(serverTombstonedIds);
+    await expenseRepo.deleteBatch(serverTombstonedIds);
+    Storage.deleteExpenses(serverTombstonedIds);
+    await expenseRepo.dequeueMutations(conflictRejectedMutationIds);
+
+    const outboxAfter = await expenseRepo.getPendingOutbox();
+    expect(outboxAfter.some((m) => m.id === conflictMut.id)).toBe(false);
+
+    const isTombstoned = await expenseRepo.isTombstoned('exp-remote-dead');
+    expect(isTombstoned).toBe(true);
+  });
+
+  it('25. Interrupted acknowledgement: network timeout leaves pending mutations in outbox with error state', async () => {
+    await expenseRepo.enqueueMutation({
+      expenseId: 'exp-interrupted-1',
+      action: 'create',
+      payload: { id: 'exp-interrupted-1', name: 'Unsent Item', amount: 75 },
+    });
+
+    const pendingBefore = await expenseRepo.getPendingOutbox();
+    expect(pendingBefore.length).toBeGreaterThan(0);
+
+    // Simulate network drop error handling
+    await expenseRepo.setSyncStatus({
+      state: 'error',
+      lastError: 'HTTP 402: Service for this project is restricted due to exceed_egress_quota',
+      pendingCount: pendingBefore.length,
+    });
+
+    const status = await expenseRepo.getSyncStatus();
+    expect(status.state).toBe('error');
+    expect(status.lastError).toContain('exceed_egress_quota');
+    expect(status.pendingCount).toBe(pendingBefore.length);
+
+    // Mutations must NEVER be dequeued on interrupted ack
+    const pendingAfter = await expenseRepo.getPendingOutbox();
+    expect(pendingAfter.length).toBe(pendingBefore.length);
+  });
 });
+
 

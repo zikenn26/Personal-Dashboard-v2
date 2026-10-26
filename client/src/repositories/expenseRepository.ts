@@ -351,7 +351,11 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
         updatedAt: exp.updatedAt || nowMs,
       };
 
-      this.memoryTombstones.delete(cleanId);
+      if (this.memoryTombstones.has(cleanId)) {
+        console.warn('[TOMBSTONE_DIAGNOSTIC] saveBatch skipped tombstoned expense to prevent resurrection:', cleanId);
+        continue;
+      }
+
       this.memoryExpenses.set(cleanId, sanitized);
       sanitizedList.push(sanitized);
     }
@@ -359,11 +363,9 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
     if (this.db) {
       try {
         await new Promise<void>((resolve, reject) => {
-          const tx = this.db!.transaction([STORE_EXPENSES, STORE_TOMBSTONES], 'readwrite');
+          const tx = this.db!.transaction(STORE_EXPENSES, 'readwrite');
           const expStore = tx.objectStore(STORE_EXPENSES);
-          const tombStore = tx.objectStore(STORE_TOMBSTONES);
           sanitizedList.forEach((item) => {
-            tombStore.delete(item.id);
             expStore.put(item);
           });
           tx.oncomplete = () => resolve();
@@ -382,6 +384,7 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
     const cleanId = String(id).trim();
     this.memoryExpenses.delete(cleanId);
     this.memoryTombstones.add(cleanId);
+    console.info('[TOMBSTONE_DIAGNOSTIC] Recorded deletion tombstone for:', cleanId);
 
     if (this.db) {
       try {
@@ -409,6 +412,7 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
       this.memoryExpenses.delete(id);
       this.memoryTombstones.add(id);
     });
+    console.info('[TOMBSTONE_DIAGNOSTIC] Recorded deletion tombstones for:', cleanIds);
 
     if (this.db) {
       try {

@@ -324,6 +324,8 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
 
   const handleManualSyncNow = async () => {
     Sound.click(soundEnabled);
+    // Instant synchronous visual state transition to provide immediate feedback
+    setExpenseSyncStatus((prev) => ({ ...prev, state: 'syncing' }));
     const toastId = toast.loading('Syncing expenses with Supabase Cloud...');
     try {
       const res = await expenseSyncService.syncExpenses({ manual: true });
@@ -1403,54 +1405,68 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
 
         {/* Right: Sync Now, Export, Excel, + Add Expense */}
         <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-          {/* Sync Now / Cloud Status Button */}
+          {/* Sync Now / Cloud Status Button with Lifecycle Visual Indicator */}
           <button
             type="button"
             id="btn-expense-sync-now"
             onClick={handleManualSyncNow}
             disabled={expenseSyncStatus.state === 'syncing'}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold shadow-2xs transition-all cursor-pointer ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-semibold shadow-2xs transition-all cursor-pointer ${
               expenseSyncStatus.state === 'syncing'
-                ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300'
+                ? 'bg-blue-50 dark:bg-blue-950/70 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300'
                 : expenseSyncStatus.state === 'error'
-                ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300'
+                ? 'bg-rose-50 dark:bg-rose-950/70 border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300'
                 : expenseSyncStatus.state === 'offline'
-                ? 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'
+                ? 'bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300'
                 : expenseSyncStatus.pendingCount > 0
-                ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300'
-                : 'bg-white dark:bg-[#1A202C] hover:bg-gray-50 dark:hover:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200'
+                ? 'bg-amber-50 dark:bg-amber-950/70 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200'
+                : 'bg-emerald-50 dark:bg-emerald-950/70 hover:bg-emerald-100/60 dark:hover:bg-emerald-900/60 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200'
             }`}
             title={`Local-First Spending Sync: ${
               expenseSyncStatus.state === 'syncing'
                 ? 'Synchronizing with Supabase...'
                 : expenseSyncStatus.state === 'error'
-                ? `Sync error: ${expenseSyncStatus.lastError || 'Retry'}`
+                ? `Sync failed: ${expenseSyncStatus.lastError || 'Click to retry'}`
                 : expenseSyncStatus.pendingCount > 0
                 ? `${expenseSyncStatus.pendingCount} pending local changes to sync`
                 : 'All expenses synchronized with Supabase'
             }`}
           >
-            <RefreshCw
-              className={`w-3.5 h-3.5 ${
-                expenseSyncStatus.state === 'syncing' ? 'animate-spin text-blue-600 dark:text-blue-400' : ''
-              }`}
-            />
+            {expenseSyncStatus.state === 'syncing' ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600 dark:text-blue-400" />
+            ) : expenseSyncStatus.state === 'error' ? (
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+            ) : expenseSyncStatus.pendingCount > 0 ? (
+              <RefreshCw className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+            ) : expenseSyncStatus.state === 'offline' ? (
+              <RefreshCw className="w-3.5 h-3.5 text-gray-500" />
+            ) : (
+              <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            )}
+
             <span>
               {expenseSyncStatus.state === 'syncing'
                 ? 'Syncing...'
                 : expenseSyncStatus.state === 'error'
-                ? 'Retry Sync'
+                ? 'Failed (Retry)'
                 : expenseSyncStatus.state === 'offline'
                 ? 'Offline'
                 : expenseSyncStatus.pendingCount > 0
-                ? `${expenseSyncStatus.pendingCount} Pending`
-                : 'Sync Now'}
+                ? `Pending (${expenseSyncStatus.pendingCount})`
+                : 'Synced'}
             </span>
-            {expenseSyncStatus.pendingCount > 0 && (
+
+            {expenseSyncStatus.state === 'syncing' && (
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
+            )}
+            {expenseSyncStatus.state !== 'syncing' && expenseSyncStatus.pendingCount > 0 && (
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
             )}
             {expenseSyncStatus.state === 'synced' && expenseSyncStatus.pendingCount === 0 && (
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            )}
+            {expenseSyncStatus.state === 'error' && (
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
             )}
           </button>
 
