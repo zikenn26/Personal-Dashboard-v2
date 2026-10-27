@@ -93,7 +93,7 @@ export const ExportExpenseSheet: React.FC<ExportExpenseSheetProps> = ({
     return `expenses_${scopePrefix}_${todayStr}.${format}`;
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (targetExpenses.length === 0) {
       toast.error('No transactions available to export');
       return;
@@ -106,12 +106,12 @@ export const ExportExpenseSheet: React.FC<ExportExpenseSheetProps> = ({
     try {
       const filename = getExportFilename();
       if (format === 'xlsx') {
-        downloadExpenseExcel(targetExpenses, filename);
+        await downloadExpenseExcel(targetExpenses, filename);
       } else if (format === 'csv') {
-        downloadExpenseCSV(targetExpenses, filename);
+        await downloadExpenseCSV(targetExpenses, filename);
       } else {
         const json = generateExpenseJSON(targetExpenses);
-        downloadExpenseFile(json, filename, 'application/json;charset=utf-8;');
+        await downloadExpenseFile(json, filename, 'application/json;charset=utf-8;');
       }
 
       toast.success(`Exported ${targetExpenses.length} records!`, {

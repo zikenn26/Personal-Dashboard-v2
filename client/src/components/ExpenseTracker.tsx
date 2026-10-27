@@ -1343,46 +1343,68 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     return Array.from(set);
   }, [currentExpenses]);
 
-  const handleDownloadExcel = () => {
+  const handleDownloadExcel = async () => {
     Sound.success(soundEnabled);
     triggerConfetti();
 
-    const listToExport = currentExpenses.length > 0 ? currentExpenses : expenses;
+    let listToExport = currentExpenses && currentExpenses.length > 0 ? currentExpenses : [];
+    if (listToExport.length === 0) {
+      listToExport = Storage.getExpenses();
+    }
+    if (listToExport.length === 0 && Array.isArray(expenses) && expenses.length > 0) {
+      listToExport = expenses;
+    }
 
     if (listToExport.length === 0) {
-      alert('No transactions available to export.');
+      toast.error('No transactions available to export');
+      setIsExportMenuOpen(false);
       return;
     }
 
-    // Use the device's local calendar date for the filename.
-    const dateStr = getLocalDateKey();
-
-    downloadExpenseExcel(
-      listToExport,
-      `expense_transactions_${dateStr}.xlsx`
-    );
+    try {
+      const dateStr = getLocalDateKey();
+      const filename = `expense_transactions_${dateStr}.xlsx`;
+      toast.success(`Exporting ${listToExport.length} transactions to Excel...`, {
+        description: `Downloading ${filename}`,
+      });
+      await downloadExpenseExcel(listToExport, filename);
+    } catch (err: any) {
+      console.error('[EXPORT] Excel download error:', err);
+      toast.error('Failed to export Excel sheet. Please try again.');
+    }
 
     setIsExportMenuOpen(false);
   };
 
-  const handleDownloadCSV = () => {
+  const handleDownloadCSV = async () => {
     Sound.success(soundEnabled);
     triggerConfetti();
 
-    const listToExport = currentExpenses.length > 0 ? currentExpenses : expenses;
+    let listToExport = currentExpenses && currentExpenses.length > 0 ? currentExpenses : [];
+    if (listToExport.length === 0) {
+      listToExport = Storage.getExpenses();
+    }
+    if (listToExport.length === 0 && Array.isArray(expenses) && expenses.length > 0) {
+      listToExport = expenses;
+    }
 
     if (listToExport.length === 0) {
-      alert('No transactions available to export.');
+      toast.error('No transactions available to export');
+      setIsExportMenuOpen(false);
       return;
     }
 
-    // Use the device's local calendar date for the filename.
-    const dateStr = getLocalDateKey();
-
-    downloadExpenseCSV(
-      listToExport,
-      `expense_transactions_${dateStr}.csv`
-    );
+    try {
+      const dateStr = getLocalDateKey();
+      const filename = `expense_transactions_${dateStr}.csv`;
+      toast.success(`Exporting ${listToExport.length} transactions to CSV...`, {
+        description: `Downloading ${filename}`,
+      });
+      await downloadExpenseCSV(listToExport, filename);
+    } catch (err: any) {
+      console.error('[EXPORT] CSV download error:', err);
+      toast.error('Failed to export CSV. Please try again.');
+    }
 
     setIsExportMenuOpen(false);
   };

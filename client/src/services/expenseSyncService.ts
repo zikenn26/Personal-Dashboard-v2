@@ -49,6 +49,8 @@ class ExpenseSyncService {
   private isSyncing = false;
   private syncDebounceTimer: any = null;
   private isInitialized = false;
+  private currentEpoch = 0;
+  private activeSyncPromise: Promise<SyncExpensesResult> | null = null;
 
   constructor() {
     this.initLifecycle();
@@ -207,222 +209,317 @@ class ExpenseSyncService {
       };
     }
 
-    if (this.isSyncing) {
-      return {
-        success: true,
-        pushedCount: 0,
-        pulledCount: 0,
-        pendingCount: this.currentStatus.pendingCount,
-        message: 'Sync already in progress...',
-      };
+    // Single-Flight coalescing: If a background sync is already in flight and this is also background, coalesce
+    if (!isManual && this.activeSyncPromise) {
+      return this.activeSyncPromise;
     }
 
+    // Allocate an incremental Epoch token for this sync attempt.
+    // If a manual sync is initiated, bumping the epoch supersedes previous in-flight syncs
+    // so any late responses from old requests are safely discarded and cannot mutate state or dequeue outbox items.
+    const requestEpoch = ++this.currentEpoch;
     this.isSyncing = true;
     this.updateStatus({ state: 'syncing' });
 
-    try {
-      const outbox = await expenseRepo.getPendingOutbox();
-      const tombstones = await expenseRepo.getTombstones();
-      let pushedCount = 0;
-      let pulledCount = 0;
-      const inFlightMutationIds = outbox.map((m) => m.id);
+    const executeSync = async (): Promise<SyncExpensesResult> => {
+      try {
+        const outbox = await expenseRepo.getPendingOutbox();
+        const tombstones = await expenseRepo.getTombstones();
+        let pushedCount = 0;
+        let pulledCount = 0;
+        const inFlightMutationIds = outbox.map((m) => m.id);
 
-      // 1. PUSH PHASE: First attempt dedicated Supabase table `public.user_expenses`
-      let dedicatedPushSuccessful = false;
-      let needsWorkspaceFallback = false;
+        // 1. PUSH PHASE: First attempt dedicated Supabase table `public.user_expenses`
+        let dedicatedPushSuccessful = false;
+        let needsWorkspaceFallback = false;
 
-      if (outbox.length > 0) {
-        const dedicatedRes = await pushExpenseMutationsToDedicatedTable(outbox);
-        if (dedicatedRes.success) {
-          dedicatedPushSuccessful = true;
-          pushedCount = dedicatedRes.pushedIds.length;
+        if (outbox.length > 0) {
+          const dedicatedRes = await pushExpenseMutationsToDedicatedTable(outbox);
 
-          // Dequeue ONLY verified acknowledged mutations
-          if (dedicatedRes.pushedIds.length > 0) {
-            await expenseRepo.dequeueMutations(dedicatedRes.pushedIds);
+          // Epoch verification: If a newer request was issued while waiting for server response, abort immediately
+          if (requestEpoch !== this.currentEpoch) {
+            console.warn('[EXPENSE_SYNC] Push phase completed for superseded epoch; discarding mutation changes:', { requestEpoch, currentEpoch: this.currentEpoch });
+            return {
+              success: false,
+              pushedCount: 0,
+              pulledCount: 0,
+              pendingCount: (await expenseRepo.getPendingOutbox()).length,
+              message: 'Superseded by newer sync request',
+            };
           }
 
-          // If server rejected mutations because records are tombstoned on server, enforce local tombstones
-          if (dedicatedRes.serverTombstonedIds && dedicatedRes.serverTombstonedIds.length > 0) {
-            console.warn('[TOMBSTONE_DIAGNOSTIC] Server confirmed tombstones for:', dedicatedRes.serverTombstonedIds);
-            await expenseRepo.recordTombstones(dedicatedRes.serverTombstonedIds);
-            await expenseRepo.deleteBatch(dedicatedRes.serverTombstonedIds);
-            Storage.deleteExpenses(dedicatedRes.serverTombstonedIds);
+          if (dedicatedRes.success) {
+            dedicatedPushSuccessful = true;
+            pushedCount = dedicatedRes.pushedIds.length;
+
+            // Dequeue ONLY verified acknowledged mutations
+            if (dedicatedRes.pushedIds.length > 0) {
+              await expenseRepo.dequeueMutations(dedicatedRes.pushedIds);
+            }
+
+            // If server rejected mutations because records are tombstoned on server, enforce local tombstones
+            if (dedicatedRes.serverTombstonedIds && dedicatedRes.serverTombstonedIds.length > 0) {
+              console.warn('[TOMBSTONE_DIAGNOSTIC] Server confirmed tombstones for:', dedicatedRes.serverTombstonedIds);
+              await expenseRepo.recordTombstones(dedicatedRes.serverTombstonedIds);
+              await expenseRepo.deleteBatch(dedicatedRes.serverTombstonedIds);
+              Storage.deleteExpenses(dedicatedRes.serverTombstonedIds);
+            }
+
+            // Preserve conflicted mutations into Trash under deletion-wins policy before dequeuing
+            if (dedicatedRes.conflictRejectedMutationIds && dedicatedRes.conflictRejectedMutationIds.length > 0) {
+              const conflictSet = new Set(dedicatedRes.conflictRejectedMutationIds);
+              const conflicted = outbox.filter((m) => conflictSet.has(m.id));
+              conflicted.forEach((m) => {
+                const item = (m.data || m.payload) as any;
+                if (item && typeof item === 'object') {
+                  Storage.moveToTrash(
+                    'expenses',
+                    item,
+                    `[Conflict: Server Deletion Wins] ${item.name || 'Expense'} (₹${Number(item.amount) || 0})`
+                  );
+                }
+              });
+              await expenseRepo.dequeueMutations(dedicatedRes.conflictRejectedMutationIds);
+            }
+          } else if (dedicatedRes.isFallbackNeeded) {
+            needsWorkspaceFallback = true;
+          } else {
+            throw new Error(dedicatedRes.error || 'Failed to push mutations to dedicated expense table');
+          }
+        }
+
+        // Fallback: If public.user_expenses table is missing, push via user_workspaces with OCC protection
+        if ((needsWorkspaceFallback || (!dedicatedPushSuccessful && outbox.length > 0)) && inFlightMutationIds.length > 0) {
+          const localExpenses = await expenseRepo.getAll();
+          const payloadToSync: any = Storage.getAllDataPayload();
+          payloadToSync.expenses = localExpenses;
+          payloadToSync.deletedExpenseIds = Array.from(tombstones);
+
+          payloadToSync._meta = {
+            ...(payloadToSync._meta || {}),
+            deletedExpenseIds: Array.from(tombstones),
+            syncVersion: Date.now(),
+            clientTimestamp: Date.now(),
+          };
+
+          const syncResult = await syncWorkspaceToSupabase(payloadToSync, !isManual);
+
+          // Epoch verification
+          if (requestEpoch !== this.currentEpoch) {
+            console.warn('[EXPENSE_SYNC] Fallback push completed for superseded epoch; discarding changes');
+            return {
+              success: false,
+              pushedCount: 0,
+              pulledCount: 0,
+              pendingCount: (await expenseRepo.getPendingOutbox()).length,
+              message: 'Superseded by newer sync request',
+            };
           }
 
-          // Dequeue mutations that were rejected due to server tombstone conflict so they don't loop
-          if (dedicatedRes.conflictRejectedMutationIds && dedicatedRes.conflictRejectedMutationIds.length > 0) {
-            await expenseRepo.dequeueMutations(dedicatedRes.conflictRejectedMutationIds);
+          if (syncResult.success) {
+            pushedCount = inFlightMutationIds.length;
+            await expenseRepo.dequeueMutations(inFlightMutationIds);
+          } else {
+            throw new Error(syncResult.message || 'Failed to sync with Supabase Cloud');
           }
-        } else if (dedicatedRes.isFallbackNeeded) {
-          needsWorkspaceFallback = true;
-        } else {
-          throw new Error(dedicatedRes.error || 'Failed to push mutations to dedicated expense table');
-        }
-      }
-
-      // Fallback: If public.user_expenses table is missing, push via user_workspaces with OCC protection
-      if ((needsWorkspaceFallback || (!dedicatedPushSuccessful && outbox.length > 0)) && inFlightMutationIds.length > 0) {
-        const localExpenses = await expenseRepo.getAll();
-        const payloadToSync: any = Storage.getAllDataPayload();
-        payloadToSync.expenses = localExpenses;
-        payloadToSync.deletedExpenseIds = Array.from(tombstones);
-
-        payloadToSync._meta = {
-          ...(payloadToSync._meta || {}),
-          deletedExpenseIds: Array.from(tombstones),
-          syncVersion: Date.now(),
-          clientTimestamp: Date.now(),
-        };
-
-        const syncResult = await syncWorkspaceToSupabase(payloadToSync, !isManual);
-        if (syncResult.success) {
-          pushedCount = inFlightMutationIds.length;
-          await expenseRepo.dequeueMutations(inFlightMutationIds);
-        } else {
-          throw new Error(syncResult.message || 'Failed to sync with Supabase Cloud');
-        }
-      }
-
-      // 2. PULL PHASE: Safe remote reconciliation
-      let dedicatedPullSuccessful = false;
-      const dedicatedFetch = await fetchExpensesFromDedicatedTable();
-
-      if (dedicatedFetch.success) {
-        dedicatedPullSuccessful = true;
-        // Ingest remote deletion tombstones
-        if (dedicatedFetch.tombstones.length > 0) {
-          await expenseRepo.recordTombstones(dedicatedFetch.tombstones);
-          await expenseRepo.deleteBatch(dedicatedFetch.tombstones);
         }
 
-        const currentTombstones = await expenseRepo.getTombstones();
-        const validRemote = dedicatedFetch.data.filter((e) => {
-          if (!e || !e.id) return false;
-          return !currentTombstones.has(String(e.id).trim());
+        // 2. PULL PHASE: Safe remote reconciliation
+        let dedicatedPullSuccessful = false;
+        const dedicatedFetch = await fetchExpensesFromDedicatedTable();
+
+        // Epoch verification before applying remote data
+        if (requestEpoch !== this.currentEpoch) {
+          console.warn('[EXPENSE_SYNC] Pull phase completed for superseded epoch; skipping remote merge');
+          return {
+            success: false,
+            pushedCount: 0,
+            pulledCount: 0,
+            pendingCount: (await expenseRepo.getPendingOutbox()).length,
+            message: 'Superseded by newer sync request',
+          };
+        }
+
+        if (dedicatedFetch.success) {
+          dedicatedPullSuccessful = true;
+          // Ingest remote deletion tombstones
+          if (dedicatedFetch.tombstones.length > 0) {
+            await expenseRepo.recordTombstones(dedicatedFetch.tombstones);
+            await expenseRepo.deleteBatch(dedicatedFetch.tombstones);
+          }
+
+          const currentTombstones = await expenseRepo.getTombstones();
+          const validRemote = dedicatedFetch.data.filter((e) => {
+            if (!e || !e.id) return false;
+            return !currentTombstones.has(String(e.id).trim());
+          });
+
+          const freshLocal = await expenseRepo.getAll();
+          const merged = mergeExpenseLists(freshLocal, validRemote, currentTombstones);
+
+          await expenseRepo.saveBatch(merged);
+          pulledCount = validRemote.length;
+          Storage.setExpenses(merged);
+
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(
+              new CustomEvent('dashboard-data-updated', {
+                detail: { module: 'expenses', updatedExpenses: merged },
+              })
+            );
+          }
+        }
+
+        // Fallback pull: If dedicated table is not available, pull from user_workspaces
+        if (!dedicatedPullSuccessful && dedicatedFetch.isFallbackNeeded) {
+          const remoteFetch = await fetchWorkspaceFromSupabase();
+
+          // Epoch verification
+          if (requestEpoch !== this.currentEpoch) {
+            return {
+              success: false,
+              pushedCount: 0,
+              pulledCount: 0,
+              pendingCount: (await expenseRepo.getPendingOutbox()).length,
+              message: 'Superseded by newer sync request',
+            };
+          }
+
+          if (remoteFetch.success && remoteFetch.data) {
+            const remoteTombstoneIds: string[] = [
+              ...(Array.isArray(remoteFetch.data._meta?.deletedExpenseIds) ? remoteFetch.data._meta.deletedExpenseIds : []),
+              ...(Array.isArray(remoteFetch.data.deletedExpenseIds) ? remoteFetch.data.deletedExpenseIds : []),
+            ];
+
+            if (Array.isArray(remoteFetch.data.trash)) {
+              remoteFetch.data.trash.forEach((t: any) => {
+                if (t && (t.module === 'expenses' || !t.module)) {
+                  if (t.data?.id) remoteTombstoneIds.push(String(t.data.id).trim());
+                  if (typeof t.data === 'string' && t.data.trim()) remoteTombstoneIds.push(t.data.trim());
+                  if (t.id) remoteTombstoneIds.push(String(t.id).trim());
+                }
+              });
+            }
+
+            if (remoteTombstoneIds.length > 0) {
+              await expenseRepo.recordTombstones(remoteTombstoneIds);
+              await expenseRepo.deleteBatch(remoteTombstoneIds);
+            }
+
+            if (Array.isArray(remoteFetch.data.expenses)) {
+              const remoteExpenses: ExpenseItem[] = remoteFetch.data.expenses;
+              const currentTombstones = await expenseRepo.getTombstones();
+
+              const validRemote = remoteExpenses.filter((e) => {
+                if (!e || !e.id) return false;
+                const id = String(e.id).trim();
+                return !currentTombstones.has(id) && (e as any).is_deleted !== true && (e as any).isDeleted !== true;
+              });
+
+              const freshLocal = await expenseRepo.getAll();
+              const merged = mergeExpenseLists(freshLocal, validRemote, currentTombstones);
+
+              await expenseRepo.saveBatch(merged);
+              pulledCount = validRemote.length;
+              Storage.setExpenses(merged);
+
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(
+                  new CustomEvent('dashboard-data-updated', {
+                    detail: { module: 'expenses', updatedExpenses: merged },
+                  })
+                );
+              }
+            }
+          } else if (!remoteFetch.success) {
+            throw new Error(remoteFetch.message || 'Failed to fetch from fallback workspace in Supabase Cloud');
+          }
+        } else if (!dedicatedPullSuccessful && !dedicatedFetch.success) {
+          throw new Error(dedicatedFetch.error || 'Failed to retrieve expenses from Supabase dedicated table');
+        }
+
+        if (dedicatedPushSuccessful || dedicatedPullSuccessful) {
+          this.syncMode = 'dedicated_table';
+        } else if (needsWorkspaceFallback) {
+          this.syncMode = 'workspace_jsonb_fallback';
+        }
+
+        // Final epoch check before marking synced status
+        if (requestEpoch !== this.currentEpoch) {
+          return {
+            success: false,
+            pushedCount: 0,
+            pulledCount: 0,
+            pendingCount: (await expenseRepo.getPendingOutbox()).length,
+            message: 'Superseded by newer sync request',
+          };
+        }
+
+        const remainingOutbox = await expenseRepo.getPendingOutbox();
+        this.updateStatus({
+          state: remainingOutbox.length > 0 ? 'pending' : 'synced',
+          pendingCount: remainingOutbox.length,
+          lastSyncedAt: Date.now(),
+          lastError: null,
+          syncMode: this.syncMode,
         });
 
-        const freshLocal = await expenseRepo.getAll();
-        const merged = mergeExpenseLists(freshLocal, validRemote, currentTombstones);
+        return {
+          success: true,
+          pushedCount,
+          pulledCount,
+          pendingCount: remainingOutbox.length,
+          syncMode: this.syncMode,
+          message:
+            this.syncMode === 'dedicated_table'
+              ? 'Spending successfully synchronized with dedicated table (public.user_expenses)'
+              : 'Spending successfully synchronized with Supabase Cloud (workspace fallback mode)',
+        };
+      } catch (err: any) {
+        if (requestEpoch !== this.currentEpoch) {
+          return {
+            success: false,
+            pushedCount: 0,
+            pulledCount: 0,
+            pendingCount: (await expenseRepo.getPendingOutbox()).length,
+            message: 'Superseded by newer sync request',
+          };
+        }
 
-        await expenseRepo.saveBatch(merged);
-        pulledCount = validRemote.length;
-        Storage.setExpenses(merged);
+        console.warn('[EXPENSE_SYNC] Sync error notice:', err);
+        const outbox = await expenseRepo.getPendingOutbox();
+        const errorMsg = err?.message || 'Network error during sync';
 
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(
-            new CustomEvent('dashboard-data-updated', {
-              detail: { module: 'expenses', updatedExpenses: merged },
-            })
-          );
+        this.updateStatus({
+          state: 'error',
+          pendingCount: outbox.length,
+          lastError: errorMsg,
+        });
+
+        return {
+          success: false,
+          pushedCount: 0,
+          pulledCount: 0,
+          pendingCount: outbox.length,
+          message: errorMsg,
+          error: errorMsg,
+        };
+      } finally {
+        if (requestEpoch === this.currentEpoch) {
+          this.isSyncing = false;
         }
       }
+    };
 
-      // Fallback pull: If dedicated table is not available, pull from user_workspaces
-      if (!dedicatedPullSuccessful && dedicatedFetch.isFallbackNeeded) {
-        const remoteFetch = await fetchWorkspaceFromSupabase();
-        if (remoteFetch.success && remoteFetch.data) {
-          const remoteTombstoneIds: string[] = [
-            ...(Array.isArray(remoteFetch.data._meta?.deletedExpenseIds) ? remoteFetch.data._meta.deletedExpenseIds : []),
-            ...(Array.isArray(remoteFetch.data.deletedExpenseIds) ? remoteFetch.data.deletedExpenseIds : []),
-          ];
-
-          if (Array.isArray(remoteFetch.data.trash)) {
-            remoteFetch.data.trash.forEach((t: any) => {
-              if (t && (t.module === 'expenses' || !t.module)) {
-                if (t.data?.id) remoteTombstoneIds.push(String(t.data.id).trim());
-                if (typeof t.data === 'string' && t.data.trim()) remoteTombstoneIds.push(t.data.trim());
-                if (t.id) remoteTombstoneIds.push(String(t.id).trim());
-              }
-            });
-          }
-
-          if (remoteTombstoneIds.length > 0) {
-            await expenseRepo.recordTombstones(remoteTombstoneIds);
-            await expenseRepo.deleteBatch(remoteTombstoneIds);
-          }
-
-          if (Array.isArray(remoteFetch.data.expenses)) {
-            const remoteExpenses: ExpenseItem[] = remoteFetch.data.expenses;
-            const currentTombstones = await expenseRepo.getTombstones();
-
-            const validRemote = remoteExpenses.filter((e) => {
-              if (!e || !e.id) return false;
-              const id = String(e.id).trim();
-              return !currentTombstones.has(id) && (e as any).is_deleted !== true && (e as any).isDeleted !== true;
-            });
-
-            const freshLocal = await expenseRepo.getAll();
-            const merged = mergeExpenseLists(freshLocal, validRemote, currentTombstones);
-
-            await expenseRepo.saveBatch(merged);
-            pulledCount = validRemote.length;
-            Storage.setExpenses(merged);
-
-            if (typeof window !== 'undefined') {
-              window.dispatchEvent(
-                new CustomEvent('dashboard-data-updated', {
-                  detail: { module: 'expenses', updatedExpenses: merged },
-                })
-              );
-            }
-          }
-        } else if (!remoteFetch.success) {
-          throw new Error(remoteFetch.message || 'Failed to fetch from fallback workspace in Supabase Cloud');
-        }
-      } else if (!dedicatedPullSuccessful && !dedicatedFetch.success) {
-        // Dedicated fetch failed with a non-fallback error (e.g. quota exceeded or network disconnect)
-        throw new Error(dedicatedFetch.error || 'Failed to retrieve expenses from Supabase dedicated table');
+    const promise = executeSync();
+    this.activeSyncPromise = promise;
+    promise.finally(() => {
+      if (this.activeSyncPromise === promise) {
+        this.activeSyncPromise = null;
       }
+    });
 
-      if (dedicatedPushSuccessful || dedicatedPullSuccessful) {
-        this.syncMode = 'dedicated_table';
-      } else if (needsWorkspaceFallback) {
-        this.syncMode = 'workspace_jsonb_fallback';
-      }
-
-      const remainingOutbox = await expenseRepo.getPendingOutbox();
-      this.updateStatus({
-        state: remainingOutbox.length > 0 ? 'pending' : 'synced',
-        pendingCount: remainingOutbox.length,
-        lastSyncedAt: Date.now(),
-        lastError: null,
-        syncMode: this.syncMode,
-      });
-
-      return {
-        success: true,
-        pushedCount,
-        pulledCount,
-        pendingCount: remainingOutbox.length,
-        syncMode: this.syncMode,
-        message:
-          this.syncMode === 'dedicated_table'
-            ? 'Spending successfully synchronized with dedicated table (public.user_expenses)'
-            : 'Spending successfully synchronized with Supabase Cloud (workspace fallback mode)',
-      };
-    } catch (err: any) {
-      console.warn('[EXPENSE_SYNC] Sync error notice:', err);
-      const outbox = await expenseRepo.getPendingOutbox();
-      const errorMsg = err?.message || 'Network error during sync';
-
-      this.updateStatus({
-        state: 'error',
-        pendingCount: outbox.length,
-        lastError: errorMsg,
-      });
-
-      return {
-        success: false,
-        pushedCount: 0,
-        pulledCount: 0,
-        pendingCount: outbox.length,
-        message: errorMsg,
-        error: errorMsg,
-      };
-    } finally {
-      this.isSyncing = false;
-    }
+    return promise;
   }
 }
 

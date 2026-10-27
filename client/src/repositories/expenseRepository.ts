@@ -1,6 +1,13 @@
 import { ExpenseItem, OutboxMutation, ExpenseSyncStatus, ExpenseSyncStatusState } from '../types';
 import { normalizeExpenseDateKey, getLocalDateKey } from '../utils/expenseUtils';
 
+export class DurableStorageError extends Error {
+  constructor(message: string, public readonly originalError?: unknown) {
+    super(message);
+    this.name = 'DurableStorageError';
+  }
+}
+
 export interface ExpenseRepository {
   init(): Promise<void>;
   setWorkspace(workspaceKey: string): Promise<void>;
@@ -25,9 +32,10 @@ export interface ExpenseRepository {
   getTombstones(): Promise<Set<string>>;
   isTombstoned(id: string): Promise<boolean>;
 
-  // Sync Status
+  // Sync Status & Durability
   getSyncStatus(): Promise<ExpenseSyncStatus>;
   setSyncStatus(status: Partial<ExpenseSyncStatus>): Promise<void>;
+  getDurabilityState(): 'durable' | 'degraded' | 'error';
 }
 
 const DEFAULT_DB_NAME = 'lifeos_local_first_db';
@@ -62,7 +70,20 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
     pendingCount: 0,
     lastSyncedAt: Date.now(),
     lastError: null,
+    localDurabilityState: 'durable',
   };
+  private lastDurabilityState: 'durable' | 'degraded' | 'error' = 'durable';
+
+  public getDurabilityState(): 'durable' | 'degraded' | 'error' {
+    return this.lastDurabilityState;
+  }
+
+  private persistDegradedBackup(): void {
+    if (typeof localStorage === 'undefined') return;
+    const key = `lifeos_expenses_backup_${this.workspaceKey}`;
+    const data = Array.from(this.memoryExpenses.values());
+    localStorage.setItem(key, JSON.stringify(data));
+  }
 
   private getEffectiveDbName(): string {
     if (!this.workspaceKey || this.workspaceKey === 'default') {
@@ -308,8 +329,16 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
           tx.oncomplete = () => resolve();
           tx.onerror = () => reject(tx.error);
         });
+        this.lastDurabilityState = 'durable';
       } catch (err) {
         console.warn('[EXPENSE_REPO] save IDB transaction notice:', err);
+        try {
+          this.persistDegradedBackup();
+          this.lastDurabilityState = 'degraded';
+        } catch {
+          this.lastDurabilityState = 'error';
+          throw new DurableStorageError(`Durable persistence failed to all local storage layers: ${(err as any)?.message || 'Unknown error'}`, err);
+        }
       }
     }
 
@@ -371,8 +400,16 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
           tx.oncomplete = () => resolve();
           tx.onerror = () => reject(tx.error);
         });
+        this.lastDurabilityState = 'durable';
       } catch (err) {
         console.warn('[EXPENSE_REPO] saveBatch IDB transaction notice:', err);
+        try {
+          this.persistDegradedBackup();
+          this.lastDurabilityState = 'degraded';
+        } catch {
+          this.lastDurabilityState = 'error';
+          throw new DurableStorageError(`Durable persistence failed to all local storage layers: ${(err as any)?.message || 'Unknown error'}`, err);
+        }
       }
     }
 
@@ -397,8 +434,16 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
           tx.oncomplete = () => resolve();
           tx.onerror = () => reject(tx.error);
         });
+        this.lastDurabilityState = 'durable';
       } catch (err) {
         console.warn('[EXPENSE_REPO] delete IDB notice:', err);
+        try {
+          this.persistDegradedBackup();
+          this.lastDurabilityState = 'degraded';
+        } catch {
+          this.lastDurabilityState = 'error';
+          throw new DurableStorageError(`Durable persistence failed to all local storage layers: ${(err as any)?.message || 'Unknown error'}`, err);
+        }
       }
     }
   }
@@ -427,8 +472,16 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
           tx.oncomplete = () => resolve();
           tx.onerror = () => reject(tx.error);
         });
+        this.lastDurabilityState = 'durable';
       } catch (err) {
         console.warn('[EXPENSE_REPO] deleteBatch IDB notice:', err);
+        try {
+          this.persistDegradedBackup();
+          this.lastDurabilityState = 'degraded';
+        } catch {
+          this.lastDurabilityState = 'error';
+          throw new DurableStorageError(`Durable persistence failed to all local storage layers: ${(err as any)?.message || 'Unknown error'}`, err);
+        }
       }
     }
   }
