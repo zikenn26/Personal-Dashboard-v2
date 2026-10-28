@@ -637,13 +637,8 @@ class SmsExpenseService {
       }
 
       // Protection against true duplicate SMS broadcasts, retries, and queue reprocessing:
-      // If the raw text is 100% identical to a prior delivery
+      // If the raw text is 100% identical to a prior delivery already in Spending
       if (rawBody && rawBody.trim()) {
-        const rawHash = `raw_sms_${rawBody.trim().toLowerCase().replace(/\s+/g, ' ')}`;
-        if (processedFingerprints.includes(rawHash)) {
-          return { isDuplicate: true, reason: 'Duplicate: Identical raw SMS payload already processed' };
-        }
-
         const matchByRawText = existingExpenses.find(
           (e) => e.rawSmsText && e.rawSmsText.trim().toLowerCase() === rawBody.trim().toLowerCase()
         );
@@ -652,15 +647,11 @@ class SmsExpenseService {
         }
       }
 
-      // Also check exact deterministic fingerprint (which incorporates the clean reference ID)
-      if (parsed.fingerprint && processedFingerprints.includes(parsed.fingerprint)) {
-        return { isDuplicate: true, reason: 'Duplicate: Exact SMS fingerprint already processed' };
-      }
-
       // CRITICAL REQUIREMENT:
       // If two SMS have different transaction/reference IDs, always create separate Spending entries,
       // even if they are from the same bank, same account, same merchant, and within five minutes.
-      // Since this transaction has a valid, non-duplicate reference ID, IT IS A GENUINE SEPARATE TRANSACTION.
+      // Since this transaction has a valid, non-duplicate reference ID and is absent from existingExpenses,
+      // IT IS A GENUINE DISTINCT TRANSACTION.
       return { isDuplicate: false };
     }
 
@@ -673,11 +664,6 @@ class SmsExpenseService {
     // A. Protection against identical raw SMS delivery repeats
     if (rawBody && rawBody.trim()) {
       const rawLower = rawBody.trim().toLowerCase();
-      const rawHash = `raw_sms_${rawLower.replace(/\s+/g, ' ')}`;
-      if (processedFingerprints.includes(rawHash)) {
-        return { isDuplicate: true, reason: 'Duplicate: Identical raw SMS payload already processed' };
-      }
-
       const matchByRawText = existingExpenses.find(
         (e) => e.rawSmsText && e.rawSmsText.trim().toLowerCase() === rawLower
       );
@@ -695,20 +681,9 @@ class SmsExpenseService {
       }
     }
 
-    if (parsed.fingerprint && processedFingerprints.includes(parsed.fingerprint)) {
-      return { isDuplicate: true, reason: 'Duplicate: Duplicate SMS fingerprint already processed' };
-    }
-
-    // B. Composite fingerprint check: (bank + amount + timestamp + payee + message hash)
-    const cleanPayee = (parsed.payee || parsed.merchant || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const cleanBank = (parsed.bankName || parsed.bankOrAccount || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const compositeKey = `composite_${cleanBank}_${parsed.amount.toFixed(2)}_${parsed.date}_${cleanPayee}_${parsed.time || ''}`;
-    if (processedFingerprints.includes(compositeKey)) {
-      return { isDuplicate: true, reason: 'Duplicate: Matching composite transaction fingerprint already processed' };
-    }
-
     // C. Contextual matching: strictly fallback when NO reference ID exists.
     // Must match: exact same amount, same date, same payee/merchant, within 3 minutes.
+    const cleanPayee = (parsed.payee || parsed.merchant || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const matchByDetails = existingExpenses.find((e) => {
       // Different amounts to the same payee are NEVER duplicates:
       if (Math.abs(Number(e.amount) - parsed.amount) > 0.01) return false;

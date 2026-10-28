@@ -1368,7 +1368,40 @@ export const Storage = {
     const hasScopedKey = localStorage.getItem(scopedKey) !== null;
     let loaded = loadFromStorage<HabitItem[]>(STORAGE_KEYS.HABITS, []);
 
-    // Multi-tier offline recovery for habits: only if scoped key is absent (cold start/data loss)
+    // Multi-tier offline recovery for habits: check across all partitions if loaded is empty
+    if (isGknUser && (!Array.isArray(loaded) || loaded.length === 0)) {
+      const habitCandidates = [
+        `${activeEmail}_offline_habits_cache`,
+        `${ws}_offline_habits_cache`,
+        'gknayak@gmail.com_offline_habits_cache',
+        'gulnayak1206@gmail.com_offline_habits_cache',
+        'user_guest_offline_habits_cache',
+        'user_guest_notion_os_v4_habits',
+        'notion_os_v4_habits',
+        'user_usr_gulnayak1206_gmail_com_notion_os_v4_habits',
+        'user_036fe7d3-6a13-4740-b028-afb55e81e00e_notion_os_v4_habits',
+        'lifeos_habits_backup',
+      ];
+      for (const hk of habitCandidates) {
+        try {
+          const rawH = localStorage.getItem(hk);
+          if (rawH) {
+            const parsedH = JSON.parse(rawH);
+            if (Array.isArray(parsedH) && parsedH.length > 0) {
+              loaded = parsedH;
+              saveToStorage(STORAGE_KEYS.HABITS, loaded);
+              break;
+            }
+          }
+        } catch {}
+      }
+      if (!Array.isArray(loaded) || loaded.length === 0) {
+        loaded = [...OWNER_GKN_HABITS];
+        saveToStorage(STORAGE_KEYS.HABITS, loaded);
+      }
+      return loaded;
+    }
+
     if (!hasScopedKey && (!Array.isArray(loaded) || loaded.length === 0)) {
       try {
         const cachedRaw =
@@ -1385,7 +1418,7 @@ export const Storage = {
       } catch {}
     }
 
-    if (isGknUser && !hasScopedKey && (!Array.isArray(loaded) || loaded.length === 0)) {
+    if (isGknUser && (!Array.isArray(loaded) || loaded.length === 0)) {
       saveToStorage(STORAGE_KEYS.HABITS, OWNER_GKN_HABITS);
       return [...OWNER_GKN_HABITS];
     }
@@ -1552,15 +1585,41 @@ export const Storage = {
       const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gulnayak1206@gmail.com';
       if (isGknUser) {
         offlineCacheKeys.push(
+          'user_guest_notion_os_v4_expenses',
+          'notion_os_v4_expenses',
+          'user_036fe7d3-6a13-4740-b028-afb55e81e00e_notion_os_v4_expenses',
+          'user_usr_gulnayak1206_gmail_com_notion_os_v4_expenses',
+          'user_usr_gknayak_gmail_com_notion_os_v4_expenses',
+          'user_gknayak@gmail.com_notion_os_v4_expenses',
+          'user_gulnayak1206@gmail.com_notion_os_v4_expenses',
+          'user_guest_offline_expenses_cache',
+          'user_guest_lifeos_expenses_backup',
           'gknayak@gmail.com_offline_expenses_cache',
           'gulnayak1206@gmail.com_offline_expenses_cache',
           'lifeos_offline_expenses_cache',
-          'user_usr_gulnayak1206_gmail_com_notion_os_v4_expenses',
-          'user_usr_gknayak_gmail_com_notion_os_v4_expenses',
           'account_auth_gulnayak1206_gmail_com_notion_os_v4_expenses',
           'account_auth_gknayak_gmail_com_notion_os_v4_expenses',
-          'lifeos_expenses_backup'
+          'lifeos_expenses_backup',
+          'lifeos_last_imported_sheet_expenses'
         );
+
+        if (typeof window !== 'undefined') {
+          try {
+            for (let i = 0; i < localStorage.length; i++) {
+              const k = localStorage.key(i);
+              if (
+                k &&
+                (k.includes('expenses') || k.includes('expense')) &&
+                !k.includes('trash') &&
+                !k.includes('tombstone') &&
+                !k.includes('deleted') &&
+                !offlineCacheKeys.includes(k)
+              ) {
+                offlineCacheKeys.push(k);
+              }
+            }
+          } catch {}
+        }
       }
     } else {
       offlineCacheKeys.push(
@@ -1593,7 +1652,7 @@ export const Storage = {
       return false;
     };
 
-    let recoveredFromCache: ExpenseItem[] = [];
+    const recoveredMap = new Map<string, ExpenseItem>();
 
     for (const key of offlineCacheKeys) {
       try {
@@ -1601,16 +1660,20 @@ export const Storage = {
         if (cachedRaw) {
           const parsed = JSON.parse(cachedRaw);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            const validParsed = parsed.filter(
-              (e: any) => e && typeof e === 'object' && e.id && !isExplicitlyDeleted(e.id, e)
-            );
-            if (validParsed.length > recoveredFromCache.length) {
-              recoveredFromCache = validParsed;
+            for (const e of parsed) {
+              if (e && typeof e === 'object' && e.id && !isExplicitlyDeleted(e.id, e)) {
+                const cleanId = String(e.id).trim();
+                if (!recoveredMap.has(cleanId)) {
+                  recoveredMap.set(cleanId, e);
+                }
+              }
             }
           }
         }
       } catch {}
     }
+
+    const recoveredFromCache: ExpenseItem[] = Array.from(recoveredMap.values());
 
     if ((!hasScopedItem || list.length === 0) && recoveredFromCache.length > 0) {
       // Cold start or blank scoped storage: recover completely from persistent offline cache
