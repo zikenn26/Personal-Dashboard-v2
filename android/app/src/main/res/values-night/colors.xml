@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#6366F1</color>
+    <color name="colorPrimaryDark">#090A0F</color>
+    <color name="colorAccent">#818CF8</color>
+    <color name="navigationBarColor">#090A0F</color>
+    <color name="statusBarColor">#090A0F</color>
+
+    <!-- Scratch Pad Widget Colors (Dark) -->
+    <color name="widget_bg">#1A171F</color>
+    <color name="widget_border">#2E2A34</color>
+    <color name="widget_header_text">#F9FAFB</color>
+    <color name="widget_sub_text">#9CA3AF</color>
+    <color name="widget_body_text">#E5E7EB</color>
+    <color name="widget_empty_text">#6B7280</color>
+    <color name="widget_divider">#2A2630</color>
+    <color name="widget_btn_bg">#2C251C</color>
+    <color name="widget_btn_tint">#F59E0B</color>
+    <color name="widget_icon_tint">#FBBF24</color>
+
+    <!-- Spending Widget Colors (Dark) -->
+    <color name="widget_spending_bg">#0B0F19</color>
+    <color name="widget_spending_border">#1E2638</color>
+    <color name="widget_spending_divider">#1E2638</color>
+    <color name="widget_spending_amount">#FFFFFF</color>
+    <color name="widget_spending_subtext">#94A3B8</color>
+    <color name="widget_spending_calendar_green">#10B981</color>
+    <color name="widget_spending_barchart_cyan">#06B6D4</color>
+    <color name="widget_spending_trend_green">#34D399</color>
+    <color name="widget_spending_trend_red">#F87171</color>
+    <!-- Screen Time Widget Colors (Dark) -->
+    <color name="widget_screentime_bg">#0B0E1B</color>
+    <color name="widget_screentime_border">#1E243E</color>
+    <color name="widget_screentime_label">#A5B4FC</color>
+    <color name="widget_screentime_duration">#FFFFFF</color>
+    <color name="widget_screentime_subtext">#818CF8</color>
+    <color name="widget_screentime_error">#F87171</color>
+    <color name="widget_screentime_accent">#6366F1</color>
+</resources>

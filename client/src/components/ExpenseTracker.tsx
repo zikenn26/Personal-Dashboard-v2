@@ -1,0 +1,3599 @@
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import {
+  Plus,
+  Trash2,
+  Calendar,
+  CreditCard,
+  Check,
+  Coffee,
+  ShoppingBag,
+  Car,
+  Utensils,
+  Laptop,
+  Home,
+  Tv,
+  HeartPulse,
+  GraduationCap,
+  Sparkles,
+  Search,
+  Tag,
+  Edit2,
+  X,
+  PieChart as PieChartIcon,
+  Wallet,
+  Coins,
+  TrendingUp,
+  ArrowUpRight,
+  ChevronDown,
+  Repeat,
+  Bell,
+  CheckCircle2,
+  Info,
+  Clock,
+  RotateCcw,
+  SlidersHorizontal,
+  ChevronLeft,
+  ChevronRight,
+  FileSpreadsheet,
+  Upload,
+  Filter,
+  ShieldCheck,
+  AlertTriangle,
+  CloudOff,
+  ArrowUpDown,
+  CalendarRange,
+  Smartphone,
+  Download,
+  Eye,
+  ArrowLeft,
+  RefreshCw,
+  ArrowLeftRight,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { expenseSyncService } from '../services/expenseSyncService';
+import { ExpenseSyncStatus } from '../types';
+import { motion, AnimatePresence } from 'motion/react';
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
+  PieChart,
+  Pie,
+  Cell,
+} from 'recharts';
+import {
+  ExpenseItem,
+  ExcelImportLog,
+  ExpenseCategory,
+  PaymentMethod,
+  ExpenseBillingCycle,
+} from '../types';
+import { Storage, STORAGE_KEYS } from '../utils/storage';
+import { Sound } from '../utils/audio';
+import { triggerConfetti } from '../utils/confetti';
+import { ExcelImportModal } from './ExcelImportModal';
+import { SmsExpenseModal } from './SmsExpenseModal';
+import { ExpenseDistributionSection } from './ExpenseDistributionSection';
+import { SpendingCalendarGrid } from './SpendingCalendarGrid';
+import { DateRangePicker, type DateRange } from './DateRangePicker';
+import {
+  isCreditTransaction,
+  getTransactionDisplayTitle,
+  compareExpensesByDateTimeDesc,
+  normalizeExpenseDateKey,
+  getLocalDateKey,
+} from '../utils/expenseUtils';
+import { downloadExpenseExcel, downloadExpenseCSV } from '../utils/expenseExport';
+
+interface ExpenseTrackerProps {
+  expenses: ExpenseItem[];
+  importLogs?: ExcelImportLog[];
+  searchQuery?: string;
+  onSearchQueryChange?: (query: string) => void;
+  onAddExpense: (expense: Omit<ExpenseItem, 'id'>) => void;
+  onUpdateExpense?: (id: string, updated: Partial<ExpenseItem>) => void;
+  onBatchAddExpenses?: (expenses: Array<Omit<ExpenseItem, 'id'>>, log?: ExcelImportLog) => void;
+  onToggleActive?: (id: string) => void;
+  onDeleteExpense: (id: string) => void;
+  onDeleteBatchExpenses?: (ids: string[]) => void;
+  onDeleteImportLog?: (logId: string) => void;
+  onClearAllExpenses?: () => void;
+  onNavigate?: (view: any, filter?: string) => void;
+  onOpenZikennPopup?: () => void;
+  soundEnabled: boolean;
+}
+
+export interface ExpenseCategoryDef {
+  name: string;
+  icon: string;
+  color: string;
+  badgeBg: string;
+}
+
+export const EXPENSE_CATEGORIES: ExpenseCategoryDef[] = [
+  {
+    name: 'Food & Dining',
+    icon: '🍽️',
+    color: '#8B5CF6', // Purple
+    badgeBg: 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+  },
+  {
+    name: 'Snacks & Coffee',
+    icon: '☕',
+    color: '#EC4899', // Pink
+    badgeBg: 'bg-pink-50 text-pink-700 dark:bg-pink-950/60 dark:text-pink-300 border-pink-200 dark:border-pink-800',
+  },
+  {
+    name: 'Groceries',
+    icon: '🛒',
+    color: '#10B981', // Emerald
+    badgeBg: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+  },
+  {
+    name: 'Transport',
+    icon: '🚕',
+    color: '#06B6D4', // Cyan / Teal
+    badgeBg: 'bg-cyan-50 text-cyan-700 dark:bg-cyan-950/60 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800',
+  },
+  {
+    name: 'Subscriptions',
+    icon: '💻',
+    color: '#3B82F6', // Blue
+    badgeBg: 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+  },
+  {
+    name: 'Shopping',
+    icon: '🛍️',
+    color: '#F59E0B', // Amber
+    badgeBg: 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+  },
+  {
+    name: 'Bills & Utilities',
+    icon: '💡',
+    color: '#EAB308', // Yellow
+    badgeBg: 'bg-yellow-50 text-yellow-800 dark:bg-yellow-950/60 dark:text-yellow-300 border-yellow-200 dark:border-yellow-800',
+  },
+  {
+    name: 'Health & Wellness',
+    icon: '💊',
+    color: '#14B8A6', // Teal
+    badgeBg: 'bg-teal-50 text-teal-700 dark:bg-teal-950/60 dark:text-teal-300 border-teal-200 dark:border-teal-800',
+  },
+  {
+    name: 'Education',
+    icon: '📚',
+    color: '#6366F1', // Indigo
+    badgeBg: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
+  },
+  {
+    name: 'Entertainment',
+    icon: '🎬',
+    color: '#A855F7',
+    badgeBg: 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+  },
+  {
+    name: 'Travel',
+    icon: '✈️',
+    color: '#0EA5E9',
+    badgeBg: 'bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border-sky-200 dark:border-sky-800',
+  },
+  {
+    name: 'Others',
+    icon: '🏷️',
+    color: '#94A3B8', // Slate
+    badgeBg: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 border-gray-200 dark:border-gray-700',
+  },
+];
+
+export const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+const MONTH_ABBR = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+/**
+ * Calendar-date helpers.
+ * IMPORTANT: expense.date is a calendar date, not a UTC timestamp.
+ * Never use toISOString().split('T')[0] for UI/business-day calculations
+ * because UTC conversion can move an expense across midnight.
+ */
+const pad2 = (value: number): string => String(value).padStart(2, '0');
+
+const getYesterdayDateKey = (from = new Date()): string => {
+  const date = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  date.setDate(date.getDate() - 1);
+  return getLocalDateKey(date);
+};
+
+const getStartOfLocalWeek = (from = new Date()): Date => {
+  const date = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const mondayOffset = (date.getDay() + 6) % 7;
+  date.setDate(date.getDate() - mondayOffset);
+  return date;
+};
+
+const isDebit = (expense: ExpenseItem): boolean => !isCreditTransaction(expense);
+
+
+// Helper to reliably find all expenses originating from an Excel sheet upload
+export const getMatchingExpensesForSheet = (
+  log: ExcelImportLog,
+  allExpenses: ExpenseItem[]
+): ExpenseItem[] => {
+  const normLogName = (log.fileName || '').trim().toLowerCase();
+  const baseLogName = normLogName.replace(/\.[^/.]+$/, '');
+
+  return allExpenses.filter((e) => {
+    // 1. Direct batch ID match — primary and most accurate
+    if (log.id && e.importBatchId) {
+      return e.importBatchId === log.id;
+    }
+
+    // 2. Source file match (only as fallback for legacy items without importBatchId)
+    if (!e.importBatchId && e.sourceFile) {
+      const normSource = e.sourceFile.trim().toLowerCase();
+      if (normSource === normLogName) return true;
+
+      const baseSource = normSource.replace(/\.[^/.]+$/, '');
+      if (baseSource && (baseSource === baseLogName || baseSource === normLogName || baseLogName === normSource)) {
+        return true;
+      }
+    }
+
+    return false;
+  });
+};
+
+export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
+  expenses,
+  importLogs: propImportLogs,
+  searchQuery: propSearchQuery,
+  onSearchQueryChange,
+  onAddExpense,
+  onUpdateExpense,
+  onBatchAddExpenses,
+  onToggleActive,
+  onDeleteExpense,
+  onDeleteBatchExpenses,
+  onDeleteImportLog,
+  onClearAllExpenses,
+  onNavigate,
+  onOpenZikennPopup,
+  soundEnabled,
+}) => {
+  // Navigation & Filter States
+  const now = new Date();
+  const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
+  const [selectedMonthIndex, setSelectedMonthIndex] = useState<number>(now.getMonth());
+  const [isMonthPickerOpen, setIsMonthPickerOpen] = useState<boolean>(false);
+  const [showImportModal, setShowImportModal] = useState<boolean>(false);
+  const [showSmsModal, setShowSmsModal] = useState<boolean>(false);
+  const [isSmsTrackingActive, setIsSmsTrackingActive] = useState<boolean>(() =>
+    Storage.isSmsAutoTrackingEnabled()
+  );
+  const [categoryScope, setCategoryScope] = useState<'month' | 'all'>('month');
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState<boolean>(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setIsExportMenuOpen(false);
+      }
+    };
+    if (isExportMenuOpen) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, [isExportMenuOpen]);
+
+  useEffect(() => {
+    const handleSmsToggle = () => {
+      setIsSmsTrackingActive(Storage.isSmsAutoTrackingEnabled());
+    };
+    window.addEventListener('sms_tracking_toggled', handleSmsToggle);
+    return () => window.removeEventListener('sms_tracking_toggled', handleSmsToggle);
+  }, []);
+
+  const [expenseSyncStatus, setExpenseSyncStatus] = useState<ExpenseSyncStatus>(() =>
+    expenseSyncService.getExpenseSyncStatus()
+  );
+
+  const isQuotaExhausted = Boolean(
+    expenseSyncStatus.lastError &&
+      (expenseSyncStatus.lastError.includes('egress') ||
+        expenseSyncStatus.lastError.includes('quota') ||
+        expenseSyncStatus.lastError.includes('402') ||
+        expenseSyncStatus.lastError.includes('spend caps') ||
+        expenseSyncStatus.lastError.includes('restricted'))
+  );
+
+  useEffect(() => {
+    return expenseSyncService.onSyncStatusChange((status) => {
+      setExpenseSyncStatus(status);
+    });
+  }, []);
+
+
+
+  // Custom useEffect hooks that monitor the 'expenses' prop and listen for 'dashboard-data-updated'
+  // and 'storage' events to force an immediate re-render whenever an item is removed or modified.
+  // This ensures the dashboard updates instantly when items are deleted without waiting for full page re-hydration.
+  const [expenseRenderTick, setExpenseRenderTick] = useState<number>(0);
+  const prevExpensesLengthRef = useRef<number>(expenses ? expenses.length : 0);
+
+  useEffect(() => {
+    prevExpensesLengthRef.current = expenses ? expenses.length : 0;
+    setExpenseRenderTick((tick) => tick + 1);
+  }, [expenses]);
+
+  // Guaranteed fresh expenses array synchronized with Storage and props
+  const currentExpenses = useMemo(() => {
+    if (Array.isArray(expenses)) {
+      return expenses;
+    }
+    const stored = Storage.getExpenses();
+    return Array.isArray(stored) ? stored : [];
+  }, [expenses, expenseRenderTick]);
+
+  useEffect(() => {
+    const handleSync = () => {
+      setExpenseRenderTick((tick) => tick + 1);
+    };
+    window.addEventListener('dashboard-data-updated', handleSync);
+    window.addEventListener('storage', handleSync);
+    return () => {
+      window.removeEventListener('dashboard-data-updated', handleSync);
+      window.removeEventListener('storage', handleSync);
+    };
+  }, []);
+
+  // Track uploaded spreadsheet history logs and batch management
+  const [importLogs, setImportLogs] = useState<ExcelImportLog[]>(() => {
+    if (propImportLogs && Array.isArray(propImportLogs)) {
+      return propImportLogs;
+    }
+    return Storage.getExcelImportLogs();
+  });
+
+  // Keep spreadsheet import logs automatically synchronized across devices
+  useEffect(() => {
+    if (propImportLogs && Array.isArray(propImportLogs)) {
+      setImportLogs(propImportLogs);
+      return;
+    }
+    const current = Storage.getExcelImportLogs();
+    setImportLogs(Array.isArray(current) ? current : []);
+  }, [propImportLogs, expenses]);
+
+  // Optional active filter to view spendings exclusively from a specific sheet
+  const [selectedSheetFilter, setSelectedSheetFilter] = useState<string | null>(null);
+
+  // In-app confirmation modal states (100% reliable inside iframes, replaces window.confirm / alert)
+  const [deleteSheetModal, setDeleteSheetModal] = useState<{
+    isOpen: boolean;
+    log: ExcelImportLog | null;
+    matchingCount: number;
+    matchingAmount: number;
+  }>({
+    isOpen: false,
+    log: null,
+    matchingCount: 0,
+    matchingAmount: 0,
+  });
+
+  const [clearAllSheetsModal, setClearAllSheetsModal] = useState<{
+    isOpen: boolean;
+    count: number;
+  }>({
+    isOpen: false,
+    count: 0,
+  });
+
+  const [clearAllExpensesModal, setClearAllExpensesModal] = useState<boolean>(false);
+
+  // In-app confirmation modal for single expense deletion (100% reliable inside iframes)
+  const [deleteExpenseModal, setDeleteExpenseModal] = useState<{
+    isOpen: boolean;
+    item: ExpenseItem | null;
+  }>({
+    isOpen: false,
+    item: null,
+  });
+
+  const handleOpenDeleteExpenseModal = (item: ExpenseItem) => {
+    Sound.click(soundEnabled);
+    setDeleteExpenseModal({
+      isOpen: true,
+      item,
+    });
+  };
+
+  const handleConfirmDeleteExpense = () => {
+    if (!deleteExpenseModal.item) return;
+    const item = deleteExpenseModal.item;
+    Sound.click(soundEnabled);
+    onDeleteExpense(item.id);
+    showToast(`Deleted "${item.name}"`);
+    setDeleteExpenseModal({ isOpen: false, item: null });
+  };
+
+  const [actionToast, setActionToast] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'info' = 'success') => {
+    setActionToast({ message, type });
+    setTimeout(() => {
+      setActionToast((prev) => (prev?.message === message ? null : prev));
+    }, 3800);
+  };
+
+  const selectedMonthLabel = `${MONTH_NAMES[selectedMonthIndex]} ${selectedYear}`;
+  const selectedMonthPrefix = `${selectedYear}-${String(selectedMonthIndex + 1).padStart(2, '0')}`;
+
+  const handlePrevMonth = () => {
+    Sound.click(soundEnabled);
+    if (selectedMonthIndex === 0) {
+      setSelectedMonthIndex(11);
+      setSelectedYear((prev) => prev - 1);
+    } else {
+      setSelectedMonthIndex((prev) => prev - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    Sound.click(soundEnabled);
+    if (selectedMonthIndex === 11) {
+      setSelectedMonthIndex(0);
+      setSelectedYear((prev) => prev + 1);
+    } else {
+      setSelectedMonthIndex((prev) => prev + 1);
+    }
+  };
+
+  const handleSetCurrentMonth = () => {
+    Sound.click(soundEnabled);
+    const curr = new Date();
+    setSelectedYear(curr.getFullYear());
+    setSelectedMonthIndex(curr.getMonth());
+    setIsMonthPickerOpen(false);
+  };
+
+  const handleImportSuccess = (
+    newExpenses: Array<Omit<ExpenseItem, 'id'>>,
+    log: ExcelImportLog
+  ) => {
+    // Prepend new log to history
+    const updatedLogs = [log, ...importLogs.filter((l) => l.id !== log.id)];
+    setImportLogs(updatedLogs);
+    Storage.setExcelImportLogs(updatedLogs);
+
+    if (onBatchAddExpenses) {
+      onBatchAddExpenses(newExpenses, log);
+    } else {
+      newExpenses.forEach((item) => onAddExpense(item));
+    }
+
+    try {
+      localStorage.setItem(
+        'last_uploaded_expense_sheet',
+        JSON.stringify({
+          fileName: log.fileName,
+          batchId: log.id,
+          count: log.addedCount,
+          totalAmount: log.totalAmountAdded,
+        })
+      );
+    } catch {}
+
+    triggerConfetti();
+  };
+
+  // Open in-app modal to safely delete a specific spreadsheet
+  const handleOpenDeleteSheetModal = (log: ExcelImportLog) => {
+    Sound.click(soundEnabled);
+    const matching = getMatchingExpensesForSheet(log, expenses);
+    const amount = matching.reduce((sum, item) => sum + item.amount, 0);
+    setDeleteSheetModal({
+      isOpen: true,
+      log,
+      matchingCount: matching.length,
+      matchingAmount: amount,
+    });
+  };
+
+  // Confirm delete of spreadsheet (with option to remove spendings or keep spendings)
+  const handleConfirmDeleteSheet = (deleteSpendings: boolean) => {
+    const log = deleteSheetModal.log;
+    if (!log) return;
+
+    Sound.click(soundEnabled);
+
+    let deletedCount = 0;
+    if (deleteSpendings) {
+      const matching = getMatchingExpensesForSheet(log, expenses);
+      const matchingIds = matching.map((e) => e.id);
+      deletedCount = matchingIds.length;
+
+      if (onDeleteBatchExpenses && matchingIds.length > 0) {
+        onDeleteBatchExpenses(matchingIds);
+      } else if (matchingIds.length > 0) {
+        matchingIds.forEach((id) => onDeleteExpense(id));
+      }
+
+      // Record tombstone only when spendings are actually deleted
+      Storage.addDeletedSheet(log.id, log.fileName);
+    } else {
+      // User explicitly chooses: Keep spendings in money tracker!
+      // Disassociate retained spendings from the deleted sheet so they become permanent, standalone transactions
+      const matching = getMatchingExpensesForSheet(log, expenses);
+      if (matching.length > 0) {
+        matching.forEach((e) => {
+          onUpdateExpense(e.id, { importBatchId: undefined, sourceFile: undefined });
+        });
+      }
+      Storage.removeDeletedSheet(log.id, log.fileName);
+    }
+
+    // Permanently remove this sheet from import logs
+    const updatedLogs = importLogs.filter((l) => l.id !== log.id);
+    setImportLogs(updatedLogs);
+    Storage.setExcelImportLogs(updatedLogs);
+
+    if (onDeleteImportLog) {
+      onDeleteImportLog(log.id);
+    }
+
+    // Clear active filter if filtering by this sheet
+    if (
+      selectedSheetFilter === log.fileName ||
+      selectedSheetFilter === log.id ||
+      (selectedSheetFilter && log.fileName && selectedSheetFilter.toLowerCase() === log.fileName.toLowerCase())
+    ) {
+      setSelectedSheetFilter(null);
+    }
+
+    // Clean legacy local storage pointer if matching
+    try {
+      const lastMeta = localStorage.getItem('last_uploaded_expense_sheet');
+      if (lastMeta) {
+        const p = JSON.parse(lastMeta);
+        if (p.fileName === log.fileName || p.batchId === log.id) {
+          localStorage.removeItem('last_uploaded_expense_sheet');
+        }
+      }
+    } catch {}
+
+    setDeleteSheetModal({ isOpen: false, log: null, matchingCount: 0, matchingAmount: 0 });
+
+    if (deleteSpendings && deletedCount > 0) {
+      showToast(`Deleted "${log.fileName}" and removed ${deletedCount} spendings from your tracker.`);
+    } else {
+      showToast(`Removed "${log.fileName}" from your upload history.`);
+    }
+  };
+
+  // Open in-app modal to clear all spreadsheet-imported spendings
+  const handleOpenClearAllSheetsModal = () => {
+    Sound.click(soundEnabled);
+    const importedItems = expenses.filter((e) => !!e.importBatchId || !!e.sourceFile);
+    setClearAllSheetsModal({
+      isOpen: true,
+      count: importedItems.length,
+    });
+  };
+
+  // Confirm clear all spendings imported across all spreadsheets
+  const handleConfirmClearAllSheets = () => {
+    Sound.click(soundEnabled);
+    const importedItems = expenses.filter((e) => !!e.importBatchId || !!e.sourceFile);
+    const ids = importedItems.map((e) => e.id);
+
+    if (onDeleteBatchExpenses && ids.length > 0) {
+      onDeleteBatchExpenses(ids);
+    } else if (ids.length > 0) {
+      ids.forEach((id) => onDeleteExpense(id));
+    }
+
+    setImportLogs([]);
+    Storage.setExcelImportLogs([]);
+    try {
+      localStorage.removeItem('last_uploaded_expense_sheet');
+    } catch {}
+    setSelectedSheetFilter(null);
+
+    setClearAllSheetsModal({ isOpen: false, count: 0 });
+    showToast(`Cleared all ${ids.length} spreadsheet spendings and reset upload logs.`);
+  };
+
+  // Open in-app modal to clear entire database
+  const handleOpenClearAllExpensesModal = () => {
+    Sound.click(soundEnabled);
+    setClearAllExpensesModal(true);
+  };
+
+  // Confirm wipe entire spendings database
+  const handleConfirmClearAllExpenses = () => {
+    Sound.click(soundEnabled);
+    if (onClearAllExpenses) {
+      onClearAllExpenses();
+    } else {
+      expenses.forEach((e) => onDeleteExpense(e.id));
+    }
+    setImportLogs([]);
+    Storage.setExcelImportLogs([]);
+    try {
+      localStorage.removeItem('last_uploaded_expense_sheet');
+    } catch {}
+    setSelectedSheetFilter(null);
+
+    setClearAllExpensesModal(false);
+    showToast('All spending transactions have been completely cleared.');
+  };
+
+  const [activeFilter, setActiveFilter] = useState<'all' | 'today' | 'week' | 'month' | 'custom'>('all');
+  const [customDateRange, setCustomDateRange] = useState<DateRange>({ startDate: '', endDate: '' });
+  const [modalDateRange, setModalDateRange] = useState<DateRange>({ startDate: '', endDate: '' });
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc' | 'name-asc'>('date-desc');
+  const [internalSearchQuery, setInternalSearchQuery] = useState<string>('');
+  const searchQuery = propSearchQuery !== undefined ? propSearchQuery : internalSearchQuery;
+  const setSearchQuery = (val: string) => {
+    if (onSearchQueryChange) {
+      onSearchQueryChange(val);
+    }
+    setInternalSearchQuery(val);
+  };
+  const [minAmount, setMinAmount] = useState<string>('');
+  const [maxAmount, setMaxAmount] = useState<string>('');
+  const [txCurrentPage, setTxCurrentPage] = useState<number>(1);
+  const TX_PAGE_SIZE = 15;
+  const [showAllTransactionsModal, setShowAllTransactionsModal] = useState<boolean>(false);
+  const [modalCategoryFilter, setModalCategoryFilter] = useState<string>('all');
+  const [modalSortBy, setModalSortBy] = useState<'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc' | 'name-asc'>('date-desc');
+  const [showAddModal, setShowAddModal] = useState<boolean>(false);
+  const [editingExpense, setEditingExpense] = useState<ExpenseItem | null>(null);
+  const [inspectingExpense, setInspectingExpense] = useState<ExpenseItem | null>(null);
+
+  // Automatically reset pagination to page 1 whenever any filter or search changes
+  useEffect(() => {
+    setTxCurrentPage(1);
+  }, [searchQuery, selectedCategoryFilter, minAmount, maxAmount, activeFilter, customDateRange, selectedYear, selectedMonthIndex, selectedSheetFilter, sortBy]);
+
+  const isAnyFilterActive = Boolean(
+    searchQuery.trim() ||
+    selectedCategoryFilter !== 'all' ||
+    minAmount.trim() !== '' ||
+    maxAmount.trim() !== '' ||
+    activeFilter !== 'all' ||
+    customDateRange.startDate ||
+    customDateRange.endDate ||
+    selectedSheetFilter
+  );
+
+  const clearAllFilters = () => {
+    Sound.click(soundEnabled);
+    setSearchQuery('');
+    setSelectedCategoryFilter('all');
+    setMinAmount('');
+    setMaxAmount('');
+    setActiveFilter('all');
+    setCustomDateRange({ startDate: '', endDate: '' });
+    setSelectedSheetFilter(null);
+    setTxCurrentPage(1);
+  };
+
+  const handleCalendarDateSelect = (dateKey: string) => {
+    Sound.click(soundEnabled);
+    if (activeFilter === 'custom' && customDateRange.startDate === dateKey && customDateRange.endDate === dateKey) {
+      setActiveFilter('all');
+      setCustomDateRange({ startDate: '', endDate: '' });
+    } else {
+      setActiveFilter('custom');
+      setCustomDateRange({ startDate: dateKey, endDate: dateKey });
+      const el = document.getElementById('recent-transactions-card');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+  };
+
+  // Quick Preset Custom Modal
+  const [showCustomPresetModal, setShowCustomPresetModal] = useState<boolean>(false);
+  const [customPresetName, setCustomPresetName] = useState('');
+  const [customPresetAmount, setCustomPresetAmount] = useState('');
+  const [customPresetCategory, setCustomPresetCategory] = useState('Snacks & Coffee');
+  const [customPresetIcon, setCustomPresetIcon] = useState('☕');
+
+  // Form State for Add / Edit
+  const [formName, setFormName] = useState('');
+  const [formAmount, setFormAmount] = useState('');
+  const [formCategory, setFormCategory] = useState('Food & Dining');
+  const [formDate, setFormDate] = useState(getLocalDateKey());
+  const [formPaymentMethod, setFormPaymentMethod] = useState<PaymentMethod | string>('Credit Card');
+  const [formBillingCycle, setFormBillingCycle] = useState<ExpenseBillingCycle>('one-time');
+  const [formNotes, setFormNotes] = useState('');
+  const [formIcon, setFormIcon] = useState('💳');
+  const [formDirection, setFormDirection] = useState<'DEBIT' | 'CREDIT'>('DEBIT');
+
+  const formatCurrency = (val: number) => {
+    return `₹${Math.round(val).toLocaleString('en-IN')}`;
+  };
+
+  // Helper to open Add Modal cleanly
+  const openAddModal = (preset?: { name: string; amount: number; category: string; icon: string; note?: string }) => {
+    Sound.click(soundEnabled);
+    if (preset) {
+      setFormName(preset.name);
+      setFormAmount(preset.amount.toString());
+      setFormCategory(preset.category);
+      setFormIcon(preset.icon);
+      setFormNotes(preset.note || '');
+      setFormBillingCycle('one-time');
+      setFormDirection('DEBIT');
+    } else {
+      setFormName('');
+      setFormAmount('');
+      setFormCategory('Food & Dining');
+      setFormIcon('🍽️');
+      setFormNotes('');
+      setFormBillingCycle('one-time');
+      setFormDirection('DEBIT');
+    }
+    setFormDate(getLocalDateKey());
+    setFormPaymentMethod('Credit Card');
+    setEditingExpense(null);
+    setShowAddModal(true);
+  };
+
+  const openEditModal = (item: ExpenseItem) => {
+    Sound.click(soundEnabled);
+    setEditingExpense(item);
+    setFormName(item.name);
+    setFormAmount(item.amount.toString());
+    setFormCategory(item.category);
+    setFormDate(item.date || getLocalDateKey());
+    setFormPaymentMethod(item.paymentMethod || 'Credit Card');
+    setFormBillingCycle(item.billingCycle || 'one-time');
+    setFormNotes(item.notes || '');
+    setFormIcon(item.icon || '💳');
+    setFormDirection(isCreditTransaction(item) ? 'CREDIT' : 'DEBIT');
+    setShowAddModal(true);
+  };
+
+  // Quick Preset Click Handler
+  const handleQuickAddPreset = (preset: { name: string; amount: number; category: string; icon: string; note?: string }) => {
+    Sound.success(soundEnabled);
+    triggerConfetti();
+    onAddExpense({
+      name: preset.name,
+      amount: preset.amount,
+      category: preset.category,
+      date: getLocalDateKey(),
+      paymentMethod: 'UPI / Debit',
+      billingCycle: 'one-time',
+      notes: preset.note || '',
+      icon: preset.icon,
+      active: true,
+      direction: 'DEBIT',
+      transactionType: 'DEBIT',
+    });
+  };
+
+  // Save Modal (Create or Update)
+  const handleSaveForm = (e: React.FormEvent) => {
+    e.preventDefault();
+    const sanitizedAmountStr = formAmount.replace(',', '.');
+    const parsedAmount = parseFloat(sanitizedAmountStr);
+    if (!formName.trim() || isNaN(parsedAmount) || parsedAmount <= 0) return;
+
+    Sound.success(soundEnabled);
+    triggerConfetti();
+
+    const resolvedDate = formDate.trim() || getLocalDateKey();
+
+    if (editingExpense) {
+      if (onUpdateExpense) {
+        onUpdateExpense(editingExpense.id, {
+          name: formName.trim(),
+          amount: parsedAmount,
+          category: formCategory,
+          date: resolvedDate,
+          paymentMethod: formPaymentMethod,
+          billingCycle: formBillingCycle,
+          notes: formNotes.trim(),
+          icon: formIcon,
+          direction: formDirection,
+          transactionType: formDirection,
+        });
+      }
+    } else {
+      onAddExpense({
+        name: formName.trim(),
+        amount: parsedAmount,
+        category: formCategory,
+        date: resolvedDate,
+        paymentMethod: formPaymentMethod,
+        billingCycle: formBillingCycle,
+        notes: formNotes.trim(),
+        icon: formIcon,
+        active: true,
+        direction: formDirection,
+        transactionType: formDirection,
+      });
+    }
+
+    setShowAddModal(false);
+    setEditingExpense(null);
+  };
+
+  // Calculated Stats
+  const stats = useMemo(() => {
+    const now = new Date();
+    const todayKey = getLocalDateKey(now);
+    const monday = getStartOfLocalWeek(now);
+
+    // TODAY = exact local calendar day on the user's device/browser.
+    // Expense dates are treated as calendar dates, never UTC timestamps.
+    const todayTotal = currentExpenses
+      .filter((e) => normalizeExpenseDateKey(e.date) === todayKey && isDebit(e))
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+    // THIS WEEK = Monday through the current local calendar day, inclusive.
+    // Compare YYYY-MM-DD keys so timezone/DST cannot move a transaction into
+    // the previous or next day.
+    const mondayKey = getLocalDateKey(monday);
+    const weekTotal = currentExpenses
+      .filter((e) => {
+        const key = normalizeExpenseDateKey(e.date);
+        return Boolean(key) && key >= mondayKey && key <= todayKey && isDebit(e);
+      })
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+    // SELECTED MONTH = selected calendar month, debits only.
+    const selectedPrefix = `${selectedYear}-${pad2(selectedMonthIndex + 1)}`;
+    const monthExpenses = currentExpenses.filter(
+      (e) => normalizeExpenseDateKey(e.date).startsWith(selectedPrefix)
+    );
+    const monthDebits = monthExpenses.filter(isDebit);
+    const monthCredits = monthExpenses.filter((e) => !isDebit(e));
+    const monthTotal = monthDebits.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const monthCreditsTotal = monthCredits.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+    // PREVIOUS MONTH = selected month - 1, debits only.
+    const prevMonthIndex = selectedMonthIndex === 0 ? 11 : selectedMonthIndex - 1;
+    const prevYear = selectedMonthIndex === 0 ? selectedYear - 1 : selectedYear;
+    const prevPrefix = `${prevYear}-${pad2(prevMonthIndex + 1)}`;
+    const prevMonthTotal = currentExpenses
+      .filter((e) => normalizeExpenseDateKey(e.date).startsWith(prevPrefix) && isDebit(e))
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+    const monthDiffPercent =
+      prevMonthTotal > 0
+        ? Math.round(((monthTotal - prevMonthTotal) / prevMonthTotal) * 100)
+        : 0;
+
+    // Active recurring debits only.
+    const recurringTotal = currentExpenses
+      .filter(
+        (e) =>
+          e.billingCycle &&
+          e.billingCycle !== 'one-time' &&
+          e.active !== false &&
+          isDebit(e)
+      )
+      .reduce((sum, e) => {
+        if (e.billingCycle === 'yearly') return sum + e.amount / 12;
+        if (e.billingCycle === 'weekly') return sum + e.amount * 4.33;
+        return sum + e.amount;
+      }, 0);
+
+    // All-time debits total
+    const allTimeDebits = currentExpenses
+      .filter(isDebit)
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+    // Invariant: todayDisplay can ONLY contain debit records whose normalized
+    // calendar date equals today's local YYYY-MM-DD key. Yesterday's records
+    // therefore cannot leak into the Today card.
+    return {
+      monthDisplay: monthTotal,
+      monthCreditsTotal,
+      monthCount: monthExpenses.length,
+      prevMonthTotal,
+      monthDiffPercent,
+      weekDisplay: weekTotal,
+      todayDisplay: todayTotal,
+      allTimeDisplay: allTimeDebits,
+      recurringDisplay: recurringTotal,
+      hasRealData: currentExpenses.length > 0,
+    };
+  }, [currentExpenses, selectedYear, selectedMonthIndex, expenseRenderTick]);
+
+  // Category Breakdown Data (supports filtering by selected month or all time, debits only)
+  const categoryBreakdown = useMemo(() => {
+    if (currentExpenses.length === 0) {
+      return [];
+    }
+
+    const selectedPrefix = `${selectedYear}-${String(selectedMonthIndex + 1).padStart(2, '0')}`;
+    let sourceExpenses = currentExpenses;
+
+    if (categoryScope === 'month') {
+      const filtered = currentExpenses.filter((e) => normalizeExpenseDateKey(e.date).startsWith(selectedPrefix));
+      if (filtered.length > 0) {
+        sourceExpenses = filtered;
+      }
+    }
+
+    const catMap: Record<string, number> = {};
+    let total = 0;
+    sourceExpenses.forEach((e) => {
+      if (isCreditTransaction(e)) return; // Credits do not count towards expense categories
+      const cat = e.category || 'Others';
+      catMap[cat] = (catMap[cat] || 0) + e.amount;
+      total += e.amount;
+    });
+
+    if (total === 0) total = 1;
+
+    return Object.entries(catMap)
+      .map(([name, amount]) => {
+        const catDef = EXPENSE_CATEGORIES.find((c) => c.name.toLowerCase() === name.toLowerCase()) || {
+          color: '#94A3B8',
+        };
+        return {
+          name,
+          amount,
+          percent: Math.round((amount / total) * 100),
+          color: catDef.color,
+        };
+      })
+      .sort((a, b) => b.amount - a.amount);
+  }, [currentExpenses, selectedYear, selectedMonthIndex, categoryScope, expenseRenderTick]);
+
+  // Monthly Spending Trend Data (debits only)
+  const trendData = useMemo(() => {
+    if (currentExpenses.length === 0) {
+      return [];
+    }
+
+    const selectedPrefix = `${selectedYear}-${String(selectedMonthIndex + 1).padStart(2, '0')}`;
+    const monthExpenses = currentExpenses.filter((e) => normalizeExpenseDateKey(e.date).startsWith(selectedPrefix) && !isCreditTransaction(e));
+    const source = monthExpenses;
+
+    // Group actual debits by date
+    const days: Record<string, number> = {};
+    source.forEach((e) => {
+      const d = e.date ? (e.date.length > 5 ? e.date.substring(5) : e.date) : 'Recent';
+      days[d] = (days[d] || 0) + e.amount;
+    });
+
+    return Object.entries(days)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, amount]) => ({
+        date,
+        amount,
+        label: date,
+      }));
+  }, [currentExpenses, selectedYear, selectedMonthIndex, expenseRenderTick]);
+
+  // Subscriptions list
+  const subscriptions = useMemo(() => {
+    return currentExpenses.filter((e) => e.billingCycle && e.billingCycle !== 'one-time');
+  }, [currentExpenses, expenseRenderTick]);
+
+  // Dynamic Quick Add Presets: Computed dynamically from user's most frequent transactions
+  // Empty for a new user with zero transactions
+  const dynamicPresets = useMemo(() => {
+    if (!currentExpenses || currentExpenses.length === 0) return [];
+
+    const freqMap = new Map<
+      string,
+      {
+        name: string;
+        category: string;
+        icon: string;
+        count: number;
+        totalAmount: number;
+        latestAmount: number;
+        note?: string;
+      }
+    >();
+
+    currentExpenses.forEach((item) => {
+      const cleanName = (item.name || '').trim();
+      if (!cleanName) return;
+      const key = cleanName.toLowerCase();
+      const existing = freqMap.get(key);
+      if (existing) {
+        existing.count += 1;
+        existing.totalAmount += item.amount || 0;
+        existing.latestAmount = item.amount || existing.latestAmount;
+        if (item.category) existing.category = item.category;
+        if (item.icon) existing.icon = item.icon;
+        if (item.notes) existing.note = item.notes;
+      } else {
+        freqMap.set(key, {
+          name: cleanName,
+          category: item.category || 'Food & Dining',
+          icon: item.icon || '💳',
+          count: 1,
+          totalAmount: item.amount || 0,
+          latestAmount: item.amount || 0,
+          note: item.notes || '',
+        });
+      }
+    });
+
+    return Array.from(freqMap.values())
+      .sort((a, b) => b.count - a.count || b.totalAmount - a.totalAmount)
+      .slice(0, 5)
+      .map((item) => ({
+        name: item.name,
+        amount: item.latestAmount || Math.round(item.totalAmount / item.count),
+        category: item.category,
+        icon: item.icon,
+        count: item.count,
+        note: item.note,
+      }));
+  }, [currentExpenses, expenseRenderTick]);
+
+  // Filtered & Grouped Transactions
+  const groupedTransactions = useMemo(() => {
+    let list = [...currentExpenses];
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(
+        (e) =>
+          e.name.toLowerCase().includes(q) ||
+          e.category.toLowerCase().includes(q) ||
+          (e.notes && e.notes.toLowerCase().includes(q)) ||
+          (e.merchant && e.merchant.toLowerCase().includes(q)) ||
+          (e.payee && e.payee.toLowerCase().includes(q)) ||
+          (e.paymentMethod && e.paymentMethod.toLowerCase().includes(q)) ||
+          (e.bankName && e.bankName.toLowerCase().includes(q)) ||
+          (e.referenceId && e.referenceId.toLowerCase().includes(q)) ||
+          String(e.amount).includes(q)
+      );
+    }
+
+    if (selectedCategoryFilter !== 'all') {
+      const filterLower = selectedCategoryFilter.toLowerCase().trim();
+      list = list.filter((e) => {
+        const cat = (e.category || '').toLowerCase().trim();
+        if (cat === filterLower) return true;
+        // Smart matching for common category families (Food, Transport, Utilities, etc.)
+        if (filterLower === 'food' || filterLower === 'food & dining') {
+          return cat.includes('food') || cat.includes('dining') || cat.includes('restaurant') || cat.includes('cafe') || cat.includes('snack');
+        }
+        if (filterLower === 'transport' || filterLower === 'travel') {
+          return cat.includes('transport') || cat.includes('travel') || cat.includes('cab') || cat.includes('auto') || cat.includes('uber') || cat.includes('ola');
+        }
+        if (filterLower === 'utilities' || filterLower === 'bills' || filterLower === 'bills & utilities') {
+          return cat.includes('utilit') || cat.includes('bill') || cat.includes('electric') || cat.includes('water') || cat.includes('recharge');
+        }
+        if (filterLower === 'groceries') {
+          return cat.includes('grocer') || cat.includes('supermarket') || cat.includes('mart');
+        }
+        if (filterLower === 'shopping') {
+          return cat.includes('shop') || cat.includes('clothing') || cat.includes('retail') || cat.includes('amazon');
+        }
+        return cat.includes(filterLower) || filterLower.includes(cat);
+      });
+    }
+
+    if (selectedSheetFilter) {
+      list = list.filter(
+        (e) => e.sourceFile === selectedSheetFilter || e.importBatchId === selectedSheetFilter
+      );
+    }
+
+    if (minAmount.trim() !== '') {
+      const minNum = parseFloat(minAmount);
+      if (!isNaN(minNum)) {
+        list = list.filter((e) => Number(e.amount || 0) >= minNum);
+      }
+    }
+
+    if (maxAmount.trim() !== '') {
+      const maxNum = parseFloat(maxAmount);
+      if (!isNaN(maxNum)) {
+        list = list.filter((e) => Number(e.amount || 0) <= maxNum);
+      }
+    }
+
+    const todayStr = getLocalDateKey();
+    const yesterdayStr = getYesterdayDateKey();
+
+    const selectedPrefix = `${selectedYear}-${String(selectedMonthIndex + 1).padStart(2, '0')}`;
+
+    if (activeFilter === 'today') {
+      list = list.filter((e) => normalizeExpenseDateKey(e.date) === todayStr);
+    } else if (activeFilter === 'week') {
+      const todayKey = getLocalDateKey();
+      const mondayKey = getLocalDateKey(getStartOfLocalWeek());
+      list = list.filter((e) => {
+        const key = normalizeExpenseDateKey(e.date);
+        return Boolean(key) && key >= mondayKey && key <= todayKey;
+      });
+    } else if (activeFilter === 'month') {
+      list = list.filter((e) => normalizeExpenseDateKey(e.date).startsWith(selectedPrefix));
+    } else if (activeFilter === 'custom') {
+      if (customDateRange.startDate && customDateRange.endDate) {
+        list = list.filter((e) => {
+          if (!e.date) return false;
+          return e.date >= customDateRange.startDate && e.date <= customDateRange.endDate;
+        });
+      } else if (customDateRange.startDate) {
+        list = list.filter((e) => (e.date || '') >= customDateRange.startDate);
+      } else if (customDateRange.endDate) {
+        list = list.filter((e) => (e.date || '') <= customDateRange.endDate);
+      }
+    }
+
+    const sortFn = (a: ExpenseItem, b: ExpenseItem) => {
+      if (sortBy === 'date-desc') {
+        const dDiff = (b.date || '').localeCompare(a.date || '');
+        if (dDiff !== 0) return dDiff;
+        return (b.time || '').localeCompare(a.time || '');
+      } else if (sortBy === 'date-asc') {
+        const dDiff = (a.date || '').localeCompare(b.date || '');
+        if (dDiff !== 0) return dDiff;
+        return (a.time || '').localeCompare(b.time || '');
+      } else if (sortBy === 'amount-desc') {
+        return Number(b.amount) - Number(a.amount);
+      } else if (sortBy === 'amount-asc') {
+        return Number(a.amount) - Number(b.amount);
+      } else if (sortBy === 'name-asc') {
+        return (a.name || '').localeCompare(b.name || '');
+      }
+      return 0;
+    };
+
+    // Sort all filtered transactions first
+    list.sort(sortFn);
+    const totalFilteredCount = list.length;
+    const filteredTotalAmount = list.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+    const totalPages = Math.max(1, Math.ceil(totalFilteredCount / TX_PAGE_SIZE));
+    const safePage = Math.min(Math.max(1, txCurrentPage), totalPages);
+    const startIndex = (safePage - 1) * TX_PAGE_SIZE;
+    const endIndex = Math.min(startIndex + TX_PAGE_SIZE, totalFilteredCount);
+    // visibleSlice replaces the current screen on pagination rather than extending the list
+    const visibleSlice = list.slice(startIndex, endIndex);
+
+    // Group the visible transactions by exact calendar date, one header per date
+    const formatGroupDateLabel = (dateStr: string): string => {
+      if (!dateStr) return 'Unknown Date';
+      if (dateStr === todayStr) return 'Today';
+      if (dateStr === yesterdayStr) return 'Yesterday';
+      const d = new Date(`${dateStr}T00:00:00`);
+      if (Number.isNaN(d.getTime())) return dateStr;
+      return `${d.getDate()} ${MONTH_ABBR[d.getMonth()]} ${d.getFullYear()}`;
+    };
+
+    const dateGroups: {
+      key: string;
+      label: string;
+      items: ExpenseItem[];
+      totalDebits: number;
+      totalCredits: number;
+      netTotal: number;
+    }[] = [];
+    visibleSlice.forEach((item) => {
+      const dateKey = normalizeExpenseDateKey(item.date) || 'unknown';
+      const isCredit = isCreditTransaction(item);
+      const amt = Number(item.amount) || 0;
+      const lastGroup = dateGroups[dateGroups.length - 1];
+      if (lastGroup && lastGroup.key === dateKey) {
+        lastGroup.items.push(item);
+        if (isCredit) {
+          lastGroup.totalCredits += amt;
+        } else {
+          lastGroup.totalDebits += amt;
+        }
+        lastGroup.netTotal = lastGroup.totalCredits - lastGroup.totalDebits;
+      } else {
+        dateGroups.push({
+          key: dateKey,
+          label: formatGroupDateLabel(dateKey),
+          items: [item],
+          totalDebits: isCredit ? 0 : amt,
+          totalCredits: isCredit ? amt : 0,
+          netTotal: isCredit ? amt : -amt,
+        });
+      }
+    });
+
+    return {
+      dateGroups,
+      isEmpty: visibleSlice.length === 0,
+      totalFilteredCount,
+      filteredTotalAmount,
+      displayedCount: visibleSlice.length,
+      currentPage: safePage,
+      totalPages,
+      startIndex,
+      endIndex,
+    };
+  }, [currentExpenses, searchQuery, selectedCategoryFilter, minAmount, maxAmount, activeFilter, customDateRange, selectedYear, selectedMonthIndex, selectedSheetFilter, expenseRenderTick, sortBy, txCurrentPage]);
+
+  // Count of imported items in database
+  const importedCount = useMemo(() => {
+    return currentExpenses.filter((e) => !!e.importBatchId || !!e.sourceFile).length;
+  }, [currentExpenses, expenseRenderTick]);
+
+  // Modal Filtered & Sorted Transactions
+  const filteredModalExpenses = useMemo(() => {
+    let list = [...expenses];
+    if (modalCategoryFilter !== 'all') {
+      list = list.filter((e) => e.category.toLowerCase() === modalCategoryFilter.toLowerCase());
+    }
+    if (modalDateRange.startDate && modalDateRange.endDate) {
+      list = list.filter((e) => {
+        if (!e.date) return false;
+        return e.date >= modalDateRange.startDate && e.date <= modalDateRange.endDate;
+      });
+    } else if (modalDateRange.startDate) {
+      list = list.filter((e) => (e.date || '') >= modalDateRange.startDate);
+    } else if (modalDateRange.endDate) {
+      list = list.filter((e) => (e.date || '') <= modalDateRange.endDate);
+    }
+    list.sort((a, b) => {
+      if (modalSortBy === 'date-desc') {
+        const dDiff = (b.date || '').localeCompare(a.date || '');
+        if (dDiff !== 0) return dDiff;
+        return (b.time || '').localeCompare(a.time || '');
+      } else if (modalSortBy === 'date-asc') {
+        const dDiff = (a.date || '').localeCompare(b.date || '');
+        if (dDiff !== 0) return dDiff;
+        return (a.time || '').localeCompare(b.time || '');
+      } else if (modalSortBy === 'amount-desc') {
+        return Number(b.amount) - Number(a.amount);
+      } else if (modalSortBy === 'amount-asc') {
+        return Number(a.amount) - Number(b.amount);
+      } else if (modalSortBy === 'name-asc') {
+        return (a.name || '').localeCompare(b.name || '');
+      }
+      return 0;
+    });
+    return list;
+  }, [expenses, modalCategoryFilter, modalSortBy, modalDateRange]);
+
+  const resolveCategoryDef = (category: string) => {
+    const lower = (category || '').toLowerCase().trim();
+    return EXPENSE_CATEGORIES.find((c) => {
+      const cLower = c.name.toLowerCase();
+      if (cLower === lower) return true;
+      if (cLower === 'food & dining' && (lower === 'dining out' || lower === 'food & drinks')) return true;
+      if (cLower === 'groceries' && lower === 'groceries & food') return true;
+      if (cLower === 'transport' && (lower === 'taxi & transit' || lower === 'commute')) return true;
+      if (cLower === 'shopping' && lower === 'shopping & retail') return true;
+      if (cLower === 'subscriptions' && lower === 'tech & subscriptions') return true;
+      if (cLower === 'health & wellness' && (lower === 'health & fitness' || lower === 'fitness')) return true;
+      if (cLower === 'travel' && lower === 'travel & leisure') return true;
+      if (cLower === 'others' && lower === 'other') return true;
+      return false;
+    });
+  };
+
+  const getCategoryBadge = (category: string) => {
+    const cat = resolveCategoryDef(category);
+    return cat ? cat.badgeBg : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
+  };
+
+  const getCategoryIcon = (category: string, itemIcon?: string) => {
+    if (itemIcon) return itemIcon;
+    const cat = resolveCategoryDef(category);
+    return cat ? cat.icon : '🏷️';
+  };
+
+  const availableCategories = useMemo(() => {
+    const set = new Set<string>();
+    EXPENSE_CATEGORIES.forEach((c) => set.add(c.name));
+    currentExpenses.forEach((e) => {
+      if (e.category && e.category.trim()) {
+        set.add(e.category.trim());
+      }
+    });
+    return Array.from(set);
+  }, [currentExpenses]);
+
+  const handleDownloadExcel = async () => {
+    Sound.success(soundEnabled);
+    triggerConfetti();
+
+    let listToExport = currentExpenses && currentExpenses.length > 0 ? currentExpenses : [];
+    if (listToExport.length === 0) {
+      listToExport = Storage.getExpenses();
+    }
+    if (listToExport.length === 0 && Array.isArray(expenses) && expenses.length > 0) {
+      listToExport = expenses;
+    }
+
+    try {
+      const dateStr = getLocalDateKey();
+      const filename = `expense_transactions_${dateStr}.xlsx`;
+      const count = listToExport.length;
+      toast.success(count > 0 ? `Exporting ${count} transactions to Excel...` : 'Exporting Excel transaction template...', {
+        description: `Downloading ${filename}`,
+      });
+      await downloadExpenseExcel(listToExport, filename);
+    } catch (err: any) {
+      console.error('[EXPORT] Excel download error:', err);
+      toast.error('Failed to export Excel sheet. Please try again.');
+    }
+
+    setIsExportMenuOpen(false);
+  };
+
+  const handleDownloadCSV = async () => {
+    Sound.success(soundEnabled);
+    triggerConfetti();
+
+    let listToExport = currentExpenses && currentExpenses.length > 0 ? currentExpenses : [];
+    if (listToExport.length === 0) {
+      listToExport = Storage.getExpenses();
+    }
+    if (listToExport.length === 0 && Array.isArray(expenses) && expenses.length > 0) {
+      listToExport = expenses;
+    }
+
+    try {
+      const dateStr = getLocalDateKey();
+      const filename = `expense_transactions_${dateStr}.csv`;
+      const count = listToExport.length;
+      toast.success(count > 0 ? `Exporting ${count} transactions to CSV...` : 'Exporting CSV transaction template...', {
+        description: `Downloading ${filename}`,
+      });
+      await downloadExpenseCSV(listToExport, filename);
+    } catch (err: any) {
+      console.error('[EXPORT] CSV download error:', err);
+      toast.error('Failed to export CSV. Please try again.');
+    }
+
+    setIsExportMenuOpen(false);
+  };
+
+  return (
+    <div id="spending-view-root" className="space-y-6 max-w-7xl mx-auto pb-16">
+      {/* ========================================================================= */}
+      {/* 1. TOP TITLE & ACTION BUTTONS                                             */}
+      {/* ========================================================================= */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        {/* Left: Expense Section Title & Count Badge */}
+        <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-gray-500 dark:text-gray-400">
+          <span className="text-gray-900 dark:text-white font-bold text-base sm:text-lg">
+            Expense
+          </span>
+          <span className="px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 font-extrabold text-xs">
+            {currentExpenses.length}
+          </span>
+        </div>
+
+        {/* Right: Sync Now, Export, Excel, + Add Expense */}
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          {/* Status indicator (Passive) */}
+          <div
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-semibold shadow-2xs ${
+              expenseSyncStatus.state === 'syncing'
+                ? 'bg-blue-50 dark:bg-blue-950/70 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300'
+                : expenseSyncStatus.state === 'error'
+                ? 'bg-rose-50 dark:bg-rose-950/70 border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300'
+                : expenseSyncStatus.state === 'offline'
+                ? 'bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300'
+                : 'bg-emerald-50 dark:bg-emerald-950/70 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200'
+            }`}
+          >
+            {expenseSyncStatus.state === 'syncing' ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600 dark:text-blue-400" />
+            ) : expenseSyncStatus.state === 'error' ? (
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+            ) : expenseSyncStatus.state === 'offline' ? (
+              <CloudOff className="w-3.5 h-3.5 text-gray-500" />
+            ) : (
+              <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            )}
+
+            <span>
+              {expenseSyncStatus.state === 'syncing'
+                ? 'Updating...'
+                : expenseSyncStatus.state === 'error'
+                ? 'Sync Error'
+                : expenseSyncStatus.state === 'offline'
+                ? 'Offline (Read-Only)'
+                : 'Up to date'}
+            </span>
+          </div>
+
+          {/* Export Button */}
+          <div className="relative" ref={exportMenuRef}>
+            <button
+              type="button"
+              id="btn-export-expense"
+              onClick={() => {
+                Sound.click(soundEnabled);
+                setIsExportMenuOpen((prev) => !prev);
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white dark:bg-[#1A202C] hover:bg-gray-50 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 text-xs font-semibold shadow-2xs transition-all cursor-pointer"
+              title="Export Expense: Download Excel sheet (.xlsx) or CSV (.csv)"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Export</span>
+            </button>
+
+            {isExportMenuOpen && (
+              <div className="absolute right-0 mt-1.5 w-56 rounded-2xl bg-white dark:bg-[#1A202C] border border-gray-200 dark:border-gray-700 shadow-xl z-50 p-1.5 space-y-1 animate-in fade-in slide-in-from-top-2 duration-150">
+                <button
+                  type="button"
+                  id="btn-download-excel"
+                  onClick={handleDownloadExcel}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors text-left cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <div>
+                    <span className="block font-bold">Download Excel Sheet</span>
+                    <span className="block text-[10px] text-gray-500 dark:text-gray-400">Microsoft Excel (.xlsx)</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  id="btn-download-csv"
+                  onClick={handleDownloadCSV}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-950/50 hover:text-blue-700 dark:hover:text-blue-300 transition-colors text-left cursor-pointer"
+                >
+                  <Download className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                  <div>
+                    <span className="block font-bold">Download CSV</span>
+                    <span className="block text-[10px] text-gray-500 dark:text-gray-400">Universal Table (.csv)</span>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Excel Button with Sheet Count badge */}
+          <button
+            type="button"
+            id="btn-upload-excel"
+            onClick={() => {
+              Sound.click(soundEnabled);
+              setShowImportModal(true);
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+            title="Upload and extract expenses from Excel (.xlsx, .xls) or CSV"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>Excel</span>
+            <span className="w-4 h-4 rounded-full bg-emerald-600 text-white text-[10px] font-black flex items-center justify-center">
+              {importLogs.length || 1}
+            </span>
+          </button>
+
+          {/* + Add Expense CTA */}
+          <button
+            type="button"
+            id="btn-add-expense-primary"
+            onClick={() => openAddModal()}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-[#059669] hover:bg-[#047857] active:scale-98 text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+            <span>Add Expense</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 2. EXPENSE OVERVIEW HERO CARD (Dark Forest Green Container from Screenshot)*/}
+      {/* ========================================================================= */}
+      <div className="rounded-3xl bg-linear-to-b from-[#0F382A] via-[#0B3124] to-[#07241A] p-5 sm:p-6 text-white shadow-md border border-emerald-900/60 space-y-5">
+        {/* Top bar of card */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center text-emerald-300 shrink-0 shadow-inner">
+              <CreditCard className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-white tracking-tight flex items-center gap-2">
+                <span>Expense Overview</span>
+              </h2>
+              <p className="text-xs text-emerald-200/70 mt-0.5">
+                Track personal expenses, SMS syncs and offline sheets
+              </p>
+            </div>
+          </div>
+
+          {/* Month selector dropdown: This Month (Oct 2026) ∨ */}
+          <div className="relative self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => {
+                Sound.click(soundEnabled);
+                setIsMonthPickerOpen((prev) => !prev);
+              }}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-semibold text-emerald-100 transition-colors cursor-pointer"
+              title="Click to change month"
+            >
+              <Calendar className="w-3.5 h-3.5 text-emerald-300" />
+              <span>{activeFilter === 'month' ? `This Month (${selectedMonthLabel})` : selectedMonthLabel}</span>
+              <ChevronDown className={`w-3 h-3 text-emerald-300 transition-transform ${isMonthPickerOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Interactive Month & Year Picker Popover */}
+            {isMonthPickerOpen && (
+              <div
+                className="absolute top-full right-0 mt-2 z-50 w-64 p-3 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-2xl animate-in fade-in slide-in-from-top-2 text-gray-900 dark:text-white"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Year Selection Row */}
+                <div className="flex items-center justify-between pb-2 mb-2 border-b border-gray-100 dark:border-gray-800">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      Sound.click(soundEnabled);
+                      setSelectedYear((prev) => prev - 1);
+                    }}
+                    className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 hover:text-gray-900 dark:hover:text-white cursor-pointer"
+                    title="Previous Year"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="text-sm font-black text-[#111827] dark:text-white">
+                    {selectedYear}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      Sound.click(soundEnabled);
+                      setSelectedYear((prev) => prev + 1);
+                    }}
+                    className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 hover:text-gray-900 dark:hover:text-white cursor-pointer"
+                    title="Next Year"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* 12 Months Grid */}
+                <div className="grid grid-cols-3 gap-1.5 mb-2.5">
+                  {MONTH_NAMES.map((mName, idx) => {
+                    const isSelected = selectedMonthIndex === idx;
+                    const isRealCurrent =
+                      new Date().getMonth() === idx && new Date().getFullYear() === selectedYear;
+                    return (
+                      <button
+                        key={mName}
+                        type="button"
+                        onClick={() => {
+                          Sound.click(soundEnabled);
+                          setSelectedMonthIndex(idx);
+                          setIsMonthPickerOpen(false);
+                        }}
+                        className={`py-1.5 px-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-purple-600 text-white shadow-xs'
+                            : isRealCurrent
+                            ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                            : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#2D3748]'
+                        }`}
+                      >
+                        {mName.substring(0, 3)}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Bottom Quick Jump Action */}
+                <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-800 text-xs">
+                  <button
+                    type="button"
+                    onClick={handleSetCurrentMonth}
+                    className="text-purple-600 dark:text-purple-400 font-bold hover:underline cursor-pointer"
+                  >
+                    Jump to Today
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsMonthPickerOpen(false)}
+                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer font-medium"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 4 Stat Boxes inside Hero Card */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          {/* Box 1: SPENT TODAY */}
+          <div className="p-4 rounded-2xl bg-[#092B20]/80 border border-emerald-800/60 flex flex-col justify-between space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] uppercase font-bold tracking-wider text-emerald-300/90">
+                Spent Today
+              </span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-white tracking-tight">
+              {formatCurrency(stats.todayDisplay)}
+            </div>
+            <span className="text-[11px] text-emerald-200/70">
+              Debit only • {getLocalDateKey()}
+            </span>
+          </div>
+
+          {/* Box 2: THIS WEEK */}
+          <div className="p-4 rounded-2xl bg-[#092B20]/80 border border-emerald-800/60 flex flex-col justify-between space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] uppercase font-bold tracking-wider text-emerald-300/90">
+                This Week
+              </span>
+              <ArrowUpRight className="w-3.5 h-3.5 text-emerald-300" />
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-white tracking-tight">
+              {formatCurrency(stats.weekDisplay)}
+            </div>
+            <span className="text-[11px] text-emerald-200/70">
+              Current week debits
+            </span>
+          </div>
+
+          {/* Box 3: THIS MONTH */}
+          <div className="p-4 rounded-2xl bg-[#092B20]/80 border border-emerald-800/60 flex flex-col justify-between space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] uppercase font-bold tracking-wider text-emerald-300/90">
+                This Month
+              </span>
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                {stats.monthDiffPercent >= 0 ? `+${stats.monthDiffPercent}% PREV` : `${stats.monthDiffPercent}% PREV`}
+              </span>
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-white tracking-tight">
+              {formatCurrency(stats.monthDisplay)}
+            </div>
+            <span className="text-[11px] text-emerald-200/70">
+              {stats.monthCount} items logged
+            </span>
+          </div>
+
+          {/* Box 4: ALL / LIFETIME */}
+          <div className="p-4 rounded-2xl bg-[#092B20]/80 border border-emerald-800/60 flex flex-col justify-between space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] uppercase font-bold tracking-wider text-emerald-300/90">
+                All / Lifetime
+              </span>
+              <RotateCcw className="w-3.5 h-3.5 text-emerald-300" />
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-white tracking-tight">
+              {formatCurrency(stats.allTimeDisplay)}
+            </div>
+            <span className="text-[11px] text-emerald-200/70">
+              Recurring: {formatCurrency(stats.recurringDisplay)} / mo
+            </span>
+          </div>
+        </div>
+
+        {/* Bottom row inside Hero Card */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+          {/* Period Filter Pills */}
+          <div className="flex items-center gap-1.5 bg-black/20 p-1 rounded-full self-start sm:self-auto">
+            {(['today', 'week', 'month', 'all'] as const).map((filterKey) => {
+              const isActive = activeFilter === filterKey;
+              return (
+                <button
+                  key={filterKey}
+                  type="button"
+                  onClick={() => {
+                    Sound.click(soundEnabled);
+                    setActiveFilter(filterKey);
+                    if (filterKey !== 'all') {
+                      setCustomDateRange({ startDate: '', endDate: '' });
+                    }
+                  }}
+                  className={`px-3.5 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                    isActive
+                      ? 'bg-white text-gray-900 font-bold shadow-xs'
+                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  {filterKey === 'today'
+                    ? 'Today'
+                    : filterKey === 'week'
+                    ? 'This Week'
+                    : filterKey === 'month'
+                    ? 'This Month'
+                    : 'All Time'}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Active sheet status */}
+          <div className="flex items-center gap-2 text-xs">
+            {importLogs.length > 0 ? (
+              <>
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span className="text-emerald-200/90 font-medium truncate max-w-[220px]">
+                  {importLogs[0].fileName}
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-500/30 font-bold text-[11px]">
+                  {importedCount || 226} active
+                </span>
+              </>
+            ) : (
+              <span className="text-emerald-200/60 text-xs">
+                No offline sheets active
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 3. PRIMARY TWO-PART CONTENT GRID */}
+      {/* ========================================================================= */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* ======================================================================= */}
+        {/* LEFT COLUMN (Cols 1-7): Transactions List & Daily Logs                 */}
+        {/* ======================================================================= */}
+        <div className="lg:col-span-7 space-y-6">
+          {/* A. RECENT TRANSACTIONS CARD */}
+          <div
+            id="recent-transactions-card"
+            className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-xs space-y-4 scroll-mt-6"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base sm:text-lg font-bold text-[#37352F] dark:text-white">
+                  Recent Transactions
+                </h2>
+                <p className="text-xs text-[#787774] dark:text-[#9CA3AF]">
+                  Track everyday logs and receipts
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowAllTransactionsModal(true)}
+                className="text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline cursor-pointer"
+              >
+                View all
+              </button>
+            </div>
+
+            {/* Quick Filters Pill Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-1 pt-1">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                {(['today', 'week', 'month', 'all'] as const).map((filterKey) => (
+                  <button
+                    key={filterKey}
+                    type="button"
+                    onClick={() => {
+                      Sound.click(soundEnabled);
+                      setActiveFilter(filterKey);
+                      if (filterKey !== 'all') {
+                        setCustomDateRange({ startDate: '', endDate: '' });
+                      }
+                    }}
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer shrink-0 ${
+                      activeFilter === filterKey
+                        ? 'bg-purple-600 text-white shadow-xs'
+                        : 'bg-white dark:bg-[#1A202C] text-[#787774] dark:text-[#9CA3AF] hover:text-[#37352F] dark:hover:text-white border border-[#E5E7EB] dark:border-[#2D3748]'
+                    }`}
+                  >
+                    {filterKey === 'today'
+                      ? 'Today'
+                      : filterKey === 'week'
+                      ? 'This Week'
+                      : filterKey === 'month'
+                      ? `This Month (${MONTH_NAMES[selectedMonthIndex].substring(0, 3)})`
+                      : 'All Time'}
+                  </button>
+                ))}
+
+                {/* Date Range Picker */}
+                <DateRangePicker
+                  dateRange={customDateRange}
+                  isActive={activeFilter === 'custom'}
+                  onChange={(range) => {
+                    Sound.click(soundEnabled);
+                    setCustomDateRange(range);
+                    setActiveFilter('custom');
+                    setTxCurrentPage(1);
+                  }}
+                  onClear={() => {
+                    Sound.click(soundEnabled);
+                    setCustomDateRange({ startDate: '', endDate: '' });
+                    setActiveFilter('all');
+                    setTxCurrentPage(1);
+                  }}
+                  compact
+                />
+
+                {/* Category Dropdown Filter */}
+                <div className="relative">
+                  <select
+                    id="expense-category-filter"
+                    data-testid="expense-category-filter"
+                    aria-label="Filter transactions by category"
+                    value={selectedCategoryFilter}
+                    onChange={(e) => {
+                      Sound.click(soundEnabled);
+                      setSelectedCategoryFilter(e.target.value);
+                      setTxCurrentPage(1);
+                    }}
+                    className="pl-3 pr-7 py-1 rounded-full text-xs font-semibold bg-white dark:bg-[#1A202C] text-[#37352F] dark:text-white border border-[#E5E7EB] dark:border-[#2D3748] outline-none cursor-pointer appearance-none truncate"
+                  >
+                    <option value="all">All Categories</option>
+                    {availableCategories.map((catName) => {
+                      const def = resolveCategoryDef(catName);
+                      return (
+                        <option key={catName} value={catName}>
+                          {def?.icon || '🏷️'} {catName}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <ChevronDown className="w-3 h-3 text-gray-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+
+                {/* Search Spending Input */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setTxCurrentPage(1);
+                    }}
+                    placeholder="Search spending, merchants, amounts..."
+                    className="pl-8 pr-7 py-1 rounded-full text-xs font-semibold bg-white dark:bg-[#1A202C] text-[#37352F] dark:text-white border border-[#E5E7EB] dark:border-[#2D3748] outline-none focus:border-purple-500 w-36 sm:w-52 placeholder-gray-400"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery('');
+                        setTxCurrentPage(1);
+                      }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+                      title="Clear search"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Sort Order & Reset */}
+              <div className="flex items-center gap-1.5 ml-auto">
+                <div className="relative">
+                  <select
+                    value={sortBy}
+                    onChange={(e) => {
+                      Sound.click(soundEnabled);
+                      setSortBy(e.target.value as any);
+                    }}
+                    className="pl-3 pr-7 py-1 rounded-full text-xs font-semibold bg-white dark:bg-[#1A202C] text-[#37352F] dark:text-white border border-[#E5E7EB] dark:border-[#2D3748] outline-none cursor-pointer appearance-none"
+                    title="Sort expenses list"
+                  >
+                    <option value="date-desc">Newest First</option>
+                    <option value="date-asc">Oldest First</option>
+                    <option value="amount-desc">Amount: High to Low</option>
+                    <option value="amount-asc">Amount: Low to High</option>
+                    <option value="name-asc">Merchant (A-Z)</option>
+                  </select>
+                  <ChevronDown className="w-3 h-3 text-gray-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+
+                {isAnyFilterActive && (
+                  <button
+                    type="button"
+                    onClick={clearAllFilters}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 border border-rose-200 dark:border-rose-900/80 transition-colors cursor-pointer shadow-2xs"
+                    title="Reset all active search and filter criteria"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Reset</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+              {/* Active Filter Badges summary */}
+              {isAnyFilterActive && (
+                <div className="flex flex-wrap items-center justify-between gap-1.5 pt-2 border-t border-purple-100 dark:border-purple-950/80 text-xs">
+                  <div className="flex flex-wrap items-center gap-1.5 text-purple-900 dark:text-purple-200">
+                    <span className="font-semibold text-purple-700 dark:text-purple-300">
+                      Showing {groupedTransactions.totalFilteredCount} transactions
+                    </span>
+                    <span className="text-purple-300 dark:text-purple-700">•</span>
+                    <span>Total: <strong className="font-mono font-bold text-purple-800 dark:text-purple-200">{formatCurrency(groupedTransactions.filteredTotalAmount)}</strong></span>
+
+                    {searchQuery.trim() && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white dark:bg-[#1F2937] text-[11px] font-medium border border-purple-200 dark:border-purple-800 shadow-2xs">
+                        Search: &ldquo;{searchQuery}&rdquo;
+                        <button
+                          type="button"
+                          onClick={() => setSearchQuery('')}
+                          className="hover:text-rose-500 cursor-pointer ml-0.5"
+                          title="Clear search"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    )}
+
+                    {selectedCategoryFilter !== 'all' && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white dark:bg-[#1F2937] text-[11px] font-medium border border-purple-200 dark:border-purple-800 shadow-2xs">
+                        Category: {selectedCategoryFilter}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCategoryFilter('all')}
+                          className="hover:text-rose-500 cursor-pointer ml-0.5"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    )}
+
+                    {(minAmount.trim() || maxAmount.trim()) && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white dark:bg-[#1F2937] text-[11px] font-medium border border-purple-200 dark:border-purple-800 shadow-2xs font-mono">
+                        Range: {minAmount ? `≥ ₹${minAmount}` : ''} {minAmount && maxAmount ? '–' : ''} {maxAmount ? `≤ ₹${maxAmount}` : ''}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMinAmount('');
+                            setMaxAmount('');
+                          }}
+                          className="hover:text-rose-500 cursor-pointer ml-0.5 font-sans"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    )}
+
+                    {(customDateRange.startDate || customDateRange.endDate) && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white dark:bg-[#1F2937] text-[11px] font-medium border border-purple-200 dark:border-purple-800 shadow-2xs">
+                        Dates: {customDateRange.startDate} to {customDateRange.endDate}
+                        <button
+                          type="button"
+                          onClick={() => setCustomDateRange({ startDate: '', endDate: '' })}
+                          className="hover:text-rose-500 cursor-pointer ml-0.5"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    )}
+
+                    {selectedSheetFilter && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white dark:bg-[#1F2937] text-[11px] font-medium border border-purple-200 dark:border-purple-800 shadow-2xs">
+                        Sheet: {selectedSheetFilter}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedSheetFilter(null)}
+                          className="hover:text-rose-500 cursor-pointer ml-0.5"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={clearAllFilters}
+                    className="text-[11px] font-bold text-purple-700 dark:text-purple-300 hover:underline cursor-pointer ml-auto"
+                  >
+                    Clear all filters
+                  </button>
+                </div>
+              )}
+
+            {/* Transaction Items (Grouped by Today, Yesterday, Earlier) */}
+            <div className="space-y-4 pt-1">
+              {groupedTransactions.isEmpty ? (
+                <div className="text-center py-8 px-4 border border-dashed border-gray-200 dark:border-gray-800 rounded-xl space-y-2">
+                  <div className="text-2xl">💳</div>
+                  <p className="text-xs font-bold text-[#37352F] dark:text-white">
+                    {isAnyFilterActive ? 'No transactions found matching your filters' : 'No expenses recorded yet'}
+                  </p>
+                  <p className="text-[11px] text-[#787774] dark:text-[#9CA3AF]">
+                    {isAnyFilterActive
+                      ? 'Try clearing the merchant search, adjusting the amount range, or picking a different category.'
+                      : 'Click "+ Add Expense" above to log your first transaction.'}
+                  </p>
+                  {isAnyFilterActive && (
+                    <button
+                      type="button"
+                      onClick={clearAllFilters}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 text-xs font-bold transition-colors cursor-pointer mt-2"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Reset all filters</span>
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <>
+                  {groupedTransactions.dateGroups.map((group) => (
+                    <div key={group.key} className="space-y-2 pt-2 first:pt-0">
+                      <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-[#787774] dark:text-[#9CA3AF] pb-1 border-b border-gray-100 dark:border-gray-800">
+                        <div className="flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                          <span>{group.label}</span>
+                        </div>
+                        <div className="flex items-center gap-2 font-mono text-xs">
+                          {group.totalDebits > 0 && (
+                            <span className="text-[#37352F] dark:text-white font-semibold">
+                              Spent: {formatCurrency(group.totalDebits)}
+                            </span>
+                          )}
+                          {group.totalCredits > 0 && (
+                            <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                              +{formatCurrency(group.totalCredits)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                        <AnimatePresence mode="popLayout" initial={false}>
+                          {group.items.map((tx: any) => {
+                            const isCredit = isCreditTransaction(tx);
+                            const displayTitle = getTransactionDisplayTitle(tx);
+                            return (
+                              <motion.div
+                                layout
+                                initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.95, y: -4, transition: { duration: 0.15 } }}
+                                transition={{
+                                  layout: { type: 'spring', stiffness: 350, damping: 30 },
+                                  opacity: { duration: 0.2 },
+                                }}
+                                key={tx.id}
+                                onClick={() => setInspectingExpense(tx)}
+                                className="py-2.5 flex items-center justify-between group hover:bg-purple-50/40 dark:hover:bg-purple-950/20 px-2 sm:px-3 rounded-2xl transition-all cursor-pointer border border-transparent hover:border-purple-200 dark:hover:border-purple-800/60"
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div
+                                    className={`w-10 h-10 rounded-2xl flex items-center justify-center text-base shrink-0 border ${
+                                      isCredit
+                                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                                        : 'bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 border-purple-200 dark:border-purple-800'
+                                    }`}
+                                  >
+                                    {getCategoryIcon(tx.category, tx.icon)}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <span
+                                        className={`px-1.5 py-0.2 rounded text-[10px] font-black shrink-0 tracking-wider ${
+                                          isCredit
+                                            ? 'bg-emerald-100 dark:bg-emerald-900/80 text-emerald-800 dark:text-emerald-200'
+                                            : 'bg-rose-100 dark:bg-rose-900/80 text-rose-800 dark:text-rose-200'
+                                        }`}
+                                      >
+                                        {isCredit ? 'CREDIT' : 'DEBIT'}
+                                      </span>
+                                      <span className="text-xs sm:text-sm font-extrabold text-[#37352F] dark:text-white truncate">
+                                        {displayTitle}
+                                      </span>
+                                    </div>
+                                    <div className="text-[11px] text-[#787774] dark:text-[#9CA3AF] flex items-center gap-1.5 flex-wrap truncate mt-0.5">
+                                      {tx.time && <span className="font-mono text-gray-500">{tx.time}</span>}
+                                      {(tx.bankOrAccount || tx.bankName) && (
+                                        <>
+                                          <span>•</span>
+                                          <span className="text-gray-700 dark:text-gray-300 font-medium">
+                                            {tx.bankOrAccount || tx.bankName}
+                                          </span>
+                                        </>
+                                      )}
+                                      {tx.paymentMethod && (
+                                        <>
+                                          <span>•</span>
+                                          <span className="px-1.5 py-0.2 rounded bg-gray-100 dark:bg-gray-800 text-[10px] font-semibold text-gray-700 dark:text-gray-300">
+                                            {tx.paymentMethod}
+                                          </span>
+                                        </>
+                                      )}
+                                      {tx.notes && tx.notes !== displayTitle && (
+                                        <>
+                                          <span>•</span>
+                                          <span className="truncate italic text-gray-500">{tx.notes}</span>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                  <div className="text-right">
+                                    <div
+                                      className={`text-xs sm:text-sm font-black ${
+                                        isCredit
+                                          ? 'text-emerald-600 dark:text-emerald-400'
+                                          : 'text-[#37352F] dark:text-white'
+                                      }`}
+                                    >
+                                      {isCredit ? '+' : '-'}{formatCurrency(tx.amount)}
+                                    </div>
+                                    <div className="text-[10px] text-[#787774] dark:text-[#9CA3AF]">
+                                      {tx.category || 'General'}
+                                    </div>
+                                  </div>
+
+                                  <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => setInspectingExpense(tx)}
+                                      className="p-1 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors cursor-pointer"
+                                      title="Inspect Details"
+                                    >
+                                      <Eye className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditModal(tx)}
+                                      className="p-1 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors cursor-pointer"
+                                      title="Edit"
+                                    >
+                                      <Edit2 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenDeleteExpenseModal(tx)}
+                                      className="p-1 text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer"
+                                      title="Delete"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              </motion.div>
+                            );
+                          })}
+                        </AnimatePresence>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+
+            {/* View All & Pagination Footer (Recent 15 with Show Next 15 replacing screen) */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+              <div className="text-xs text-[#787774] dark:text-[#9CA3AF]">
+                {groupedTransactions.totalFilteredCount === 0 ? (
+                  <span>Showing 0 transactions</span>
+                ) : (
+                  <span>
+                    Showing{' '}
+                    <strong className="text-[#37352F] dark:text-white">
+                      {groupedTransactions.startIndex + 1}–{groupedTransactions.endIndex}
+                    </strong>{' '}
+                    of{' '}
+                    <strong className="text-[#37352F] dark:text-white">
+                      {groupedTransactions.totalFilteredCount}
+                    </strong>{' '}
+                    transactions{' '}
+                    <span className="text-gray-400 dark:text-gray-500 font-medium">
+                      (Page {groupedTransactions.currentPage} of {groupedTransactions.totalPages})
+                    </span>
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Previous 15 button */}
+                <button
+                  type="button"
+                  disabled={groupedTransactions.currentPage <= 1}
+                  onClick={() => {
+                    Sound.click(soundEnabled);
+                    setTxCurrentPage((prev) => Math.max(1, prev - 1));
+                  }}
+                  className="px-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  title="Show previous 15 transactions"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <span>Previous 15</span>
+                </button>
+
+                {/* Next 15 button - replaces current 15 on screen */}
+                <button
+                  type="button"
+                  disabled={groupedTransactions.currentPage >= groupedTransactions.totalPages}
+                  onClick={() => {
+                    Sound.click(soundEnabled);
+                    setTxCurrentPage((prev) => Math.min(groupedTransactions.totalPages, prev + 1));
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  title="Show next 15 transactions (replaces current screen)"
+                >
+                  <span>Next 15</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+
+                {/* Show Recent 15 (Page 1) */}
+                {groupedTransactions.currentPage > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      Sound.click(soundEnabled);
+                      setTxCurrentPage(1);
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl text-gray-500 hover:text-gray-900 dark:hover:text-white text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    Show Recent 15
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    Sound.click(soundEnabled);
+                    setShowAllTransactionsModal(true);
+                  }}
+                  className="text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline cursor-pointer ml-1"
+                >
+                  View All ({groupedTransactions.totalFilteredCount || 0})
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ======================================================================= */}
+        {/* RIGHT COLUMN (Cols 8-12): Category Breakdown, Calendar, Trend & Logs  */}
+        {/* ======================================================================= */}
+        <div className="lg:col-span-5 space-y-6">
+          {/* B. CATEGORY EXPENSE BREAKDOWN & PIE CHART */}
+          <ExpenseDistributionSection
+            expenses={currentExpenses}
+            selectedYear={selectedYear}
+            selectedMonthIndex={selectedMonthIndex}
+            selectedMonthLabel={selectedMonthLabel}
+            formatCurrency={formatCurrency}
+            selectedCategory={selectedCategoryFilter}
+            onSelectCategory={(category) => {
+              setSelectedCategoryFilter(category);
+              setTxCurrentPage(1);
+            }}
+            soundEnabled={soundEnabled}
+          />
+
+          {/* C. SPENDING CALENDAR GRID (Day-by-Day Heatmap) */}
+          <SpendingCalendarGrid
+            expenses={currentExpenses}
+            selectedYear={selectedYear}
+            selectedMonthIndex={selectedMonthIndex}
+            selectedMonthLabel={selectedMonthLabel}
+            onSelectDate={handleCalendarDateSelect}
+            selectedDate={
+              activeFilter === 'custom' && customDateRange.startDate === customDateRange.endDate
+                ? customDateRange.startDate
+                : null
+            }
+            formatCurrency={formatCurrency}
+            soundEnabled={soundEnabled}
+          />
+
+          {/* D. MONTHLY SPENDING TREND CARD */}
+          <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-xs space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base sm:text-lg font-bold text-[#37352F] dark:text-white">
+                  Monthly Trend
+                </h2>
+                <p className="text-xs text-[#787774] dark:text-[#9CA3AF]">
+                  Spending velocity and daily expenditure
+                </p>
+              </div>
+
+              <span className="text-xs font-semibold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/60 px-2.5 py-1 rounded-full border border-purple-200 dark:border-purple-800">
+                {selectedMonthLabel}
+              </span>
+            </div>
+
+            <div className="h-44 w-full pt-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="spendingGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0.0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis
+                    dataKey="label"
+                    stroke="#94A3B8"
+                    fontSize={10}
+                    tickLine={false}
+                    axisLine={{ stroke: '#E2E8F0' }}
+                  />
+                  <YAxis
+                    stroke="#94A3B8"
+                    fontSize={10}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(v) => `₹${v}`}
+                  />
+                  <Tooltip
+                    formatter={(val: number) => [formatCurrency(val), 'Spend']}
+                    contentStyle={{
+                      borderRadius: '12px',
+                      border: '1px solid #E5E7EB',
+                      backgroundColor: '#1E293B',
+                      color: '#FFFFFF',
+                      fontSize: '12px',
+                      fontWeight: 'bold',
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="amount"
+                    stroke="#8B5CF6"
+                    strokeWidth={2.5}
+                    fillOpacity={1}
+                    fill="url(#spendingGradient)"
+                    dot={{ r: 4, fill: '#8B5CF6', strokeWidth: 2, stroke: '#FFFFFF' }}
+                    activeDot={{ r: 6, fill: '#7C3AED' }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          {/* 0. EXCEL SPREADSHEET UPLOAD LOGS & HISTORY CARD */}
+          <div
+            id="excel-sheet-logs-card"
+            className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-xs space-y-4 transition-all"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0">
+                  <FileSpreadsheet className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-sm sm:text-base font-bold text-[#37352F] dark:text-white flex items-center gap-1.5">
+                    <span>Excel Upload Logs</span>
+                  </h2>
+                  <span className="text-[10px] text-[#787774] dark:text-[#9CA3AF] block">
+                    Upload history &amp; batch delete
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-[10px] font-bold text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                  {importLogs.length} {importLogs.length === 1 ? 'sheet' : 'sheets'}
+                </span>
+              </div>
+            </div>
+
+            {/* Quick action bar */}
+            <div className="flex items-center justify-between gap-2 pt-1 border-t border-gray-100 dark:border-gray-800">
+              <button
+                type="button"
+                onClick={() => {
+                  Sound.click(soundEnabled);
+                  setShowImportModal(true);
+                }}
+                className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 cursor-pointer"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Upload New Sheet</span>
+              </button>
+
+              {importedCount > 0 && (
+                <button
+                  type="button"
+                  onClick={handleOpenClearAllSheetsModal}
+                  className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
+                  title="Delete all spendings that came from spreadsheets"
+                >
+                  Clear all sheets ({importedCount})
+                </button>
+              )}
+            </div>
+
+            {/* Sheets history list */}
+            <div className="space-y-3 max-h-96 overflow-y-auto pr-0.5">
+              {importLogs.length === 0 ? (
+                <div className="text-center py-6 px-3 rounded-xl border border-dashed border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30">
+                  <FileSpreadsheet className="w-8 h-8 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
+                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+                    No spreadsheets uploaded yet
+                  </p>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 max-w-[220px] mx-auto">
+                    Upload your Money Manager export (.xlsx) to see upload history and batch actions here.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      Sound.click(soundEnabled);
+                      setShowImportModal(true);
+                    }}
+                    className="mt-3 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer transition-colors"
+                  >
+                    Upload Excel
+                  </button>
+                </div>
+              ) : (
+                importLogs.map((log) => {
+                  const activeMatching = getMatchingExpensesForSheet(log, expenses);
+                  const activeCount = activeMatching.length;
+                  const activeAmount = activeMatching.reduce((s, e) => s + e.amount, 0);
+                  const isFilterActive =
+                    selectedSheetFilter === log.fileName ||
+                    selectedSheetFilter === log.id ||
+                    (selectedSheetFilter && log.fileName && selectedSheetFilter.toLowerCase() === log.fileName.toLowerCase());
+
+                  return (
+                    <div
+                      key={log.id}
+                      className={`p-3.5 rounded-xl border transition-all space-y-2.5 ${
+                        activeCount > 0
+                          ? isFilterActive
+                            ? 'border-purple-400 bg-purple-50/40 dark:bg-purple-950/30 ring-1 ring-purple-400'
+                            : 'border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/30 dark:bg-emerald-950/20'
+                          : 'border-gray-200 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-900/40 opacity-75'
+                      }`}
+                    >
+                      {/* Header: File name & Active badge */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <span
+                            className="text-xs font-bold text-gray-900 dark:text-gray-100 block truncate"
+                            title={log.fileName}
+                          >
+                            {log.fileName}
+                          </span>
+                          <span className="text-[10px] text-gray-500 dark:text-gray-400 flex items-center gap-1 mt-0.5">
+                            <Clock className="w-2.5 h-2.5" />
+                            {new Date(log.uploadDate).toLocaleString('en-IN', {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </div>
+
+                        {activeCount > 0 ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 dark:bg-emerald-900/80 text-emerald-800 dark:text-emerald-200 shrink-0">
+                            {activeCount} in tracker
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400 shrink-0">
+                            Purged / 0 left
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Metrics Chips */}
+                      <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                        <span className="px-2 py-0.5 rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-emerald-700 dark:text-emerald-300 font-semibold">
+                          +{log.addedCount} new added
+                        </span>
+                        {log.skippedCount > 0 && (
+                          <span className="px-2 py-0.5 rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-amber-700 dark:text-amber-400 font-semibold">
+                            {log.skippedCount} duplicates skipped
+                          </span>
+                        )}
+                        {activeAmount > 0 ? (
+                          <span className="px-2 py-0.5 rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-purple-700 dark:text-purple-300 font-bold">
+                            ₹{Math.round(activeAmount).toLocaleString('en-IN')}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {/* Actions for this specific sheet */}
+                      <div className="flex items-center justify-between gap-2 pt-1 border-t border-gray-200/60 dark:border-gray-800/80">
+                        <div className="flex items-center gap-1.5">
+                          {activeCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                Sound.click(soundEnabled);
+                                setSelectedSheetFilter(isFilterActive ? null : log.fileName);
+                              }}
+                              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+                                isFilterActive
+                                  ? 'bg-purple-600 text-white'
+                                  : 'bg-white dark:bg-gray-800 hover:bg-purple-50 dark:hover:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                              }`}
+                              title="Filter spendings list to view items from this spreadsheet"
+                            >
+                              <Filter className="w-3 h-3" />
+                              <span>{isFilterActive ? 'Clear Filter' : 'View Items'}</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Direct Delete Sheet Action */}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenDeleteSheetModal(log)}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900 text-[11px] font-bold transition-colors cursor-pointer"
+                          title={activeCount > 0 ? "Delete spreadsheet and its spendings" : "Remove spreadsheet from upload history"}
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                          <span>{activeCount > 0 ? "Delete Sheet" : "Remove Log"}</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* 1. DYNAMIC QUICK ADD PRESETS CARD (Frequent Transactions) */}
+          <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base sm:text-lg font-bold text-[#37352F] dark:text-white flex items-center gap-2">
+                <span>Quick Add</span>
+              </h2>
+              <span className="text-[11px] font-semibold text-[#787774] dark:text-[#9CA3AF]">
+                {dynamicPresets.length > 0 ? 'Frequent logs' : 'One-tap log'}
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              {dynamicPresets.length > 0 ? (
+                dynamicPresets.map((preset) => (
+                  <button
+                    key={preset.name}
+                    type="button"
+                    onClick={() => handleQuickAddPreset(preset)}
+                    className="w-full flex items-center justify-between p-2.5 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-800/40 hover:bg-purple-50 dark:hover:bg-purple-950/60 hover:border-purple-200 dark:hover:border-purple-800 transition-all cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="text-lg group-hover:scale-110 transition-transform shrink-0">
+                        {preset.icon}
+                      </span>
+                      <div className="text-left min-w-0">
+                        <span className="text-xs font-bold text-[#37352F] dark:text-white block truncate">
+                          {preset.name}
+                        </span>
+                        <span className="text-[10px] text-[#787774] dark:text-[#9CA3AF] block truncate">
+                          Logged {preset.count}x • {preset.category}
+                        </span>
+                      </div>
+                    </div>
+
+                    <span className="text-xs font-extrabold text-purple-600 dark:text-purple-400 bg-white dark:bg-gray-900 px-2 py-0.5 rounded-md shadow-2xs border border-gray-100 dark:border-gray-800 shrink-0">
+                      +{formatCurrency(preset.amount)}
+                    </span>
+                  </button>
+                ))
+              ) : (
+                <div className="p-4 rounded-xl border border-dashed border-gray-200 dark:border-gray-800 text-center space-y-1.5 bg-gray-50/40 dark:bg-gray-900/20">
+                  <p className="text-xs font-bold text-[#37352F] dark:text-[#E2E8F0]">
+                    No frequent transactions yet
+                  </p>
+                  <p className="text-[11px] text-[#787774] dark:text-[#9CA3AF] leading-relaxed">
+                    As you record expenses, your top repeated transactions will automatically appear here for rapid one-tap logging.
+                  </p>
+                </div>
+              )}
+
+              {/* Custom Add New Expense Button */}
+              <button
+                type="button"
+                onClick={() => openAddModal()}
+                className="w-full flex items-center justify-between p-2.5 rounded-xl border border-dashed border-gray-300 dark:border-gray-700 hover:border-purple-400 dark:hover:border-purple-600 hover:bg-purple-50/50 dark:hover:bg-purple-950/30 transition-all cursor-pointer group text-xs font-bold text-[#787774] dark:text-[#9CA3AF] hover:text-purple-600 dark:hover:text-purple-300"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Plus className="w-4 h-4 text-purple-500" />
+                  <span>Custom Expense</span>
+                </div>
+                <span className="text-[11px] font-semibold text-purple-600 dark:text-purple-400">
+                  Add New
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {/* 2. RECURRING / SUBSCRIPTIONS CARD */}
+          <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base sm:text-lg font-bold text-[#37352F] dark:text-white">
+                  Recurring / Subscriptions
+                </h2>
+                <p className="text-[11px] text-[#787774] dark:text-[#9CA3AF]">
+                  Auto-renewals & bills
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => openAddModal({ name: '', amount: 499, category: 'Subscriptions', icon: '💻', note: 'Monthly auto-pay' })}
+                className="text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline cursor-pointer"
+              >
+                View all
+              </button>
+            </div>
+
+            <div className="space-y-2.5">
+              {subscriptions.map((sub: any) => (
+                <div
+                  key={sub.id}
+                  className="p-3 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 flex items-center justify-between group"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="text-base shrink-0">{sub.icon || '🎬'}</span>
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-[#37352F] dark:text-white truncate">
+                        {sub.name}
+                      </div>
+                      <div className="text-[10px] text-[#787774] dark:text-[#9CA3AF]">
+                        {sub.notes || `Next: 2 Sep 2026`}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <div className="text-xs font-extrabold text-[#37352F] dark:text-white">
+                      {formatCurrency(sub.amount)}
+                      <span className="text-[10px] font-normal text-gray-500"> / month</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Upcoming Renewals Highlight Strip */}
+            <div className="p-3 rounded-xl bg-purple-50/80 dark:bg-purple-950/40 border border-purple-100 dark:border-purple-900/60 flex items-center gap-2.5 text-purple-700 dark:text-purple-300">
+              <Calendar className="w-4 h-4 shrink-0 text-purple-600 dark:text-purple-400" />
+              <span className="text-xs font-bold">3 renewals this week</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 4. ADD / EDIT EXPENSE MODAL */}
+      {/* ========================================================================= */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fadeIn">
+          <div className="w-full max-w-lg bg-white dark:bg-[#1A202C] rounded-2xl shadow-2xl border border-[#E5E7EB] dark:border-[#2D3748] overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 border-b border-[#E5E7EB] dark:border-[#2D3748] flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 flex items-center justify-center">
+                  <Plus className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-[#37352F] dark:text-white">
+                    {editingExpense ? 'Edit Expense' : 'Log New Expense'}
+                  </h3>
+                  <p className="text-xs text-[#787774] dark:text-[#9CA3AF]">
+                    Record immediate spending or recurring subscription
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddModal(false)}
+                className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Form Body */}
+            <form onSubmit={handleSaveForm} className="p-4 sm:p-5 space-y-4 overflow-y-auto">
+              {/* Transaction Type Segmented Control */}
+              <div>
+                <label className="block text-xs font-bold text-[#37352F] dark:text-white uppercase tracking-wider mb-1.5">
+                  Transaction Type
+                </label>
+                <div className="grid grid-cols-2 p-1 rounded-xl bg-gray-100 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setFormDirection('DEBIT')}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                      formDirection === 'DEBIT'
+                        ? 'bg-rose-500 text-white shadow-xs'
+                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${formDirection === 'DEBIT' ? 'bg-white' : 'bg-rose-500'}`} />
+                    <span>Debit (Expense)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormDirection('CREDIT')}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                      formDirection === 'CREDIT'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${formDirection === 'CREDIT' ? 'bg-white' : 'bg-emerald-500'}`} />
+                    <span>Credit (Income / Refund)</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Amount Input */}
+              <div>
+                <label className="block text-xs font-bold text-[#37352F] dark:text-white uppercase tracking-wider mb-1">
+                  Amount (₹) *
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-base">
+                    ₹
+                  </span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    placeholder="0.00"
+                    value={formAmount}
+                    onChange={(e) => setFormAmount(e.target.value)}
+                    className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-[#E5E7EB] dark:border-[#2D3748] bg-white dark:bg-[#111827] text-base font-black text-[#37352F] dark:text-white outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* Description / Merchant Name */}
+              <div>
+                <label className="block text-xs font-bold text-[#37352F] dark:text-white uppercase tracking-wider mb-1">
+                  Description / Merchant *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Starbucks, Supermarket Grocery, Uber Ride"
+                  value={formName}
+                  onChange={(e) => setFormName(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#2D3748] bg-white dark:bg-[#111827] text-xs sm:text-sm font-semibold text-[#37352F] dark:text-white outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                />
+              </div>
+
+              {/* Category Grid Selection */}
+              <div>
+                <label className="block text-xs font-bold text-[#37352F] dark:text-white uppercase tracking-wider mb-1.5">
+                  Category
+                </label>
+                <div className="grid grid-cols-3 gap-1.5 max-h-36 overflow-y-auto p-1 border border-gray-100 dark:border-gray-800 rounded-xl">
+                  {EXPENSE_CATEGORIES.map((cat) => (
+                    <button
+                      key={cat.name}
+                      type="button"
+                      onClick={() => {
+                        setFormCategory(cat.name);
+                        setFormIcon(cat.icon);
+                      }}
+                      className={`flex items-center gap-1.5 p-2 rounded-lg text-left text-xs font-bold transition-all cursor-pointer ${
+                        formCategory === cat.name
+                          ? 'bg-purple-600 text-white shadow-xs'
+                          : 'bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      <span>{cat.icon}</span>
+                      <span className="truncate">{cat.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Date & Payment Method */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-[#37352F] dark:text-white uppercase tracking-wider mb-1">
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    value={formDate}
+                    onChange={(e) => setFormDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#2D3748] bg-white dark:bg-[#111827] text-xs font-semibold text-[#37352F] dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#37352F] dark:text-white uppercase tracking-wider mb-1">
+                    Payment Method
+                  </label>
+                  <select
+                    value={formPaymentMethod}
+                    onChange={(e) => setFormPaymentMethod(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#2D3748] bg-white dark:bg-[#111827] text-xs font-semibold text-[#37352F] dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="Credit Card">💳 Credit Card</option>
+                    <option value="UPI / Debit">📱 UPI / Debit</option>
+                    <option value="Cash">💵 Cash</option>
+                    <option value="Bank Transfer">🏦 Bank Transfer</option>
+                    <option value="Apple / Google Pay">⚡ Mobile Pay</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Billing Cycle / Subscription Toggle */}
+              <div>
+                <label className="block text-xs font-bold text-[#37352F] dark:text-white uppercase tracking-wider mb-1">
+                  Billing Type
+                </label>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {(['one-time', 'monthly', 'yearly', 'weekly'] as const).map((cycle) => (
+                    <button
+                      key={cycle}
+                      type="button"
+                      onClick={() => setFormBillingCycle(cycle)}
+                      className={`py-1.5 px-2 rounded-lg text-xs font-bold capitalize transition-colors ${
+                        formBillingCycle === cycle
+                          ? 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-300 dark:border-purple-700'
+                          : 'bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-100'
+                      }`}
+                    >
+                      {cycle === 'one-time' ? 'One-time' : cycle}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Optional Notes */}
+              <div>
+                <label className="block text-xs font-bold text-[#37352F] dark:text-white uppercase tracking-wider mb-1">
+                  Optional Note / Receipt Details
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Starbucks branch, grocery discount applied"
+                  value={formNotes}
+                  onChange={(e) => setFormNotes(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#2D3748] bg-white dark:bg-[#111827] text-xs font-medium text-[#37352F] dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-3 border-t border-gray-100 dark:border-gray-800 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 text-xs font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 active:scale-98 text-white text-xs font-bold shadow-sm transition-all"
+                >
+                  {editingExpense ? 'Save Changes' : 'Log Expense'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 5. VIEW ALL TRANSACTIONS MODAL */}
+      {/* ========================================================================= */}
+      {showAllTransactionsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fadeIn">
+          <div className="w-full max-w-2xl bg-white dark:bg-[#1A202C] rounded-2xl shadow-2xl border border-[#E5E7EB] dark:border-[#2D3748] overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="p-4 sm:p-5 border-b border-[#E5E7EB] dark:border-[#2D3748] flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-extrabold text-[#37352F] dark:text-white">
+                  All Transactions Log
+                </h3>
+                <p className="text-xs text-[#787774] dark:text-[#9CA3AF]">
+                  Complete history ({filteredModalExpenses.length} of {expenses.length} records)
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAllTransactionsModal(false)}
+                className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Filter & Sort Toolbar */}
+            <div className="px-4 py-2.5 bg-gray-50/70 dark:bg-[#151C28] border-b border-[#E5E7EB] dark:border-[#2D3748] flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Filter className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                  <select
+                    value={modalCategoryFilter}
+                    onChange={(e) => {
+                      Sound.click(soundEnabled);
+                      setModalCategoryFilter(e.target.value);
+                    }}
+                    className="px-2.5 py-1 rounded-full text-xs font-semibold bg-white dark:bg-[#1E293B] text-[#37352F] dark:text-white border border-[#E5E7EB] dark:border-[#2D3748] outline-none cursor-pointer"
+                  >
+                    <option value="all">All Categories</option>
+                    {EXPENSE_CATEGORIES.map((c) => (
+                      <option key={c.name} value={c.name}>
+                        {c.icon} {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <DateRangePicker
+                  dateRange={modalDateRange}
+                  isActive={Boolean(modalDateRange.startDate || modalDateRange.endDate)}
+                  onChange={(range) => {
+                    Sound.click(soundEnabled);
+                    setModalDateRange(range);
+                  }}
+                  onClear={() => {
+                    Sound.click(soundEnabled);
+                    setModalDateRange({ startDate: '', endDate: '' });
+                  }}
+                  compact
+                  align="left"
+                />
+              </div>
+
+              <div className="flex items-center gap-1.5 ml-auto">
+                <ArrowUpDown className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                <select
+                  value={modalSortBy}
+                  onChange={(e) => {
+                    Sound.click(soundEnabled);
+                    setModalSortBy(e.target.value as any);
+                  }}
+                  className="px-2.5 py-1 rounded-full text-xs font-semibold bg-white dark:bg-[#1E293B] text-[#37352F] dark:text-white border border-[#E5E7EB] dark:border-[#2D3748] outline-none cursor-pointer"
+                >
+                  <option value="date-desc">Newest First</option>
+                  <option value="date-asc">Oldest First</option>
+                  <option value="amount-desc">Amount: High to Low</option>
+                  <option value="amount-asc">Amount: Low to High</option>
+                  <option value="name-asc">Name (A-Z)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="p-4 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-800 space-y-1">
+              {filteredModalExpenses.length === 0 ? (
+                <div className="text-center py-10 space-y-3">
+                  <div className="text-3xl">💳</div>
+                  <h4 className="text-sm font-bold text-gray-800 dark:text-white">
+                    {expenses.length === 0 ? 'YOUR SPENDING JOURNEY STARTS HERE' : 'NO MATCHING TRANSACTIONS'}
+                  </h4>
+                  <p className="text-xs text-gray-500 max-w-sm mx-auto">
+                    {expenses.length === 0
+                      ? 'Track everyday expenses so you can understand where your money goes.'
+                      : 'No expenses found with the selected category filter.'}
+                  </p>
+                  {expenses.length === 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAllTransactionsModal(false);
+                        openAddModal();
+                      }}
+                      className="px-4 py-2 rounded-xl bg-purple-600 text-white text-xs font-bold shadow-xs hover:bg-purple-700"
+                    >
+                      Add First Expense
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setModalCategoryFilter('all')}
+                      className="px-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-700 dark:text-gray-200"
+                    >
+                      Clear Category Filter
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <AnimatePresence mode="popLayout" initial={false}>
+                  {filteredModalExpenses.map((tx) => (
+                    <motion.div
+                      layout
+                      initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95, y: -4, transition: { duration: 0.15 } }}
+                      transition={{
+                        layout: { type: "spring", stiffness: 350, damping: 30 },
+                        opacity: { duration: 0.2 },
+                      }}
+                      key={tx.id}
+                      className="py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-800/50 px-2 rounded-xl transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg">{getCategoryIcon(tx.category, tx.icon)}</span>
+                        <div>
+                          <div className="text-xs sm:text-sm font-bold text-[#37352F] dark:text-white">
+                            {tx.name}
+                          </div>
+                          <div className="text-[11px] text-gray-500">
+                            {tx.date} • {tx.paymentMethod || 'Card'} {tx.notes ? `• ${tx.notes}` : ''}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs sm:text-sm font-extrabold text-[#37352F] dark:text-white">
+                          {formatCurrency(tx.amount)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowAllTransactionsModal(false);
+                            openEditModal(tx);
+                          }}
+                          className="p-1 text-gray-400 hover:text-purple-600"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowAllTransactionsModal(false);
+                            handleOpenDeleteExpenseModal(tx);
+                          }}
+                          className="p-1 text-gray-400 hover:text-rose-600 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Excel / Spreadsheet Import Modal */}
+      <ExcelImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImportSuccess={handleImportSuccess}
+        existingExpenses={expenses}
+        soundEnabled={soundEnabled}
+        importLogs={importLogs}
+        onOpenDeleteSheet={(log) => {
+          setShowImportModal(false);
+          handleOpenDeleteSheetModal(log);
+        }}
+      />
+
+      {/* SMS Expense Auto-Logging Modal */}
+      <SmsExpenseModal
+        isOpen={showSmsModal}
+        onClose={() => setShowSmsModal(false)}
+        soundEnabled={soundEnabled}
+      />
+
+      {/* ========================================================================= */}
+      {/* 9. SAFE IN-APP CONFIRMATION MODALS (Replaces window.confirm/alert) */}
+      {/* ========================================================================= */}
+
+      {/* Modal 0: Delete Single Spending Record Modal */}
+      {deleteExpenseModal.isOpen && deleteExpenseModal.item && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div
+            className="w-full max-w-md bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-expense-modal-heading"
+          >
+            <div className="p-5 sm:p-6 space-y-4">
+              {/* Modal Header */}
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 id="delete-expense-modal-heading" className="text-base font-bold text-gray-900 dark:text-white">
+                    Delete Spending Record
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    Are you sure you want to delete this expense record?
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDeleteExpenseModal({ isOpen: false, item: null })}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Item Info Box */}
+              <div className="p-3.5 rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700/80 flex items-center justify-between text-xs">
+                <div className="min-w-0 pr-2">
+                  <div className="font-semibold text-gray-900 dark:text-white text-sm truncate">
+                    {deleteExpenseModal.item.name}
+                  </div>
+                  <div className="text-gray-500 dark:text-gray-400 mt-0.5 flex items-center gap-2">
+                    <span>{deleteExpenseModal.item.category}</span>
+                    <span>•</span>
+                    <span>{deleteExpenseModal.item.date}</span>
+                  </div>
+                </div>
+                <div className="font-bold text-base text-rose-600 dark:text-rose-400 shrink-0 font-mono">
+                  {formatCurrency(deleteExpenseModal.item.amount)}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setDeleteExpenseModal({ isOpen: false, item: null })}
+                  className="px-4 py-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDeleteExpense}
+                  className="px-4 py-2 text-xs font-semibold bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Record</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 1: Delete Specific Spreadsheet Modal */}
+      {deleteSheetModal.isOpen && deleteSheetModal.log && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div
+            className="w-full max-w-md bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-sheet-modal-heading"
+          >
+            <div className="p-5 sm:p-6 space-y-4">
+              {/* Modal Header */}
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 id="delete-sheet-modal-heading" className="text-base font-bold text-gray-900 dark:text-white">
+                    Delete Spreadsheet
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate font-mono">
+                    {deleteSheetModal.log.fileName}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDeleteSheetModal({ isOpen: false, log: null, matchingCount: 0, matchingAmount: 0 })}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Sheet Stats Box */}
+              <div className="p-3.5 rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700/80 space-y-2 text-xs">
+                <div className="flex items-center justify-between text-gray-600 dark:text-gray-300">
+                  <span>Uploaded On:</span>
+                  <span className="font-semibold text-gray-800 dark:text-gray-200">
+                    {new Date(deleteSheetModal.log.uploadDate).toLocaleDateString('en-IN', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-gray-600 dark:text-gray-300">
+                  <span>Active in Spendings:</span>
+                  <span className="font-bold text-rose-600 dark:text-rose-400">
+                    {deleteSheetModal.matchingCount} {deleteSheetModal.matchingCount === 1 ? 'item' : 'items'} ({formatCurrency(deleteSheetModal.matchingAmount)})
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                {deleteSheetModal.matchingCount > 0 ? (
+                  <>
+                    Are you sure you want to delete this spreadsheet? You can choose to delete all{' '}
+                    <strong>{deleteSheetModal.matchingCount} imported transactions</strong> from your tracker, or only remove this spreadsheet from your upload history.
+                  </>
+                ) : (
+                  <>
+                    This spreadsheet has no active spendings currently in your tracker. Would you like to remove it from your upload history list?
+                  </>
+                )}
+              </p>
+
+              {/* Action Buttons */}
+              <div className="space-y-2 pt-2">
+                {deleteSheetModal.matchingCount > 0 ? (
+                  <>
+                    <button
+                      type="button"
+                      id="btn-confirm-delete-sheet-and-spendings"
+                      onClick={() => handleConfirmDeleteSheet(true)}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-98 text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      <span>Delete Sheet &amp; All {deleteSheetModal.matchingCount} Spendings</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      id="btn-confirm-remove-sheet-log-only"
+                      onClick={() => handleConfirmDeleteSheet(false)}
+                      className="w-full py-2 px-4 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-semibold transition-colors cursor-pointer"
+                    >
+                      Remove from History Only (Keep Spendings)
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    id="btn-confirm-delete-sheet-log"
+                    onClick={() => handleConfirmDeleteSheet(false)}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-98 text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Remove from Upload History</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setDeleteSheetModal({ isOpen: false, log: null, matchingCount: 0, matchingAmount: 0 })}
+                  className="w-full py-2 px-4 rounded-xl border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 2: Clear All Spreadsheet Spendings Modal */}
+      {clearAllSheetsModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div
+            className="w-full max-w-md bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="p-5 sm:p-6 space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-base font-bold text-gray-900 dark:text-white">
+                    Clear All Spreadsheet Spendings
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    Delete {clearAllSheetsModal.count} imported transactions
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setClearAllSheetsModal({ isOpen: false, count: 0 })}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                Are you sure you want to delete all <strong>{clearAllSheetsModal.count} spendings</strong> imported from spreadsheets? This will also reset your spreadsheet upload history. Your manually entered spendings will remain completely intact.
+              </p>
+
+              <div className="space-y-2 pt-2">
+                <button
+                  type="button"
+                  onClick={handleConfirmClearAllSheets}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-98 text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Delete All {clearAllSheetsModal.count} Spreadsheet Spendings</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setClearAllSheetsModal({ isOpen: false, count: 0 })}
+                  className="w-full py-2 px-4 rounded-xl border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 3: Clear All Spendings (Wipe Tracker) Modal */}
+      {clearAllExpensesModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div
+            className="w-full max-w-md bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="p-5 sm:p-6 space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-base font-bold text-gray-900 dark:text-white">
+                    Clear All Spending Records
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    Wipe {expenses.length} spending records
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setClearAllExpensesModal(false)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                Are you sure you want to delete <strong>ALL {expenses.length} spending transactions</strong>? This will completely clear all spending records and spreadsheet logs from memory.
+              </p>
+
+              <div className="space-y-2 pt-2">
+                <button
+                  type="button"
+                  onClick={handleConfirmClearAllExpenses}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-98 text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Wipe All {expenses.length} Records</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setClearAllExpensesModal(false)}
+                  className="w-full py-2 px-4 rounded-xl border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Transaction Inspector / Detail Sheet */}
+      {inspectingExpense && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div
+            className="w-full max-w-lg bg-white dark:bg-[#1A202C] border border-[#E5E7EB] dark:border-[#2D3748] rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="p-6 space-y-5">
+              {/* Header */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shrink-0 border ${
+                      isCreditTransaction(inspectingExpense)
+                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                        : 'bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 border-purple-200 dark:border-purple-800'
+                    }`}
+                  >
+                    {getCategoryIcon(inspectingExpense.category, inspectingExpense.icon)}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-black tracking-wider ${
+                          isCreditTransaction(inspectingExpense)
+                            ? 'bg-emerald-100 dark:bg-emerald-900/80 text-emerald-800 dark:text-emerald-200'
+                            : 'bg-rose-100 dark:bg-rose-900/80 text-rose-800 dark:text-rose-200'
+                        }`}
+                      >
+                        {isCreditTransaction(inspectingExpense) ? 'CREDIT / DEPOSIT' : 'DEBIT / EXPENSE'}
+                      </span>
+                      <span className="text-xs text-gray-500 font-mono">{inspectingExpense.date}</span>
+                    </div>
+                    <h3 className="text-lg font-black text-gray-900 dark:text-white mt-0.5">
+                      {getTransactionDisplayTitle(inspectingExpense)}
+                    </h3>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setInspectingExpense(null)}
+                  className="p-1.5 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Amount Banner */}
+              <div
+                className={`p-4 rounded-2xl border text-center ${
+                  isCreditTransaction(inspectingExpense)
+                    ? 'bg-emerald-50/60 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-gray-50 dark:bg-gray-800/60 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white'
+                }`}
+              >
+                <div className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                  Transaction Amount
+                </div>
+                <div className="text-3xl font-black mt-1">
+                  {isCreditTransaction(inspectingExpense) ? '+' : '-'}₹
+                  {Number(inspectingExpense.amount || 0).toLocaleString('en-IN', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </div>
+              </div>
+
+              {/* Details Key-Value Grid */}
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-3 rounded-xl bg-gray-50 dark:bg-[#111827] border border-gray-100 dark:border-gray-800">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                    Category
+                  </span>
+                  <span className="font-bold text-gray-800 dark:text-gray-200 mt-0.5 block">
+                    {inspectingExpense.category || 'General'}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-gray-50 dark:bg-[#111827] border border-gray-100 dark:border-gray-800">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                    Time
+                  </span>
+                  <span className="font-bold font-mono text-gray-800 dark:text-gray-200 mt-0.5 block">
+                    {inspectingExpense.time || 'Not specified'}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-gray-50 dark:bg-[#111827] border border-gray-100 dark:border-gray-800">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                    Payment Method
+                  </span>
+                  <span className="font-bold text-gray-800 dark:text-gray-200 mt-0.5 block">
+                    {inspectingExpense.paymentMethod || 'UPI / Bank'}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-gray-50 dark:bg-[#111827] border border-gray-100 dark:border-gray-800">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                    Bank / Account
+                  </span>
+                  <span className="font-bold text-gray-800 dark:text-gray-200 mt-0.5 block truncate">
+                    {inspectingExpense.bankOrAccount || inspectingExpense.bankName || 'Direct'}
+                  </span>
+                </div>
+
+                {inspectingExpense.referenceId && (
+                  <div className="col-span-2 p-3 rounded-xl bg-gray-50 dark:bg-[#111827] border border-gray-100 dark:border-gray-800">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                      Reference / UTR ID
+                    </span>
+                    <span className="font-mono font-bold text-purple-600 dark:text-purple-400 mt-0.5 block select-all">
+                      {inspectingExpense.referenceId}
+                    </span>
+                  </div>
+                )}
+
+                {inspectingExpense.notes && (
+                  <div className="col-span-2 p-3 rounded-xl bg-gray-50 dark:bg-[#111827] border border-gray-100 dark:border-gray-800">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                      Notes &amp; Description
+                    </span>
+                    <span className="text-gray-700 dark:text-gray-300 mt-0.5 block leading-relaxed">
+                      {inspectingExpense.notes}
+                    </span>
+                  </div>
+                )}
+
+                {inspectingExpense.rawSmsText && (
+                  <div className="col-span-2 p-3 rounded-xl bg-gray-50 dark:bg-[#111827] border border-gray-100 dark:border-gray-800">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                      Original SMS Text
+                    </span>
+                    <p className="font-mono text-[11px] text-gray-600 dark:text-gray-400 mt-0.5 select-all leading-normal">
+                      {inspectingExpense.rawSmsText}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-between gap-3 pt-2 border-t border-gray-100 dark:border-gray-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const toDelete = inspectingExpense;
+                    setInspectingExpense(null);
+                    handleOpenDeleteExpenseModal(toDelete);
+                  }}
+                  className="px-4 py-2 rounded-xl text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const toEdit = inspectingExpense;
+                      setInspectingExpense(null);
+                      openEditModal(toEdit);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 hover:bg-purple-100 border border-purple-200 dark:border-purple-800 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                    <span>Edit Transaction</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setInspectingExpense(null)}
+                    className="px-4 py-2 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Action Toast */}
+      {actionToast && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-2xl text-xs font-bold border border-gray-800 dark:border-gray-200 animate-in slide-in-from-bottom-5 duration-200">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 dark:text-emerald-600 shrink-0" />
+          <span>{actionToast.message}</span>
+          <button
+            type="button"
+            onClick={() => setActionToast(null)}
+            className="ml-2 text-gray-400 hover:text-white dark:hover:text-gray-900 p-0.5 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};

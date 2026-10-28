@@ -1,0 +1,10 @@
+/build/*
+!/build/.npmkeep
+
+# Keystores and signing credentials (untracked for security)
+*.jks
+*.keystore
+release-key.jks
+release.properties
+release-signing.properties
+

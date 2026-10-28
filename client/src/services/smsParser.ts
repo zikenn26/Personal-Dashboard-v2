@@ -1,0 +1,902 @@
+import { ExpenseCategory, ParsedSmsTransaction } from '../types';
+
+/**
+ * Converts any string into Title Case (e.g. "ARPITA PRIYADAR" -> "Arpita Priyadar")
+ * Preserves banking acronyms such as "ATM", "UPI", and "PNR".
+ */
+export function toTitleCase(raw: string): string {
+  if (!raw) return '';
+  const cleaned = raw.trim().replace(/\s+/g, ' ');
+  return cleaned
+    .split(' ')
+    .map((word) => {
+      if (!word) return '';
+      if (word.toUpperCase() === 'ATM') return 'ATM';
+      if (word.toUpperCase() === 'UPI') return 'UPI';
+      if (word.toUpperCase() === 'PNR') return 'PNR';
+      if (word.includes('-')) {
+        return word
+          .split('-')
+          .map((sub) => {
+            if (!sub) return '';
+            if (sub.toUpperCase() === 'ATM') return 'ATM';
+            if (sub.toUpperCase() === 'UPI') return 'UPI';
+            return sub.charAt(0).toUpperCase() + sub.slice(1).toLowerCase();
+          })
+          .join('-');
+      }
+      if (word.includes('.')) {
+        return word
+          .split('.')
+          .map((sub) => {
+            if (!sub) return '';
+            if (sub.toUpperCase() === 'ATM') return 'ATM';
+            return sub.charAt(0).toUpperCase() + sub.slice(1).toLowerCase();
+          })
+          .join('.');
+      }
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(' ');
+}
+
+/**
+ * Normalizes payee and merchant names by cleaning trailing punctuation, stop words,
+ * handles, and formatting in clean Title Case.
+ */
+export function cleanMerchantName(raw: string): string {
+  if (!raw) return '';
+
+  let cleaned = raw
+    .trim()
+    .replace(/^[\s,.\-_:;]+|[\s,.\-_:;]+$/g, '')
+    // Strip trailing reference, date, status words, or balance noise
+    .replace(/\s+(?:on|via|ref|using|dated|rrn|txn|imps|neft|was|is|has\s+been|confirmed|successful|success)\b.*$/i, '')
+    .replace(/\s+(?:A\/c|card|ending|\*+|xx+).*$/i, '')
+    .trim();
+
+  // Strip excessive whitespace
+  cleaned = cleaned.replace(/\s+/g, ' ');
+
+  // Clean VPA handles like xyz@okaxis -> xyz or arpita.priyadar@okaxis -> arpita priyadar
+  if (cleaned.includes('@')) {
+    const handleMatch = cleaned.match(/^([A-Za-z0-9._\-]+)@/);
+    if (handleMatch && handleMatch[1]) {
+      cleaned = handleMatch[1].replace(/[._\-]+/g, ' ').trim();
+    }
+  }
+
+  // Strip leading 'vpa', 'to', 'upi to', 'upi' if accidentally caught
+  cleaned = cleaned.replace(/^(?:vpa|to|upi\s+to|upi)\s+/i, '').trim();
+
+  // If candidate is purely numbers or too short
+  if (/^\d+$/.test(cleaned) || cleaned.length < 2) {
+    return '';
+  }
+
+  // Always capitalize nicely in Title Case
+  cleaned = toTitleCase(cleaned);
+
+  if (/^(upi|vpa|bank|transaction|account|card|rs|inr)$/i.test(cleaned)) {
+    return '';
+  }
+
+  return cleaned || 'Bank Transaction';
+}
+
+/**
+ * Automatically infers the most relevant ExpenseCategory based on the merchant,
+ * payee, or SMS keywords.
+ */
+export function inferExpenseCategory(text: string, merchant: string = ''): ExpenseCategory {
+  const combined = `${merchant} ${text}`.toLowerCase();
+
+  // Groceries & Quick Commerce
+  if (
+    /\b(zepto|blinkit|instamart|bigbasket|dmart|supermarket|grocery|groceries|kirana|provision|nature'?s basket|spencers|more retail)\b/i.test(
+      combined
+    )
+  ) {
+    return 'Groceries & Food';
+  }
+
+  // Food & Dining / Snacks & Coffee
+  if (
+    /\b(starbucks|cafe|coffee|chai|tea stall|chaayos|blue tokai|barista|ccd|costa)\b/i.test(combined)
+  ) {
+    return 'Snacks & Coffee';
+  }
+
+  if (
+    /\b(swiggy|zomato|mcdonald|kfc|dominos|pizza|burger|restaurant|dine|dining|eats|bakery|barbeque|bistro|dhaba|subway|biryani|kitchen)\b/i.test(
+      combined
+    )
+  ) {
+    return 'Dining Out';
+  }
+
+  // Transportation & Commute
+  if (
+    /\b(uber|ola|rapido|metro|petrol|fuel|diesel|cng|indian oil|bharat petroleum|hpcl|shell|fastag|toll|parking|taxi|transit|cab)\b/i.test(
+      combined
+    )
+  ) {
+    return 'Taxi & Transit';
+  }
+
+  // Travel (Flights, Trains, Hotels)
+  if (
+    /\b(irctc|railways|redbus|bus|train|flight|airline|indigo|air india|vistara|spicejet|makemytrip|goibibo|cleartrip|yatra|hotel|resort|airbnb|booking\.com)\b/i.test(
+      combined
+    )
+  ) {
+    return 'Travel & Leisure';
+  }
+
+  // Shopping & E-Commerce
+  if (
+    /\b(amazon|flipkart|myntra|meesho|ajio|zara|h&m|nykaa|retail|store|mall|croma|reliance digital|decathlon|uniqlo|lenskart|tata cliq)\b/i.test(
+      combined
+    )
+  ) {
+    return 'Shopping & Retail';
+  }
+
+  // Utilities & Bills
+  if (
+    /\b(electricity|water bill|gas bill|bescom|mseb|adani electricity|airtel|jio|vi|broadband|wifi|recharge|dth|tata play|dish tv|bill payment|bbps|cylinder)\b/i.test(
+      combined
+    )
+  ) {
+    return 'Bills & Utilities';
+  }
+
+  // Subscriptions & Tech
+  if (
+    /\b(netflix|spotify|prime video|hotstar|youtube|apple\.com|google play|openai|chatgpt|github|aws|domain|hosting)\b/i.test(
+      combined
+    )
+  ) {
+    return 'Tech & Subscriptions';
+  }
+
+  // Entertainment
+  if (
+    /\b(bookmyshow|pvr|inox|cinema|movie|steam|sonyliv|zee5|disney|playstation|game)\b/i.test(
+      combined
+    )
+  ) {
+    return 'Entertainment';
+  }
+
+  // Health & Wellness / Pharmacy
+  if (
+    /\b(apollo|pharmacy|chemist|medplus|practo|netmeds|hospital|clinic|lab|1mg|tata 1mg|pharmeasy|dental|gym|cult\.fit|cult fit|doctor|medicines)\b/i.test(
+      combined
+    )
+  ) {
+    return 'Health & Fitness';
+  }
+
+  // Education
+  if (
+    /\b(coursera|udemy|school|college|university|tuition|fees|coaching|books|stationery|exam fee)\b/i.test(
+      combined
+    )
+  ) {
+    return 'Education';
+  }
+
+  return 'Other';
+}
+
+/**
+ * Formats a Date or timestamp into YYYY-MM-DD
+ */
+function formatDateToYMD(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Attempts to parse date strings found in SMS bodies like "23-Sep-26", "23/09/2026", "23-09-26", etc.
+ */
+function extractDateFromSms(text: string, fallbackTimestamp: number): { date: string; rawDate?: string; time?: string } {
+  const fallbackDate = new Date(fallbackTimestamp || Date.now());
+  let date = formatDateToYMD(fallbackDate);
+  let rawDate: string | undefined;
+  let time = `${String(fallbackDate.getHours()).padStart(2, '0')}:${String(fallbackDate.getMinutes()).padStart(2, '0')}`;
+
+  // 1. Time match: "14:35:20" or "02:30 PM"
+  const timeMatch = text.match(/\b([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?\s*(am|pm)?\b/i);
+  if (timeMatch) {
+    let hours = parseInt(timeMatch[1], 10);
+    const mins = timeMatch[2];
+    const meridiem = timeMatch[4]?.toLowerCase();
+    if (meridiem === 'pm' && hours < 12) hours += 12;
+    if (meridiem === 'am' && hours === 12) hours = 0;
+    time = `${String(hours).padStart(2, '0')}:${mins}`;
+  }
+
+  // 2. Date match: "23-Sep-26" or "23-Sep-2026" or "23Sep26"
+  const textMonthMatch = text.match(
+    /\b(\d{1,2})[-/\s]?(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[-/\s]?(\d{2,4})\b/i
+  );
+  if (textMonthMatch) {
+    rawDate = textMonthMatch[0];
+    const day = parseInt(textMonthMatch[1], 10);
+    const monthStr = textMonthMatch[2].toLowerCase();
+    let year = parseInt(textMonthMatch[3], 10);
+    if (year < 100) year += 2000;
+
+    const monthMap: Record<string, number> = {
+      jan: 0,
+      feb: 1,
+      mar: 2,
+      apr: 3,
+      may: 4,
+      jun: 5,
+      jul: 6,
+      aug: 7,
+      sep: 8,
+      oct: 9,
+      nov: 10,
+      dec: 11,
+    };
+    const monthIdx = monthMap[monthStr.slice(0, 3)];
+    if (monthIdx !== undefined) {
+      const parsedD = new Date(year, monthIdx, day);
+      if (!isNaN(parsedD.getTime())) {
+        date = formatDateToYMD(parsedD);
+      }
+    }
+  } else {
+    // Numeric date match: "23/09/2026" or "23-09-26"
+    const numericDateMatch = text.match(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b/);
+    if (numericDateMatch) {
+      rawDate = numericDateMatch[0];
+      const day = parseInt(numericDateMatch[1], 10);
+      const month = parseInt(numericDateMatch[2], 10) - 1;
+      let year = parseInt(numericDateMatch[3], 10);
+      if (year < 100) year += 2000;
+
+      const currentYear = new Date().getFullYear();
+      if (year >= currentYear - 2 && year <= currentYear + 2 && month >= 0 && month <= 11 && day >= 1 && day <= 31) {
+        const parsedD = new Date(year, month, day);
+        if (!isNaN(parsedD.getTime())) {
+          date = formatDateToYMD(parsedD);
+        }
+      }
+    }
+  }
+
+  return { date, rawDate, time };
+}
+
+/**
+ * Computes a deterministic fingerprint string to identify identical transactions
+ * across duplicate SMS deliveries or re-scans.
+ */
+function computeTransactionFingerprint(
+  amount: number,
+  type: string,
+  date: string,
+  merchant: string,
+  accountLast4?: string,
+  refId?: string,
+  time?: string
+): string {
+  const cleanMerchant = merchant.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const cleanRef = (refId || '').trim().toUpperCase();
+  const cleanAcc = (accountLast4 || '').trim();
+  const cleanTime = (time || '').trim();
+  return `sms_${type}_${amount.toFixed(2)}_${date}_${cleanRef || `${cleanMerchant}_${cleanAcc}_${cleanTime}`}`;
+}
+
+/**
+ * Main parser: evaluates an SMS message body, identifies whether it is an actual
+ * financial transaction, extracts all structured fields, filters out OTPs/ads/spams,
+ * and creates a normalized ParsedSmsTransaction object.
+ */
+export function parseSmsTransaction(
+  body: string,
+  sender: string = '',
+  timestamp: number = Date.now()
+): ParsedSmsTransaction {
+  const fallbackTime = timestamp || Date.now();
+  const { date: defaultDate, time: defaultTime } = extractDateFromSms(body, fallbackTime);
+
+  const baseResult: ParsedSmsTransaction = {
+    isTransaction: false,
+    type: 'expense',
+    amount: 0,
+    currency: '₹',
+    merchant: '',
+    category: 'Other',
+    date: defaultDate,
+    time: defaultTime,
+    rawSms: body,
+    sender,
+    timestamp: fallbackTime,
+    fingerprint: '',
+  };
+
+  if (!body || body.trim().length === 0) {
+    baseResult.ignoreReason = 'Empty SMS text';
+    return baseResult;
+  }
+
+  const text = body.trim();
+  const lower = text.toLowerCase();
+
+  // --------------------------------------------------------------------------
+  // STEP 1: PRE-FILTER & REJECTION (OTPs, Ads, Spam, Upcoming Due Reminders)
+  // --------------------------------------------------------------------------
+
+  // Reject OTP and authentication codes
+  if (
+    (/\b(otp|one time password|verification code)\b/i.test(lower) &&
+      (/\b(is your|secret otp|valid for|to authenticate|use this otp)\b/i.test(lower) ||
+        /\botp\s*(?:is|:)?\s*\d+/i.test(lower))) ||
+    lower.includes('is your one time password') ||
+    lower.includes('is your verification code') ||
+    lower.includes('security code')
+  ) {
+    baseResult.ignoreReason = 'Authentication OTP / Security Code';
+    return baseResult;
+  }
+
+  // Reject promotional ads & loan pre-approvals
+  if (
+    /\b(pre-approved loan|instant loan|apply for credit card|apply now|win cash|cashback offer|flat \d+% off|limited period offer|upgrade your card|congratulations! you won)\b/i.test(
+      lower
+    ) &&
+    !/\b(debited|credited|spent|withdrawn)\b/i.test(lower)
+  ) {
+    baseResult.ignoreReason = 'Promotional / Marketing Offer';
+    return baseResult;
+  }
+
+  // Reject recharge offers & marketing promotions
+  if (
+    /\b(recharge offer|recharge now|special recharge|exclusive recharge|recharge with rs\.?|cashback on recharge|flat \d+% off on recharge)\b/i.test(
+      lower
+    ) &&
+    !/\b(debited|payment of rs|spent|withdrawn)\b/i.test(lower)
+  ) {
+    baseResult.ignoreReason = 'Recharge Promotion / Marketing Offer';
+    return baseResult;
+  }
+
+  // Reject upcoming bill payment reminders (NOT yet paid)
+  if (
+    /\b(bill of rs\.?|bill amount of|due date|pay before|pay your bill|bill generated)\b/i.test(lower) &&
+    /\b(is due on|pay now|avoid late fee|minimum amount due)\b/i.test(lower) &&
+    !/\b(thank you for paying|payment received|has been debited|paid successfully)\b/i.test(lower)
+  ) {
+    baseResult.ignoreReason = 'Upcoming Bill Due Reminder (Unpaid)';
+    return baseResult;
+  }
+
+  // Reject telecom pack expiration / data quota alerts
+  if (
+    /\b(data pack|recharge plan|pack expires|data balance|daily quota|validity expires)\b/i.test(lower) &&
+    !/\b(debited|payment of rs)\b/i.test(lower)
+  ) {
+    baseResult.ignoreReason = 'Telecom Service / Quota Notice';
+    return baseResult;
+  }
+
+  // Reject failed / declined transactions
+  if (
+    /\b(declined|transaction failed|payment failed|unsuccessful|failed due to|insufficient balance)\b/i.test(
+      lower
+    )
+  ) {
+    baseResult.ignoreReason = 'Transaction was declined or failed';
+    return baseResult;
+  }
+
+  // --------------------------------------------------------------------------
+  // STEP 2: TRANSACTION TYPE IDENTIFICATION (Debit / Expense vs Credit / Income)
+  // --------------------------------------------------------------------------
+
+  const isDebit =
+    /\b(debited|debited by|debit of|debit|paid|spent|withdrawn|transferred to|transfer to|transfer of|transferred|sent to|sent\b|purchase of|purchase at|purchase|charged|deducted|used at|txn of|txn\b|transaction of|payment of|payment for|payment\b|payment done|paid to|dr to|vpa debit|pos txn|atm wdl)\b/i.test(
+      lower
+    );
+
+  const isCredit =
+    /\b(credited|credited to|credited with|credit of|credit\b|received|deposited|refund of|refund\b|cashback of|cashback\b|cr to)\b/i.test(
+      lower
+    );
+
+  if (!isDebit && !isCredit) {
+    baseResult.ignoreReason = 'No financial transaction verb found';
+    return baseResult;
+  }
+
+  const transactionType: 'expense' | 'income' = isCredit && !isDebit ? 'income' : 'expense';
+
+  // --------------------------------------------------------------------------
+  // STEP 3: AMOUNT & CURRENCY EXTRACTION
+  // --------------------------------------------------------------------------
+
+  let amount = 0;
+  let currency = '₹';
+
+  // Verb-bound amount (e.g. "payment of 1787.95", "debited by 1200.00", "spent INR 650", "paid Rs 200", "txn of 1787.95", "transfer of 1787.95")
+  const verbAmountMatch = text.match(
+    /\b(?:debited\s*(?:by|for|with)?|credited\s*(?:by|for|with)?|spent|withdrawn|paid\s*(?:to|for)?|payment\s*(?:of|for|done|confirmed|successful)?|transferred\s*(?:to)?|transfer\s*(?:of)?|sent|purchase\s*(?:of)?|charged|deducted|txn\s*(?:of)?|transaction\s*(?:of)?|dr\s*(?:by|to)?|cr\s*(?:by|to)?|amount\s*(?:of)?)\s*(?:(?:rs\.?|inr|₹|\$|usd|eur|€|gbp|£|aed)\s*)?([0-9]+(?:,[0-9]+)*(?:\.[0-9]{1,2})?)\b/i
+  );
+
+  // Amount before verb: "1787.95 debited", "1787.95 paid", "INR 1787.95 has been debited"
+  const amountBeforeVerbMatch = text.match(
+    /\b(?:(?:rs\.?|inr|₹|\$|usd|eur|€|gbp|£|aed)\s*)?([0-9]+(?:,[0-9]+)*(?:\.[0-9]{1,2})?)\s*(?:has\s+been\s+|was\s+|is\s+)?(?:debited|credited|paid|spent|withdrawn|transferred|deducted|charged|sent)\b/i
+  );
+
+  // Payment confirmation with colon or status: "Payment confirmed: 1787.95", "Payment confirmed for 1787.95"
+  const paymentConfirmMatch = text.match(
+    /\b(?:payment\s*(?:of|for|done|confirmed|successful)?|confirmed\s*[:\-]?\s*payment|payment\s+confirmation)\s*[:#\-]?\s*(?:of|for)?\s*(?:(?:rs\.?|inr|₹|\$|usd|eur|€|gbp|£|aed)\s*)?([0-9]+(?:,[0-9]+)*(?:\.[0-9]{1,2})?)\b/i
+  );
+
+  // All currency-prefixed amounts: "Rs. 450.00", "INR 1,200", "₹500", "$25.50"
+  const allCurrencyMatches = Array.from(
+    text.matchAll(/(rs\.?|inr|₹|\$|usd|eur|€|gbp|£|aed)\s*([0-9]+(?:,[0-9]+)*(?:\.[0-9]{1,2})?)/gi)
+  );
+
+  // Find first currency match that is not preceded by balance/limit keywords
+  const nonBalCurrency = allCurrencyMatches.find((m) => {
+    if (m.index === undefined) return false;
+    const prefix = text.substring(Math.max(0, m.index - 30), m.index).toLowerCase();
+    return !/\b(?:bal|balance|avl|avail|available|limit)\s*[:#\-]?\s*$/i.test(prefix) &&
+           !/\b(?:bal|balance|avl\s*bal|avail\s*bal|available\s*bal|credit\s*limit)\b/i.test(prefix);
+  });
+
+  // Amount followed by currency suffix: "450.00 Rs", "1200 INR", "500 rupees"
+  const amountSuffixMatch = text.match(
+    /\b([0-9]+(?:,[0-9]+)*(?:\.[0-9]{1,2})?)\s*(?:rs\.?|inr|₹|rupees)\b/i
+  );
+
+  // Bare amount following transaction verbs
+  const bareAmountMatch = text.match(
+    /\b(?:debited\s+(?:by|for|with)|credited\s+(?:by|with)|spent|withdrawn|amount\s+of|dr\s+(?:by|to)|cr\s+(?:by|to)|payment\s+(?:of|for|confirmed|done|successful)|paid|transfer\s+of|transferred|txn\s+of|transaction\s+of|sent|purchase\s+of|charged|deducted|debit\s+of|credit\s+of)\s+([0-9]+(?:,[0-9]+)*(?:\.[0-9]{1,2})?)/i
+  );
+
+  // Standalone decimal float: find all decimal numbers that are not preceded by balance keywords
+  const allDecimalMatches = Array.from(
+    text.matchAll(/\b([0-9]+(?:,[0-9]+)*\.[0-9]{1,2})\b/g)
+  );
+  const nonBalDecimal = allDecimalMatches.find((m) => {
+    if (m.index === undefined) return false;
+    const prefix = text.substring(Math.max(0, m.index - 30), m.index).toLowerCase();
+    return (
+      !/\b(?:bal|balance|avl|avail|available|limit)\s*[:#\-]?\s*$/i.test(prefix) &&
+      !/\b(?:bal|balance|avl\s*bal|avail\s*bal|available\s*bal|credit\s*limit)\b/i.test(prefix)
+    );
+  });
+
+  if (verbAmountMatch && verbAmountMatch[1]) {
+    const rawNum = verbAmountMatch[1].replace(/,/g, '');
+    amount = parseFloat(rawNum);
+    if (/[$]|usd/i.test(verbAmountMatch[0])) currency = '$';
+    else if (/[€]|eur/i.test(verbAmountMatch[0])) currency = '€';
+    else if (/[£]|gbp/i.test(verbAmountMatch[0])) currency = '£';
+    else if (/aed/i.test(verbAmountMatch[0])) currency = 'AED';
+    else currency = '₹';
+  } else if (amountBeforeVerbMatch && amountBeforeVerbMatch[1]) {
+    const rawNum = amountBeforeVerbMatch[1].replace(/,/g, '');
+    amount = parseFloat(rawNum);
+    if (/[$]|usd/i.test(amountBeforeVerbMatch[0])) currency = '$';
+    else if (/[€]|eur/i.test(amountBeforeVerbMatch[0])) currency = '€';
+    else if (/[£]|gbp/i.test(amountBeforeVerbMatch[0])) currency = '£';
+    else if (/aed/i.test(amountBeforeVerbMatch[0])) currency = 'AED';
+    else currency = '₹';
+  } else if (paymentConfirmMatch && paymentConfirmMatch[1]) {
+    const rawNum = paymentConfirmMatch[1].replace(/,/g, '');
+    amount = parseFloat(rawNum);
+    if (/[$]|usd/i.test(paymentConfirmMatch[0])) currency = '$';
+    else if (/[€]|eur/i.test(paymentConfirmMatch[0])) currency = '€';
+    else if (/[£]|gbp/i.test(paymentConfirmMatch[0])) currency = '£';
+    else if (/aed/i.test(paymentConfirmMatch[0])) currency = 'AED';
+    else currency = '₹';
+  } else if (nonBalCurrency && nonBalCurrency[2]) {
+    const rawNum = nonBalCurrency[2].replace(/,/g, '');
+    amount = parseFloat(rawNum);
+    const sym = nonBalCurrency[1].toLowerCase();
+    if (/[$]|usd/.test(sym)) currency = '$';
+    else if (/[€]|eur/.test(sym)) currency = '€';
+    else if (/[£]|gbp/.test(sym)) currency = '£';
+    else if (/aed/.test(sym)) currency = 'AED';
+    else currency = '₹';
+  } else if (amountSuffixMatch && amountSuffixMatch[1]) {
+    const rawNum = amountSuffixMatch[1].replace(/,/g, '');
+    amount = parseFloat(rawNum);
+    currency = '₹';
+  } else if (bareAmountMatch && bareAmountMatch[1]) {
+    const rawNum = bareAmountMatch[1].replace(/,/g, '');
+    amount = parseFloat(rawNum);
+    currency = '₹';
+  } else if (nonBalDecimal && nonBalDecimal[1]) {
+    const rawNum = nonBalDecimal[1].replace(/,/g, '');
+    amount = parseFloat(rawNum);
+    currency = '₹';
+  } else if (allCurrencyMatches.length > 0 && allCurrencyMatches[0][2]) {
+    const rawNum = allCurrencyMatches[0][2].replace(/,/g, '');
+    amount = parseFloat(rawNum);
+    currency = '₹';
+  }
+
+  // Sanity check on amount
+  if (isNaN(amount) || amount <= 0) {
+    baseResult.ignoreReason = 'No valid transaction amount extracted';
+    return baseResult;
+  }
+
+  // --------------------------------------------------------------------------
+  // STEP 4: BANK, ACCOUNT & CARD EXTRACTION
+  // --------------------------------------------------------------------------
+
+  let bankOrAccount: string | undefined;
+  let accountLast4: string | undefined;
+  let maskedAccount: string | undefined;
+
+  // Account last digits: "Acct XX070", "A/c **1234", "account ending with 4567", "A/C 9876"
+  const accMatch = text.match(/\b(?:a\/c|acct|account)\s*(?:no\.?)?\s*(?:ending\s*)?([xX*]*\d{3,6})\b/i);
+  if (accMatch) {
+    maskedAccount = accMatch[1];
+    accountLast4 = accMatch[1].replace(/^[xX*]+/, '');
+  }
+
+  // Card last digits: "Card ending 4412", "Card XX2004", "Card **9012"
+  const cardMatch = text.match(/\bcard\s*(?:ending\s*)?([xX*]*\d{4})\b/i);
+  if (cardMatch) {
+    maskedAccount = cardMatch[1];
+    accountLast4 = cardMatch[1].replace(/^[xX*]+/, '');
+  }
+
+  // Bank name extraction from sender or body
+  const knownBanks = [
+    { name: 'HDFC Bank', test: /(hdfc|hdfcbk)/i },
+    { name: 'State Bank of India', test: /(sbi|sbiinb|sbiupi)/i },
+    { name: 'ICICI Bank', test: /(icici|icicib|icicit)/i },
+    { name: 'Axis Bank', test: /(axis|axisbk)/i },
+    { name: 'Union Bank of India', test: /(unionb|union\s*bank)/i },
+    { name: 'IRCTC', test: /(irctc|irctci)/i },
+    { name: 'Kotak Bank', test: /(kotak|kotakb)/i },
+    { name: 'Punjab National Bank', test: /(pnb|pnbsms)/i },
+    { name: 'Bank of Baroda', test: /(bob|baroda)/i },
+    { name: 'IDFC FIRST Bank', test: /(idfc)/i },
+    { name: 'IndusInd Bank', test: /(indusind)/i },
+    { name: 'Yes Bank', test: /(yes\s*bank|yesb|yesbk|yesbnk)/i },
+    { name: 'Canara Bank', test: /(canara|canbnk)/i },
+    { name: 'Bank of India', test: /(boi|bankofindia|bank\s*of\s*india)/i },
+    { name: 'Standard Chartered', test: /(scb|standard\s*chartered)/i },
+    { name: 'Citi Bank', test: /(citi|citibank)/i },
+    { name: 'Chase Bank', test: /(chase)/i },
+    { name: 'American Express', test: /\b(amex|american\s*express)\b/i },
+    { name: 'Paytm Payments Bank', test: /\b(paytm)\b/i },
+    { name: 'PhonePe', test: /\b(phonepe)\b/i },
+    { name: 'Google Pay', test: /\b(gpay|google\s*pay)\b/i },
+    { name: 'CRED', test: /\b(cred)\b/i },
+  ];
+
+  const matchedBank = knownBanks.find((b) => b.test.test(sender) || b.test.test(text));
+  const bankName = matchedBank ? matchedBank.name : undefined;
+  if (matchedBank) {
+    bankOrAccount = matchedBank.name;
+    if (maskedAccount) {
+      bankOrAccount += cardMatch ? ` (Card ${maskedAccount})` : ` (Acct ${maskedAccount})`;
+    }
+  } else if (maskedAccount) {
+    bankOrAccount = cardMatch ? `Card ${maskedAccount}` : `Acct ${maskedAccount}`;
+  }
+
+  // --------------------------------------------------------------------------
+  // STEP 5: REFERENCE ID & UPI EXTRACTION
+  // --------------------------------------------------------------------------
+
+  let referenceId: string | undefined;
+
+  // 1. Standard 12-digit Indian UPI / UTR / RRN / IMPS / NEFT numbers (NPCI standard: 12 numeric digits)
+  // Handles:
+  // - "UPI:131834525249", "UPI: 131834525249", "UPI: \"131834525249\"", "UPI: '131834525249'"
+  // - "UPI/131834525249/Merchant", "UPI/CR/131834525249/...", "UPI/DR/131834525249/..."
+  // - "Info: UPI/131834525249/...", "towards UPI:131834525249"
+  // - "RRN 131834525249", "UPI Ref 131834525249", "Ref No. 131834525249", "Txn ID 131834525249", "UTR:663416590461"
+  const upi12DigitMatch =
+    text.match(
+      /\b(?:upi(?:\s*(?:ref|reference|rrn|txn|id|no))?|rrn|ref(?:\s*(?:no\.?|num\.?|id))?|reference(?:\s*(?:no\.?|id))?|txn\s*(?:id|no\.?|num\.?)?|trans\s+id|transaction\s+id|utr(?:\s*(?:no\.?|num\.?|id))?|imps(?:\s*(?:ref|rrn|txn|id|no\.?))?|neft(?:\s*(?:ref|id|no\.?))?|rtgs(?:\s*(?:ref|id|no\.?))?)\s*[:#\/=\s-]*["']?\s*(\d{12})\b/i
+    ) ||
+    text.match(
+      /\b(?:upi|utr|imps|rrn)[\/:\s]+(?:cr|dr|[a-z0-9_-]+)[\/:\s]+["']?(\d{12})\b/i
+    ) ||
+    text.match(
+      /\b(?:towards|by|via|info:?)\s+(?:upi|utr|imps)[:\/]\s*["']?(\d{12})\b/i
+    ) ||
+    text.match(/\b(?:upi|utr)[:#\/=\s-]+["']?\s*(\d{12})\b/i);
+
+  // 2. General alphanumeric reference / transaction IDs (e.g., UTR PUNB12345678, REF-DOMINOS-9988, 100003928194)
+  const generalRefMatch =
+    text.match(
+      /\b(?:upi\s*(?:ref|txn|reference|id|no)|ref(?:\s*(?:no\.?|num\.?|id))?|reference(?:\s*(?:no\.?|id))?|rrn|txn\s*(?:id|no\.?)?|trans\s+id|transaction\s+id|imps(?:\s*ref)?|neft(?:\s*ref)?|rtgs(?:\s*ref)?|utr(?:\s*(?:no\.?|id))?)\s*[:#\/=\s-]*["']?\s*([A-Za-z0-9_-]{5,30})\b/i
+    ) ||
+    text.match(/\b(?:upi|utr)[:#\/=\s]+["']?\s*([A-Za-z0-9_-]{5,30})\b/i);
+
+  let candidateRef = upi12DigitMatch ? upi12DigitMatch[1] : (generalRefMatch ? generalRefMatch[1] : undefined);
+  if (candidateRef) {
+    // Strip surrounding quotes, hyphens, colons, dots
+    candidateRef = candidateRef.replace(/^["'\-_:#]+|["'\-_:#.]+$/g, '').trim();
+    // If it caught a trailing hyphenated merchant name like "131834525249-Merchant", split it
+    const numPrefixMatch = candidateRef.match(/^(\d{6,})-[A-Za-z]/);
+    if (numPrefixMatch) {
+      candidateRef = numPrefixMatch[1];
+    }
+    if (candidateRef.length >= 4) {
+      referenceId = candidateRef;
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // STEP 6: PAYMENT METHOD DETECTION
+  // --------------------------------------------------------------------------
+
+  let paymentMethod = 'Bank Transfer';
+  if (/\b(upi|vpa|gpay|phonepe|paytm upi)\b/i.test(lower)) {
+    paymentMethod = 'UPI';
+  } else if (/\b(debit\s*card|atm)\b/i.test(lower)) {
+    paymentMethod = 'Debit Card';
+  } else if (/\b(credit\s*card)\b/i.test(lower) || cardMatch) {
+    paymentMethod = 'Credit Card';
+  } else if (/\b(net\s*banking|netbanking|imps|neft|rtgs)\b/i.test(lower)) {
+    paymentMethod = 'Net Banking';
+  } else if (/\b(wallet)\b/i.test(lower)) {
+    paymentMethod = 'Digital Wallet';
+  }
+
+  // --------------------------------------------------------------------------
+  // STEP 7: MERCHANT / PAYEE EXTRACTION
+  // --------------------------------------------------------------------------
+
+  let rawMerchant = '';
+
+  // Case A: ATM cash withdrawal
+  if (/\b(atm|cash withdrawal|atm wdl)\b/i.test(lower)) {
+    rawMerchant = 'ATM Cash Withdrawal';
+  } else if (transactionType === 'income') {
+    // Income credit: "by Salary", "from Zomato Refund", "deposited by Client"
+    const fromMatch = text.match(/\b(?:from|by)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:on|via|ref|upi|avl|bal|\.|\n|$))/i);
+    rawMerchant = fromMatch ? `${cleanMerchantName(fromMatch[1])} Refund/Deposit` : 'Income Deposit';
+  } else {
+    // 0. Explicit Payee / VPA / Hyphenated UPI Patterns
+    const explicitPayeeMatch =
+      text.match(/(?:^|\n)\s*(?:to|payee)\s*[:\-]\s*([A-Za-z0-9\s._@\-]+?)(?:\r?\n|$)/i) ||
+      text.match(/\bpayee\s*[:\-]\s*([A-Za-z0-9\s._@\-]+?)(?:[\/:\.\n;]|\s+(?:on|via|ref|bal)|$)/i) ||
+      text.match(/\b(?:to|towards)\s+upi\s*(?:\/|to)\s*([A-Za-z0-9\s._@\-]+?)(?:[\/:\.\n;]|\s+(?:on|via|ref|bal)|$)/i) ||
+      text.match(/\b(?:to\s+vpa|vpa)\s+[A-Za-z0-9._\-]+@[A-Za-z0-9._\-]+\s*\(([A-Za-z0-9\s._@\-]+?)\)/i) ||
+      text.match(/\bupi\s*[:#\/=\s-]*\d{10,14}-([A-Za-z0-9\s._@\-]+?)(?:[\/:\.\n;]|\s+(?:on|via|ref|bal)|$)/i) ||
+      text.match(/([A-Za-z][A-Za-z0-9\s._@\-]{1,40})\s+has\s+been\s+credited\b/i) ||
+      text.match(/\b(?:paid|payment\s+of|transfer\s+of|sent|txn\s+of)?\s*(?:rs\.?|inr|₹)?\s*[0-9,.]+\s+(?:done\s+|was\s+)?(?:via\s+upi\s+)?(?:made\s+)?to\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:via|on|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i) ||
+      text.match(/\bpaid to\s+([A-Za-z0-9\s._@\-]+?)\s+(?:rs\.?|inr|₹)/i) ||
+      text.match(/\bsent to\s+([A-Za-z0-9\s._@\-]+?)\s+(?:from|via|on|ref)/i);
+
+    if (explicitPayeeMatch && explicitPayeeMatch[1]) {
+      const candidate = cleanMerchantName(explicitPayeeMatch[1]);
+      if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa|your|bal|balance|via)$/i.test(candidate)) {
+        rawMerchant = candidate;
+      }
+    }
+
+    // 1. Payee credited patterns:
+    // Pattern 1a: "credited to [NAME]" or "credited: [NAME]"
+    const creditedToMatch = text.match(
+      /\bcredited\s*(?:to|with|in)?\s*[:\-]?\s*([A-Za-z0-9][A-Za-z0-9\s._@\-]+?)(?:\s+(?:on|via|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i
+    );
+    if (creditedToMatch && creditedToMatch[1]) {
+      const candidate = cleanMerchantName(creditedToMatch[1]);
+      if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa|your|bal|balance)$/i.test(candidate)) {
+        rawMerchant = candidate;
+      }
+    }
+
+    // Pattern 1b: "[NAME] credited" (e.g. "; ARPITA PRIYADAR credited." or "ARPITA PRIYADAR credited.")
+    if (!rawMerchant) {
+      const nameCreditedMatch = text.match(
+        /(?:;\s*|,\s*|\.\s*|\n\s*|^)\s*([A-Za-z][A-Za-z0-9\s._@\-]{1,40})\s+credited\b/i
+      );
+      if (nameCreditedMatch && nameCreditedMatch[1]) {
+        const candidate = cleanMerchantName(nameCreditedMatch[1]);
+        if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa|your|bal|balance|and)$/i.test(candidate)) {
+          rawMerchant = candidate;
+        }
+      }
+    }
+
+    // 2. "debited to [Name]", "paid to [Name]", "sent to [Name]", "transfer to [Name]", "transferred to [Name]", "credited by [Name]"
+    if (!rawMerchant) {
+      const directPayeeMatch = text.match(
+        /\b(?:debited to|paid to|payment to|transfer to|transferred to|sent to|credited by)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:via|on|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i
+      );
+      if (directPayeeMatch && directPayeeMatch[1]) {
+        const candidate = cleanMerchantName(directPayeeMatch[1]);
+        if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa|your)$/i.test(candidate)) {
+          rawMerchant = candidate;
+        }
+      }
+    }
+
+    // 2b. "merchant [Name]" or "merchant: [Name]"
+    if (!rawMerchant) {
+      const merchantTagMatch = text.match(
+        /\bmerchant\s*[:\-]?\s*([A-Za-z0-9\s._@\-]+?)(?:\s+(?:via|on|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i
+      );
+      if (merchantTagMatch && merchantTagMatch[1]) {
+        const candidate = cleanMerchantName(merchantTagMatch[1]);
+        if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa|your)$/i.test(candidate)) {
+          rawMerchant = candidate;
+        }
+      }
+    }
+
+    // 3. Slash delimited UPI format: UPI/DR/663416590461/PAYEE/ or UPI/663416590461/PAYEE/ or Info: UPI/663416590461/PAYEE
+    if (!rawMerchant) {
+      const upiSlashMatch =
+        text.match(/\bupi[\/:\s]+(?:cr|dr)[\/:\s]+(?:\d+)[\/:\s]+([A-Za-z0-9\s._@\-]+?)(?:[\/:\.\n;]|\s+(?:on|via|ref|bal)|$)/i) ||
+        text.match(/\bupi[\/:\s]+(?:\d{10,14})[\/:\s]+([A-Za-z0-9\s._@\-]+?)(?:[\/:\.\n;]|\s+(?:on|via|ref|bal)|$)/i) ||
+        text.match(/\binfo:\s*upi[\/:\s]+(?:\d+)[\/:\s]+([A-Za-z0-9\s._@\-]+?)(?:[\/:\.\n;]|\s+(?:on|via|ref|bal)|$)/i);
+      if (upiSlashMatch && upiSlashMatch[1]) {
+        const candidate = cleanMerchantName(upiSlashMatch[1]);
+        if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa)$/i.test(candidate)) {
+          rawMerchant = candidate;
+        }
+      }
+    }
+
+    // 4. "purchase at", "purchase of ... at", "spent at", "used at", "at [Merchant]"
+    if (!rawMerchant) {
+      const atMerchantMatch =
+        text.match(/\b(?:purchase at|purchase of\s+[A-Za-z0-9.]+\s+at|used at|spent on [A-Za-z0-9\s]+\s+at|spent at)\s+([A-Za-z0-9\s&'.-]+?)(?:\s+(?:on|via|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i) ||
+        text.match(/\bat\s+([A-Za-z0-9\s&'.-]+?)(?:\s+(?:on|via|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i);
+      if (atMerchantMatch && atMerchantMatch[1]) {
+        const candidate = cleanMerchantName(atMerchantMatch[1]);
+        if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa)$/i.test(candidate)) {
+          rawMerchant = candidate;
+        }
+      }
+    }
+
+    // 5. "towards [Name]" or "for [Name]" (excluding "for Rs 500" amount descriptions)
+    if (!rawMerchant) {
+      const towardsMatch = text.match(
+        /\b(?:towards|for\s+(?!(?:rs\.?|inr|₹|\$|\d|pnr)))\s+(?:vpa\s+)?([A-Za-z0-9\s._@\-]+?)(?:\s+(?:via|on|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i
+      );
+      if (towardsMatch && towardsMatch[1]) {
+        const candidate = cleanMerchantName(towardsMatch[1]);
+        if (
+          candidate &&
+          !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa|your)$/i.test(candidate) &&
+          !/^\d{6,}$/.test(candidate.replace(/\D/g, ''))
+        ) {
+          rawMerchant = candidate;
+        }
+      }
+    }
+
+    // 6. "to [Name]" or "to vpa [handle]"
+    if (!rawMerchant) {
+      const toMatch = text.match(
+        /\b(?:to|vpa)\s+([A-Za-z0-9\s._@\-]+?)(?:\s+(?:via|on|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i
+      );
+      if (toMatch && toMatch[1]) {
+        const candidate = cleanMerchantName(toMatch[1]);
+        if (
+          candidate &&
+          !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa|your)$/i.test(candidate) &&
+          !/^\d{6,}$/.test(candidate.replace(/\D/g, ''))
+        ) {
+          rawMerchant = candidate;
+        }
+      }
+    }
+
+    // 7. "Info: [Merchant]"
+    if (!rawMerchant) {
+      const infoMatch = text.match(/\binfo:\s*([A-Za-z0-9\s._@\-]+?)(?:\s+(?:on|via|ref|using|upi|dated|rrn|avl|bal|\()|(?:\.(?:\s+|$)|;|\n|$))/i);
+      if (infoMatch && infoMatch[1]) {
+        const candidate = cleanMerchantName(infoMatch[1]);
+        if (candidate && !/^(card|a\/c|account|debit|credit|bank|atm|inr|rs|upi|vpa)$/i.test(candidate)) {
+          rawMerchant = candidate;
+        }
+      }
+    }
+
+    // 8. UPI VPA handle standalone if no name found yet: e.g. "arpita@okaxis" or "swiggy@icici"
+    if (!rawMerchant) {
+      const vpaMatch = text.match(/\b([A-Za-z0-9._\-]{3,30}@[A-Za-z]{2,15})\b/i);
+      if (vpaMatch && vpaMatch[1]) {
+        const candidate = cleanMerchantName(vpaMatch[1]);
+        if (candidate) {
+          rawMerchant = candidate;
+        }
+      }
+    }
+  }
+
+  // Clean merchant / payee name in Title Case
+  let merchant = cleanMerchantName(rawMerchant);
+
+  // If merchant extraction yielded generic noise or nothing, try sender or fallback
+  if (!merchant || /^(bank|transaction|account|card|upi|rs|inr)$/i.test(merchant)) {
+    // If sender is a TRAI Service Header like "VM-IRCTCi-S" or "AD-IRCTC", extract entity "IRCTC"
+    const traiMatch = sender.match(/^[A-Za-z]{2}-([A-Za-z0-9]+)(?:-[sStTpP])?$/);
+    if (traiMatch && !/^(bank|sms|alert|txn|otp|info)/i.test(traiMatch[1])) {
+      const entity = traiMatch[1];
+      if (/irctc/i.test(entity)) {
+        merchant = 'IRCTC';
+      } else if (!/(sbi|hdfc|icici|axis|kotak|pnb|bob|idfc|canara|unionb)/i.test(entity)) {
+        merchant = cleanMerchantName(entity);
+      }
+    }
+
+    if (!merchant || /^(bank|transaction|account|card|upi|rs|inr)$/i.test(merchant)) {
+      if (sender && !/^(bank|sms|alert|txn|otp|info|vm-|vk-|bz-|ad-|ax-|id-)/i.test(sender)) {
+        merchant = cleanMerchantName(sender);
+      } else {
+        merchant = paymentMethod === 'UPI' ? 'UPI Payment' : `${paymentMethod} Expense`;
+      }
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // STEP 8: CATEGORY & DATE EXTRACTION
+  // --------------------------------------------------------------------------
+
+  const category = inferExpenseCategory(text, merchant);
+  const dateResult = extractDateFromSms(text, fallbackTime);
+  const date = dateResult.date;
+  const time = dateResult.time;
+
+  // Compute deterministic fingerprint
+  const fingerprint = computeTransactionFingerprint(
+    amount,
+    transactionType,
+    date,
+    merchant,
+    accountLast4,
+    referenceId,
+    time
+  );
+
+  const cleanBankName = matchedBank ? matchedBank.name : undefined;
+  const displayAccount = maskedAccount || (accountLast4 ? `*${accountLast4}` : undefined);
+
+  return {
+    isTransaction: true,
+    type: transactionType,
+    transactionType: transactionType === 'income' ? 'CREDIT' : 'DEBIT',
+    amount,
+    currency,
+    merchant,
+    payee: merchant,
+    rawPayee: rawMerchant ? rawMerchant.trim() : merchant,
+    category,
+    paymentMethod,
+    bankOrAccount,
+    bank: cleanBankName,
+    bankName: cleanBankName,
+    account: displayAccount,
+    maskedAccount: displayAccount,
+    accountLast4,
+    reference: referenceId,
+    referenceId,
+    date,
+    rawDate: dateResult.rawDate || date,
+    time,
+    rawSms: text,
+    sender,
+    timestamp: fallbackTime,
+    fingerprint,
+  };
+}

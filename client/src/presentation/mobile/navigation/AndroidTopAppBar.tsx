@@ -1,0 +1,101 @@
+import React from 'react';
+import { Search, Sparkles } from 'lucide-react';
+import { UserProfile } from '../../../types';
+import { nativeService } from '../../../services/nativeService';
+import { BrandLogo } from '../../../components/BrandLogo';
+import { UserAvatar } from '../../../components/UserAvatar';
+
+export interface AndroidTopAppBarProps {
+  profile: UserProfile;
+  onOpenSearch: () => void;
+  onOpenProfile: () => void;
+  onOpenAssistant?: () => void;
+  title?: string;
+  className?: string;
+}
+
+/**
+ * Material You Android Top App Bar
+ * Compact single-line bar with small brand icon, compact title, AI Assistant, Search, and Avatar.
+ */
+export const AndroidTopAppBar: React.FC<AndroidTopAppBarProps> = ({
+  profile,
+  onOpenSearch,
+  onOpenProfile,
+  onOpenAssistant,
+  title = 'Personal Dashboard',
+  className = '',
+}) => {
+  const handleAssistantClick = () => {
+    void nativeService.triggerHaptic('selection');
+    if (onOpenAssistant) onOpenAssistant();
+  };
+
+  const handleSearchClick = () => {
+    void nativeService.triggerHaptic('selection');
+    onOpenSearch();
+  };
+
+  const handleProfileClick = () => {
+    void nativeService.triggerHaptic('selection');
+    onOpenProfile();
+  };
+
+  return (
+    <header
+      className={`sticky top-0 z-40 w-full bg-[#F7F6FC]/95 dark:bg-[#0B0F19]/95 backdrop-blur-md border-b border-[#E8E5F3] dark:border-[#1E2638] pt-[env(safe-area-inset-top,0px)] px-4 transition-colors shrink-0 ${className}`}
+    >
+      <div className="h-11 sm:h-12 flex items-center justify-between gap-3 max-w-lg mx-auto">
+        {/* Left: Small Brand Icon + Compact Single-Line Title */}
+        <div className="flex items-center gap-2.5 min-w-0">
+          <BrandLogo size={28} className="rounded-lg shadow-xs shrink-0" alt="Personal Dashboard Logo" />
+          <span className="text-[15px] font-semibold text-gray-900 dark:text-gray-100 tracking-tight truncate leading-none">
+            {title}
+          </span>
+        </div>
+
+        {/* Right: AI Assistant + Search Icon + Profile Avatar */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* AI Assistant Button */}
+          {onOpenAssistant && (
+            <button
+              type="button"
+              onClick={handleAssistantClick}
+              aria-label="Open Zikenn AI Assistant"
+              className="w-8 h-8 rounded-full flex items-center justify-center text-violet-600 dark:text-violet-400 bg-violet-100/70 dark:bg-violet-950/60 hover:bg-violet-200/80 dark:hover:bg-violet-900/60 active:scale-95 transition-all cursor-pointer shadow-2xs"
+              title="Zikenn AI Assistant"
+            >
+              <Sparkles className="w-4 h-4" />
+            </button>
+          )}
+
+          {/* Search Button */}
+          <button
+            type="button"
+            onClick={handleSearchClick}
+            aria-label="Search dashboard"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-gray-600 dark:text-gray-300 hover:text-violet-600 dark:hover:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/40 active:scale-95 transition-all cursor-pointer"
+          >
+            <Search className="w-4 h-4" />
+          </button>
+
+          {/* Profile / Avatar Button */}
+          <button
+            type="button"
+            onClick={handleProfileClick}
+            aria-label="Open profile settings"
+            className="w-8 h-8 rounded-full overflow-hidden ring-1 ring-violet-500/40 shadow-2xs active:scale-95 transition-all cursor-pointer flex items-center justify-center shrink-0"
+          >
+            <UserAvatar
+              avatarUrl={profile.avatarUrl}
+              name={profile.name}
+              userEmail={profile.contactEmail}
+              size="md"
+              className="w-full h-full"
+            />
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+};

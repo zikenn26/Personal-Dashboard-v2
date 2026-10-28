@@ -1,0 +1,627 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { BrandLogo } from "./BrandLogo";
+import {
+  ArrowRight, BarChart3, BookOpen, Check, CheckCircle2, CircleDollarSign,
+  Flame, Goal, Grid2X2, LayoutDashboard, Menu, Moon, NotebookPen, Plus,
+  Search, Sparkles, Target, X, BriefcaseBusiness, LockKeyhole, CalendarDays,
+  Bot,
+} from "lucide-react";
+
+type PageKey = "Today" | "Assistant" | "Tasks" | "Habits" | "Goals" | "Journal" | "Spending" | "Library" | "Portfolio";
+const navItems = ["Features", "How it works", "For your whole life"];
+const pageData: Record<PageKey, { icon: any; color: string; bg: string; title: string; subtitle: string }> = {
+  Today: { icon: LayoutDashboard, color: "#6b35d9", bg: "#f0e8ff", title: "Your day, in focus", subtitle: "Make today meaningful and productive." },
+  Assistant: { icon: Bot, color: "#6366f1", bg: "#eef2ff", title: "Zikenn AI", subtitle: "Personalized Zikenn AI assistant with live context fetching & action execution." },
+  Tasks: { icon: CheckCircle2, color: "#6b35d9", bg: "#f0e8ff", title: "Tasks", subtitle: "Your personal kanban for a calmer queue." },
+  Habits: { icon: Flame, color: "#e88a51", bg: "#fff0e5", title: "Current week habits & routines", subtitle: "Starts fresh every Monday automatically • Only current week visible." },
+  Goals: { icon: Goal, color: "#55aa93", bg: "#e0f7ed", title: "Goals & milestones", subtitle: "Turn your big picture into next steps." },
+  Journal: { icon: NotebookPen, color: "#d68570", bg: "#fff0e5", title: "Journal", subtitle: "A private space to notice, reflect, and reset." },
+  Spending: { icon: CircleDollarSign, color: "#65a1d8", bg: "#e8f3fb", title: "Spending snapshot", subtitle: "Clarity over clutter, every week." },
+  Library: { icon: BookOpen, color: "#e5a94f", bg: "#fff6dd", title: "Media library", subtitle: "Keep your ideas, books, and references close." },
+  Portfolio: { icon: BriefcaseBusiness, color: "#d77ac6", bg: "#fbeafa", title: "Portfolio", subtitle: "Your work, story, and next chapter." },
+};
+const sidebarGroups: { label: string; items: PageKey[] }[] = [
+  { label: "YOUR SPACE", items: ["Today", "Assistant", "Tasks", "Habits", "Goals"] },
+  { label: "MAKE ROOM", items: ["Journal", "Spending", "Library"] },
+  { label: "WORK & LIFE", items: ["Portfolio"] },
+];
+
+function PageContent({ active, onSelectPage }: { active: PageKey; onSelectPage?: (page: PageKey) => void }) {
+  if (active === "Assistant") return (
+    <div className="tour-panel" style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "10px", minHeight: "260px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingBottom: "8px", borderBottom: "1px solid #eef2ff" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <div style={{ width: "24px", height: "24px", borderRadius: "6px", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: "#eef2ff" }}>
+            <Bot size={16} className="text-indigo-600" />
+          </div>
+          <div>
+            <b style={{ fontSize: "12px", color: "#1e1b4b", display: "block" }}>Zikenn AI</b>
+            <span style={{ fontSize: "10px", color: "#6366f1" }}>Personalized Assistant</span>
+          </div>
+        </div>
+        <span style={{ fontSize: "10px", background: "#e0e7ff", color: "#4338ca", padding: "2px 8px", borderRadius: "10px", fontWeight: 600 }}>Text-Only</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "12px" }}>
+        <div style={{ alignSelf: "flex-end", background: "#6366f1", color: "#fff", padding: "8px 12px", borderRadius: "12px 12px 2px 12px", maxWidth: "80%" }}>
+          What are my top priorities today and log ₹350 for coffee?
+        </div>
+        <div style={{ alignSelf: "flex-start", background: "#fff", border: "1px solid #e2e8f0", padding: "10px 12px", borderRadius: "12px 12px 12px 2px", maxWidth: "90%", display: "flex", flexDirection: "column", gap: "6px" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+            <span style={{ fontSize: "10px", background: "#e0e7ff", color: "#3730a3", padding: "2px 6px", borderRadius: "4px" }}>
+              ⚡ Context Fetched: 3 Tasks
+            </span>
+            <span style={{ fontSize: "10px", background: "#ecfdf5", color: "#065f46", border: "1px solid #a7f3d0", padding: "2px 6px", borderRadius: "4px" }}>
+              ✓ Expense Logged: ₹350
+            </span>
+          </div>
+          <p style={{ margin: 0, color: "#334155", lineHeight: 1.4 }}>
+            You have 3 active tasks today including <b>"Finalize project presentation"</b>. I've recorded your <b>₹350</b> expense under Spending!
+          </p>
+        </div>
+      </div>
+      <div style={{ marginTop: "auto", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "6px 10px", display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "11px", color: "#94a3b8" }}>
+        <span>Instruct secretary (e.g. 'Add task...', 'Analyze spending')...</span>
+        <button style={{ background: "#6366f1", color: "#fff", border: "none", borderRadius: "6px", padding: "3px 8px", fontSize: "10px" }}>Send</button>
+      </div>
+    </div>
+  );
+  if (active === "Tasks") return <div className="tour-panel kanban"><div className="kanban-head"><b>All tasks</b><span>Filter by status <Plus size={12} /></span></div><div className="kanban-cols"><div><small>TO-DO · 3</small><p>Go for a run <i>today</i></p><p>Reply to emails <i>today</i></p></div><div><small>IN PROGRESS · 1</small><p>Build something useful <i>60%</i></p></div><div><small>COMPLETE · 4</small><p className="done">Read 20 pages <i>✓</i></p></div></div></div>;
+  if (active === "Habits") return (
+    <div className="tour-panel routine">
+      <div className="routine-head">
+        <div>
+          <b>Habit Tracker & Weekly Routine</b>
+          <span style={{ display: "block", fontSize: "10px", color: "#6366f1", fontWeight: 600, marginTop: "2px" }}>
+            Current Week Only • Resets fresh every Monday
+          </span>
+        </div>
+        <span style={{ background: "#eef2ff", color: "#4f46e5", padding: "2px 6px", borderRadius: "4px", fontSize: "10px", fontWeight: 700 }}>
+          Current Week Active
+        </span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr repeat(7, 24px)", gap: "6px", alignItems: "center", fontSize: "9px", color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", marginBottom: "4px", paddingLeft: "4px" }}>
+        <span>Routine</span>
+        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d, i) => (
+          <span key={i} style={{ textAlign: "center", color: i === 2 ? "#6366f1" : (i >= 5 ? "#ef4444" : undefined), fontWeight: i === 2 ? 800 : undefined }}>
+            {d}
+          </span>
+        ))}
+      </div>
+      {[
+        { name: "Gym & Fitness", done: [true, true, true, false, false, false, false] },
+        { name: "Deep Work Sprint", done: [true, true, false, false, false, false, false] },
+        { name: "15m Meditation", done: [true, true, true, false, false, false, false] },
+      ].map((h) => (
+        <div className="routine-row" key={h.name}>
+          <span>{h.name}</span>
+          {h.done.map((checked, d) => (
+            <i className={checked ? "checked" : ""} key={d}>{checked ? "✓" : ""}</i>
+          ))}
+        </div>
+      ))}
+      <div className="progress-line"><span style={{ width: "38%" }} /></div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "10px", color: "#64748b", marginTop: "6px", padding: "0 2px" }}>
+        <span>🌱 Only current week is visible on landing</span>
+        <span style={{ fontWeight: 600, color: "#6366f1" }}>38% target</span>
+      </div>
+    </div>
+  );
+  if (active === "Goals") return <div className="tour-panel goals"><div className="goal-big"><div className="goal-ring"><b>72%</b><span>on track</span></div><div><b>Launch personal site</b><p>4 of 6 milestones completed</p></div></div>{["Polish case studies", "Write about page", "Share with 3 friends"].map((x, i) => <div className="goal-row" key={x}><span className={i < 2 ? "goal-check" : "goal-empty"}>{i < 2 ? "✓" : ""}</span>{x}<em>{i < 2 ? "Done" : "Next"}</em></div>)}</div>;
+  if (active === "Journal") return <div className="tour-panel journal-panel"><span className="journal-date">WEDNESDAY · SEP 02</span><h4>What felt lighter today?</h4><p>“The best systems are the ones that leave room for being human.”</p><div className="writing-space"><span>Write freely…</span>{[1,2,3,4,5].map((x) => <i key={x} />)}</div><div className="journal-footer"><span>3 minute reflection</span><span><LockKeyhole size={9} /> Private · encrypted</span></div></div>;
+  if (active === "Spending") return (
+    <div className="tour-panel spending-panel">
+      <div className="spending-head">
+        <div>
+          <small>SPENT THIS WEEK (MON–SUN)</small>
+          <b>₹420</b>
+          <em>₹420 today (Mon)</em>
+        </div>
+        <span style={{ fontSize: "9px" }}>Week starts Mon</span>
+      </div>
+      <div className="spending-detail">
+        <div className="spending-pie" />
+        <div className="spending-legend">
+          <span><i className="legend-purple" /> Groceries <b>₹420</b></span>
+          <span><i className="legend-mint" /> Transport <b>₹0</b></span>
+          <span><i className="legend-peach" /> Dining <b>₹0</b></span>
+          <span><i className="legend-blue" /> Other <b>₹0</b></span>
+        </div>
+      </div>
+      <div className="transactions">
+        <div>
+          <span className="transaction-icon grocery">⌁</span>
+          <b>Fresh Mart <small>Groceries · Today (Mon)</small></b>
+          <em>−₹420</em>
+        </div>
+      </div>
+    </div>
+  );
+  if (active === "Library") return <div className="tour-panel library-panel"><div className="book-cover"><BookOpen size={24} /><b>Make Time</b><span>Jake Knapp</span></div><div className="library-copy"><small>READING NEXT</small><h4>Make time for what matters.</h4><p>Save articles, books, podcasts, and ideas in one thoughtful shelf.</p><div className="rating">★★★★★ <span>In progress</span></div></div></div>;
+  if (active === "Portfolio") return <div className="tour-panel portfolio-panel"><div className="portfolio-cover"><div className="portfolio-avatar">ME</div><span>CREATIVE PORTFOLIO</span><b>Personal Portfolio</b></div><div className="resume-sheet"><div><small>RESUME PREVIEW</small><b>Interactive Resume & CV</b><span>Clean · Modular · Customizable</span></div><button><ArrowRight size={10} /> View CV</button></div><div className="portfolio-stats"><span><b>0</b> projects</span><span><b>0</b> articles</span><span><b>0</b> skills</span></div><div className="portfolio-line" /></div>;
+  return <div className="today-dashboard"><div className="quote-card"><div className="quote-icon">“</div><div><p>“You do not rise to the level of your goals. You fall to the level of your systems.”</p><small>— James Clear</small></div><div className="quote-dots"><i /><i /><i /></div></div><div className="today-stats"><div><span className="stat-icon purple"><Check size={14} /></span><small>Tasks left</small><b>0</b><em>! 0 high priority</em></div><div><span className="stat-icon mint"><Flame size={14} /></span><small>Habits done</small><b>0%</b><em className="mint-text">✓ 0 / 0 completed</em></div><div><span className="stat-icon peach"><CircleDollarSign size={14} /></span><small>Spent this week</small><b>₹420</b><em>₹420 today · Week starts Mon</em></div></div><div className="today-columns"><div className="mini-calendar"><div className="today-card-title"><span><CalendarDays size={13} /> CALENDAR</span><div><button>Grid</button><button>Festivals</button></div></div><b className="month-label">September 2026</b><div className="calendar-week">{["Mo","Tu","We","Th","Fr","Sa","Su"].map(d => <span key={d}>{d}</span>)}</div><div className="calendar-grid">{[31,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27].map((n, i) => <span className={`${i === 2 ? "today" : ""} ${i > 3 && i % 7 > 4 ? "soft-red" : ""}`} key={i}>{n}</span>)}</div></div><div className="today-side-card"><div className="today-card-title"><span onClick={() => onSelectPage?.("Tasks")} style={{ cursor: "pointer" }}><CheckCircle2 size={13} /> TODAY'S TASKS</span><a onClick={() => onSelectPage?.("Tasks")} style={{ cursor: "pointer" }}>View all</a></div><div className="empty-state" onClick={() => onSelectPage?.("Tasks")} style={{ cursor: "pointer" }}><CheckCircle2 size={23} /><b>No tasks created yet</b><span>Add a task below to plan your day.</span></div><button className="add-link" onClick={() => onSelectPage?.("Tasks")}><Plus size={13} /> Add Task</button></div><div className="today-side-card"><div className="today-card-title"><span onClick={() => onSelectPage?.("Habits")} style={{ cursor: "pointer" }}><Flame size={13} /> TODAY'S HABITS</span><a onClick={() => onSelectPage?.("Habits")} style={{ cursor: "pointer" }}>View all</a></div><div className="empty-state" onClick={() => onSelectPage?.("Habits")} style={{ cursor: "pointer" }}><Flame size={23} /><b>Build daily momentum</b><span>Track small rituals that compound over time.</span></div><button className="add-link" onClick={() => onSelectPage?.("Habits")}><Plus size={13} /> Add Habit</button></div></div></div>;
+}
+
+function AppPreview({ onGetStarted }: { onGetStarted: () => void }) {
+  const [active, setActive] = useState<PageKey>("Today");
+  const data = pageData[active]; const Icon = data.icon;
+  useEffect(() => {
+    if (active === "Today") return;
+    const resetTimer = window.setTimeout(() => setActive("Today"), 10000);
+    return () => window.clearTimeout(resetTimer);
+  }, [active]);
+  return <div className="preview-shell interactive-preview" aria-label="Interactive Personal Dashboard product preview"><div className="preview-topbar"><div className="preview-brand"><span className="brand-mark small"><Sparkles size={12} /></span><span>personal-dashboard</span></div><div className="preview-top-actions"><span className="preview-search"><Search size={12} /> Search</span><Moon size={14} /><span className="avatar">WS</span></div></div><div className="preview-body"><aside className="preview-sidebar"><div className="mini-profile"><div className="avatar large">WS</div><div><b>Workspace</b><span>Good morning</span></div></div>{sidebarGroups.map(group => <div key={group.label}><div className="side-label">{group.label}</div>{group.items.map(item => { const I = pageData[item].icon; return <button className={active === item ? "side-active" : "side-item"} key={item} onClick={() => setActive(item)}><I size={13} style={{ color: pageData[item].color }} /> {item}{item !== "Today" && <em>{item === "Tasks" ? "4" : item === "Habits" ? "3" : ""}</em>}</button>})}</div>)}</aside><main className="preview-main"><div className="preview-heading"><div><p className="eyebrow">WEDNESDAY, SEPTEMBER 2</p><h3><span className="preview-page-icon" style={{ background: data.bg, color: data.color }}><Icon size={16} /></span>{data.title}</h3><p>{data.subtitle}</p></div><button className="mini-add" onClick={onGetStarted}><Plus size={13} /> Add</button></div><PageContent active={active} onSelectPage={setActive} /><div className="preview-footer-note"><span style={{ background: data.color }} /> Click a page in the sidebar to explore the workspace</div></main></div></div>;
+}
+
+function MoneyFeatureVisual() {
+  // ISO Week starts from Monday (index 0 = Monday, index 6 = Sunday)
+  const currentDayOfWeek = useMemo(() => {
+    const day = new Date().getDay(); // 0 is Sunday, 1 is Monday
+    return day === 0 ? 6 : day - 1; // 0 for Mon, 6 for Sun
+  }, []);
+
+  // Base spending amounts for active week starting from Monday.
+  // When today is Monday (index 0), Sunday (index 6, end of week) has not occurred and is ₹0.
+  const weekDayTemplate = [
+    { day: "Mon", fullDay: "Monday", amountVal: 1420, height: 48 },
+    { day: "Tue", fullDay: "Tuesday", amountVal: 2350, height: 62 },
+    { day: "Wed", fullDay: "Wednesday", amountVal: 1840, height: 50 },
+    { day: "Thu", fullDay: "Thursday", amountVal: 2910, height: 76 },
+    { day: "Fri", fullDay: "Friday", amountVal: 2100, height: 55 },
+    { day: "Sat", fullDay: "Saturday", amountVal: 3420, height: 88 },
+    { day: "Sun", fullDay: "Sunday", amountVal: 2680, height: 70 },
+  ];
+
+  const dayData = useMemo(() => {
+    return weekDayTemplate.map((item, idx) => {
+      const isPastOrToday = idx <= currentDayOfWeek;
+      const amountVal = isPastOrToday ? item.amountVal : 0;
+      return {
+        day: item.day,
+        fullDay: item.fullDay,
+        amount: isPastOrToday ? `₹${amountVal.toLocaleString()}` : '₹0',
+        amountVal,
+        height: isPastOrToday ? item.height : 6,
+        isUpcoming: idx > currentDayOfWeek,
+        isToday: idx === currentDayOfWeek,
+      };
+    });
+  }, [currentDayOfWeek]);
+
+  const totalSpentThisWeek = useMemo(() => {
+    return dayData.reduce((sum, d) => sum + d.amountVal, 0);
+  }, [dayData]);
+
+  const [selectedDay, setSelectedDay] = useState<number | null>(null);
+
+  return (
+    <div className="feature-art money-art">
+      <div className="money-header">
+        <span>
+          {selectedDay !== null
+            ? `${dayData[selectedDay].day} spending${dayData[selectedDay].isUpcoming ? ' (Upcoming)' : dayData[selectedDay].isToday ? ' (Today)' : ''}`
+            : "Spending this week"}
+        </span>
+        <b>
+          {selectedDay !== null
+            ? dayData[selectedDay].amount
+            : `₹${totalSpentThisWeek.toLocaleString()}`}
+        </b>
+      </div>
+      <div className="bars">
+        {dayData.map((d, i) => {
+          const isSelected = selectedDay === i;
+          return (
+            <button
+              type="button"
+              key={d.day}
+              onClick={() => setSelectedDay(selectedDay === i ? null : i)}
+              style={{
+                height: `${d.height}%`,
+                background: isSelected ? "#efa976" : d.isUpcoming ? "rgba(239, 169, 118, 0.15)" : undefined,
+                boxShadow: isSelected ? "0 0 12px #efa976aa" : undefined,
+                border: isSelected ? "2px solid #fff" : d.isToday ? "2px solid #6366f1" : "none",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+              }}
+              className={isSelected ? "active-money-bar" : ""}
+              title={`${d.day}: ${d.amount}${d.isUpcoming ? ' (Upcoming - Week starts Monday)' : ''}`}
+            />
+          );
+        })}
+      </div>
+      <div className="money-line" />
+      <span className="money-note">
+        {selectedDay !== null
+          ? "tap bar again to reset · week starts Monday"
+          : "week starts Monday · clarity over clutter"}
+      </span>
+    </div>
+  );
+}
+
+function FeatureVisual({ type }: { type: string }) {
+  if (type === "habits") return <div className="feature-art habit-art"><div className="sun-orb" /><div className="habit-lines"><span style={{ width: "82%" }} /><span style={{ width: "64%" }} /><span style={{ width: "91%" }} /><span style={{ width: "48%" }} /></div><div className="sparkle">✦</div><div className="art-caption">small rituals<br /><b>big momentum</b></div></div>;
+  if (type === "money") return <MoneyFeatureVisual />;
+  return <div className="feature-art journal-art"><div className="paper-sheet"><span className="paper-date">02 / 09 / 26</span><b>Today I noticed…</b><span className="paper-line" /><span className="paper-line short" /><span className="paper-line" /><span className="paper-line shorter" /><div className="paper-star">✦</div></div><div className="pen" /></div>;
+}
+
+export interface LandingPageProps {
+  onSignIn?: () => void;
+  onSignUp?: () => void;
+  onGetStarted: () => void;
+}
+
+export default function LandingPage({ onSignIn, onSignUp, onGetStarted }: LandingPageProps) {
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const handleSignIn = onSignIn || onGetStarted;
+  const handleSignUp = onSignUp || onGetStarted;
+
+  const scrollTo = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  return (
+    <div className="site-shell min-h-screen w-full overflow-x-hidden relative">
+      <header className="site-header">
+        <a className="brand" href="#top" onClick={(e) => { e.preventDefault(); scrollTo('top'); }}>
+          <BrandLogo size={28} className="rounded-lg shrink-0 shadow-2xs" alt="Personal Dashboard Logo" />
+          <span>personal-dashboard</span>
+        </a>
+
+        <nav className={mobileOpen ? "nav-links open" : "nav-links"}>
+          {navItems.map((item, i) => {
+            const targetId = i === 0 ? "features" : i === 1 ? "how" : "whole-life";
+            return (
+              <a
+                key={item}
+                href={`#${targetId}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  setMobileOpen(false);
+                  scrollTo(targetId);
+                }}
+              >
+                {item}
+              </a>
+            );
+          })}
+          <button
+            type="button"
+            className="mobile-signin"
+            onClick={() => {
+              setMobileOpen(false);
+              handleSignIn();
+            }}
+          >
+            Sign in
+          </button>
+          <button
+            type="button"
+            className="nav-cta mobile-cta"
+            onClick={() => {
+              setMobileOpen(false);
+              handleSignUp();
+            }}
+          >
+            Get started <ArrowRight size={15} />
+          </button>
+        </nav>
+
+        <div className="header-actions">
+          <button
+            type="button"
+            className="signin"
+            onClick={handleSignIn}
+          >
+            Sign in
+          </button>
+          <button
+            type="button"
+            className="nav-cta"
+            onClick={handleSignUp}
+          >
+            Get started <ArrowRight size={15} />
+          </button>
+        </div>
+
+        <button
+          className="menu-btn"
+          onClick={() => setMobileOpen(!mobileOpen)}
+          aria-label="Toggle navigation"
+        >
+          {mobileOpen ? <X size={20} /> : <Menu size={20} />}
+        </button>
+      </header>
+
+      <main id="top">
+        <section className="hero">
+          <div className="hero-glow glow-one" />
+          <div className="hero-glow glow-two" />
+          <div className="hero-copy">
+            <div className="pill">
+              <span className="pill-dot" /> A calmer way to get things done
+            </div>
+            <h1>
+              Your whole life,<br />
+              <i>in one place.</i>
+            </h1>
+            <p className="hero-sub">
+              Personal Dashboard brings your tasks, habits, goals, money, and thoughts together — so you can spend less time organizing and more time living.
+            </p>
+            <div className="hero-actions">
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={handleSignUp}
+              >
+                Get started <ArrowRight size={17} />
+              </button>
+              <button
+                type="button"
+                className="hero-signin-btn"
+                onClick={handleSignIn}
+              >
+                Sign in
+              </button>
+              <button
+                type="button"
+                className="text-btn"
+                onClick={() => scrollTo("features")}
+              >
+                See how it works <span>↓</span>
+              </button>
+            </div>
+            <div className="social-proof">
+              <div className="faces">
+                <span>AM</span>
+                <span>SK</span>
+                <span>RJ</span>
+                <span>+</span>
+              </div>
+              <span>Join <b>2,400+</b> people making room for what matters.</span>
+            </div>
+          </div>
+          <div className="hero-visual">
+            <div className="visual-note note-top">
+              <Sparkles size={14} /> click around the workspace
+            </div>
+            <AppPreview onGetStarted={handleSignUp} />
+            <div className="visual-note note-bottom">
+              <span className="pulse-dot" /> built for your real life
+            </div>
+          </div>
+        </section>
+
+        <section className="trust-row">
+          <span>ONE SPACE FOR</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Bot size={16} /> Zikenn AI
+          </div>
+          <div><CheckCircle2 size={16} /> Tasks</div>
+          <div><Flame size={16} /> Habits</div>
+          <div><Target size={16} /> Goals</div>
+          <div><NotebookPen size={16} /> Journal</div>
+          <div><CircleDollarSign size={16} /> Spending</div>
+        </section>
+
+        <section className="tour-section" id="tour">
+          <div className="section-kicker">TRY THE WORKSPACE</div>
+          <div className="tour-grid">
+            <div>
+              <h2>
+                Everything has<br />
+                <span>a place.</span>
+              </h2>
+              <p>From the next task to the big life plan, your workspace adapts to the way you think.</p>
+              <ul className="feature-bullets">
+                <li><Check size={14} /> Delegate actions & context queries to your autonomous AI Secretary</li>
+                <li><Check size={14} /> Organize tasks with a simple kanban flow</li>
+                <li><Check size={14} /> Build daily habits and see your momentum</li>
+                <li><Check size={14} /> Track goals, spending, journals, and ideas</li>
+                <li><Check size={14} /> Keep a polished portfolio close at hand</li>
+                <li><Check size={14} /> Protect private thoughts with a personal vault</li>
+              </ul>
+              <button className="under-link" onClick={() => scrollTo("features")}>
+                See all features <ArrowRight size={15} />
+              </button>
+            </div>
+            <div className="tour-callout">
+              <div className="tour-callout-icon">
+                <Sparkles size={17} />
+              </div>
+              <b>One workspace.<br />Many ways to make it yours.</b>
+              <span>Tap a section in the sidebar<br />to see your life rearrange.</span>
+            </div>
+          </div>
+        </section>
+
+        <section className="intro-section" id="how">
+          <div className="section-kicker">01 — THE BIG PICTURE</div>
+          <div className="intro-grid">
+            <h2>
+              Less scattered.<br />
+              <span>More together.</span>
+            </h2>
+            <div>
+              <p>Most productivity tools help you manage one corner of your life. Personal Dashboard helps you see the whole picture — without the noise.</p>
+              <a
+                href="#features"
+                className="under-link"
+                onClick={(e) => {
+                  e.preventDefault();
+                  scrollTo("features");
+                }}
+              >
+                Explore the features <ArrowRight size={15} />
+              </a>
+            </div>
+          </div>
+        </section>
+
+        <section className="feature-section" id="features">
+          <div className="section-kicker">02 — MAKE IT YOURS</div>
+          <div className="feature-row">
+            <div className="feature-copy">
+              <span className="feature-number">01</span>
+              <h3>
+                Build a rhythm<br />
+                that sticks.
+              </h3>
+              <p>Turn intentions into tiny, trackable rituals. See your streaks, notice your patterns, and build momentum without the guilt.</p>
+              <div className="feature-tags">
+                <span>Habit tracking</span>
+                <span>Daily check-ins</span>
+                <span>Streaks</span>
+              </div>
+            </div>
+            <FeatureVisual type="habits" />
+          </div>
+
+          <div className="feature-row reverse">
+            <FeatureVisual type="money" />
+            <div className="feature-copy">
+              <span className="feature-number">02</span>
+              <h3>
+                Know where<br />
+                your money goes.
+              </h3>
+              <p>Get a clear, kind view of your spending. No spreadsheets, no shame — just the signal you need to make better choices.</p>
+              <div className="feature-tags">
+                <span>Weekly snapshot</span>
+                <span>Categories</span>
+                <span>Trends</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="feature-row">
+            <div className="feature-copy">
+              <span className="feature-number">03</span>
+              <h3>
+                Make space<br />
+                for your thoughts.
+              </h3>
+              <p>Your best ideas deserve more than a random notes app. Capture reflections, quotes, and the little things you want to remember.</p>
+              <div className="feature-tags">
+                <span>Journal</span>
+                <span>Quotes</span>
+                <span>Library</span>
+              </div>
+            </div>
+            <FeatureVisual type="journal" />
+          </div>
+        </section>
+
+        <section className="whole-life" id="whole-life">
+          <div className="whole-copy">
+            <div className="section-kicker light">03 — THE WHOLE YOU</div>
+            <h2>
+              Organize the day.<br />
+              <i>Keep the wonder.</i>
+            </h2>
+            <p>Personal Dashboard is structured enough to keep you moving, and gentle enough to feel like yours.</p>
+            <button
+              type="button"
+              className="light-btn"
+              onClick={handleSignUp}
+            >
+              Start with today <ArrowRight size={16} />
+            </button>
+          </div>
+          <div className="orbit-art">
+            <div className="orbit orbit-a" />
+            <div className="orbit orbit-b" />
+            <div className="orbit-center">
+              <Sparkles size={26} />
+            </div>
+            <span className="orbit-tag tag-one">focus</span>
+            <span className="orbit-tag tag-two">energy</span>
+            <span className="orbit-tag tag-three">money</span>
+            <span className="orbit-tag tag-four">joy</span>
+          </div>
+        </section>
+
+        <section className="final-cta">
+          <div className="final-kicker">YOUR NEXT CHAPTER STARTS HERE</div>
+          <h2>
+            A little more clarity<br />
+            <i>goes a long way.</i>
+          </h2>
+          <div style={{ display: 'flex', gap: '14px', justifyContent: 'center', flexWrap: 'wrap', alignItems: 'center' }}>
+            <button
+              type="button"
+              className="primary-btn"
+              onClick={handleSignUp}
+            >
+              Create your dashboard <ArrowRight size={17} />
+            </button>
+            <button
+              type="button"
+              className="secondary-cta-btn"
+              onClick={handleSignIn}
+            >
+              Sign in to your account
+            </button>
+          </div>
+          <p>No credit card. No complicated setup. Just a fresh place to begin.</p>
+        </section>
+      </main>
+
+      <footer id="footer">
+        <a className="brand" href="#top" onClick={(e) => { e.preventDefault(); scrollTo('top'); }}>
+          <BrandLogo size={28} className="rounded-lg shrink-0 shadow-2xs" alt="Personal Dashboard Logo" />
+          <span>personal-dashboard</span>
+        </a>
+        <span>© 2026 Make room for what matters.</span>
+        <div>
+          <button
+            type="button"
+            className="signin"
+            onClick={handleSignIn}
+            style={{ background: 'transparent', border: 0, padding: 0 }}
+          >
+            Sign in
+          </button>
+          <button
+            type="button"
+            className="signin"
+            onClick={handleSignUp}
+            style={{ background: 'transparent', border: 0, padding: 0, fontWeight: 700, color: '#6b35d9' }}
+          >
+            Get started
+          </button>
+          <a
+            href="#features"
+            onClick={(e) => {
+              e.preventDefault();
+              scrollTo('features');
+            }}
+          >
+            Features
+          </a>
+          <a
+            href="#how"
+            onClick={(e) => {
+              e.preventDefault();
+              scrollTo('how');
+            }}
+          >
+            About
+          </a>
+          <a
+            href="#top"
+            onClick={(e) => {
+              e.preventDefault();
+              scrollTo('top');
+            }}
+          >
+            Back to top ↑
+          </a>
+        </div>
+      </footer>
+    </div>
+  );
+}

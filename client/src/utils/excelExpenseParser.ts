@@ -1,0 +1,670 @@
+import * as XLSX from 'xlsx';
+import { ExpenseItem } from '../types';
+import { normalizeExpenseDateKey } from './expenseUtils';
+
+export interface ParsedSpreadsheetResult {
+  fileName: string;
+  totalRows: number;
+  headersFound: string[];
+  columnMapping: {
+    dateCol: string;
+    amountCol: string;
+    categoryCol: string;
+    noteCol: string;
+    accountCol?: string;
+    subCategoryCol?: string;
+    typeCol?: string;
+  };
+  expenses: Array<Omit<ExpenseItem, 'id'>>;
+  incomeCount: number;
+  skippedCount: number;
+  totalAmount: number;
+  dateRange: { min: string; max: string } | null;
+}
+
+// Map common Money Manager / Indian banking emojis & categories to clean app categories & icons
+const CATEGORY_MAP: Record<string, { category: string; icon: string }> = {
+  food: { category: 'Food & Dining', icon: '🍽️' },
+  dining: { category: 'Food & Dining', icon: '🍽️' },
+  restaurant: { category: 'Food & Dining', icon: '🍽️' },
+  snack: { category: 'Snacks & Coffee', icon: '☕' },
+  snacks: { category: 'Snacks & Coffee', icon: '☕' },
+  coffee: { category: 'Snacks & Coffee', icon: '☕' },
+  tea: { category: 'Snacks & Coffee', icon: '☕' },
+  groceries: { category: 'Groceries', icon: '🛒' },
+  grocery: { category: 'Groceries', icon: '🛒' },
+  supermarket: { category: 'Groceries', icon: '🛒' },
+  transport: { category: 'Transport', icon: '🚕' },
+  travel: { category: 'Transport', icon: '✈️' },
+  metro: { category: 'Transport', icon: '🚇' },
+  cab: { category: 'Transport', icon: '🚖' },
+  auto: { category: 'Transport', icon: '🛺' },
+  fuel: { category: 'Transport', icon: '⛽' },
+  petrol: { category: 'Transport', icon: '⛽' },
+  household: { category: 'Bills & Utilities', icon: '🪑' },
+  house: { category: 'Bills & Utilities', icon: '🏠' },
+  rent: { category: 'Living & Rent', icon: '🏠' },
+  bills: { category: 'Bills & Utilities', icon: '⚡' },
+  recharge: { category: 'Bills & Utilities', icon: '📱' },
+  education: { category: 'Education', icon: '📚' },
+  books: { category: 'Education', icon: '📖' },
+  study: { category: 'Education', icon: '🎓' },
+  exam: { category: 'Education', icon: '📝' },
+  'social life': { category: 'Entertainment', icon: '🧑‍🤝‍🧑' },
+  social: { category: 'Entertainment', icon: '🧑‍🤝‍🧑' },
+  friends: { category: 'Entertainment', icon: '🎉' },
+  entertainment: { category: 'Entertainment', icon: '🎬' },
+  movies: { category: 'Entertainment', icon: '🍿' },
+  beauty: { category: 'Personal Care', icon: '💄' },
+  salon: { category: 'Personal Care', icon: '💇' },
+  'personal care': { category: 'Personal Care', icon: '🧴' },
+  health: { category: 'Health & Fitness', icon: '🧘' },
+  medical: { category: 'Health & Fitness', icon: '💊' },
+  medicine: { category: 'Health & Fitness', icon: '💊' },
+  fitness: { category: 'Health & Fitness', icon: '🏋️' },
+  gift: { category: 'Shopping', icon: '🎁' },
+  gifts: { category: 'Shopping', icon: '🎁' },
+  shopping: { category: 'Shopping', icon: '🛍️' },
+  clothes: { category: 'Shopping', icon: '👕' },
+  subscriptions: { category: 'Subscriptions', icon: '💻' },
+  tech: { category: 'Subscriptions', icon: '💻' },
+  other: { category: 'Other', icon: '💳' },
+};
+
+/**
+ * Smart Date Parser
+ * Handles:
+ * - DD/MM/YYYY HH:mm:ss (Money Manager default: e.g. 08/09/2026 16:48:25)
+ * - DD/MM/YYYY or DD-MM-YYYY
+ * - YYYY-MM-DD or YYYY/MM/DD
+ * - MM/DD/YYYY
+ * - Excel Date Serial numbers (e.g. 45543.69)
+ */
+export function parseSmartDate(val: unknown): { date: string; time?: string } | null {
+  if (val === null || val === undefined || val === '') return null;
+
+  // 1. If it's an Excel Date Serial Number (e.g. 45543)
+  if (typeof val === 'number' && val > 20000 && val < 60000) {
+    try {
+      const parsed = XLSX.SSF.parse_date_code(val);
+      if (parsed && parsed.y && parsed.m && parsed.d) {
+        const yStr = String(parsed.y);
+        const mStr = String(parsed.m).padStart(2, '0');
+        const dStr = String(parsed.d).padStart(2, '0');
+        const timeStr = parsed.H !== undefined ? `${String(parsed.H).padStart(2, '0')}:${String(parsed.M || 0).padStart(2, '0')}` : undefined;
+        return { date: `${yStr}-${mStr}-${dStr}`, time: timeStr };
+      }
+    } catch {
+      // Fallback
+    }
+    const msSince1900 = (val - 25569) * 86400 * 1000;
+    const d = new Date(msSince1900);
+    if (!isNaN(d.getTime())) {
+      return { date: d.toISOString().split('T')[0] };
+    }
+  }
+
+  // 2. If it's already a JS Date object
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    let yStr: string;
+    let mStr: string;
+    let dStr: string;
+    let timeStr: string | undefined;
+
+    // In SheetJS with cellDates: true, date-only cells are constructed as UTC midnight (00:00:00.000Z).
+    // Using local getMonth()/getDate() in any timezone behind UTC shifts the date to the previous day/month (e.g. Oct 1 -> Sep 30).
+    if (val.getUTCHours() === 0 && val.getUTCMinutes() === 0 && val.getUTCSeconds() === 0) {
+      yStr = String(val.getUTCFullYear());
+      mStr = String(val.getUTCMonth() + 1).padStart(2, '0');
+      dStr = String(val.getUTCDate()).padStart(2, '0');
+    } else {
+      yStr = String(val.getFullYear());
+      mStr = String(val.getMonth() + 1).padStart(2, '0');
+      dStr = String(val.getDate()).padStart(2, '0');
+      timeStr = `${String(val.getHours()).padStart(2, '0')}:${String(val.getMinutes()).padStart(2, '0')}`;
+    }
+    return { date: `${yStr}-${mStr}-${dStr}`, time: timeStr };
+  }
+
+  const str = String(val).trim();
+  if (!str) return null;
+
+  // 3. Match DD/MM/YYYY or DD-MM-YYYY with optional time and AM/PM
+  // e.g. "08/09/2026 16:48:25" or "08/09/2026 04:48 PM" or "8/9/2026"
+  const ddmmyyyyMatch = str.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?(?:\s*(am|pm))?)?/i);
+  if (ddmmyyyyMatch) {
+    const day = parseInt(ddmmyyyyMatch[1], 10);
+    const month = parseInt(ddmmyyyyMatch[2], 10);
+    const year = parseInt(ddmmyyyyMatch[3], 10);
+
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const yStr = String(year);
+      const mStr = String(month).padStart(2, '0');
+      const dStr = String(day).padStart(2, '0');
+      let timeStr: string | undefined;
+      if (ddmmyyyyMatch[4] !== undefined) {
+        let hour = parseInt(ddmmyyyyMatch[4], 10);
+        const minute = parseInt(ddmmyyyyMatch[5] || '0', 10);
+        const meridiem = ddmmyyyyMatch[7]?.toLowerCase();
+        if (meridiem === 'pm' && hour < 12) hour += 12;
+        if (meridiem === 'am' && hour === 12) hour = 0;
+        timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+      }
+      return { date: `${yStr}-${mStr}-${dStr}`, time: timeStr };
+    }
+  }
+
+  // 4. Match YYYY-MM-DD or YYYY/MM/DD
+  const yyyymmddMatch = str.match(/^(\d{4})[\/\.-](\d{1,2})[\/\.-](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2}))?/);
+  if (yyyymmddMatch) {
+    const year = parseInt(yyyymmddMatch[1], 10);
+    const month = parseInt(yyyymmddMatch[2], 10);
+    const day = parseInt(yyyymmddMatch[3], 10);
+
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const yStr = String(year);
+      const mStr = String(month).padStart(2, '0');
+      const dStr = String(day).padStart(2, '0');
+      const timeStr = yyyymmddMatch[4] !== undefined ? `${String(yyyymmddMatch[4]).padStart(2, '0')}:${String(yyyymmddMatch[5] || '00').padStart(2, '0')}` : undefined;
+      return { date: `${yStr}-${mStr}-${dStr}`, time: timeStr };
+    }
+  }
+
+  // 5. Fallback to standard JavaScript Date parser
+  const parsedTimestamp = Date.parse(str);
+  if (!isNaN(parsedTimestamp)) {
+    const d = new Date(parsedTimestamp);
+    let yStr: string;
+    let mStr: string;
+    let dStr: string;
+    if (str.includes('T00:00:00') || (str.endsWith('Z') && d.getUTCHours() === 0 && d.getUTCMinutes() === 0)) {
+      yStr = String(d.getUTCFullYear());
+      mStr = String(d.getUTCMonth() + 1).padStart(2, '0');
+      dStr = String(d.getUTCDate()).padStart(2, '0');
+    } else {
+      yStr = String(d.getFullYear());
+      mStr = String(d.getMonth() + 1).padStart(2, '0');
+      dStr = String(d.getDate()).padStart(2, '0');
+    }
+    return { date: `${yStr}-${mStr}-${dStr}` };
+  }
+
+  return null;
+}
+
+/**
+ * Clean and normalize Category and Emoji
+ * E.g. "🍜 Food" -> category "Food & Dining", icon "🍜"
+ * E.g. "📙 Education" -> category "Education", icon "📙"
+ */
+export function parseCategoryAndEmoji(rawCategory: string): { category: string; icon: string; rawClean: string } {
+  const str = (rawCategory || '').trim();
+  if (!str) {
+    return { category: 'Other', icon: '💳', rawClean: 'Other' };
+  }
+
+  // Extract leading emoji if present
+  // Regex matches extended emoji characters
+  const emojiMatch = str.match(/^([\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F\u200D\s]+)/u);
+  const leadingEmoji = emojiMatch ? emojiMatch[1].trim() : '';
+
+  // Clean the text without the leading emoji
+  const cleanText = str
+    .replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F\u200D\s]+/u, '')
+    .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F\u200D]+/gu, '')
+    .trim();
+
+  const searchKey = cleanText.toLowerCase();
+
+  // Try direct lookup
+  if (CATEGORY_MAP[searchKey]) {
+    return {
+      category: CATEGORY_MAP[searchKey].category,
+      icon: leadingEmoji || CATEGORY_MAP[searchKey].icon,
+      rawClean: cleanText || str,
+    };
+  }
+
+  // Try partial lookup
+  for (const [key, val] of Object.entries(CATEGORY_MAP)) {
+    if (searchKey.includes(key) || key.includes(searchKey)) {
+      return {
+        category: val.category,
+        icon: leadingEmoji || val.icon,
+        rawClean: cleanText || str,
+      };
+    }
+  }
+
+  // Default fallback: keep the clean text as the category name!
+  const finalCat = cleanText || str || 'Other';
+  return {
+    category: finalCat,
+    icon: leadingEmoji || '💳',
+    rawClean: finalCat,
+  };
+}
+
+/**
+ * Smart Amount Parser
+ * Strips currency symbols (₹, $, Rs), commas, and handles decimals
+ */
+export function parseSmartAmount(val: unknown): number | null {
+  if (typeof val === 'number') {
+    return isNaN(val) ? null : Math.abs(val);
+  }
+  if (!val) return null;
+
+  const str = String(val)
+    .replace(/[₹$€£\s,Rs\.]/gi, (match) => (match === '.' ? '.' : ''))
+    .trim();
+
+  // Re-check if valid decimal
+  const cleanStr = String(val).replace(/[^0-9.-]/g, '');
+  const parsed = parseFloat(cleanStr);
+  if (isNaN(parsed) || parsed === 0) return null;
+  return Math.abs(parsed);
+}
+
+/**
+ * Main parser function: Reads Excel/CSV ArrayBuffer, detects headers, maps columns,
+ * and extracts clean ExpenseItems.
+ */
+export async function parseExpensesFromExcel(
+  data: ArrayBuffer,
+  fileName: string,
+  batchId: string = `batch_${Date.now()}`
+): Promise<ParsedSpreadsheetResult> {
+  // Suppress benign SheetJS ZIP parser console.error warnings (e.g. "Bad uncompressed size: ... != 0")
+  // that occur on valid streaming XLSX exports where local file header sizes are 0
+  const origConsoleError = console.error;
+  let workbook: XLSX.WorkBook;
+  try {
+    console.error = (...args: unknown[]) => {
+      const msg = typeof args[0] === 'string' ? args[0] : '';
+      if (
+        msg.includes('Bad uncompressed size') ||
+        msg.includes('Bad compressed size') ||
+        msg.includes('Bad CRC32 checksum')
+      ) {
+        // Harmless streaming ZIP data descriptor notice, ignore
+        return;
+      }
+      origConsoleError.apply(console, args);
+    };
+
+    workbook = XLSX.read(data, {
+      type: 'array',
+      cellDates: true,
+    });
+  } finally {
+    console.error = origConsoleError;
+  }
+
+  const firstSheetName = workbook.SheetNames[0];
+  const worksheet = workbook.Sheets[firstSheetName];
+  if (!worksheet) {
+    throw new Error('No worksheets found in the uploaded file.');
+  }
+
+  // Convert to array of arrays
+  const rawRows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
+    header: 1,
+    defval: '',
+    blankrows: false,
+  });
+
+  if (rawRows.length === 0) {
+    throw new Error('Spreadsheet appears to be completely empty.');
+  }
+
+  // 1. Locate the header row (typically row 0 or row 1)
+  let headerRowIndex = 0;
+  let headers: string[] = [];
+
+  for (let i = 0; i < Math.min(rawRows.length, 10); i++) {
+    const row = rawRows[i] as unknown[];
+    const rowStrings = row.map((cell) => String(cell || '').trim());
+    const rowCombined = rowStrings.join(' ').toLowerCase();
+
+    // Check if row has hallmarks of Money Manager or financial headers
+    const hasDate = rowCombined.includes('date') || rowCombined.includes('time');
+    const hasCategory = rowCombined.includes('category');
+    const hasAmount = rowCombined.includes('inr') || rowCombined.includes('amount') || rowCombined.includes('price') || rowCombined.includes('debit') || rowCombined.includes('rs');
+    const hasNote = rowCombined.includes('note') || rowCombined.includes('description') || rowCombined.includes('merchant');
+
+    if ((hasDate && hasCategory) || (hasDate && hasAmount) || (hasCategory && hasAmount) || (hasDate && hasNote)) {
+      headerRowIndex = i;
+      headers = rowStrings;
+      break;
+    }
+  }
+
+  // If no clear header found, use the first row
+  if (headers.length === 0) {
+    headers = (rawRows[0] as unknown[]).map((cell) => String(cell || '').trim());
+  }
+
+  // 2. Identify Column Indices
+  let dateColIdx = -1;
+  let accountColIdx = -1;
+  let categoryColIdx = -1;
+  let subCategoryColIdx = -1;
+  let noteColIdx = -1;
+  let amountColIdx = -1;
+  let typeColIdx = -1;
+
+  headers.forEach((h, idx) => {
+    const colName = h.toLowerCase().trim();
+    if (!colName) return;
+
+    if (dateColIdx === -1 && /date|time|timestamp|period/i.test(colName)) {
+      dateColIdx = idx;
+    } else if (typeColIdx === -1 && /income\/expense|income.*expense|flow|i\/e|trans.*type|^type$/i.test(colName)) {
+      typeColIdx = idx;
+    } else if (subCategoryColIdx === -1 && /sub.*cat/i.test(colName)) {
+      subCategoryColIdx = idx;
+    } else if (categoryColIdx === -1 && /category|^cat$|group/i.test(colName)) {
+      categoryColIdx = idx;
+    } else if (noteColIdx === -1 && /note|desc|merchant|item|title|detail|remark|payee|narration/i.test(colName)) {
+      noteColIdx = idx;
+    } else if (amountColIdx === -1 && /inr|amount|price|cost|total|debit|withdrawal|dr\b|rs|rupee|expense$/i.test(colName)) {
+      // Don't mistake "Income/Expense" for amount
+      if (!colName.includes('income')) {
+        amountColIdx = idx;
+      }
+    } else if (accountColIdx === -1 && /account|payment|method|wallet|mode|source|bank/i.test(colName)) {
+      accountColIdx = idx;
+    }
+  });
+
+  // Fallback defaults matching Money Manager export standard:
+  // Col 0: Date, Col 1: Account, Col 2: Category, Col 3: Subcategory, Col 4: Note, Col 5: INR, Col 6: Income/Expense
+  if (dateColIdx === -1 && headers.length > 0) dateColIdx = 0;
+  if (amountColIdx === -1) {
+    // Look for column with numeric values in sample rows
+    for (let col = 0; col < headers.length; col++) {
+      if (col === dateColIdx) continue;
+      const sampleVal = rawRows[headerRowIndex + 1]?.[col];
+      if (parseSmartAmount(sampleVal) !== null) {
+        amountColIdx = col;
+        break;
+      }
+    }
+  }
+  if (categoryColIdx === -1 && headers.length > 2) categoryColIdx = 2;
+  if (noteColIdx === -1 && headers.length > 4) noteColIdx = 4;
+
+  const dataRows = rawRows.slice(headerRowIndex + 1);
+  const expenses: Array<Omit<ExpenseItem, 'id'>> = [];
+  let incomeCount = 0;
+  let skippedCount = 0;
+  let totalAmount = 0;
+  let minDate = '';
+  let maxDate = '';
+
+  for (let rIdx = 0; rIdx < dataRows.length; rIdx++) {
+    const row = dataRows[rIdx] as unknown[];
+    if (!row || row.length === 0) continue;
+
+    // Check Income/Expense column if present
+    if (typeColIdx !== -1) {
+      const typeVal = String(row[typeColIdx] || '').trim().toLowerCase();
+      if (typeVal.includes('income')) {
+        incomeCount++;
+        continue; // Skip income rows since this is the spending/expense tracker
+      }
+    }
+
+    // Parse Amount
+    const rawAmount = amountColIdx !== -1 ? row[amountColIdx] : null;
+    const amount = parseSmartAmount(rawAmount);
+    if (amount === null || amount <= 0) {
+      skippedCount++;
+      continue;
+    }
+
+    // Parse Date
+    const rawDate = dateColIdx !== -1 ? row[dateColIdx] : null;
+    const dateParsed = parseSmartDate(rawDate);
+    const date = dateParsed ? dateParsed.date : new Date().toISOString().split('T')[0];
+
+    // Track min / max date
+    if (!minDate || date < minDate) minDate = date;
+    if (!maxDate || date > maxDate) maxDate = date;
+
+    // Parse Category & Icon
+    const rawCategory = categoryColIdx !== -1 ? String(row[categoryColIdx] || '') : '';
+    const { category, icon, rawClean } = parseCategoryAndEmoji(rawCategory);
+
+    // Parse Note / Description / Merchant
+    const rawNote = noteColIdx !== -1 ? String(row[noteColIdx] || '').trim() : '';
+    const rawSubCat = subCategoryColIdx !== -1 ? String(row[subCategoryColIdx] || '').trim() : '';
+    const rawAccount = accountColIdx !== -1 ? String(row[accountColIdx] || '').trim() : '';
+
+    // Smart name resolution:
+    // If note is present ("Hunger box", "Instamart", "Flipkart books", "Rent") -> use Note
+    // If note is blank -> use Subcategory, else Category
+    let expenseName = rawNote;
+    if (!expenseName) {
+      expenseName = rawSubCat || rawClean || category || 'Expense';
+    }
+
+    // Compose extra notes if subcategory or account is present
+    const noteParts: string[] = [];
+    if (rawNote && (rawSubCat || rawClean !== category)) {
+      if (rawSubCat) noteParts.push(`Subcat: ${rawSubCat}`);
+      if (rawClean && rawClean !== category) noteParts.push(`Type: ${rawClean}`);
+    }
+    if (rawAccount && rawAccount.toLowerCase() !== 'accounts') {
+      noteParts.push(`Account: ${rawAccount}`);
+    }
+    if (dateParsed?.time) {
+      noteParts.push(`Time: ${dateParsed.time}`);
+    }
+
+    // Payment method mapping
+    let paymentMethod = 'Other';
+    if (rawAccount) {
+      const accLower = rawAccount.toLowerCase();
+      if (accLower.includes('cash')) paymentMethod = 'Cash';
+      else if (accLower.includes('card') || accLower.includes('credit')) paymentMethod = 'Credit Card';
+      else if (accLower.includes('debit')) paymentMethod = 'Debit Card';
+      else if (accLower.includes('upi') || accLower.includes('gpay') || accLower.includes('phonepe') || accLower.includes('paytm')) paymentMethod = 'Apple / Google Pay';
+      else if (accLower.includes('bank') || accLower.includes('account')) paymentMethod = 'Bank Transfer';
+    }
+
+    totalAmount += amount;
+
+    expenses.push({
+      name: expenseName,
+      amount: Math.round(amount * 100) / 100,
+      category,
+      date,
+      paymentMethod,
+      icon,
+      notes: noteParts.length > 0 ? noteParts.join(' • ') : undefined,
+      billingCycle: 'one-time',
+      active: true,
+      sourceFile: fileName,
+      importBatchId: batchId,
+    });
+  }
+
+  return {
+    fileName,
+    totalRows: dataRows.length,
+    headersFound: headers,
+    columnMapping: {
+      dateCol: headers[dateColIdx] || 'Date',
+      amountCol: headers[amountColIdx] || 'Amount/INR',
+      categoryCol: headers[categoryColIdx] || 'Category',
+      noteCol: headers[noteColIdx] || 'Note',
+      accountCol: accountColIdx !== -1 ? headers[accountColIdx] : undefined,
+      subCategoryCol: subCategoryColIdx !== -1 ? headers[subCategoryColIdx] : undefined,
+      typeCol: typeColIdx !== -1 ? headers[typeColIdx] : undefined,
+    },
+    expenses,
+    incomeCount,
+    skippedCount,
+    totalAmount: Math.round(totalAmount),
+    dateRange: minDate && maxDate ? { min: minDate, max: maxDate } : null,
+  };
+}
+
+/**
+ * Normalizes text for lenient yet accurate financial comparison
+ */
+export function normalizeForComparison(str: string): string {
+  return (str || '')
+    .toLowerCase()
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/[^\w\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Extracts optional time stamp string from expense notes (e.g. "Time: 14:30")
+ */
+export function extractTimeFromNotes(notes?: string): string | null {
+  if (!notes) return null;
+  const match = notes.match(/Time:\s*([0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?)/i);
+  return match ? match[1] : null;
+}
+
+export interface DuplicateMatchInfo {
+  item: Omit<ExpenseItem, 'id'>;
+  reason: string;
+  matchedWith: {
+    date: string;
+    name: string;
+    amount: number;
+    category: string;
+    notes?: string;
+  };
+}
+
+export interface DeduplicationResult {
+  newExpenses: Array<Omit<ExpenseItem, 'id'>>;
+  duplicateExpenses: DuplicateMatchInfo[];
+  totalParsed: number;
+  newCount: number;
+  duplicateCount: number;
+  newTotalAmount: number;
+  duplicateTotalAmount: number;
+}
+
+/**
+ * Smart Deduplication Engine:
+ * Compares incoming parsed Excel expenses against existing spending transactions.
+ * Automatically detects exact duplicates, partial re-uploads (e.g. Morning vs Afternoon),
+ * and multi-month sheet overlaps, while safely preserving genuine recurring purchases
+ * using a multiset / pool-consumption model.
+ */
+export function deduplicateExpenses(
+  incomingExpenses: Array<Omit<ExpenseItem, 'id'>>,
+  existingExpenses: Array<ExpenseItem>
+): DeduplicationResult {
+  // Pool of existing expenses with matched consumption flags
+  const pool = existingExpenses.map((e) => ({
+    expense: e,
+    matched: false,
+  }));
+
+  const newExpenses: Array<Omit<ExpenseItem, 'id'>> = [];
+  const duplicateExpenses: DuplicateMatchInfo[] = [];
+
+  for (const incoming of incomingExpenses) {
+    const incDate = normalizeExpenseDateKey(incoming.date);
+    const incAmount = Math.round(Number(incoming.amount) * 100) / 100;
+    const incNameNorm = normalizeForComparison(incoming.name);
+    const incCatNorm = normalizeForComparison(incoming.category);
+    const incTime = incoming.time || extractTimeFromNotes(incoming.notes);
+
+    // Pass 1: Strict match on Date, Amount, Name, Category, and Time (if present)
+    let matchIdx = pool.findIndex((p) => {
+      if (p.matched) return false;
+      const ex = p.expense;
+      if (normalizeExpenseDateKey(ex.date) !== incDate) return false;
+      if (Math.abs(ex.amount - incAmount) >= 0.01) return false;
+
+      const exNameNorm = normalizeForComparison(ex.name);
+      const exCatNorm = normalizeForComparison(ex.category);
+      const exTime = ex.time || extractTimeFromNotes(ex.notes);
+
+      // If both have specific times logged and they don't match, they are distinct transactions
+      if (incTime && exTime && incTime !== exTime) {
+        return false;
+      }
+
+      const nameMatch = incNameNorm === exNameNorm;
+      const catMatch = !incCatNorm || !exCatNorm || incCatNorm === exCatNorm;
+
+      return nameMatch && catMatch;
+    });
+
+    // Pass 2: Fuzzy/Substring Name Match for transactions on the same day with same amount & category
+    if (matchIdx === -1) {
+      matchIdx = pool.findIndex((p) => {
+        if (p.matched) return false;
+        const ex = p.expense;
+        if (normalizeExpenseDateKey(ex.date) !== incDate) return false;
+        if (Math.abs(ex.amount - incAmount) >= 0.01) return false;
+
+        const exNameNorm = normalizeForComparison(ex.name);
+        const exCatNorm = normalizeForComparison(ex.category);
+        const exTime = ex.time || extractTimeFromNotes(ex.notes);
+
+        if (incTime && exTime && incTime !== exTime) {
+          return false;
+        }
+
+        const catMatch = !incCatNorm || !exCatNorm || incCatNorm === exCatNorm;
+        if (!catMatch) return false;
+
+        // Substring name match (e.g. "Lunch at Bistro" vs "Lunch", or "Swiggy order" vs "Swiggy")
+        const subMatch =
+          incNameNorm.length >= 3 &&
+          exNameNorm.length >= 3 &&
+          (incNameNorm.includes(exNameNorm) || exNameNorm.includes(incNameNorm));
+
+        return subMatch;
+      });
+    }
+
+    if (matchIdx !== -1) {
+      // Recognized as a duplicate! Mark this existing item as consumed
+      const matchedEx = pool[matchIdx].expense;
+      pool[matchIdx].matched = true;
+      duplicateExpenses.push({
+        item: incoming,
+        reason: `Matched existing ₹${matchedEx.amount} on ${matchedEx.date} (${matchedEx.name})`,
+        matchedWith: {
+          date: matchedEx.date,
+          name: matchedEx.name,
+          amount: matchedEx.amount,
+          category: matchedEx.category,
+          notes: matchedEx.notes,
+        },
+      });
+    } else {
+      // Genuine new extra spending!
+      newExpenses.push(incoming);
+    }
+  }
+
+  const newTotalAmount = newExpenses.reduce((sum, e) => sum + e.amount, 0);
+  const duplicateTotalAmount = duplicateExpenses.reduce((sum, d) => sum + d.item.amount, 0);
+
+  return {
+    newExpenses,
+    duplicateExpenses,
+    totalParsed: incomingExpenses.length,
+    newCount: newExpenses.length,
+    duplicateCount: duplicateExpenses.length,
+    newTotalAmount: Math.round(newTotalAmount),
+    duplicateTotalAmount: Math.round(duplicateTotalAmount),
+  };
+}
+

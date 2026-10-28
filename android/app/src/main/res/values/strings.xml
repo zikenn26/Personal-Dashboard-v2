@@ -1,0 +1,26 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Personal Dashboard</string>
+    <string name="title_activity_main">Personal Dashboard</string>
+    <string name="package_name">com.zikenn.dashboard</string>
+    <string name="custom_url_scheme">com.zikenn.dashboard</string>
+
+    <!-- Scratch Pad Widget Strings -->
+    <string name="scratchpad_widget_name">Scratch Pad</string>
+    <string name="scratchpad_widget_title">Scratch Pad</string>
+    <string name="scratchpad_widget_desc">Sticky notes and quick thoughts from Personal Dashboard</string>
+    <string name="scratchpad_widget_empty">No notes yet.\nTap to write a quick note.</string>
+
+    <!-- Spending Widget Strings -->
+    <string name="spending_widget_name">Spending</string>
+    <string name="spending_widget_desc">Track today and weekly spending at a glance</string>
+    <string name="spending_widget_today">Today</string>
+    <string name="spending_widget_week">This Week</string>
+    <!-- Screen Time Widget Strings -->
+    <string name="screentime_widget_name">Screen Time</string>
+    <string name="screentime_widget_desc">Track today\'s screen time at a glance</string>
+    <string name="screentime_widget_title">Screen Time Today</string>
+    <string name="screentime_widget_perm_needed">Permission Needed</string>
+    <string name="screentime_widget_tap_to_setup">Tap to grant access</string>
+    <string name="screentime_widget_no_data">No data yet today</string>
+</resources>

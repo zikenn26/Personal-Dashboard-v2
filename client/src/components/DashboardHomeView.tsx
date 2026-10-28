@@ -1,0 +1,829 @@
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { motion } from 'motion/react';
+import {
+  UserProfile,
+  TodoItem,
+  HabitItem,
+  JournalEntry,
+  DashboardSection,
+  Priority,
+  TaskStatus,
+  QuoteItem,
+  LifeMilestone,
+  ExpenseItem,
+  MediaItem,
+  WeeklyScheduleData,
+} from '../types';
+import { Sound } from '../utils/audio';
+import { triggerConfetti } from '../utils/confetti';
+import { INITIAL_QUOTES, INITIAL_SCHEDULE, Storage, DEFAULT_HOME_GRID_ORDER, DEFAULT_HOME_COLUMNS } from '../utils/storage';
+import { IndianCalendarWidget } from './IndianCalendarWidget';
+import { DynamicScheduleCard } from './DynamicScheduleCard';
+import { CommandCenterGrid } from './CommandCenterGrid';
+import { FlipClock } from './FlipClock';
+import { CurrentWeatherWidget } from './CurrentWeatherWidget';
+import {
+  CheckCircle2,
+  Circle,
+  Clock,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  ArrowRight,
+  Sparkles,
+  Target,
+  Flame,
+  CreditCard,
+  BookOpen,
+  FileText,
+  Quote,
+  TrendingDown,
+  TrendingUp,
+  CheckSquare,
+  Award,
+  Edit3,
+  X,
+  ExternalLink,
+  Sun,
+  Layers,
+  Send,
+  GripVertical,
+  RotateCcw,
+  LayoutGrid,
+  Bot,
+  Sparkle,
+} from 'lucide-react';
+
+interface SlidePhoto {
+  id: string;
+  url: string;
+  title: string;
+  subtitle?: string;
+  tag?: string;
+}
+
+interface DashboardHomeViewProps {
+  profile: UserProfile;
+  todos: TodoItem[];
+  habits: HabitItem[];
+  journal: JournalEntry[];
+  sections: DashboardSection[];
+  photos: SlidePhoto[];
+  quotes: QuoteItem[];
+  milestones?: LifeMilestone[];
+  expenses?: ExpenseItem[];
+  media?: MediaItem[];
+  onAddQuote: (quote: Omit<QuoteItem, 'id' | 'createdAt'>) => void;
+  onDeleteQuote: (id: string) => void;
+  onUpdateSections: (sections: DashboardSection[]) => void;
+  onUpdatePhotos: (photos: SlidePhoto[]) => void;
+  onNavigate: (view: any, tabOrFilter?: string) => void;
+  onToggleTodo: (id: string) => void;
+  onToggleHabitDay: (habitId: string, dayIndex: number) => void;
+  onAddTodo?: (title: string, priority: Priority, category: string, dueDate?: string, status?: TaskStatus) => void;
+  onAddExpense?: (item: Omit<ExpenseItem, 'id'>) => void;
+  onAddHabit?: (title: string, category: string, icon: string, color: string) => void;
+  schedule?: WeeklyScheduleData;
+  onUpdateSchedule?: (schedule: WeeklyScheduleData) => void;
+  soundEnabled: boolean;
+  onOpenZikennPopup?: () => void;
+}
+
+const DEFAULT_QUOTES = INITIAL_QUOTES;
+
+const formatTaskDueDate = (dueDate?: string): string => {
+  if (!dueDate) return 'Today';
+  const due = new Date(`${dueDate}T00:00:00`);
+  const today = new Date();
+  if (due.toDateString() === today.toDateString()) return 'Due Today';
+  if (Number.isNaN(due.getTime())) return dueDate;
+  return `Due ${due.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })}`;
+};
+
+export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
+  profile,
+  todos = [],
+  habits = [],
+  journal = [],
+  quotes = [],
+  milestones = [],
+  expenses = [],
+  media = [],
+  schedule = INITIAL_SCHEDULE,
+  onAddQuote,
+  onNavigate,
+  onToggleTodo,
+  onToggleHabitDay,
+  onAddTodo,
+  onAddExpense,
+  onAddHabit,
+  onUpdateSchedule,
+  soundEnabled,
+  onOpenZikennPopup,
+}) => {
+  // Current Day of Week Index (0 = Monday, 6 = Sunday)
+  const todayIndex = useMemo(() => {
+    const day = new Date().getDay(); // 0 is Sunday
+    return day === 0 ? 6 : day - 1;
+  }, []);
+
+  // Enhanced navigation handler: forces state update to activeView and triggers scroll-to-top event
+  const handleItemNavigate = (view: any, tabOrFilter?: string) => {
+    Sound.click(soundEnabled);
+    onNavigate(view, tabOrFilter);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+      const mainEl = document.querySelector('main');
+      if (mainEl) {
+        mainEl.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+        mainEl.scrollTop = 0;
+      }
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+      window.dispatchEvent(
+        new CustomEvent('dashboard-navigate-scroll-top', {
+          detail: { view, tabOrFilter },
+        })
+      );
+    }
+  };
+
+  // Time-based Greeting & Live Clock (Timezone Synchronized)
+  const [currentTime, setCurrentTime] = useState(() => new Date());
+  const [isAlarmRinging, setIsAlarmRinging] = useState(false);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 15000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const { greeting, greetingEmoji, formattedTimeStr, timezoneStr } = useMemo(() => {
+    const hour = currentTime.getHours();
+    let g = 'Good morning';
+    let emoji = '🌅';
+    if (hour >= 5 && hour < 12) {
+      g = 'Good morning';
+      emoji = '🌅';
+    } else if (hour >= 12 && hour < 17) {
+      g = 'Good afternoon';
+      emoji = '☀️';
+    } else if (hour >= 17 && hour < 21) {
+      g = 'Good evening';
+      emoji = '🌆';
+    } else {
+      g = 'Good night';
+      emoji = '🌙';
+    }
+
+    const timeStr = currentTime.toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+    const dateStr = currentTime.toLocaleDateString([], {
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric',
+    });
+
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Local';
+
+    return {
+      greeting: g,
+      greetingEmoji: emoji,
+      formattedTimeStr: `${dateStr} • ${timeStr}`,
+      timezoneStr: tz,
+    };
+  }, [currentTime]);
+
+  // Inspirational Quotes with 10-Second Auto-Slideshow & Prev/Next Controls
+  const allQuotesList = useMemo(() => {
+    return quotes || [];
+  }, [quotes]);
+  const [currentQuoteIdx, setCurrentQuoteIdx] = useState(0);
+  const [isQuoteAutoPlay, setIsQuoteAutoPlay] = useState(true);
+  const activeQuote = allQuotesList.length > 0 ? allQuotesList[currentQuoteIdx % allQuotesList.length] : null;
+
+  // 10-Second Auto-Slideshow Interval
+  useEffect(() => {
+    if (!isQuoteAutoPlay || allQuotesList.length <= 1) return;
+    const interval = setInterval(() => {
+      setCurrentQuoteIdx((prev) => (prev + 1) % allQuotesList.length);
+    }, 10000); // 10 seconds auto-rotation
+    return () => clearInterval(interval);
+  }, [isQuoteAutoPlay, allQuotesList.length]);
+
+  const handlePrevQuote = () => {
+    Sound.click(soundEnabled);
+    setCurrentQuoteIdx((prev) => (prev - 1 + allQuotesList.length) % allQuotesList.length);
+  };
+
+  const handleNextQuote = () => {
+    Sound.click(soundEnabled);
+    setCurrentQuoteIdx((prev) => (prev + 1) % allQuotesList.length);
+  };
+
+  // Add Quote Popover state & outside-click collapse handler
+  const [showAddQuotePopover, setShowAddQuotePopover] = useState(false);
+  const [newQuoteText, setNewQuoteText] = useState('');
+  const [newQuoteAuthor, setNewQuoteAuthor] = useState('');
+  const [newQuoteCategory, setNewQuoteCategory] = useState('Inspiration');
+  const quotePopoverRef = useRef<HTMLDivElement>(null);
+  const quoteButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!showAddQuotePopover) return;
+
+    const handleDocumentClick = (event: MouseEvent | TouchEvent) => {
+      if (
+        quotePopoverRef.current &&
+        !quotePopoverRef.current.contains(event.target as Node) &&
+        quoteButtonRef.current &&
+        !quoteButtonRef.current.contains(event.target as Node)
+      ) {
+        setShowAddQuotePopover(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleDocumentClick);
+    document.addEventListener('touchstart', handleDocumentClick);
+    return () => {
+      document.removeEventListener('mousedown', handleDocumentClick);
+      document.removeEventListener('touchstart', handleDocumentClick);
+    };
+  }, [showAddQuotePopover]);
+
+  const handleSaveNewQuote = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newQuoteText.trim()) return;
+    onAddQuote({
+      text: newQuoteText.trim(),
+      author: newQuoteAuthor.trim() || 'Anonymous',
+      category: newQuoteCategory,
+    });
+    setNewQuoteText('');
+    setNewQuoteAuthor('');
+    setShowAddQuotePopover(false);
+    setCurrentQuoteIdx(0); // View newly added quote
+    Sound.success(soundEnabled);
+  };
+
+  // Inline Quick Add Task for Today
+  const [quickTaskTitle, setQuickTaskTitle] = useState('');
+  const [showQuickTaskInput, setShowQuickTaskInput] = useState(false);
+
+  const handleCreateQuickTask = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickTaskTitle.trim() || !onAddTodo) return;
+    onAddTodo(
+      quickTaskTitle.trim(),
+      'medium',
+      'Today',
+      new Date().toISOString().split('T')[0],
+      'todo'
+    );
+    setQuickTaskTitle('');
+    setShowQuickTaskInput(false);
+    Sound.click(soundEnabled);
+  };
+
+  // Inline Quick Add Habit
+  const [showQuickHabitInput, setShowQuickHabitInput] = useState(false);
+  const [quickHabitTitle, setQuickHabitTitle] = useState('');
+
+  const handleCreateQuickHabit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickHabitTitle.trim() || !onAddHabit) return;
+    onAddHabit(quickHabitTitle.trim(), 'Daily', '⚡', '#6366F1');
+    setQuickHabitTitle('');
+    setShowQuickHabitInput(false);
+    Sound.success(soundEnabled);
+  };
+
+  // Inline Quick Add Expense
+  const [showQuickExpenseModal, setShowQuickExpenseModal] = useState(false);
+  const [quickExpenseName, setQuickExpenseName] = useState('');
+  const [quickExpenseAmount, setQuickExpenseAmount] = useState('');
+  const [quickExpenseCat, setQuickExpenseCat] = useState<'Food' | 'Transport' | 'Subscriptions' | 'Shopping' | 'Utilities'>('Food');
+
+  const handleCreateQuickExpense = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickExpenseName.trim() || !quickExpenseAmount || !onAddExpense) return;
+    onAddExpense({
+      name: quickExpenseName.trim(),
+      amount: Number(quickExpenseAmount),
+      category: quickExpenseCat,
+      date: new Date().toISOString().split('T')[0],
+      billingCycle: 'one-time',
+      icon: '💳',
+      active: true,
+    });
+    setQuickExpenseName('');
+    setQuickExpenseAmount('');
+    setShowQuickExpenseModal(false);
+    Sound.success(soundEnabled);
+  };
+
+  // Drag-and-Drop Home Grid Columns State (3-column responsive smart-packing grid)
+  const [columns, setColumns] = useState<[string[], string[], string[]]>(() => {
+    return Storage.getHomeGridColumns();
+  });
+
+  const isDefaultOrder = useMemo(() => {
+    return (
+      JSON.stringify(columns[0]) === JSON.stringify(DEFAULT_HOME_COLUMNS[0]) &&
+      JSON.stringify(columns[1]) === JSON.stringify(DEFAULT_HOME_COLUMNS[1]) &&
+      JSON.stringify(columns[2]) === JSON.stringify(DEFAULT_HOME_COLUMNS[2])
+    );
+  }, [columns]);
+
+  const handleResetGridLayout = () => {
+    Sound.click(soundEnabled);
+    const resetCols: [string[], string[], string[]] = [
+      [...DEFAULT_HOME_COLUMNS[0]],
+      [...DEFAULT_HOME_COLUMNS[1]],
+      [...DEFAULT_HOME_COLUMNS[2]],
+    ];
+    setColumns(resetCols);
+    Storage.setHomeGridColumns(resetCols);
+  };
+
+  const handleColumnsChange = (newCols: [string[], string[], string[]]) => {
+    setColumns(newCols);
+    Storage.setHomeGridColumns(newCols);
+  };
+
+  // Metric Computations
+  const pendingTodos = useMemo(() => todos.filter((t) => !t.completed), [todos]);
+  const highPriorityCount = useMemo(
+    () => pendingTodos.filter((t) => t.priority === 'high' || t.priority === 'urgent').length,
+    [pendingTodos]
+  );
+
+  const habitStats = useMemo(() => {
+    if (habits.length === 0) return { completed: 0, total: 0, percentage: 0 };
+    const completed = habits.filter((h) => h.completedDays[todayIndex]).length;
+    const total = habits.length;
+    const percentage = Math.round((completed / total) * 100);
+    return { completed, total, percentage };
+  }, [habits, todayIndex]);
+
+  const todayDateStr = new Date().toISOString().split('T')[0];
+  const todayJournalCount = useMemo(
+    () => journal.filter((j) => j.date === todayDateStr).length,
+    [journal, todayDateStr]
+  );
+
+  // Real Dynamic Spending Stats derived from expenses prop strictly for current week (Mon-Sun)
+  const spendingStats = useMemo(() => {
+    // Current week boundary: Monday to Sunday
+    const now = new Date();
+    const currentDayOfWeek = (now.getDay() + 6) % 7; // 0 for Mon, 6 for Sun
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - currentDayOfWeek);
+    monday.setHours(0, 0, 0, 0);
+
+    // Deterministic YYYY-MM-DD dates for Monday (index 0) through Sunday (index 6)
+    const weekDates = Array.from({ length: 7 }).map((_, i) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    });
+
+    const dayTotals = [0, 0, 0, 0, 0, 0, 0];
+    const thisWeekExpenses = expenses.filter((e) => {
+      if (!e.date) return false;
+      const cleanDate = e.date.split('T')[0];
+      return weekDates.includes(cleanDate);
+    });
+
+    thisWeekExpenses.forEach((e) => {
+      const cleanDate = e.date.split('T')[0];
+      const dayIdx = weekDates.indexOf(cleanDate);
+      if (dayIdx >= 0 && dayIdx <= 6) {
+        dayTotals[dayIdx] += (Number(e.amount) || 0);
+      }
+    });
+
+    const weeklyTotal = dayTotals.reduce((a, b) => a + b, 0);
+
+    const maxDay = Math.max(...dayTotals, 1);
+    const dayPercentages = dayTotals.map((tot) => {
+      if (tot === 0) return 0;
+      return Math.min(100, Math.max(16, Math.round((tot / maxDay) * 100)));
+    });
+
+    // Dynamic Category Breakdown strictly for THIS WEEK (Mon-Sun)
+    const foodTotal = thisWeekExpenses
+      .filter((e) => {
+        const c = (e.category || '').toLowerCase();
+        return (
+          c.includes('food') ||
+          c.includes('grocer') ||
+          c.includes('dining') ||
+          c.includes('coffee') ||
+          c.includes('snack')
+        );
+      })
+      .reduce((a, c) => a + (Number(c.amount) || 0), 0);
+
+    const transportTotal = thisWeekExpenses
+      .filter((e) => {
+        const c = (e.category || '').toLowerCase();
+        return (
+          c.includes('transit') ||
+          c.includes('taxi') ||
+          c.includes('transport') ||
+          c.includes('fuel') ||
+          c.includes('travel')
+        );
+      })
+      .reduce((a, c) => a + (Number(c.amount) || 0), 0);
+
+    const subsTotal = thisWeekExpenses
+      .filter((e) => {
+        const c = (e.category || '').toLowerCase();
+        return (
+          c.includes('subscript') ||
+          c.includes('tech') ||
+          c.includes('bill') ||
+          c.includes('util') ||
+          c.includes('rent')
+        );
+      })
+      .reduce((a, c) => a + (Number(c.amount) || 0), 0);
+
+    return {
+      weekly: weeklyTotal,
+      dayTotals,
+      dayPercentages,
+      food: foodTotal,
+      transport: transportTotal,
+      subs: subsTotal,
+      hasExpenses: thisWeekExpenses.length > 0,
+      thisWeekCount: thisWeekExpenses.length,
+      allTimeCount: expenses.length,
+    };
+  }, [expenses]);
+
+  return (
+    <div className="space-y-3.5 pb-8">
+      {/* ========================================================================= */}
+      {/* 1. GREETING & WEATHER BAR (TOPMOST) */}
+      {/* ========================================================================= */}
+      <div className="space-y-2.5 pb-0">
+        <motion.div
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+          className="flex items-center justify-between gap-4 flex-wrap"
+        >
+          {/* Greeting: Good morning / afternoon / evening, [User Name]! */}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="text-2xl sm:text-3xl shrink-0" role="img" aria-label="greeting">
+              {greetingEmoji}
+            </span>
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold text-[#37352F] dark:text-white tracking-tight leading-tight truncate">
+                {greeting}, {profile.name ? profile.name.split(' ')[0] : 'there'}!
+              </h1>
+              <p className="text-xs text-[#787774] dark:text-[#9CA3AF] mt-0.5 font-medium">
+                {formattedTimeStr} • {timezoneStr}
+              </p>
+            </div>
+          </div>
+
+          <CurrentWeatherWidget soundEnabled={soundEnabled} />
+        </motion.div>
+
+        {/* Side-by-Side: Quote Tile (70%) + Date & Clock Tile (30%) */}
+        <div className="grid grid-cols-1 lg:grid-cols-10 gap-3.5 items-stretch">
+          {/* Quote Tile (70% ratio - increased size & synchronized font) */}
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
+            onMouseEnter={() => setIsQuoteAutoPlay(false)}
+            onMouseLeave={() => setIsQuoteAutoPlay(true)}
+            className="grid-tile lg:col-span-7 relative p-4 sm:p-5 rounded-2xl bg-[#F7F7F5] dark:bg-[#23324C] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col justify-between gap-3 transition-all group min-h-[135px]"
+          >
+            {activeQuote ? (
+              <div className="flex items-start gap-3.5 min-w-0 flex-1">
+                <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200/60 dark:border-amber-900/40 flex items-center justify-center shrink-0 text-amber-600 dark:text-amber-400 mt-0.5">
+                  <Quote className="w-4 h-4" />
+                </div>
+                <div className="min-w-0 space-y-1 flex-1">
+                  {/* High readability, consistent font size with main dashboard */}
+                  <p className="font-sans text-base sm:text-lg md:text-[19px] font-semibold text-[#37352F] dark:text-[#E2E8F0] leading-relaxed tracking-normal line-clamp-3 sm:line-clamp-2">
+                    &ldquo;{activeQuote.text}&rdquo;
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3.5 min-w-0 flex-1 py-1">
+                <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200/60 dark:border-amber-900/40 flex items-center justify-center shrink-0 text-amber-600 dark:text-amber-400">
+                  <Quote className="w-4 h-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-base sm:text-lg font-semibold text-[#37352F] dark:text-[#E2E8F0]">
+                    No Quotes in Collection
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Quote Controls Bar */}
+            <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-[#EDECE9] dark:border-[#334155]/60 flex-wrap">
+              {/* Author & counter badge */}
+              <div className="flex items-center gap-2 text-xs text-[#787774] dark:text-[#94A3B8] truncate">
+                {activeQuote && (
+                  <span className="font-bold text-xs sm:text-sm text-[#37352F] dark:text-[#E2E8F0] truncate">
+                    — {activeQuote.author}
+                  </span>
+                )}
+                {activeQuote?.category && (
+                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-900/40">
+                    {activeQuote.category}
+                  </span>
+                )}
+                {allQuotesList.length > 1 && (
+                  <span className="font-mono text-[11px] px-2 py-0.5 rounded-md bg-white dark:bg-[#0F172A] text-gray-500 dark:text-gray-400 border border-gray-200/80 dark:border-gray-700">
+                    {currentQuoteIdx + 1}/{allQuotesList.length}
+                  </span>
+                )}
+              </div>
+
+              {/* Right bottom corner */}
+              <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                {allQuotesList.length > 1 && (
+                  <div className="flex items-center gap-1 bg-white dark:bg-[#0F172A] border border-gray-200 dark:border-gray-700 rounded-lg p-0.5">
+                    <button
+                      type="button"
+                      onClick={handlePrevQuote}
+                      title="Previous quote"
+                      className="p-1 rounded text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white transition-colors cursor-pointer"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleNextQuote}
+                      title="Next quote"
+                      className="p-1 rounded text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white transition-colors cursor-pointer"
+                    >
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => handleItemNavigate('quotes')}
+                  title="Open Quotes Lounge"
+                  className="px-2.5 py-1 rounded-lg text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white hover:bg-gray-200/70 dark:hover:bg-gray-800 transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
+                >
+                  <Quote className="w-3 h-3" />
+                  <span className="hidden sm:inline">Lounge</span>
+                </button>
+
+                <button
+                  ref={quoteButtonRef}
+                  type="button"
+                  onClick={() => {
+                    Sound.click(soundEnabled);
+                    setShowAddQuotePopover((prev) => !prev);
+                  }}
+                  title="Add quote to collection"
+                  className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    showAddQuotePopover
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-[#6366F1] hover:bg-indigo-700 text-white shadow-xs'
+                  }`}
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Add</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Floating Collapsible Add Quote Popover Form */}
+            {showAddQuotePopover && (
+              <div
+                ref={quotePopoverRef}
+                className="absolute right-0 top-full mt-2 w-80 sm:w-96 z-50 p-4 rounded-2xl bg-white dark:bg-[#1E293B] border border-gray-200 dark:border-gray-700 shadow-xl animate-in fade-in slide-in-from-top-2"
+              >
+                <div className="flex items-center justify-between pb-2 border-b border-[#EDECE9] dark:border-gray-700">
+                  <div className="flex items-center gap-2">
+                    <Quote className="w-3.5 h-3.5 text-indigo-600" />
+                    <h4 className="text-xs font-bold text-gray-900 dark:text-white">
+                      Add New Inspirational Quote
+                    </h4>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddQuotePopover(false)}
+                    className="text-gray-400 hover:text-gray-600 p-0.5 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveNewQuote} className="space-y-2.5 pt-3">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-gray-600 dark:text-gray-300 mb-1">
+                      Quote Text
+                    </label>
+                    <textarea
+                      required
+                      rows={2}
+                      placeholder="e.g. The journey of a thousand miles begins with one step."
+                      value={newQuoteText}
+                      onChange={(e) => setNewQuoteText(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0F172A] text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-semibold text-gray-600 dark:text-gray-300 mb-1">
+                        Author
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Lao Tzu"
+                        value={newQuoteAuthor}
+                        onChange={(e) => setNewQuoteAuthor(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0F172A] text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-semibold text-gray-600 dark:text-gray-300 mb-1">
+                        Category
+                      </label>
+                      <select
+                        value={newQuoteCategory}
+                        onChange={(e) => setNewQuoteCategory(e.target.value)}
+                        className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0F172A] text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      >
+                        <option value="Inspiration">Inspiration</option>
+                        <option value="Focus">Focus</option>
+                        <option value="Discipline">Discipline</option>
+                        <option value="Wisdom">Wisdom</option>
+                        <option value="Mindset">Mindset</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-1 border-t border-[#EDECE9] dark:border-gray-700">
+                    <button
+                      type="button"
+                      onClick={() => setShowAddQuotePopover(false)}
+                      className="px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-3.5 py-1.5 text-xs font-bold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer shadow-xs"
+                    >
+                      Save Quote
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+          </motion.div>
+
+          {/* Date & Clock Tile (30% ratio) */}
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, delay: 0.14, ease: [0.16, 1, 0.3, 1] }}
+            className={`grid-tile lg:col-span-3 px-3.5 py-3 sm:px-4 sm:py-3.5 rounded-2xl bg-[#F7F7F5] dark:bg-[#23324C] border border-[#E5E5E2] dark:border-[#334155] shadow-xs flex flex-col justify-between transition-all duration-300 min-h-[135px] ${
+              isAlarmRinging ? 'alarm-tile-pulse' : ''
+            }`}
+          >
+            <FlipClock onRingingChange={setIsAlarmRinging} />
+          </motion.div>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 2. MAIN DASHBOARD GRID (Smart Space-Efficient Packing Grid) */}
+      {/* ========================================================================= */}
+      <CommandCenterGrid
+        columns={columns}
+        onColumnsChange={handleColumnsChange}
+        isDefaultOrder={isDefaultOrder}
+        handleResetGridLayout={handleResetGridLayout}
+        todos={todos}
+        onAddTodo={onAddTodo}
+        onToggleTodo={onToggleTodo}
+        onNavigate={handleItemNavigate}
+        habits={habits}
+        todayIndex={todayIndex}
+        onToggleHabitDay={onToggleHabitDay}
+        showQuickHabitInput={showQuickHabitInput}
+        setShowQuickHabitInput={setShowQuickHabitInput}
+        quickHabitTitle={quickHabitTitle}
+        setQuickHabitTitle={setQuickHabitTitle}
+        handleCreateQuickHabit={handleCreateQuickHabit}
+        quickTaskTitle={quickTaskTitle}
+        setQuickTaskTitle={setQuickTaskTitle}
+        showQuickTaskInput={showQuickTaskInput}
+        setShowQuickTaskInput={setShowQuickTaskInput}
+        handleCreateQuickTask={handleCreateQuickTask}
+        spendingStats={spendingStats}
+        expenses={expenses}
+        setShowQuickExpenseModal={setShowQuickExpenseModal}
+        schedule={schedule}
+        onUpdateSchedule={onUpdateSchedule}
+        soundEnabled={soundEnabled}
+      />
+
+      {/* Quick Add Expense Modal */}
+      {showQuickExpenseModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
+          <div className="bg-white dark:bg-[#1E293B] border border-[#EDECE9] dark:border-[#334155] rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4">
+            <h3 className="text-sm font-bold text-[#37352F] dark:text-white flex items-center gap-2">
+              <CreditCard className="w-4 h-4 text-[#6366F1]" />
+              <span>Record Quick Expense</span>
+            </h3>
+
+            <form onSubmit={handleCreateQuickExpense} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-[#787774] dark:text-[#9CA3AF] mb-1">
+                  Item Description
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Grocery Coffee"
+                  value={quickExpenseName}
+                  onChange={(e) => setQuickExpenseName(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#F8FAFC] dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#334155] rounded-xl text-xs text-[#37352F] dark:text-white focus:outline-hidden focus:border-[#6366F1]"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#787774] dark:text-[#9CA3AF] mb-1">
+                  Amount (₹)
+                </label>
+                <input
+                  type="number"
+                  required
+                  placeholder="e.g. 250"
+                  value={quickExpenseAmount}
+                  onChange={(e) => setQuickExpenseAmount(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#F8FAFC] dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#334155] rounded-xl text-xs text-[#37352F] dark:text-white focus:outline-hidden focus:border-[#6366F1]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#787774] dark:text-[#9CA3AF] mb-1">
+                  Category
+                </label>
+                <select
+                  value={quickExpenseCat}
+                  onChange={(e) => setQuickExpenseCat(e.target.value as any)}
+                  className="w-full px-3 py-2 bg-[#F8FAFC] dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#334155] rounded-xl text-xs text-[#37352F] dark:text-white focus:outline-hidden"
+                >
+                  <option value="Food">Food &amp; Dining</option>
+                  <option value="Transport">Transport &amp; Fuel</option>
+                  <option value="Subscriptions">Subscriptions</option>
+                  <option value="Shopping">Shopping</option>
+                  <option value="Utilities">Utilities &amp; Bills</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowQuickExpenseModal(false)}
+                  className="px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-xs font-semibold rounded-xl text-gray-700 dark:text-gray-300 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-3 py-1.5 bg-[#6366F1] hover:bg-[#4F46E5] text-white text-xs font-semibold rounded-xl cursor-pointer"
+                >
+                  Record Expense
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

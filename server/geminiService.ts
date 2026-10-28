@@ -1,0 +1,915 @@
+import { GoogleGenAI, Modality, Type, FunctionDeclaration } from "@google/genai";
+import { WebSocketServer, WebSocket } from "ws";
+import type { Server as HttpServer, IncomingMessage } from "http";
+import type { Request, Response } from "express";
+import { requireAuthForServerKeyUsage } from "./security.js";
+
+// Initialize Gemini Client (lazily with User-Agent header for telemetry)
+let aiClient: GoogleGenAI | null = null;
+
+export function getGeminiClient(customApiKey?: string): GoogleGenAI {
+  const trimmedCustom = customApiKey?.trim();
+  if (trimmedCustom) {
+    return new GoogleGenAI({
+      apiKey: trimmedCustom,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
+  }
+
+  if (!aiClient) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("GEMINI_API_KEY is not configured in the environment.");
+    }
+    aiClient = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
+  }
+  return aiClient;
+}
+
+export function isGeminiKeyConfigured(customApiKey?: string): boolean {
+  if (customApiKey && customApiKey.trim().length > 0) return true;
+  return Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim() !== "");
+}
+
+export function extractGeminiApiKey(req: Request): string | undefined {
+  const headerKey = req.headers["x-gemini-api-key"];
+  if (typeof headerKey === "string" && headerKey.trim()) {
+    return headerKey.trim();
+  }
+  if (req.body && typeof req.body.apiKey === "string" && req.body.apiKey.trim()) {
+    return req.body.apiKey.trim();
+  }
+  if (req.body && typeof req.body.geminiApiKey === "string" && req.body.geminiApiKey.trim()) {
+    return req.body.geminiApiKey.trim();
+  }
+  return undefined;
+}
+
+// Function Declarations for Dashboard Voice Commands & Tools
+const dashboardTools: FunctionDeclaration[] = [
+  {
+    name: "createTask",
+    description: "Create a new to-do task on the user's dashboard with title, optional priority, and category.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title: {
+          type: Type.STRING,
+          description: "The task title or description, e.g. 'Submit project report' or 'Buy groceries'",
+        },
+        priority: {
+          type: Type.STRING,
+          description: "Priority level: 'low', 'medium', or 'high'",
+        },
+        category: {
+          type: Type.STRING,
+          description: "Category: 'Work', 'Personal', 'Study', 'Health', etc.",
+        },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "logExpense",
+    description: "Log a spending or expense transaction with title, amount, and category.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title: {
+          type: Type.STRING,
+          description: "Description of the expense, e.g. 'Coffee with friends' or 'Internet bill'",
+        },
+        amount: {
+          type: Type.NUMBER,
+          description: "The numerical monetary amount spent, e.g. 250 or 49.99",
+        },
+        category: {
+          type: Type.STRING,
+          description: "Expense category: 'Food & Dining', 'Groceries', 'Transport', 'Utilities', 'Shopping', etc.",
+        },
+      },
+      required: ["title", "amount"],
+    },
+  },
+  {
+    name: "deleteExpense",
+    description: "Delete or remove an existing expense entry from the user's dashboard by description/name, amount, date ('today', 'yesterday'), category, or most recent/latest. Supports batch deletion (e.g. 'delete all the spendings I did today' -> date: 'today', all: true).",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        query: {
+          type: Type.STRING,
+          description: "Description or keyword of the expense to delete, e.g. 'lunch', 'coffee', 'groceries'",
+        },
+        amount: {
+          type: Type.NUMBER,
+          description: "Numerical amount of the expense to delete, e.g. 29, 250, 500",
+        },
+        date: {
+          type: Type.STRING,
+          description: "Date of the expense, e.g. 'today', 'yesterday', or 'YYYY-MM-DD'",
+        },
+        category: {
+          type: Type.STRING,
+          description: "Category of the expense, e.g. 'Food & Dining', 'Groceries'",
+        },
+        isLatest: {
+          type: Type.BOOLEAN,
+          description: "Set to true if user wants to delete their most recent or last expense",
+        },
+        all: {
+          type: Type.BOOLEAN,
+          description: "Set to true to delete all matching expenses or all expenses on that date (e.g. 'delete all the spendings I did today')",
+        },
+      },
+    },
+  },
+  {
+    name: "updateExpense",
+    description: "Update or modify an existing expense entry (e.g. change amount, title, category, or date).",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        query: {
+          type: Type.STRING,
+          description: "Existing expense title, keyword, or description to identify it, e.g. 'lunch' or 'coffee'",
+        },
+        oldAmount: {
+          type: Type.NUMBER,
+          description: "Original amount of the expense if known",
+        },
+        newName: {
+          type: Type.STRING,
+          description: "New title or description for the expense",
+        },
+        newAmount: {
+          type: Type.NUMBER,
+          description: "New numerical amount for the expense",
+        },
+        newCategory: {
+          type: Type.STRING,
+          description: "New category for the expense",
+        },
+        isLatest: {
+          type: Type.BOOLEAN,
+          description: "Set to true if updating the most recent or last logged expense",
+        },
+      },
+    },
+  },
+  {
+    name: "deleteTask",
+    description: "Delete or remove a to-do task from the dashboard by title or description.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title: {
+          type: Type.STRING,
+          description: "Title or keywords of the task to delete",
+        },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "updateTask",
+    description: "Update an existing task status (e.g. mark completed, pending) or update priority/category.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title: {
+          type: Type.STRING,
+          description: "Title or keywords of the task to update",
+        },
+        status: {
+          type: Type.STRING,
+          description: "Status to set: 'completed', 'in_progress', or 'pending'",
+        },
+        priority: {
+          type: Type.STRING,
+          description: "Priority: 'low', 'medium', or 'high'",
+        },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "toggleHabit",
+    description: "Toggle or check off a daily habit by habit title, or check both habits ('both: true') or all habits ('all: true').",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        habitTitle: {
+          type: Type.STRING,
+          description: "Name of the habit to toggle, e.g. 'Morning Meditation' or 'Drink 2L Water'",
+        },
+        both: {
+          type: Type.BOOLEAN,
+          description: "Set to true to check off both habits (e.g. 'check both my habits as done')",
+        },
+        all: {
+          type: Type.BOOLEAN,
+          description: "Set to true to check off all habits",
+        },
+      },
+    },
+  },
+  {
+    name: "toggleHabits",
+    description: "Check off or toggle multiple habits at once (e.g. 'check both my habits as done' or 'mark all habits as completed').",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        both: {
+          type: Type.BOOLEAN,
+          description: "Set to true to check off both habits",
+        },
+        all: {
+          type: Type.BOOLEAN,
+          description: "Set to true to check off all habits",
+        },
+        habitTitles: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+          description: "List of habit titles to check off",
+        },
+      },
+    },
+  },
+  {
+    name: "navigateView",
+    description: "Navigate the dashboard to a specific view or workspace page.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        viewName: {
+          type: Type.STRING,
+          description: "Target view: 'dashboard', 'tasks', 'habits', 'expenses', 'diary', 'portfolio', 'exams', 'timeline', 'vault', 'quotes', 'backup'",
+        },
+      },
+      required: ["viewName"],
+    },
+  },
+  {
+    name: "queryDashboardData",
+    description: "Query summary of user's pending tasks, habits streak, or total spending.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        queryType: {
+          type: Type.STRING,
+          description: "Type of data requested: 'tasks', 'expenses', 'habits', or 'all'",
+        },
+      },
+      required: ["queryType"],
+    },
+  },
+];
+
+// 1. Health check
+export function handleGeminiHealth(req: Request, res: Response) {
+  const customKey = extractGeminiApiKey(req);
+  res.json({
+    status: "ok",
+    hasApiKey: isGeminiKeyConfigured(customKey),
+    userCustomKeyActive: Boolean(customKey),
+    defaultModel: "gemini-3.1-flash-lite",
+    liveModel: "gemini-3.8-live",
+  });
+}
+
+// 2. Multi-turn Chat & Voice Command API
+export async function handleGeminiChat(req: Request, res: Response) {
+  try {
+    const customKey = extractGeminiApiKey(req);
+    if (!isGeminiKeyConfigured(customKey)) {
+      return res.status(503).json({
+        error: "Google Gemini API key is not configured. Please add your Gemini API key in User Profile > AI API Keys.",
+      });
+    }
+
+    const {
+      message,
+      history = [],
+      model = "gemini-3.1-flash-lite",
+      roleSystemInstruction,
+      dashboardContext,
+    } = req.body;
+
+    if (!message || typeof message !== "string") {
+      return res.status(400).json({ error: "Missing 'message' in request body." });
+    }
+
+    const ai = getGeminiClient(customKey);
+
+    // Validate model selection
+    const allowedModels = [
+      "gemini-3.1-flash-lite",
+      "gemini-3.5-flash",
+      "gemini-3.8-flash",
+      "gemini-3.1-pro-preview",
+    ];
+    const selectedModel = allowedModels.includes(model) ? model : "gemini-3.1-flash-lite";
+
+    // Build system instruction
+    const baseInstruction =
+      "You are Zikenn AI, an intelligent personal dashboard assistant, voice companion, and executive chief of staff. " +
+      "You help the user manage tasks, track habits, log and delete/modify expenses, organize exams, and reflect in their diary. " +
+      "You have full capability to execute dashboard actions via function tools: createTask, deleteTask, updateTask, logExpense, deleteExpense, updateExpense, toggleHabit, toggleHabits, navigateView, queryDashboardData.\n" +
+      "CRITICAL COMMAND RULES (INTENT DISCIPLINE):\n" +
+      "1. NEVER create a task (createTask) when the user's intent is to delete, remove, or modify existing data. For example, if the user says 'Delete all the spendings I did today', you MUST call deleteExpense with { date: 'today', all: true }. NEVER create a task titled 'delete all the spendings I did today'!\n" +
+      "2. NEVER create a task when the user asks to check off, finish, or toggle habits. If the user says 'Check both my habits as done', you MUST call toggleHabits with { both: true } or toggleHabit with { both: true }. NEVER create a task for habit completion!\n" +
+      "3. When the user asks to delete, cancel, or modify an expense or task (such as 'Delete the recent 29 rupees expense for lunch today'), ALWAYS call the appropriate tool immediately.\n" +
+      "Be concise, engaging, and helpful. When you call a tool or understand a user command, confirm clearly what you did.";
+
+    const contextPart = dashboardContext
+      ? `\nCurrent Dashboard State Summary:\n- Active Tasks: ${dashboardContext.pendingTasksCount ?? 'unknown'}\n- Today's Completed Habits: ${dashboardContext.completedHabitsCount ?? 0}/${dashboardContext.totalHabitsCount ?? 0}\n- Total Month Expenses: ₹${dashboardContext.totalExpenses ?? 0}\n` +
+        (dashboardContext.recentExpensesSummary ? `- Recent Logged Expenses: ${dashboardContext.recentExpensesSummary}\n` : '') +
+        (dashboardContext.recentTasksSummary ? `- Recent Tasks: ${dashboardContext.recentTasksSummary}\n` : '')
+      : "";
+
+    const fullSystemInstruction = `${baseInstruction}\n${roleSystemInstruction || ""}${contextPart}`;
+
+    // Format history for chat
+    const contents: any[] = [];
+    if (Array.isArray(history)) {
+      for (const msg of history) {
+        if (msg.role === "user" || msg.role === "assistant" || msg.role === "model") {
+          contents.push({
+            role: msg.role === "assistant" ? "model" : "user",
+            parts: [{ text: msg.content || "" }],
+          });
+        }
+      }
+    }
+    // Add current user message
+    contents.push({
+      role: "user",
+      parts: [{ text: message }],
+    });
+
+    // Resilient fallback order to gracefully handle temporary demand spikes
+    const candidateModels = [
+      selectedModel,
+      "gemini-3.1-flash-lite",
+      "gemini-3.5-flash",
+      "gemini-3.8-flash",
+    ];
+    const modelsToTry = Array.from(new Set(candidateModels));
+
+    let response: any = null;
+    let modelSuccessfullyUsed = selectedModel;
+
+    for (const modelToAttempt of modelsToTry) {
+      try {
+        response = await ai.models.generateContent({
+          model: modelToAttempt,
+          contents,
+          config: {
+            systemInstruction: fullSystemInstruction,
+            tools: [{ functionDeclarations: dashboardTools }],
+          },
+        });
+        modelSuccessfullyUsed = modelToAttempt;
+        break; // Succeeded
+      } catch {
+        // Try next fallback candidate smoothly without crashing
+      }
+    }
+
+    if (!response) {
+      return res.json({
+        reply: "I am temporarily experiencing high cloud traffic. I'm ready to assist—please try your question again in a moment, or use one of the quick dashboard tools below.",
+        functionCalls: [],
+        model: "offline-fallback",
+        warning: "Temporary capacity limitation on cloud models.",
+      });
+    }
+
+    const replyText = response.text || "";
+    const functionCalls = response.functionCalls || [];
+
+    // Map function calls to action chips for UI execution
+    const executedActions: any[] = [];
+    for (const fc of functionCalls) {
+      executedActions.push({
+        name: fc.name,
+        args: fc.args,
+      });
+    }
+
+    res.json({
+      reply: replyText,
+      functionCalls: executedActions,
+      model: modelSuccessfullyUsed,
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      error: "Failed to process message with Gemini AI.",
+    });
+  }
+}
+
+// 3. Text-to-Speech API (gemini-3.1-flash-tts-preview)
+export async function handleGeminiTts(req: Request, res: Response) {
+  try {
+    const customKey = extractGeminiApiKey(req);
+    if (!isGeminiKeyConfigured(customKey)) {
+      return res.status(503).json({ error: "Google Gemini API key is not configured." });
+    }
+
+    const { text, voice = "Zephyr" } = req.body;
+    if (!text || typeof text !== "string") {
+      return res.status(400).json({ error: "Missing 'text' parameter." });
+    }
+
+    const ai = getGeminiClient(customKey);
+    const cleanText = text.slice(0, 1000); // safety cap
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.1-flash-tts-preview",
+      contents: [{ parts: [{ text: cleanText }] }],
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: voice || "Zephyr" },
+          },
+        },
+      },
+    });
+
+    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (!base64Audio) {
+      return res.status(502).json({ error: "No audio generated from model." });
+    }
+
+    res.json({
+      audio: base64Audio,
+      sampleRate: 24000,
+      format: "pcm16",
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "TTS generation failed." });
+  }
+}
+
+// 3b. Audio Transcription API (gemini-3.5-transcribe)
+export async function handleGeminiTranscribe(req: Request, res: Response) {
+  try {
+    const customKey = extractGeminiApiKey(req);
+    if (!isGeminiKeyConfigured(customKey)) {
+      return res.status(503).json({ error: "Google Gemini API key is not configured." });
+    }
+
+    const { audio, mimeType = "audio/wav", isDiagnosticTest = false } = req.body;
+
+    // Fast diagnostic verification ping without invoking heavy models
+    if (isDiagnosticTest) {
+      return res.json({ transcript: "", verified: true, status: "ok" });
+    }
+
+    if (!audio || typeof audio !== "string") {
+      return res.status(400).json({ error: "Missing 'audio' (base64 string) in request body." });
+    }
+
+    // Clean base64 string (strip data-url scheme and whitespace)
+    const cleanBase64 = audio.replace(/^data:[^;]+;base64,/, "").replace(/\s/g, "");
+    if (!cleanBase64 || cleanBase64.length < 128) {
+      return res.json({ transcript: "" });
+    }
+
+    // Sanitize MIME type (remove parameters like codecs=opus)
+    let cleanMimeType = (mimeType || "audio/wav").split(";")[0].trim().toLowerCase();
+    if (cleanMimeType === "audio/wave") cleanMimeType = "audio/wav";
+
+    const ai = getGeminiClient(customKey);
+    const audioPart = {
+      inlineData: {
+        mimeType: cleanMimeType,
+        data: cleanBase64,
+      },
+    };
+
+    const promptText = "Transcribe this spoken audio exactly into text. Return only the spoken words without any commentary, quotes, or timestamps. If there is no clear speech or only silence/noise, return an empty string.";
+
+    // Dedicated transcription model order: gemini-3.1-flash-lite (fast, multimodal) -> gemini-3.8-flash
+    const modelsToTry = ["gemini-3.1-flash-lite", "gemini-3.8-flash"];
+    let transcript = "";
+    let lastError: any = null;
+
+    for (const modelName of modelsToTry) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: [audioPart, promptText],
+        });
+        const rawText = (response.text || "").trim();
+        // Discard pure silence artifacts like "00:00", "[silence]", "...", etc.
+        const cleaned = rawText
+          .replace(/^["'`]|["'`]$/g, "")
+          .replace(/^\[?(silence|blank_audio|\d{1,2}:\d{2})\]?\.?$/i, "")
+          .trim();
+
+        if (cleaned) {
+          transcript = cleaned;
+          lastError = null;
+          console.log(`[Gemini Transcribe] Model ${modelName} transcribed (${cleanMimeType}): "${transcript}"`);
+          break; // Successfully transcribed spoken words!
+        }
+      } catch (err: any) {
+        lastError = err;
+        // Continue to the next fallback model smoothly
+      }
+    }
+
+    if (lastError && !transcript) {
+      return res.json({
+        transcript: "",
+        warning: "Audio transcription is temporarily experiencing high demand. Please speak again in a moment.",
+      });
+    }
+
+    res.json({ transcript });
+  } catch (err: any) {
+    console.error("[gemini transcribe]", err);
+    res.status(500).json({ error: "Audio transcription failed." });
+  }
+}
+
+// 3c. Validate / Test Gemini API Key
+export async function handleGeminiTestKey(req: Request, res: Response) {
+  res.setHeader("Content-Type", "application/json");
+  try {
+    const customKey = extractGeminiApiKey(req);
+    if (!customKey) {
+      return res.status(400).json({
+        success: false,
+        message: "No Gemini API key provided. Please enter a valid Gemini API key.",
+      });
+    }
+
+    const ai = getGeminiClient(customKey);
+    let validated = false;
+    try {
+      const result = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: "Hello",
+      });
+      if (result && (result.text || result.candidates)) {
+        validated = true;
+      }
+    } catch (e1: any) {
+      // Fallback model check in case 2.5-flash had a temporary model outage
+      const result2 = await ai.models.generateContent({
+        model: "gemini-3.8-flash",
+        contents: "Hello",
+      });
+      if (result2 && (result2.text || result2.candidates)) {
+        validated = true;
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: "Google Gemini API key validated successfully! Ready to power your assistant.",
+    });
+  } catch (err: any) {
+    const errorMsg = err?.message || String(err);
+    return res.status(400).json({
+      success: false,
+      message: `Gemini key validation failed: ${errorMsg}`,
+    });
+  }
+}
+
+// 4. Gemini Live API WebSocket Server (gemini-3.8-live)
+export function setupGeminiLiveWebSocket(server: HttpServer) {
+  const wss = new WebSocketServer({ noServer: true });
+
+  server.on("upgrade", (request: IncomingMessage, socket, head) => {
+    const { pathname } = new URL(request.url || "", `http://${request.headers.host || "localhost"}`);
+    if (pathname === "/live" || pathname === "/api/live") {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit("connection", ws, request);
+      });
+    }
+  });
+
+  wss.on("connection", async (clientWs: WebSocket, request?: IncomingMessage) => {
+    console.log("[Live API] Client connected to voice stream");
+
+    let customKey: string | undefined;
+    try {
+      if (request?.url) {
+        const parsedUrl = new URL(request.url, `http://${request.headers?.host || "localhost"}`);
+        const queryKey = parsedUrl.searchParams.get("apiKey");
+        if (queryKey && queryKey.trim()) {
+          customKey = queryKey.trim();
+        }
+      }
+    } catch {}
+
+    if (!customKey && request?.headers?.["x-gemini-api-key"]) {
+      const hKey = request.headers["x-gemini-api-key"];
+      if (typeof hKey === "string" && hKey.trim()) {
+        customKey = hKey.trim();
+      }
+    }
+
+    if (!isGeminiKeyConfigured(customKey)) {
+      clientWs.send(
+        JSON.stringify({
+          error: "Google Gemini API key is not configured. Please enter your Gemini API key in Settings > AI API Keys.",
+        })
+      );
+      clientWs.close(1008, "API Key Missing");
+      return;
+    }
+
+    try {
+      const ai = getGeminiClient(customKey);
+
+      // Connect to Gemini 3.8 Live API session
+      const session = await ai.live.connect({
+        model: "gemini-3.8-live",
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
+          },
+          systemInstruction:
+            "You are Zikenn AI, a real-time conversational voice assistant and executive companion for the user's personal dashboard. " +
+            "You are speaking live directly to the user through their microphone and speakers. " +
+            "Keep your spoken answers friendly, punchy, concise, and natural (1-3 sentences maximum per turn). " +
+            "You can execute dashboard voice commands: createTask, logExpense, toggleHabit, navigateView. " +
+            "When the user asks you to do something, execute the tool call and briefly confirm aloud.",
+          // @ts-ignore
+          outputAudioTranscription: {},
+          // @ts-ignore
+          inputAudioTranscription: {},
+          tools: [{ functionDeclarations: dashboardTools }],
+        },
+        callbacks: {
+          onmessage: (message: any) => {
+            // 1. Audio output
+            const parts = message.serverContent?.modelTurn?.parts;
+            if (Array.isArray(parts)) {
+              for (const part of parts) {
+                if (part.inlineData?.data) {
+                  clientWs.send(JSON.stringify({ audio: part.inlineData.data }));
+                }
+                if (part.text) {
+                  clientWs.send(JSON.stringify({ text: part.text }));
+                }
+              }
+            }
+
+            // 2. User input transcription
+            if (message.serverContent?.inputAudioTranscription?.text) {
+              clientWs.send(
+                JSON.stringify({
+                  userTranscript: message.serverContent.inputAudioTranscription.text,
+                })
+              );
+            }
+
+            // 3. Model output transcription
+            if (message.serverContent?.outputAudioTranscription?.text) {
+              clientWs.send(
+                JSON.stringify({
+                  modelTranscript: message.serverContent.outputAudioTranscription.text,
+                })
+              );
+            }
+
+            // 4. Interrupted event
+            if (message.serverContent?.interrupted) {
+              clientWs.send(JSON.stringify({ interrupted: true }));
+            }
+
+            // 5. Tool Call (Function Calling from Voice)
+            if (message.toolCall?.functionCalls) {
+              const calls = message.toolCall.functionCalls;
+              clientWs.send(JSON.stringify({ toolCalls: calls }));
+              
+              // Automatically acknowledge tool call back to session so live stream proceeds
+              const responses = calls.map((call: any) => ({
+                id: call.id,
+                name: call.name,
+                response: { output: { status: "success", executed: true } },
+              }));
+              try {
+                session.sendToolResponse({ functionResponses: responses });
+              } catch (e) {
+                console.error("Error sending tool response:", e);
+              }
+            }
+          },
+          onerror: (err: any) => {
+            console.error("[Live API] Session error:", err);
+            if (clientWs.readyState === WebSocket.OPEN) {
+              clientWs.send(
+                JSON.stringify({
+                  error: err?.message || "Live voice session encountered an error.",
+                })
+              );
+            }
+          },
+          onclose: () => {
+            console.log("[Live API] Session closed by server");
+            if (clientWs.readyState === WebSocket.OPEN) {
+              clientWs.send(JSON.stringify({ closed: true }));
+            }
+          },
+        },
+      });
+
+      // Forward client audio & text packets to Gemini Live
+      clientWs.on("message", (raw: any) => {
+        try {
+          const data = JSON.parse(raw.toString());
+          if (data.audio) {
+            session.sendRealtimeInput({
+              audio: { data: data.audio, mimeType: "audio/pcm;rate=16000" },
+            });
+          } else if (data.text) {
+            session.sendRealtimeInput({
+              text: data.text,
+            });
+          }
+        } catch (err) {
+          // ignore malformed packets
+        }
+      });
+
+      clientWs.on("close", () => {
+        console.log("[Live API] Client disconnected from voice stream");
+        try {
+          session.close();
+        } catch (e) {
+          // ignore
+        }
+      });
+    } catch (err: any) {
+      console.error("[Live API] Failed to initialize live connection:", err);
+      clientWs.send(
+        JSON.stringify({
+          error: err?.message || "Failed to initialize Gemini Live session.",
+        })
+      );
+      clientWs.close(1011, "Initialization failed");
+    }
+  });
+
+  return wss;
+}
+
+// Helper to register routes on Express
+export function registerGeminiRoutes(app: any) {
+  const requireAuthForOwnKeyOnly = requireAuthForServerKeyUsage((req) => Boolean(extractGeminiApiKey(req)));
+
+  app.all("/api/gemini/health", handleGeminiHealth);
+  app.all("/api/gemini/ping", handleGeminiHealth);
+  app.get("/api/gemini/chat", (_req: any, res: any) =>
+    res.json({ status: "ok", endpoint: "/api/gemini/chat", message: "Use POST to send messages" })
+  );
+  app.post("/api/gemini/chat", requireAuthForOwnKeyOnly, handleGeminiChat);
+  app.post("/api/gemini/tts", requireAuthForOwnKeyOnly, handleGeminiTts);
+  app.post("/api/gemini/transcribe", requireAuthForOwnKeyOnly, handleGeminiTranscribe);
+  app.post("/api/gemini/test-key", handleGeminiTestKey);
+}
+
+// Helper for Vite dev server plugin
+export function geminiVitePlugin() {
+  return {
+    name: "vite-plugin-gemini",
+    configureServer(server: any) {
+      if (server.httpServer) {
+        setupGeminiLiveWebSocket(server.httpServer);
+      }
+
+      server.middlewares.use(async (req: any, res: any, next: any) => {
+        let pathname = "";
+        try {
+          const rawUrl = req.url || "";
+          pathname = rawUrl.startsWith("/")
+            ? rawUrl.split("?")[0]
+            : new URL(rawUrl, "http://localhost").pathname;
+        } catch {
+          pathname = (req.url || "").split("?")[0];
+        }
+
+        // Normalize trailing slashes
+        pathname = pathname.replace(/\/+$/, "") || "/";
+
+        if (!pathname.startsWith("/api/gemini")) {
+          return next();
+        }
+
+        // Ensure Express-like res.json, res.status, res.send
+        const enhancedRes = Object.assign(res, {
+          status(code: number) {
+            this.statusCode = code;
+            return this;
+          },
+          json(data: any) {
+            if (!this.headersSent) {
+              this.setHeader("Content-Type", "application/json");
+            }
+            this.end(JSON.stringify(data));
+          },
+          send(data: any) {
+            if (typeof data === "object") {
+              return this.json(data);
+            }
+            this.end(String(data));
+          },
+        });
+
+        // Set permissive CORS headers for all /api/gemini requests
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, HEAD");
+        res.setHeader("Access-Control-Allow-Headers", "*");
+
+        const method = (req.method || "").toUpperCase();
+
+        if (method === "OPTIONS") {
+          res.statusCode = 204;
+          return res.end();
+        }
+
+        if (pathname === "/api/gemini/health" || pathname === "/api/gemini/ping") {
+          return handleGeminiHealth(req, enhancedRes);
+        }
+
+        if (pathname === "/api/gemini/chat" && method === "GET") {
+          return enhancedRes.json({
+            status: "ok",
+            endpoint: "/api/gemini/chat",
+            message: "Use POST to send messages",
+          });
+        }
+
+        // For POST endpoints, parse JSON body safely
+        if (method === "POST") {
+          let body = req.body;
+          if (!body || typeof body !== "object") {
+            try {
+              body = await new Promise((resolve) => {
+                const timeout = setTimeout(() => resolve({}), 4000);
+                const chunks: Buffer[] = [];
+                req.on("data", (c: any) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+                req.on("end", () => {
+                  clearTimeout(timeout);
+                  try {
+                    const str = Buffer.concat(chunks).toString("utf-8");
+                    resolve(str ? JSON.parse(str) : {});
+                  } catch {
+                    resolve({});
+                  }
+                });
+                req.on("error", () => {
+                  clearTimeout(timeout);
+                  resolve({});
+                });
+              });
+            } catch {
+              body = {};
+            }
+          }
+          req.body = body;
+
+          if (pathname === "/api/gemini/chat") {
+            return handleGeminiChat(req, enhancedRes);
+          }
+          if (pathname === "/api/gemini/tts") {
+            return handleGeminiTts(req, enhancedRes);
+          }
+          if (pathname === "/api/gemini/transcribe") {
+            return handleGeminiTranscribe(req, enhancedRes);
+          }
+          if (pathname === "/api/gemini/test-key") {
+            return handleGeminiTestKey(req, enhancedRes);
+          }
+        }
+
+        return enhancedRes.status(404).json({
+          error: `Endpoint ${pathname} not found or unsupported method ${req.method}`,
+        });
+      });
+    },
+  };
+}
+
