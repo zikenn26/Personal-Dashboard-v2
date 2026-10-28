@@ -4,6 +4,10 @@ import {
   generateExpenseCSV,
   generateExpenseJSON,
   generateExpenseExcelBuffer,
+  generateExpenseWorkbook,
+  downloadExpenseExcel,
+  EXCEL_MIME_TYPE,
+  EXCEL_HEADERS,
 } from '../utils/expenseExport';
 import { ExpenseItem } from '../types';
 
@@ -98,5 +102,100 @@ describe('expenseExport utility', () => {
     expect(parsed.length).toBe(2);
     expect(parsed[0].id).toBe('exp-1');
     expect(parsed[1].name).toBe('Amazon Refund');
+  });
+
+  it('verifies exact MIME type and Blob creation for Excel .xlsx export', async () => {
+    expect(EXCEL_MIME_TYPE).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+
+    let createdAnchor: any = null;
+    let clicked = false;
+    let dispatched = false;
+    let createdBlobType = '';
+
+    const origWindow = (globalThis as any).window;
+    const origDocument = (globalThis as any).document;
+    const origBlob = globalThis.Blob;
+    const origCreateObjectURL = URL.createObjectURL;
+
+    try {
+      (globalThis as any).Blob = class MockBlob extends origBlob {
+        constructor(parts: any[], options?: any) {
+          super(parts, options);
+          createdBlobType = options?.type || '';
+        }
+      };
+
+      URL.createObjectURL = (blob: any) => {
+        createdBlobType = blob?.type || createdBlobType;
+        return 'blob:mock-url-12345';
+      };
+
+      const mockBody = {
+        appendChild: (el: any) => el,
+        removeChild: (el: any) => el,
+      };
+
+      const mockDoc = {
+        body: mockBody,
+        createElement: (tag: string) => {
+          const attrs: Record<string, string> = {};
+          const el = {
+            tagName: tag.toUpperCase(),
+            style: {},
+            href: '',
+            download: '',
+            target: '',
+            rel: '',
+            parentNode: mockBody,
+            setAttribute: (name: string, val: string) => {
+              attrs[name] = val;
+              if (name === 'download') el.download = val;
+            },
+            getAttribute: (name: string) => attrs[name] || (el as any)[name] || null,
+            click: () => {
+              clicked = true;
+            },
+            dispatchEvent: (evt: any) => {
+              if (evt?.type === 'click') dispatched = true;
+              return true;
+            },
+          };
+          if (tag === 'a') {
+            createdAnchor = el;
+          }
+          return el as any;
+        },
+      };
+
+      (globalThis as any).document = mockDoc;
+      (globalThis as any).window = globalThis;
+
+      await downloadExpenseExcel(sampleExpenses, 'test_export.xlsx');
+
+      expect(createdBlobType).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      expect(createdAnchor).not.toBeNull();
+      expect(createdAnchor.getAttribute('download')).toBe('test_export.xlsx');
+      expect(clicked || dispatched).toBe(true);
+    } finally {
+      (globalThis as any).document = origDocument;
+      (globalThis as any).window = origWindow;
+      (globalThis as any).Blob = origBlob;
+      URL.createObjectURL = origCreateObjectURL;
+    }
+  });
+
+  it('empty expense export retains all 12 standard transaction headers in workbook', () => {
+    const workbook = generateExpenseWorkbook([]);
+    const sheet = workbook.Sheets['Transactions'];
+    const rows: any[] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+    expect(rows.length).toBeGreaterThan(0);
+    const headerRow = rows[0];
+    expect(headerRow).toEqual(EXCEL_HEADERS);
+    expect(headerRow.length).toBe(12);
+    expect(headerRow).toContain('Transaction ID');
+    expect(headerRow).toContain('Merchant / Title');
+    expect(headerRow).toContain('Amount');
+    expect(headerRow).toContain('Type');
   });
 });

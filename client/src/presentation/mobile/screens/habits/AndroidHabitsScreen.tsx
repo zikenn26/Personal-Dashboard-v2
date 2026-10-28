@@ -405,7 +405,23 @@ export const AndroidHabitsScreen: React.FC<AndroidHabitsScreenProps> = ({
                 {/* Footer summary */}
                 <div className="mt-2 flex items-center justify-between text-[9px] text-[#7e7384] dark:text-[#a09bb5] pt-1 border-t border-[#e3dfff]/60 dark:border-[#2e2857]/60">
                   <span>{completedDatesInMonth}/{monthData.daysInMonth} days</span>
-                  <span className="text-[#7b2cbf] dark:text-[#deb7ff] font-semibold">Tap to edit</span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void nativeService.triggerHaptic('selection');
+                        setEditingHabit(habit);
+                      }}
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[#7b2cbf] dark:text-[#deb7ff] font-semibold hover:bg-[#efebff] dark:hover:bg-[#252045]"
+                      title="Edit habit details"
+                    >
+                      <Edit2 className="w-2.5 h-2.5" />
+                      <span>Edit</span>
+                    </button>
+                    <span>•</span>
+                    <span className="text-[#7e7384]">Calendar</span>
+                  </div>
                 </div>
               </div>
             );
@@ -463,13 +479,29 @@ export const AndroidHabitsScreen: React.FC<AndroidHabitsScreenProps> = ({
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setCalendarPopupHabitId(null)}
-                className="w-7 h-7 rounded-full flex items-center justify-center text-[#7e7384] hover:text-[#181445] dark:hover:text-white hover:bg-[#efebff] dark:hover:bg-[#252045] cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void nativeService.triggerHaptic('selection');
+                    const habitToEdit = activeCalendarHabit;
+                    setCalendarPopupHabitId(null);
+                    setEditingHabit(habitToEdit);
+                  }}
+                  className="px-2 py-1 rounded-lg flex items-center gap-1 text-xs font-semibold text-[#7b2cbf] dark:text-[#deb7ff] hover:bg-[#efebff] dark:hover:bg-[#252045] cursor-pointer"
+                  title="Edit habit details"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  <span>Edit</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCalendarPopupHabitId(null)}
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-[#7e7384] hover:text-[#181445] dark:hover:text-white hover:bg-[#efebff] dark:hover:bg-[#252045] cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             {/* Month Navigator in Popup */}

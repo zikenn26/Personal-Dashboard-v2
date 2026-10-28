@@ -613,25 +613,6 @@ export const syncWorkspaceToSupabase = async (
     }
 
     if (!existing) {
-      if (
-        payloadToSave.workspace_data &&
-        (!Array.isArray(payloadToSave.workspace_data.expenses) || payloadToSave.workspace_data.expenses.length === 0)
-      ) {
-        try {
-          const activeEmail = (activeUserEmail || '').toLowerCase().trim();
-          const cachedRaw =
-            (activeEmail ? localStorage.getItem(`${activeEmail}_offline_expenses_cache`) : null) ||
-            localStorage.getItem('lifeos_offline_expenses_cache') ||
-            localStorage.getItem('lifeos_expenses_backup');
-          if (cachedRaw) {
-            const parsed = JSON.parse(cachedRaw);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              payloadToSave.workspace_data.expenses = parsed;
-            }
-          }
-        } catch {}
-      }
-
       let { error: insertError } = await client
         .from('user_workspaces')
         .insert(payloadToSave);
@@ -715,6 +696,32 @@ export const syncWorkspaceToSupabase = async (
       addTrash(existing.workspace_data);
       addTrash(payloadToSave.workspace_data);
 
+      // Also read local deleted IDs and tombstoned refs from localStorage directly
+      try {
+        const rawDel = localStorage.getItem('notion_os_v4_deleted_expense_ids');
+        if (rawDel) {
+          const parsedDel = JSON.parse(rawDel);
+          if (Array.isArray(parsedDel)) {
+            parsedDel.forEach((id: string) => {
+              if (id) trashedExpenseIds.add(String(id).trim());
+            });
+          }
+        }
+      } catch {}
+
+      const tombstonedRefSet = new Set<string>();
+      try {
+        const rawTomb = localStorage.getItem('notion_os_v4_tombstoned_refs');
+        if (rawTomb) {
+          const parsedTomb = JSON.parse(rawTomb);
+          if (Array.isArray(parsedTomb)) {
+            parsedTomb.forEach((ref: string) => {
+              if (ref) tombstonedRefSet.add(String(ref).trim().toUpperCase());
+            });
+          }
+        }
+      } catch {}
+
       // Clean local expenses of any known trashed / deleted items
       if (Array.isArray(payloadToSave.workspace_data?.expenses)) {
         payloadToSave.workspace_data.expenses = payloadToSave.workspace_data.expenses.filter(
@@ -740,28 +747,13 @@ export const syncWorkspaceToSupabase = async (
         ? payloadToSave.workspace_data.expenses
         : [];
 
-      if (localExpenses.length === 0) {
-        try {
-          const activeEmail = (activeUserEmail || '').toLowerCase().trim();
-          const cachedRaw =
-            (activeEmail ? localStorage.getItem(`${activeEmail}_offline_expenses_cache`) : null) ||
-            localStorage.getItem('lifeos_offline_expenses_cache') ||
-            localStorage.getItem('lifeos_expenses_backup');
-          if (cachedRaw) {
-            const parsed = JSON.parse(cachedRaw);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              localExpenses = parsed;
-            }
-          }
-        } catch {}
-      }
-
       if (payloadToSave.workspace_data) {
         // Safely reconcile local and remote expenses
         const reconciled = mergeExpenseLists(localExpenses, remoteExpenses, trashedExpenseIds);
 
         // If uploading from a non-native client (e.g. desktop Chrome / mobile Chrome),
-        // strictly ensure that all SMS-derived expenses committed by the APK are kept intact.
+        // strictly ensure that all SMS-derived expenses committed by the APK are kept intact
+        // UNLESS explicitly tombstoned or trashed.
         if (!isNativeApk && remoteExpenses.length > 0) {
           const recIdSet = new Set(reconciled.map((e: any) => String(e.id).trim()));
           const recRefSet = new Set(
@@ -775,6 +767,9 @@ export const syncWorkspaceToSupabase = async (
             const expId = String(remoteExp.id).trim();
             if (trashedExpenseIds.has(expId)) return;
 
+            const remoteRef = (remoteExp.smsReferenceId || remoteExp.referenceId || remoteExp.upiReference || '').trim().toUpperCase();
+            if (remoteRef && tombstonedRefSet.has(remoteRef)) return;
+
             const isSmsExpense =
               remoteExp.source === 'sms_auto' ||
               remoteExp.source === 'sms_rescan' ||
@@ -782,7 +777,6 @@ export const syncWorkspaceToSupabase = async (
               Boolean(remoteExp.rawSmsText || remoteExp.smsReferenceId || remoteExp.upiReference);
 
             if (isSmsExpense) {
-              const remoteRef = (remoteExp.smsReferenceId || remoteExp.referenceId || remoteExp.upiReference || '').trim().toUpperCase();
               const hasIdMatch = recIdSet.has(expId);
               const hasRefMatch = remoteRef && remoteRef.length >= 4 && recRefSet.has(remoteRef);
 

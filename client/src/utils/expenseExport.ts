@@ -1,7 +1,24 @@
 import * as XLSX from 'xlsx';
 import { ExpenseItem } from '../types';
-import { isCreditTransaction } from './expenseUtils';
+import { isCreditTransaction, getLocalDateKey } from './expenseUtils';
 import { nativeService } from '../services/nativeService';
+
+export const EXCEL_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+export const EXCEL_HEADERS = [
+  'Transaction ID',
+  'Date',
+  'Time',
+  'Merchant / Title',
+  'Category',
+  'Amount',
+  'Type',
+  'Payment Method',
+  'Bank / Account',
+  'Reference ID',
+  'Source',
+  'Notes',
+];
 
 const escapeCsv = (val: any): string => {
   if (val === null || val === undefined) return '""';
@@ -14,21 +31,6 @@ const escapeCsv = (val: any): string => {
  * compatibility across Microsoft Excel, Google Sheets, LibreOffice, and mobile viewers.
  */
 export function generateExpenseCSV(expenses: ExpenseItem[]): string {
-  const headers = [
-    'Transaction ID',
-    'Date',
-    'Time',
-    'Merchant / Title',
-    'Category',
-    'Amount',
-    'Type',
-    'Payment Method',
-    'Bank / Account',
-    'Reference ID',
-    'Source',
-    'Notes',
-  ];
-
   const rows = expenses.map((item) => {
     const isCredit = isCreditTransaction(item);
     return [
@@ -48,7 +50,7 @@ export function generateExpenseCSV(expenses: ExpenseItem[]): string {
   });
 
   // Prepend UTF-8 Byte Order Mark (BOM) so Excel handles accents & symbols like ₹ correctly
-  return '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
+  return '\uFEFF' + [EXCEL_HEADERS.join(','), ...rows].join('\r\n');
 }
 
 /**
@@ -73,7 +75,10 @@ export function generateExpenseWorkbook(expenses: ExpenseItem[]): XLSX.WorkBook 
     };
   });
 
-  const worksheet = XLSX.utils.json_to_sheet(data);
+  const worksheet =
+    data.length > 0
+      ? XLSX.utils.json_to_sheet(data, { header: EXCEL_HEADERS })
+      : XLSX.utils.aoa_to_sheet([EXCEL_HEADERS]);
 
   // Set friendly column widths
   worksheet['!cols'] = [
@@ -120,7 +125,7 @@ export async function downloadExpenseFile(
   filename: string,
   mimeType: string = 'text/csv;charset=utf-8;'
 ): Promise<void> {
-  const blobPart = content instanceof Uint8Array ? content.buffer : content;
+  const blobPart = content instanceof Uint8Array ? content : content;
   const blob = new Blob([blobPart], { type: mimeType });
 
   // 1. Mobile Web Share API Level 2 (Android / iOS / Mobile WebView)
@@ -160,13 +165,17 @@ export async function downloadExpenseFile(
     link.style.opacity = '0';
     document.body.appendChild(link);
 
-    // Dispatch full MouseEvent for sandboxed iframe & strict browser compatibility
-    const clickEvt = new MouseEvent('click', {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-    });
-    link.dispatchEvent(clickEvt);
+    // Trigger file save across modern browsers
+    try {
+      link.click();
+    } catch {
+      const clickEvt = new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+      });
+      link.dispatchEvent(clickEvt);
+    }
 
     // Give browser download manager ample time to stream blob before revoking
     setTimeout(() => {
@@ -202,7 +211,11 @@ export async function downloadExpenseFile(
         link.style.top = '-9999px';
         link.style.opacity = '0';
         document.body.appendChild(link);
-        link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+        try {
+          link.click();
+        } catch {
+          link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+        }
         setTimeout(() => {
           try {
             if (link.parentNode) document.body.removeChild(link);
@@ -219,37 +232,39 @@ export async function downloadExpenseFile(
  * Convenience helper to download CSV directly.
  */
 export async function downloadExpenseCSV(expenses: ExpenseItem[], filename?: string): Promise<void> {
-  const dateStr = new Date().toISOString().split('T')[0];
+  const dateStr = getLocalDateKey();
   const name = filename || `expense_transactions_${dateStr}.csv`;
   const csv = generateExpenseCSV(expenses);
   await downloadExpenseFile(csv, name, 'text/csv;charset=utf-8;');
 }
 
 /**
- * Convenience helper to download Excel (.xlsx) directly using SheetJS native downloader with blob fallback.
+ * Convenience helper to download Excel (.xlsx) directly using Blob with
+ * 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' and anchor link download.
  */
 export async function downloadExpenseExcel(expenses: ExpenseItem[], filename?: string): Promise<void> {
-  const dateStr = new Date().toISOString().split('T')[0];
+  const dateStr = getLocalDateKey();
   const name = filename || `expense_transactions_${dateStr}.xlsx`;
   const workbook = generateExpenseWorkbook(expenses);
 
-  // If in standard browser (not native app), attempt SheetJS XLSX.writeFile first
-  if (typeof window !== 'undefined' && !nativeService.isNativeDevice()) {
-    try {
+  // Binary array buffer through SheetJS
+  const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+  const uint8Array = new Uint8Array(buffer);
+
+  // Trigger file save using Blob with explicit MIME type 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  // and anchor link creation with download attribute
+  try {
+    await downloadExpenseFile(
+      uint8Array,
+      name,
+      EXCEL_MIME_TYPE
+    );
+  } catch (err) {
+    console.warn('[EXPORT] downloadExpenseFile notice, falling back to XLSX.writeFile:', err);
+    if (typeof window !== 'undefined') {
       XLSX.writeFile(workbook, name, { bookType: 'xlsx' });
-      return;
-    } catch (err) {
-      console.warn('[EXPORT] XLSX.writeFile direct attempt notice, falling back to buffer blob:', err);
     }
   }
-
-  // Binary buffer through downloadExpenseFile with mobile Web Share & data URI fallback
-  const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-  await downloadExpenseFile(
-    new Uint8Array(buffer),
-    name,
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-  );
 }
 
 /**

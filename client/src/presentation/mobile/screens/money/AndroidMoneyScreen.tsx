@@ -20,6 +20,7 @@ import {
   ShoppingBag,
   DollarSign,
   Upload,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { ExpenseItem, ExcelImportLog } from '../../../../types';
 import { nativeService } from '../../../../services/nativeService';
@@ -33,6 +34,7 @@ import { AndroidActionSheet, ActionSheetItem } from '../../components/AndroidAct
 import { QuickExpenseSheet } from '../../components/QuickExpenseSheet';
 import { ControlledSmsRescanModal } from '../../components/ControlledSmsRescanModal';
 import { ExportExpenseSheet } from '../../components/ExportExpenseSheet';
+import { CrossDeviceSyncModal } from '../../../../components/CrossDeviceSyncModal';
 import { SmsExpenseModal } from '../../../../components/SmsExpenseModal';
 import { ExcelImportModal } from '../../../../components/ExcelImportModal';
 import { getMatchingExpensesForSheet } from '../../../../components/ExpenseTracker';
@@ -159,6 +161,7 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
   const [isExcelMenuOpen, setIsExcelMenuOpen] = useState(false);
   const [isUploadedSheetsOpen, setIsUploadedSheetsOpen] = useState(false);
   const [isExportSheetOpen, setIsExportSheetOpen] = useState(false);
+  const [isDeviceSyncModalOpen, setIsDeviceSyncModalOpen] = useState(false);
   const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
   const [isHeaderSearchOpen, setIsHeaderSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -886,6 +889,21 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
               <span>Export</span>
             </button>
 
+            {/* Direct Device Sync Button */}
+            <button
+              type="button"
+              id="btn-android-device-sync"
+              onClick={() => {
+                void nativeService.triggerHaptic('selection');
+                setIsDeviceSyncModalOpen(true);
+              }}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 active:scale-95 transition-all cursor-pointer"
+              title="Direct sync with PC/Chrome (offline)"
+            >
+              <ArrowLeftRight className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+              <span>Device Sync</span>
+            </button>
+
             {/* Excel Button */}
             <button
               type="button"
@@ -1431,6 +1449,13 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
             : 'All Time'
         }
         selectedCategory={selectedCategory}
+        soundEnabled={soundEnabled}
+      />
+
+      {/* Cross-Device Sync Modal */}
+      <CrossDeviceSyncModal
+        isOpen={isDeviceSyncModalOpen}
+        onClose={() => setIsDeviceSyncModalOpen(false)}
         soundEnabled={soundEnabled}
       />
 

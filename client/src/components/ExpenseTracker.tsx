@@ -39,6 +39,7 @@ import {
   Filter,
   ShieldCheck,
   AlertTriangle,
+  CloudOff,
   ArrowUpDown,
   CalendarRange,
   Smartphone,
@@ -46,6 +47,7 @@ import {
   Eye,
   ArrowLeft,
   RefreshCw,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { expenseSyncService } from '../services/expenseSyncService';
@@ -74,6 +76,7 @@ import { Sound } from '../utils/audio';
 import { triggerConfetti } from '../utils/confetti';
 import { ExcelImportModal } from './ExcelImportModal';
 import { SmsExpenseModal } from './SmsExpenseModal';
+import { CrossDeviceSyncModal } from './CrossDeviceSyncModal';
 import { ExpenseDistributionSection } from './ExpenseDistributionSection';
 import { SpendingCalendarGrid } from './SpendingCalendarGrid';
 import { DateRangePicker, type DateRange } from './DateRangePicker';
@@ -288,6 +291,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   );
   const [categoryScope, setCategoryScope] = useState<'month' | 'all'>('month');
   const [isExportMenuOpen, setIsExportMenuOpen] = useState<boolean>(false);
+  const [isDeviceSyncModalOpen, setIsDeviceSyncModalOpen] = useState<boolean>(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -316,6 +320,15 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     expenseSyncService.getExpenseSyncStatus()
   );
 
+  const isQuotaExhausted = Boolean(
+    expenseSyncStatus.lastError &&
+      (expenseSyncStatus.lastError.includes('egress') ||
+        expenseSyncStatus.lastError.includes('quota') ||
+        expenseSyncStatus.lastError.includes('402') ||
+        expenseSyncStatus.lastError.includes('spend caps') ||
+        expenseSyncStatus.lastError.includes('restricted'))
+  );
+
   useEffect(() => {
     return expenseSyncService.onSyncStatusChange((status) => {
       setExpenseSyncStatus(status);
@@ -336,11 +349,21 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
           description: `${res.pushedCount} pushed, ${res.pulledCount} pulled`,
         });
       } else {
-        const isQuota = res.message?.includes('egress') || res.message?.includes('quota') || res.message?.includes('exhausted');
+        const isQuota =
+          res.message?.includes('egress') ||
+          res.message?.includes('quota') ||
+          res.message?.includes('exhausted') ||
+          res.message?.includes('402') ||
+          res.message?.includes('spend caps') ||
+          res.message?.includes('restricted') ||
+          res.error?.includes('egress') ||
+          res.error?.includes('quota') ||
+          res.error?.includes('402');
         if (isQuota) {
           toast.warning('Cloud sync paused (Supabase quota limit)', {
-            description: 'All local spending records and deletions are 100% safely preserved offline in device database. Cloud sync will resume once quota resets.',
-            duration: 6000,
+            description:
+              'All local spending records and deletions are 100% safely preserved offline in device database. Cloud sync will resume once quota resets.',
+            duration: 7000,
           });
         } else {
           toast.error(res.message || 'Sync failed. Local data remains safe.');
@@ -348,11 +371,18 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       }
     } catch (err: any) {
       toast.dismiss(toastId);
-      const isQuota = err?.message?.includes('egress') || err?.message?.includes('quota') || err?.message?.includes('exhausted');
+      const isQuota =
+        err?.message?.includes('egress') ||
+        err?.message?.includes('quota') ||
+        err?.message?.includes('exhausted') ||
+        err?.message?.includes('402') ||
+        err?.message?.includes('spend caps') ||
+        err?.message?.includes('restricted');
       if (isQuota) {
         toast.warning('Cloud sync paused (Supabase quota limit)', {
-          description: 'All local spending records are safely preserved offline in device database. Cloud sync will resume once quota resets.',
-          duration: 6000,
+          description:
+            'All local spending records are safely preserved offline in device database. Cloud sync will resume once quota resets.',
+          duration: 7000,
         });
       } else {
         toast.error(err?.message || 'Sync network error. Local data remains safe.');
@@ -1355,16 +1385,11 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       listToExport = expenses;
     }
 
-    if (listToExport.length === 0) {
-      toast.error('No transactions available to export');
-      setIsExportMenuOpen(false);
-      return;
-    }
-
     try {
       const dateStr = getLocalDateKey();
       const filename = `expense_transactions_${dateStr}.xlsx`;
-      toast.success(`Exporting ${listToExport.length} transactions to Excel...`, {
+      const count = listToExport.length;
+      toast.success(count > 0 ? `Exporting ${count} transactions to Excel...` : 'Exporting Excel transaction template...', {
         description: `Downloading ${filename}`,
       });
       await downloadExpenseExcel(listToExport, filename);
@@ -1388,16 +1413,11 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       listToExport = expenses;
     }
 
-    if (listToExport.length === 0) {
-      toast.error('No transactions available to export');
-      setIsExportMenuOpen(false);
-      return;
-    }
-
     try {
       const dateStr = getLocalDateKey();
       const filename = `expense_transactions_${dateStr}.csv`;
-      toast.success(`Exporting ${listToExport.length} transactions to CSV...`, {
+      const count = listToExport.length;
+      toast.success(count > 0 ? `Exporting ${count} transactions to CSV...` : 'Exporting CSV transaction template...', {
         description: `Downloading ${filename}`,
       });
       await downloadExpenseCSV(listToExport, filename);
@@ -1436,26 +1456,32 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
             className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-semibold shadow-2xs transition-all cursor-pointer ${
               expenseSyncStatus.state === 'syncing'
                 ? 'bg-blue-50 dark:bg-blue-950/70 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300'
+                : isQuotaExhausted
+                ? 'bg-amber-50 dark:bg-amber-950/70 hover:bg-amber-100/70 dark:hover:bg-amber-900/60 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200'
                 : expenseSyncStatus.state === 'error'
-                ? 'bg-rose-50 dark:bg-rose-950/70 border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300'
+                ? 'bg-rose-50 dark:bg-rose-950/70 hover:bg-rose-100/70 dark:hover:bg-rose-900/60 border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300'
                 : expenseSyncStatus.state === 'offline'
                 ? 'bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300'
                 : expenseSyncStatus.pendingCount > 0
-                ? 'bg-amber-50 dark:bg-amber-950/70 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200'
+                ? 'bg-amber-50 dark:bg-amber-950/70 hover:bg-amber-100/70 dark:hover:bg-amber-900/60 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200'
                 : 'bg-emerald-50 dark:bg-emerald-950/70 hover:bg-emerald-100/60 dark:hover:bg-emerald-900/60 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200'
             }`}
-            title={`Local-First Spending Sync: ${
+            title={
               expenseSyncStatus.state === 'syncing'
-                ? 'Synchronizing with Supabase...'
+                ? 'Synchronizing with Supabase Cloud...'
+                : isQuotaExhausted
+                ? 'Cloud sync paused: Supabase egress quota limit reached. Local data is 100% durable and safe. Click to retry.'
                 : expenseSyncStatus.state === 'error'
                 ? `Sync failed: ${expenseSyncStatus.lastError || 'Click to retry'}`
                 : expenseSyncStatus.pendingCount > 0
-                ? `${expenseSyncStatus.pendingCount} pending local changes to sync`
-                : 'All expenses synchronized with Supabase'
-            }`}
+                ? `${expenseSyncStatus.pendingCount} pending local changes to sync. Click to sync now.`
+                : 'All expenses synchronized with Supabase Cloud. Click to re-sync.'
+            }
           >
             {expenseSyncStatus.state === 'syncing' ? (
               <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600 dark:text-blue-400" />
+            ) : isQuotaExhausted ? (
+              <CloudOff className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
             ) : expenseSyncStatus.state === 'error' ? (
               <AlertTriangle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
             ) : expenseSyncStatus.pendingCount > 0 ? (
@@ -1469,6 +1495,8 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
             <span>
               {expenseSyncStatus.state === 'syncing'
                 ? 'Syncing...'
+                : isQuotaExhausted
+                ? 'Quota Paused (Retry)'
                 : expenseSyncStatus.state === 'error'
                 ? 'Failed (Retry)'
                 : expenseSyncStatus.state === 'offline'
@@ -1481,13 +1509,16 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
             {expenseSyncStatus.state === 'syncing' && (
               <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
             )}
-            {expenseSyncStatus.state !== 'syncing' && expenseSyncStatus.pendingCount > 0 && (
+            {expenseSyncStatus.state !== 'syncing' && isQuotaExhausted && (
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+            )}
+            {expenseSyncStatus.state !== 'syncing' && !isQuotaExhausted && expenseSyncStatus.pendingCount > 0 && (
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
             )}
             {expenseSyncStatus.state === 'synced' && expenseSyncStatus.pendingCount === 0 && (
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
             )}
-            {expenseSyncStatus.state === 'error' && (
+            {expenseSyncStatus.state === 'error' && !isQuotaExhausted && (
               <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
             )}
           </button>
@@ -1538,6 +1569,21 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
               </div>
             )}
           </div>
+
+          {/* Direct Device Sync Button */}
+          <button
+            type="button"
+            id="btn-device-sync"
+            onClick={() => {
+              Sound.click(soundEnabled);
+              setIsDeviceSyncModalOpen(true);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-semibold shadow-2xs transition-all cursor-pointer"
+            title="Direct sync with Android APK / another browser (offline)"
+          >
+            <ArrowLeftRight className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+            <span>Device Sync</span>
+          </button>
 
           {/* Excel Button with Sheet Count badge */}
           <button
@@ -3661,6 +3707,13 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
           </button>
         </div>
       )}
+
+      {/* Cross-Device Sync Modal */}
+      <CrossDeviceSyncModal
+        isOpen={isDeviceSyncModalOpen}
+        onClose={() => setIsDeviceSyncModalOpen(false)}
+        soundEnabled={soundEnabled}
+      />
     </div>
   );
 };

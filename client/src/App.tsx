@@ -1794,15 +1794,26 @@ export default function App() {
     const days = getWeekDaysInfo(currentMonday);
     const dayInfo = days[dayIndex];
 
-    // Always read authoritative state directly from Storage to avoid stale React closures
-    const base = Storage.getHabits();
-    const target = base.find((h) => h.id === habitId);
-    if (!target) return;
+    // Authoritative lookup across both React state and Storage
+    const currentStored = Storage.getHabits();
+    const base = habits.some((h) => h.id === habitId) ? habits : currentStored;
+    const target =
+      base.find((h) => h.id === habitId) ||
+      currentStored.find((h) => h.id === habitId) ||
+      habits.find((h) => h.id === habitId);
+    if (!target) {
+      console.warn('[HABIT_TOGGLE] Habit target not found:', habitId);
+      return;
+    }
 
     // 1. Guard against concurrent background sync or Realtime incoming polls while toggling
     isRemoteUpdating.current = true;
 
-    const newDays = [...target.completedDays];
+    const existingDays = Array.isArray(target.completedDays) ? target.completedDays : [];
+    const newDays = [...existingDays];
+    while (newDays.length < 7) {
+      newDays.push(false);
+    }
     newDays[dayIndex] = !newDays[dayIndex];
     const isNowCompleted = Boolean(newDays[dayIndex]);
     const completedCount = newDays.filter(Boolean).length;
@@ -1820,35 +1831,26 @@ export default function App() {
       ...target,
       completedDays: newDays,
       completedDates: Array.from(dates).sort(),
-      streak: completedCount > 0 ? Math.max(0, target.streak + (isNowCompleted ? 1 : -1)) : 0,
+      streak: completedCount > 0 ? Math.max(0, (target.streak || 0) + (isNowCompleted ? 1 : -1)) : 0,
       updatedAt: Date.now(),
     };
 
     const updatedHabits = base.map((h) => (h.id === habitId ? toggledHabit : h));
+    if (!updatedHabits.some((h) => h.id === habitId)) {
+      updatedHabits.push(toggledHabit);
+    }
 
-    // 2. Explicitly commit to local storage and active week
+    // 2. Commit synchronously to local storage and active week
     Storage.setHabits(updatedHabits);
     Storage.setHabitActiveWeek(currentWeekId);
 
-    // 3. Verified verification: re-read from Storage to ensure persistence committed cleanly
-    let verifiedHabits = Storage.getHabits();
-    const verifiedTarget = verifiedHabits.find((h) => h.id === habitId);
-    const isValidated = Boolean(verifiedTarget && Boolean(verifiedTarget.completedDays[dayIndex]) === isNowCompleted);
-
-    if (!isValidated) {
-      console.warn('[HABIT_VALIDATION] Re-persisting habit toggle state:', habitId);
-      Storage.setHabits(updatedHabits);
-      verifiedHabits = Storage.getHabits();
-    }
-
-    // 4. Update UI state immediately with verified habits
-    const finalHabits = verifiedHabits.length > 0 ? verifiedHabits : updatedHabits;
-    setHabits(finalHabits);
+    // 3. Update React UI state immediately
+    setHabits(updatedHabits);
 
     // Explicitly notify all active UI views (overview, widgets, habit tracker)
     window.dispatchEvent(
       new CustomEvent('dashboard-data-updated', {
-        detail: { module: 'habits', updatedHabits: finalHabits },
+        detail: { module: 'habits', updatedHabits },
       })
     );
 
@@ -1884,7 +1886,7 @@ export default function App() {
       }
     }
 
-    // 5. Trigger cloud sync ONLY after the local state change is validated
+    // 4. Trigger cloud sync
     isCloudReady.current = true;
     scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 350);
 
@@ -1895,39 +1897,35 @@ export default function App() {
 
   const handleToggleHabitDate = (habitId: string, dateStr: string) => {
     Sound.click(settings.soundEnabled);
-    // Always read authoritative state directly from Storage
-    const base = Storage.getHabits();
-    const target = base.find((h) => h.id === habitId);
-    if (!target) return;
+    const currentStored = Storage.getHabits();
+    const base = habits.some((h) => h.id === habitId) ? habits : currentStored;
+    const target =
+      base.find((h) => h.id === habitId) ||
+      currentStored.find((h) => h.id === habitId) ||
+      habits.find((h) => h.id === habitId);
+    if (!target) {
+      console.warn('[HABIT_TOGGLE_DATE] Habit target not found:', habitId);
+      return;
+    }
 
     // 1. Guard against background sync reverts while user is toggling
     isRemoteUpdating.current = true;
 
     const currentMonday = getMondayOfWeek();
     const toggled = toggleHabitDate(target, dateStr, currentMonday);
-    const updatedHabits = base.map((h) => (h.id === habitId ? toggled : h));
-
-    // 2. Explicitly commit to local storage
-    Storage.setHabits(updatedHabits);
-
-    // 3. Validate persistence with verified verification
-    let verifiedHabits = Storage.getHabits();
     const isNowCompleted = isHabitDateCompleted(toggled, dateStr, currentMonday);
-    const verifiedTarget = verifiedHabits.find((h) => h.id === habitId);
-    const isValidated = Boolean(verifiedTarget && isHabitDateCompleted(verifiedTarget, dateStr, currentMonday) === isNowCompleted);
-
-    if (!isValidated) {
-      Storage.setHabits(updatedHabits);
-      verifiedHabits = Storage.getHabits();
+    const updatedHabits = base.map((h) => (h.id === habitId ? toggled : h));
+    if (!updatedHabits.some((h) => h.id === habitId)) {
+      updatedHabits.push(toggled);
     }
 
-    // 4. Update UI state with verified habits
-    const finalHabits = verifiedHabits.length > 0 ? verifiedHabits : updatedHabits;
-    setHabits(finalHabits);
+    // 2. Explicitly commit to local storage and React state
+    Storage.setHabits(updatedHabits);
+    setHabits(updatedHabits);
 
     window.dispatchEvent(
       new CustomEvent('dashboard-data-updated', {
-        detail: { module: 'habits', updatedHabits: finalHabits },
+        detail: { module: 'habits', updatedHabits },
       })
     );
 
@@ -1963,7 +1961,7 @@ export default function App() {
       Storage.setHabitActivities(nextActs);
     }
 
-    // 5. Trigger cloud sync ONLY after validation
+    // 3. Trigger cloud sync
     isCloudReady.current = true;
     scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 350);
 
@@ -1976,10 +1974,18 @@ export default function App() {
     Sound.click(settings.soundEnabled);
     const currentStored = Storage.getHabits();
     const base = habits.length > 0 ? habits : currentStored;
-    const updated = base.map((h) => (h.id === updatedHabit.id ? { ...h, ...updatedHabit, updatedAt: Date.now() } : h));
+    const exists = base.some((h) => h.id === updatedHabit.id);
+    const updated = exists
+      ? base.map((h) => (h.id === updatedHabit.id ? { ...h, ...updatedHabit, updatedAt: Date.now() } : h))
+      : [...base, { ...updatedHabit, updatedAt: Date.now() }];
     setHabits(updated);
     Storage.setHabits(updated);
     Storage.setHabitActiveWeek(getWeekId(getMondayOfWeek()));
+    window.dispatchEvent(
+      new CustomEvent('dashboard-data-updated', {
+        detail: { module: 'habits', updatedHabits: updated },
+      })
+    );
     isCloudReady.current = true;
     scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
   };
@@ -2006,6 +2012,11 @@ export default function App() {
     setHabits(updated);
     Storage.setHabits(updated);
     Storage.setHabitActiveWeek(currentWeekId);
+    window.dispatchEvent(
+      new CustomEvent('dashboard-data-updated', {
+        detail: { module: 'habits', updatedHabits: updated },
+      })
+    );
     isCloudReady.current = true;
     scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
   };
@@ -2019,6 +2030,11 @@ export default function App() {
       Storage.moveToTrash('habits', target, target.title);
       setTrash(Storage.getTrash());
     }
+    window.dispatchEvent(
+      new CustomEvent('dashboard-data-updated', {
+        detail: { module: 'habits', updatedHabits: updated },
+      })
+    );
     isCloudReady.current = true;
     scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
   };
