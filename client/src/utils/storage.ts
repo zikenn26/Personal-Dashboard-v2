@@ -1285,6 +1285,7 @@ export const INITIAL_SETTINGS: AppSettings = {
   masterPin: '',
   groqApiKey: '',
   groqModel: 'llama-3.3-70b-versatile',
+  workOffline: false,
 };
 
 import {

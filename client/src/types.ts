@@ -486,6 +486,7 @@ export interface AppSettings {
   groqModel?: string;
   geminiApiKey?: string;
   apiMonthlyThreshold?: number | null; // Monthly API request limit (null = unlimited)
+  workOffline?: boolean;
 }
 
 export interface ApiUsageMonthlyRecord {
