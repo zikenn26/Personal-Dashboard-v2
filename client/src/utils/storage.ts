@@ -2055,18 +2055,19 @@ export const Storage = {
     Storage.setExpenses(updated);
 
     // Commit to local-first database and enqueue outbox mutation
-    void expenseRepo.save(expenseWithTimestamps).then(() => {
-      void expenseRepo.enqueueMutation({
-        expenseId: expenseWithTimestamps.id,
-        action: existingIndex >= 0 ? 'update' : 'create',
-        payload: expenseWithTimestamps,
-      }).then(() => {
-        void expenseRepo.getPendingOutbox().then((outbox) => {
-          expenseSyncService.notifyMutationEnqueued(outbox.length);
-        });
+    void expenseRepo.save(expenseWithTimestamps).catch((err) => {
+      console.warn('[STORAGE] Local DB save notice for addExpense:', err);
+    });
+    void expenseRepo.enqueueMutation({
+      expenseId: expenseWithTimestamps.id,
+      action: existingIndex >= 0 ? 'update' : 'create',
+      payload: expenseWithTimestamps,
+    }).then(() => {
+      void expenseRepo.getPendingOutbox().then((outbox) => {
+        expenseSyncService.notifyMutationEnqueued(outbox.length);
       });
     }).catch((err) => {
-      console.warn('[STORAGE] Local DB save notice for addExpense:', err);
+      console.warn('[STORAGE] Local DB outbox enqueue notice for addExpense:', err);
     });
 
     // Immediate persistence verification

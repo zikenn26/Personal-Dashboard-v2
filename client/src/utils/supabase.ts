@@ -955,11 +955,16 @@ export const syncWorkspaceToSupabase = async (
 
 import { ConnectionPolicyManager } from '../services/connectionPolicy';
 
-/**
- * Check if the workspace is currently in offline mode (network disconnected).
- */
+let manualWorkOfflineEnabled = false;
+
 export const isWorkOfflineMode = (): boolean => {
-  return !ConnectionPolicyManager.isOnlineWriteReady();
+  if (manualWorkOfflineEnabled) return true;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+  return false;
+};
+
+export const setWorkOfflineMode = (val: boolean): void => {
+  manualWorkOfflineEnabled = !!val;
 };
 
 /**

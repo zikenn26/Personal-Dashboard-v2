@@ -454,6 +454,13 @@ class SmsExpenseService {
     try {
       const handle = await SmsTransaction.addListener('onSmsReceived', (data) => {
         if (!this.isAutoTrackingEnabled()) return;
+        // Hold incoming SMS in native pending inbox while offline to prevent multi-device inconsistency
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          logDeviceDiagnostic('info', 'LifeOS_SMS:OFFLINE_SMS_HELD', 'Incoming SMS held in native pending inbox until reconnected to prevent inconsistency', {
+            sender: data.sender,
+          });
+          return;
+        }
         this.processSms(data.body, data.sender, data.timestamp, true);
       });
       this.removeListenerCallback = () => {
@@ -1012,61 +1019,9 @@ class SmsExpenseService {
         updatedAt: nowMs,
       };
 
-      if (!ConnectionPolicyManager.isOnlineWriteReady()) {
-        // Enqueue to offline pending inbox
-        Storage.addSmsWriteRetryItem({
-          id: `retry-${Date.now()}-${newExpense.id}`,
-          expense: newExpense,
-          rawSms: body,
-          sender,
-          timestamp,
-          attempts: 0,
-          lastAttemptAt: Date.now(),
-          lastError: 'Queued offline',
-        });
-
-        return {
-          success: true,
-          status: 'storage_failed',
-          reason: 'Queued offline',
-          expense: newExpense,
-          parsed,
-        };
-      }
-
-      // Mutate storage using canonical Storage.addExpense equivalent through expenseRepo
+      // Mutate storage using canonical synchronous Storage.addExpense
       try {
-        await expenseRepo.save(newExpense);
-        const updatedExpenses = await expenseRepo.getAll();
-        Storage.setExpenses(updatedExpenses);
-
-        // Save multi-vector fingerprints
-        Storage.addProcessedSmsFingerprint(parsed.fingerprint);
-        Storage.addProcessedSmsFingerprint(`raw_sms_${body.trim().toLowerCase().replace(/\s+/g, ' ')}`);
-        if (parsed.referenceId) {
-          Storage.addProcessedSmsFingerprint(`ref_id_${parsed.referenceId.trim().toUpperCase()}`);
-        }
-        const cleanPayee = (parsed.payee || parsed.merchant || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        const cleanBank = (parsed.bankName || parsed.bankOrAccount || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        Storage.addProcessedSmsFingerprint(`composite_${cleanBank}_${parsed.amount.toFixed(2)}_${parsed.date}_${cleanPayee}_${parsed.time || ''}`);
-
-        const logItem: SmsTransactionLogItem = {
-          id: `sms-log-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-          timestamp,
-          sender,
-          rawSms: body,
-          status: 'logged',
-          expenseId: newExpense.id,
-          parsed: {
-            amount: parsed.amount,
-            merchant: parsed.merchant,
-            category: String(parsed.category),
-            type: parsed.type,
-            date: parsed.date,
-            referenceId: parsed.referenceId,
-          },
-        };
-        Storage.addSmsTransactionLog(logItem);
+        Storage.addExpense(newExpense);
       } catch (err: any) {
         Storage.addSmsWriteRetryItem({
           id: `retry-${Date.now()}-${newExpense.id}`,
@@ -1076,14 +1031,68 @@ class SmsExpenseService {
           timestamp,
           attempts: 1,
           lastAttemptAt: Date.now(),
-          lastError: err.message || 'Failed to save',
+          lastError: err?.message || 'Failed to save',
         });
+        return {
+          success: false,
+          status: 'storage_failed',
+          reason: err?.message || 'Failed to save',
+          parsed,
+        };
       }
+
+      const finalExpenses = Storage.getExpenses();
+      const isSaved = finalExpenses.some((e) => e.id === newExpense.id);
+      if (!isSaved) {
+        Storage.addSmsWriteRetryItem({
+          id: `retry-${Date.now()}-${newExpense.id}`,
+          expense: newExpense,
+          rawSms: body,
+          sender,
+          timestamp,
+          attempts: 1,
+          lastAttemptAt: Date.now(),
+          lastError: 'Storage write failed verification',
+        });
+        return {
+          success: false,
+          status: 'storage_failed',
+          reason: 'Storage write failed verification',
+          parsed,
+        };
+      }
+
+      // Save multi-vector fingerprints
+      Storage.addProcessedSmsFingerprint(parsed.fingerprint);
+      Storage.addProcessedSmsFingerprint(`raw_sms_${body.trim().toLowerCase().replace(/\s+/g, ' ')}`);
+      if (parsed.referenceId) {
+        Storage.addProcessedSmsFingerprint(`ref_id_${parsed.referenceId.trim().toUpperCase()}`);
+      }
+      const cleanPayee = (parsed.payee || parsed.merchant || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const cleanBank = (parsed.bankName || parsed.bankOrAccount || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      Storage.addProcessedSmsFingerprint(`composite_${cleanBank}_${parsed.amount.toFixed(2)}_${parsed.date}_${cleanPayee}_${parsed.time || ''}`);
+
+      const logItem: SmsTransactionLogItem = {
+        id: `sms-log-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        timestamp,
+        sender,
+        rawSms: body,
+        status: 'logged',
+        expenseId: newExpense.id,
+        parsed: {
+          amount: parsed.amount,
+          merchant: parsed.merchant,
+          category: String(parsed.category),
+          type: parsed.type,
+          date: parsed.date,
+          referenceId: parsed.referenceId,
+        },
+      };
+      Storage.addSmsTransactionLog(logItem);
 
       // =========================================================================
       // CHECKPOINT 8 — SPENDING REFRESH / STATE UPDATE
       // =========================================================================
-      const finalExpenses = Storage.getExpenses();
       // Dispatch system events with explicit updatedExpenses array so all dashboard views update in real time
       broadcastDataChanged('expenses', { newExpense, updatedExpenses: finalExpenses });
 
@@ -1095,7 +1104,7 @@ class SmsExpenseService {
         );
       }
 
-      logDeviceDiagnostic('info', 'LifeOS_SMS:8_SPENDING_REFRESH_STATE_UPDATE', 'Dispatched real-time Spending UI update events', {
+      logDeviceDiagnostic('info', 'LifeOS_SMS:LOGGED_TO_SPENDING LifeOS_SMS:8_SPENDING_REFRESH_STATE_UPDATE', `Auto-logged to Spending: ${newExpense.name} (₹${newExpense.amount})`, {
         expenseId: newExpense.id,
         title: newExpense.name,
         amount: newExpense.amount,
@@ -1193,7 +1202,7 @@ class SmsExpenseService {
       }
 
       try {
-        await expenseRepo.save(item.expense);
+        Storage.addExpense(item.expense);
         recoveredCount++;
         logDeviceDiagnostic('info', 'LifeOS_SMS:WRITE_RETRY_SUCCESS', 'Successfully recovered failed write from retry queue', {
           expenseId: item.expense.id,
@@ -1211,8 +1220,7 @@ class SmsExpenseService {
     Storage.setSmsWriteRetryQueue(remaining);
 
     if (recoveredCount > 0) {
-      const freshExpenses = await expenseRepo.getAll();
-      Storage.setExpenses(freshExpenses);
+      const freshExpenses = Storage.getExpenses();
       broadcastDataChanged('expenses', { updatedExpenses: freshExpenses });
     }
 
@@ -1278,6 +1286,10 @@ class SmsExpenseService {
       typeof window !== 'undefined' &&
       localStorage.getItem('lifeos_sms_explicitly_disabled') === 'true';
     if (isExplicitlyDisabled) return 0;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      // Hold incoming SMS in native pending inbox while offline to prevent multi-device dirty writes
+      return 0;
+    }
     if (!(await this.isNativePluginAvailable())) return 0;
 
     try {
@@ -1326,16 +1338,6 @@ class SmsExpenseService {
         } catch (ackErr) {
           console.warn('Failed to acknowledge processed SMS in native queue:', ackErr);
         }
-      }
-
-      // Automatically retry any pending items in the write retry queue
-      try {
-        const retryRecovered = await this.processPendingWriteRetries();
-        if (retryRecovered > 0) {
-          loggedCount += retryRecovered;
-        }
-      } catch (retryErr) {
-        console.warn('Notice processing pending write retries:', retryErr);
       }
 
       if (loggedCount > 0) {
@@ -1691,19 +1693,18 @@ class SmsExpenseService {
     if (result.imported > 0) {
       const freshExpenses = Storage.getExpenses();
 
-      // Synchronize immediately to Supabase Cloud and await persistence
-      try {
-        await flushAutoSyncImmediately({
-          ...Storage.getAllDataPayload(),
-          expenses: freshExpenses,
-        });
+      // Synchronize to Supabase Cloud in background
+      void flushAutoSyncImmediately({
+        ...Storage.getAllDataPayload(),
+        expenses: freshExpenses,
+      }).then(() => {
         logDeviceDiagnostic('info', 'LifeOS_SMS:RESCAN_CLOUD_SYNC', 'Synchronized imported rescan expenses to Supabase cloud', {
           importedCount: result.imported,
           totalExpenses: freshExpenses.length,
         });
-      } catch (syncErr: any) {
+      }).catch((syncErr: any) => {
         logDeviceDiagnostic('warn', 'LifeOS_SMS:RESCAN_CLOUD_SYNC', 'Notice syncing rescan to cloud (stored safely in local storage): ' + (syncErr?.message || syncErr));
-      }
+      });
 
       try {
         broadcastDataChanged('expenses', { updatedExpenses: freshExpenses });
@@ -1799,6 +1800,11 @@ class SmsExpenseService {
       window.addEventListener('focus', () => {
         if (this.isAutoTrackingEnabled()) {
           this.syncPendingBackgroundMessages();
+        }
+      });
+      window.addEventListener('online', () => {
+        if (this.isAutoTrackingEnabled()) {
+          void this.syncPendingBackgroundMessages();
         }
       });
     }

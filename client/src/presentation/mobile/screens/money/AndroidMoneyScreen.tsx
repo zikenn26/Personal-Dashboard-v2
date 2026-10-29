@@ -281,13 +281,26 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
     expenseSyncService.getExpenseSyncStatus()
   );
 
+  const [isOnline, setIsOnline] = useState<boolean>(() =>
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   useEffect(() => {
     return expenseSyncService.onSyncStatusChange((status) => {
       setExpenseSyncStatus(status);
     });
   }, []);
-
-
 
   const activeExpenses = useMemo(() => {
     const source = localExpenses && localExpenses.length > 0 ? localExpenses : expenses;
@@ -793,28 +806,6 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         {/* Compact Top Actions Bar (Horizontal Scroll / Compact layout) */}
         <div className="flex items-center justify-between gap-1.5 overflow-x-auto no-scrollbar pt-0.5">
           <div className="flex items-center gap-1.5 shrink-0">
-            {/* Status indicator (Passive) */}
-            <div className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
-                expenseSyncStatus.state === 'syncing'
-                  ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300'
-                  : expenseSyncStatus.state === 'error'
-                  ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300'
-                  : expenseSyncStatus.state === 'offline'
-                  ? 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'
-                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200'
-              }`}>
-              <RotateCw className={`w-3 h-3 ${expenseSyncStatus.state === 'syncing' ? 'animate-spin text-blue-600 dark:text-blue-400' : 'text-emerald-600 dark:text-emerald-400'}`} />
-              <span>
-                {expenseSyncStatus.state === 'syncing'
-                  ? 'Updating'
-                  : expenseSyncStatus.state === 'error'
-                  ? 'Sync Error'
-                  : expenseSyncStatus.state === 'offline'
-                  ? 'Offline (Read-Only)'
-                  : 'Up to date'}
-              </span>
-            </div>
-
             {/* Export Button */}
             <button
               type="button"
@@ -884,6 +875,13 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
 
       {/* BEGIN: MainContent */}
       <main className="flex-1 px-3.5 pt-1.5 pb-6 space-y-3">
+        {/* Offline Read-Only Banner */}
+        {!isOnline && (
+          <div className="rounded-xl px-3 py-2 bg-amber-500/15 border border-amber-500/30 text-[11px] font-semibold text-amber-900 dark:text-amber-200 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+            <span>Offline Mode (Read-Only) — Viewing cached data to prevent multi-device conflicts. Writes re-enable on reconnect.</span>
+          </div>
+        )}
 
         {/* Space-Efficient KPI Card */}
         <section
@@ -1145,11 +1143,21 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
         <button
           type="button"
           aria-label="Add Expense"
+          disabled={!isOnline}
           onClick={() => {
+            if (!isOnline) {
+              toast.warning('Offline Mode (Read-Only): Cannot add expenses while offline to prevent multi-device sync conflicts.');
+              return;
+            }
             void nativeService.triggerHaptic('selection');
             setIsAddSheetOpen(true);
           }}
-          className="fixed bottom-20 right-4 z-40 w-13 h-13 rounded-full bg-emerald-700 hover:bg-emerald-800 active:scale-95 text-white shadow-xl flex items-center justify-center transition-all cursor-pointer border-2 border-white dark:border-[#0b111e]"
+          className={`fixed bottom-20 right-4 z-40 w-13 h-13 rounded-full text-white shadow-xl flex items-center justify-center transition-all border-2 border-white dark:border-[#0b111e] ${
+            !isOnline
+              ? 'bg-gray-400 dark:bg-gray-600 opacity-60 cursor-not-allowed'
+              : 'bg-emerald-700 hover:bg-emerald-800 active:scale-95 cursor-pointer'
+          }`}
+          title={!isOnline ? 'Offline Read-Only: Reconnect to add new expenses' : 'Add Expense'}
         >
           <Plus className="w-6 h-6 stroke-[2.5]" />
         </button>

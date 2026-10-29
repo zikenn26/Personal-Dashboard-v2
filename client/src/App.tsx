@@ -51,7 +51,6 @@ import { SmsExpenseModal } from './components/SmsExpenseModal';
 import { ApiKeySettingsModal } from './components/ApiKeySettingsModal';
 import { smsExpenseService } from './services/smsExpenseService';
 import { screenTimeService } from './services/screenTimeService';
-import { expenseRepo } from './repositories/expenseRepository';
 import { scratchpadWidgetService } from './services/scratchpadWidgetService';
 import { spendingWidgetService } from './services/spendingWidgetService';
 import { expenseSyncService } from './services/expenseSyncService';
@@ -106,6 +105,7 @@ import {
   setCustomWorkspaceIdentifier,
   setCustomWorkspaceEmail,
   checkHasNewerCloudWorkspace,
+  setWorkOfflineMode,
 } from './utils/supabase';
 import { nativeService } from './services/nativeService';
 import { normalizeExpenseDateKey, getLocalDateKey } from './utils/expenseUtils';
@@ -358,6 +358,22 @@ export default function App() {
   const isInitialMount = useRef(true);
   const isRemoteUpdating = useRef(false);
   const isCloudReady = useRef(false);
+
+  // Global Online / Offline Read-Only State
+  const [isOnline, setIsOnline] = useState<boolean>(() =>
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Hydrate and reset all React useState hooks cleanly from user-scoped Storage
   const handleHydrateAllFromStorage = (playEffects = false) => {
@@ -1037,7 +1053,7 @@ export default function App() {
       } catch {
         // ignore background poll error
       }
-    }, 60000);
+    }, 30000);
 
     // 2. Realtime WebSocket channel for instant cross-device updates (<30ms delivery, no lag, no refresh)
     const unsubRealtime = subscribeToRealtimeWorkspace(
@@ -1062,25 +1078,6 @@ export default function App() {
       }
     );
 
-    // 2b. PostgreSQL Realtime listener for expenses
-    const handleExpensePostgresChange = async () => {
-      if (!isMounted || !currentUser) return;
-      try {
-        await expenseRepo.syncFromServer();
-        const updatedExpenses = await expenseRepo.getAll();
-        setExpenses(updatedExpenses);
-        Storage.setExpenses(updatedExpenses);
-        window.dispatchEvent(
-          new CustomEvent('dashboard-data-updated', {
-            detail: { module: 'expenses', updatedExpenses },
-          })
-        );
-      } catch (err) {
-        console.error('Failed to sync expenses from server after postgres change', err);
-      }
-    };
-    window.addEventListener('expense-postgres-change', handleExpensePostgresChange);
-
     // On window focus / visibility change for background wakeups:
     // 1. Verify session validity against Supabase Cloud
     // 2. Process any pending background SMS messages received while app was inactive
@@ -1100,11 +1097,25 @@ export default function App() {
           // ignore
         }
         await autoSyncFromCloud();
-        await handleExpensePostgresChange();
       }
     };
+
+    const handleOnline = async () => {
+      if (isMounted) {
+        try {
+          if (!isRemoteUpdating.current) {
+            flushAutoSyncImmediately(Storage.getAllDataPayload());
+          }
+          await autoSyncFromCloud();
+        } catch {
+          // ignore
+        }
+      }
+    };
+
     window.addEventListener('focus', handleFocus);
     document.addEventListener('visibilitychange', handleFocus);
+    window.addEventListener('online', handleOnline);
 
     return () => {
       isMounted = false;
@@ -1114,7 +1125,7 @@ export default function App() {
       unsubRealtime();
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleFocus);
-      window.removeEventListener('expense-postgres-change', handleExpensePostgresChange);
+      window.removeEventListener('online', handleOnline);
     };
   }, [currentUser?.id, currentUser?.email]);
 
@@ -1609,10 +1620,6 @@ export default function App() {
     dueDate?: string,
     status?: TaskStatus
   ) => {
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      toast.error('Offline mode: changes cannot be saved to prevent inconsistencies.');
-      return;
-    }
     const newTodo: TodoItem = {
       id: `todo-${Date.now()}`,
       title,
@@ -1655,10 +1662,6 @@ export default function App() {
   };
 
   const handleUpdateTodo = (id: string, updatedFields: Partial<TodoItem>) => {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    toast.error('Offline mode: changes cannot be saved to prevent inconsistencies.');
-    return;
-  }
     Sound.click(settings.soundEnabled);
     const updated = todos.map((t) => {
       if (t.id === id) {
@@ -1692,10 +1695,6 @@ export default function App() {
   };
 
   const handleDeleteTodo = (id: string) => {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    toast.error('Offline mode: changes cannot be deleted to prevent inconsistencies.');
-    return;
-  }
     const target = todos.find((t) => t.id === id);
     const updated = todos.filter((t) => t.id !== id);
     setTodos(updated);
@@ -1815,10 +1814,10 @@ export default function App() {
 
   // Habit Handlers
   const handleToggleHabitDay = (habitId: string, dayIndex: number) => {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    toast.error('Offline mode: changes cannot be saved to prevent inconsistencies.');
-    return;
-  }
+    if (!isOnline) {
+      toast.warning('Offline Mode (Read-Only): Cannot update habits while offline to prevent multi-device sync conflicts.');
+      return;
+    }
     Sound.click(settings.soundEnabled);
     const currentMonday = getMondayOfWeek();
     const currentWeekId = getWeekId(currentMonday);
@@ -1927,6 +1926,10 @@ export default function App() {
   };
 
   const handleToggleHabitDate = (habitId: string, dateStr: string) => {
+    if (!isOnline) {
+      toast.warning('Offline Mode (Read-Only): Cannot update habits while offline to prevent multi-device sync conflicts.');
+      return;
+    }
     Sound.click(settings.soundEnabled);
     const currentStored = Storage.getHabits();
     const base = habits.some((h) => h.id === habitId) ? habits : currentStored;
@@ -2002,10 +2005,10 @@ export default function App() {
   };
 
   const handleUpdateHabit = (updatedHabit: HabitItem) => {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    toast.error('Offline mode: changes cannot be saved to prevent inconsistencies.');
-    return;
-  }
+    if (!isOnline) {
+      toast.warning('Offline Mode (Read-Only): Cannot update habits while offline.');
+      return;
+    }
     Sound.click(settings.soundEnabled);
     const currentStored = Storage.getHabits();
     const base = habits.length > 0 ? habits : currentStored;
@@ -2026,10 +2029,10 @@ export default function App() {
   };
 
   const handleAddHabit = (title: string, category: string, icon: string, color: string) => {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    toast.error('Offline mode: changes cannot be saved to prevent inconsistencies.');
-    return;
-  }
+    if (!isOnline) {
+      toast.warning('Offline Mode (Read-Only): Cannot create habits while offline.');
+      return;
+    }
     const cleanTitle = title.trim();
     if (!cleanTitle) return;
     const currentMonday = getMondayOfWeek();
@@ -2061,10 +2064,10 @@ export default function App() {
   };
 
   const handleDeleteHabit = (id: string) => {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    toast.error('Offline mode: changes cannot be deleted to prevent inconsistencies.');
-    return;
-  }
+    if (!isOnline) {
+      toast.warning('Offline Mode (Read-Only): Cannot delete habits while offline.');
+      return;
+    }
     const target = habits.find((h) => h.id === id) || Storage.getHabits().find((h) => h.id === id);
     const updated = habits.filter((h) => h.id !== id);
     setHabits(updated);
@@ -2326,10 +2329,6 @@ export default function App() {
 
   // Goal Handlers
   const handleAddGoal = (goal: Omit<GoalItem, 'id' | 'createdAt'>) => {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    toast.error('Offline mode: changes cannot be saved to prevent inconsistencies.');
-    return;
-  }
     Sound.success(settings.soundEnabled);
     triggerConfetti();
     const newGoal: GoalItem = {
@@ -2343,10 +2342,6 @@ export default function App() {
   };
 
   const handleUpdateGoal = (id: string, updated: Partial<GoalItem>) => {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    toast.error('Offline mode: changes cannot be saved to prevent inconsistencies.');
-    return;
-  }
     Sound.click(settings.soundEnabled);
     const next = goals.map((g) => (g.id === id ? { ...g, ...updated } : g));
     setGoals(next);
@@ -2354,10 +2349,6 @@ export default function App() {
   };
 
   const handleDeleteGoal = (id: string) => {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    toast.error('Offline mode: changes cannot be deleted to prevent inconsistencies.');
-    return;
-  }
     Sound.click(settings.soundEnabled);
     const target = goals.find((g) => g.id === id);
     const next = goals.filter((g) => g.id !== id);
@@ -2370,13 +2361,14 @@ export default function App() {
   };
 
   // Expense Handlers
-  const handleAddExpense = async (item: Omit<ExpenseItem, 'id'>) => {
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      toast.error('Offline mode: changes cannot be saved to prevent inconsistencies.');
+  const handleAddExpense = (item: Omit<ExpenseItem, 'id'>) => {
+    if (!isOnline) {
+      toast.warning('Offline Mode (Read-Only): Cannot add expenses while offline to prevent multi-device sync conflicts.');
       return;
     }
     const isCredit = item.direction === 'CREDIT' || item.transactionType === 'CREDIT' || item.transactionType === 'income';
     const direction: 'DEBIT' | 'CREDIT' = isCredit ? 'CREDIT' : 'DEBIT';
+    const currentStored = Storage.getExpenses();
     const nowMs = Date.now();
 
     const newExpense: ExpenseItem = {
@@ -2387,27 +2379,32 @@ export default function App() {
       createdAt: nowMs,
       updatedAt: nowMs,
     };
+    const updated = [newExpense, ...currentStored];
+    setExpenses(updated);
+    Storage.setExpenses(updated);
 
-    try {
-      await expenseRepo.save(newExpense);
-      const updated = await expenseRepo.getAll();
-      setExpenses(updated);
-      Storage.setExpenses(updated);
+    // Broadcast change so both mobile screens and desktop components update reactively
+    window.dispatchEvent(
+      new CustomEvent('dashboard-data-updated', {
+        detail: { module: 'expenses', updatedExpenses: updated, newExpense },
+      })
+    );
 
-      window.dispatchEvent(
-        new CustomEvent('dashboard-data-updated', {
-          detail: { module: 'expenses', updatedExpenses: updated, newExpense },
-        })
-      );
-    } catch (e: any) {
-      toast.error(e.message || 'Failed to save expense');
-    }
+    // Sync immediately to Supabase
+    flushAutoSyncImmediately({
+      ...Storage.getAllDataPayload(),
+      expenses: updated,
+    });
   };
 
   const handleBatchAddExpenses = (
     newItems: Array<Omit<ExpenseItem, 'id'>>,
     newLog?: ExcelImportLog
   ) => {
+    if (!isOnline) {
+      toast.warning('Offline Mode (Read-Only): Cannot import expenses while offline to prevent multi-device sync conflicts.');
+      return;
+    }
     const currentStored = Storage.getExpenses();
     const nowMs = Date.now();
     const created: ExpenseItem[] = newItems.map((item, idx) => {
@@ -2465,94 +2462,93 @@ export default function App() {
     });
   };
 
-  const handleUpdateExpense = async (id: string, updated: Partial<ExpenseItem>) => {
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      toast.error('Offline mode: changes cannot be saved to prevent inconsistencies.');
+  const handleUpdateExpense = (id: string, updated: Partial<ExpenseItem>) => {
+    if (!isOnline) {
+      toast.warning('Offline Mode (Read-Only): Cannot edit expenses while offline to prevent multi-device sync conflicts.');
       return;
     }
     Sound.click(settings.soundEnabled);
+    const currentStored = Storage.getExpenses();
+    const nowMs = Date.now();
+    const next = currentStored.map((e) => (String(e.id) === String(id) ? { ...e, ...updated, updatedAt: nowMs } : e));
+    setExpenses(next);
+    Storage.setExpenses(next);
 
-    try {
-      const existing = await expenseRepo.getById(id);
-      if (!existing) {
-        toast.error('Expense not found');
-        return;
-      }
-      const nowMs = Date.now();
-      const updatedItem = { ...existing, ...updated, updatedAt: nowMs };
-      await expenseRepo.save(updatedItem);
+    window.dispatchEvent(
+      new CustomEvent('dashboard-data-updated', {
+        detail: { module: 'expenses', updatedExpenses: next },
+      })
+    );
 
-      const next = await expenseRepo.getAll();
-      setExpenses(next);
-      Storage.setExpenses(next);
-
-      window.dispatchEvent(
-        new CustomEvent('dashboard-data-updated', {
-          detail: { module: 'expenses', updatedExpenses: next },
-        })
-      );
-    } catch (e: any) {
-      toast.error(e.message || 'Failed to update expense');
-    }
+    flushAutoSyncImmediately({
+      ...Storage.getAllDataPayload(),
+      expenses: next,
+    });
   };
 
-  const handleToggleExpense = async (id: string) => {
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      toast.error('Offline mode: changes cannot be saved to prevent inconsistencies.');
+  const handleToggleExpense = (id: string) => {
+    if (!isOnline) {
+      toast.warning('Offline Mode (Read-Only): Cannot modify expenses while offline.');
       return;
     }
+    const currentStored = Storage.getExpenses();
+    const nowMs = Date.now();
+    const updated = currentStored.map((e) => (String(e.id) === String(id) ? { ...e, active: !e.active, updatedAt: nowMs } : e));
+    setExpenses(updated);
+    Storage.setExpenses(updated);
 
-    try {
-      const existing = await expenseRepo.getById(id);
-      if (!existing) return;
+    window.dispatchEvent(
+      new CustomEvent('dashboard-data-updated', {
+        detail: { module: 'expenses', updatedExpenses: updated },
+      })
+    );
 
-      const updatedItem = { ...existing, active: !existing.active, updatedAt: Date.now() };
-      await expenseRepo.save(updatedItem);
-
-      const updated = await expenseRepo.getAll();
-      setExpenses(updated);
-      Storage.setExpenses(updated);
-
-      window.dispatchEvent(
-        new CustomEvent('dashboard-data-updated', {
-          detail: { module: 'expenses', updatedExpenses: updated },
-        })
-      );
-    } catch (e: any) {
-      toast.error(e.message || 'Failed to toggle expense');
-    }
+    flushAutoSyncImmediately({
+      ...Storage.getAllDataPayload(),
+      expenses: updated,
+    });
   };
 
-  const executeAtomicExpenseDeletion = async (itemsToDelete: ExpenseItem[]) => {
+  const executeAtomicExpenseDeletion = (itemsToDelete: ExpenseItem[]) => {
+    if (!isOnline) {
+      toast.warning('Offline Mode (Read-Only): Cannot delete expenses while offline to prevent multi-device sync conflicts.');
+      return;
+    }
     const targetIds = itemsToDelete.map((e) => String(e.id).trim()).filter(Boolean);
     if (targetIds.length === 0) return;
 
-    try {
-      await expenseRepo.deleteBatch(targetIds);
+    // 1. Route deletion through single mutation pipeline:
+    // Storage.deleteExpenses atomically moves to Trash, records durable tombstones,
+    // deletes in IndexedDB/SQLite, enqueues delete outbox mutation, and clears offline caches.
+    const nextStored = Storage.deleteExpenses(targetIds);
 
-      const nextStored = await expenseRepo.getAll();
+    // 2. Clean up spreadsheet logs if all expenses cleared
+    if (nextStored.length === 0) {
+      Storage.setExcelImportLogs([]);
+    }
+    setTrash(Storage.getTrash());
 
-      // Clean up spreadsheet logs if all expenses cleared
-      if (nextStored.length === 0) {
-        Storage.setExcelImportLogs([]);
-      }
+    // 3. Immediately update React state with fresh array reference
+    setExpenses([...nextStored]);
+    setAtomicPendingDeletion(null);
 
-      // Move items to trash
-      itemsToDelete.forEach(target => {
-        Storage.moveToTrash('expenses', target, target.name);
-      });
-      setTrash(Storage.getTrash());
+    // 4. Dispatch 'dashboard-data-updated' event to notify all listening components
+    window.dispatchEvent(
+      new CustomEvent('dashboard-data-updated', {
+        detail: { module: 'expenses', updatedExpenses: nextStored, deletedCount: itemsToDelete.length },
+      })
+    );
 
-      setExpenses([...nextStored]);
-      Storage.setExpenses([...nextStored]);
-      setAtomicPendingDeletion(null);
-
-      window.dispatchEvent(
-        new CustomEvent('dashboard-data-updated', {
-          detail: { module: 'expenses', updatedExpenses: nextStored, deletedCount: itemsToDelete.length },
-        })
-      );
-
+    // 5. Flush auto sync immediately to Supabase
+    flushAutoSyncImmediately({
+      ...Storage.getAllDataPayload(),
+      expenses: nextStored,
+      trash: Storage.getTrash(),
+      _meta: {
+        deletedExpenseIds: targetIds,
+        lastDeletedAt: Date.now(),
+      },
+    });
 
     // 6. Trigger Undo Toast
     if (expenseUndoTimerRef.current) {
@@ -2569,16 +2565,9 @@ export default function App() {
         setExpenseUndoToast(null);
       }, 6000);
     }
-    } catch (e: any) {
-      toast.error(e.message || 'Failed to delete expense');
-    }
   };
 
   const handleDeleteExpense = (idOrIds: string | string[], skipConfirm = true) => {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    toast.error('Offline mode: changes cannot be deleted to prevent inconsistencies.');
-    return;
-  }
     Sound.click(settings.soundEnabled);
 
     const targetIds = Array.isArray(idOrIds)
@@ -2756,10 +2745,6 @@ export default function App() {
 
   // Vault Handlers
   const handleAddVaultSecret = (item: Omit<VaultCredential, 'id'>) => {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    toast.error('Offline mode: changes cannot be saved to prevent inconsistencies.');
-    return;
-  }
     const newCred: VaultCredential = {
       id: `vc-${Date.now()}`,
       ...item,
@@ -2771,10 +2756,6 @@ export default function App() {
   };
 
   const handleDeleteVaultSecret = (id: string) => {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    toast.error('Offline mode: changes cannot be deleted to prevent inconsistencies.');
-    return;
-  }
     const updated = vault.filter((v) => v.id !== id);
     setVault(updated);
     void Storage.setVault(updated, settings.masterPin);
@@ -2831,10 +2812,6 @@ export default function App() {
   };
 
   const handleAddDiaryEntry = (entry: Omit<JournalEntry, 'id' | 'timestamp'>) => {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    toast.error('Offline mode: changes cannot be saved to prevent inconsistencies.');
-    return;
-  }
     const newEntry: JournalEntry = {
       id: `jn-${Date.now()}`,
       ...entry,
@@ -2846,10 +2823,6 @@ export default function App() {
   };
 
   const handleDeleteJournalEntry = (id: string) => {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    toast.error('Offline mode: changes cannot be deleted to prevent inconsistencies.');
-    return;
-  }
     const target = journal.find((j) => j.id === id);
     const updated = journal.filter((j) => j.id !== id);
     setJournal(updated);
@@ -3436,16 +3409,38 @@ export default function App() {
 
           {/* Right: Quick Add (+), Search, Theme, Settings, Auth & Profile */}
           <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+            {/* Offline Mode Indicator Badge */}
+            {!isOnline && (
+              <div
+                id="navbar-offline-badge"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-semibold bg-amber-500/10 dark:bg-amber-400/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 dark:border-amber-400/20 shrink-0 animate-in fade-in duration-200"
+                title="Offline Read-Only: Viewing cached data to prevent multi-device sync conflicts. Writes re-enable on reconnect."
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-400 animate-pulse" />
+                <WifiOff className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-600 dark:text-amber-400" />
+                <span>Offline (Read-Only)</span>
+              </div>
+            )}
+
             {/* Top Quick Add Dropdown Menu (+) */}
             <div className="relative">
               <button
                 type="button"
+                disabled={!isOnline}
                 onClick={() => {
+                  if (!isOnline) {
+                    toast.warning('Offline Mode (Read-Only): Cannot add items while offline to prevent multi-device sync conflicts.');
+                    return;
+                  }
                   Sound.click(settings.soundEnabled);
                   setIsAddMenuOpen(!isAddMenuOpen);
                 }}
-                className="flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-lg bg-[#2383E2] hover:bg-[#1D70C2] text-white text-xs font-semibold shadow-xs hover:shadow-sm cursor-pointer transition-all"
-                title="Quick Add Task, Note, Expense, or Journal Entry"
+                className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-lg text-white text-xs font-semibold shadow-xs transition-all ${
+                  !isOnline
+                    ? 'bg-gray-400 dark:bg-gray-600 opacity-60 cursor-not-allowed'
+                    : 'bg-[#2383E2] hover:bg-[#1D70C2] cursor-pointer'
+                }`}
+                title={!isOnline ? 'Offline Read-Only: Reconnect to add items' : 'Quick Add Task, Note, Expense, or Journal Entry'}
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Add</span>
@@ -3744,6 +3739,17 @@ export default function App() {
             </div>
           </div>
         </header>
+
+        {/* Offline Mode Read-Only Banner */}
+        {!isOnline && (
+          <div
+            id="offline-readonly-banner"
+            className="w-full bg-amber-500/15 dark:bg-amber-500/20 border-b border-amber-500/30 px-4 py-2 flex items-center justify-center gap-2 text-xs font-semibold text-amber-900 dark:text-amber-200 z-30 transition-all animate-in fade-in"
+          >
+            <CloudOff className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+            <span>Offline Mode — Viewing cached local data (Read-Only to prevent device sync conflicts). Writes will re-enable once reconnected.</span>
+          </div>
+        )}
 
         {/* Quick Capture Expandable Bar */}
         {showQuickCapture && (
@@ -4578,6 +4584,7 @@ export default function App() {
                   onDeleteImportLog={handleDeleteImportLog}
                   onClearAllExpenses={handleClearAllExpenses}
                   soundEnabled={settings.soundEnabled}
+                  isOfflineReadOnly={!isOnline}
                 />
               )}
 

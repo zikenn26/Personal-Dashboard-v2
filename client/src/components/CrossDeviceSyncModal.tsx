@@ -299,17 +299,11 @@ export const CrossDeviceSyncModal: React.FC<CrossDeviceSyncModalProps> = ({
           </div>
         </div>
 
-        {/* Background Cloud Sync Option */}
+        {/* Automatic Realtime Cloud Sync Note */}
         <div className="pt-1 flex items-center justify-between">
-          <button
-            type="button"
-            onClick={handleBackgroundCloudSync}
-            disabled={isCloudSyncing}
-            className="text-[11px] font-semibold text-[#7b2cbf] dark:text-[#deb7ff] hover:underline flex items-center gap-1 cursor-pointer disabled:opacity-50"
-          >
-            <RotateCw className={`w-3 h-3 ${isCloudSyncing ? 'animate-spin' : ''}`} />
-            <span>Test Background Cloud Sync</span>
-          </button>
+          <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400">
+            Automated Real-Time Cloud Synchronization Active
+          </span>
 
           <span className="text-[10px] text-[#7e7384] dark:text-[#a09bb5] flex items-center gap-1">
             <ShieldCheck className="w-3 h-3 text-emerald-500" />

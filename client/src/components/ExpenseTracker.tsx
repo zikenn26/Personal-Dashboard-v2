@@ -104,6 +104,7 @@ interface ExpenseTrackerProps {
   onNavigate?: (view: any, filter?: string) => void;
   onOpenZikennPopup?: () => void;
   soundEnabled: boolean;
+  isOfflineReadOnly?: boolean;
 }
 
 export interface ExpenseCategoryDef {
@@ -277,7 +278,9 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   onNavigate,
   onOpenZikennPopup,
   soundEnabled,
+  isOfflineReadOnly,
 }) => {
+  const isOffline = Boolean(isOfflineReadOnly || (typeof navigator !== 'undefined' && !navigator.onLine));
   // Navigation & Filter States
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
@@ -332,8 +335,6 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       setExpenseSyncStatus(status);
     });
   }, []);
-
-
 
   // Custom useEffect hooks that monitor the 'expenses' prop and listen for 'dashboard-data-updated'
   // and 'storage' events to force an immediate re-render whenever an item is removed or modified.
@@ -740,6 +741,10 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
 
   // Helper to open Add Modal cleanly
   const openAddModal = (preset?: { name: string; amount: number; category: string; icon: string; note?: string }) => {
+    if (isOffline) {
+      toast.warning('Offline Mode (Read-Only): Cannot add expenses while offline to prevent multi-device sync conflicts.');
+      return;
+    }
     Sound.click(soundEnabled);
     if (preset) {
       setFormName(preset.name);
@@ -765,6 +770,10 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   };
 
   const openEditModal = (item: ExpenseItem) => {
+    if (isOffline) {
+      toast.warning('Offline Mode (Read-Only): Cannot edit expenses while offline to prevent multi-device sync conflicts.');
+      return;
+    }
     Sound.click(soundEnabled);
     setEditingExpense(item);
     setFormName(item.name);
@@ -781,6 +790,10 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
 
   // Quick Preset Click Handler
   const handleQuickAddPreset = (preset: { name: string; amount: number; category: string; icon: string; note?: string }) => {
+    if (isOffline) {
+      toast.warning('Offline Mode (Read-Only): Cannot add expenses while offline to prevent multi-device sync conflicts.');
+      return;
+    }
     Sound.success(soundEnabled);
     triggerConfetti();
     onAddExpense({
@@ -801,6 +814,10 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   // Save Modal (Create or Update)
   const handleSaveForm = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isOffline) {
+      toast.warning('Offline Mode (Read-Only): Cannot save changes while offline to prevent multi-device sync conflicts.');
+      return;
+    }
     const sanitizedAmountStr = formAmount.replace(',', '.');
     const parsedAmount = parseFloat(sanitizedAmountStr);
     if (!formName.trim() || isNaN(parsedAmount) || parsedAmount <= 0) return;
@@ -1390,41 +1407,8 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
           </span>
         </div>
 
-        {/* Right: Sync Now, Export, Excel, + Add Expense */}
+        {/* Right: Export, Excel, + Add Expense */}
         <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-          {/* Status indicator (Passive) */}
-          <div
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-semibold shadow-2xs ${
-              expenseSyncStatus.state === 'syncing'
-                ? 'bg-blue-50 dark:bg-blue-950/70 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300'
-                : expenseSyncStatus.state === 'error'
-                ? 'bg-rose-50 dark:bg-rose-950/70 border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300'
-                : expenseSyncStatus.state === 'offline'
-                ? 'bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300'
-                : 'bg-emerald-50 dark:bg-emerald-950/70 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200'
-            }`}
-          >
-            {expenseSyncStatus.state === 'syncing' ? (
-              <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600 dark:text-blue-400" />
-            ) : expenseSyncStatus.state === 'error' ? (
-              <AlertTriangle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
-            ) : expenseSyncStatus.state === 'offline' ? (
-              <CloudOff className="w-3.5 h-3.5 text-gray-500" />
-            ) : (
-              <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            )}
-
-            <span>
-              {expenseSyncStatus.state === 'syncing'
-                ? 'Updating...'
-                : expenseSyncStatus.state === 'error'
-                ? 'Sync Error'
-                : expenseSyncStatus.state === 'offline'
-                ? 'Offline (Read-Only)'
-                : 'Up to date'}
-            </span>
-          </div>
-
           {/* Export Button */}
           <div className="relative" ref={exportMenuRef}>
             <button
@@ -1476,14 +1460,23 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
           <button
             type="button"
             id="btn-upload-excel"
+            disabled={isOffline}
             onClick={() => {
+              if (isOffline) {
+                toast.warning('Offline Mode (Read-Only): Cannot import Excel sheets while offline. Reconnect to add new records.');
+                return;
+              }
               Sound.click(soundEnabled);
               setShowImportModal(true);
             }}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold shadow-2xs transition-colors cursor-pointer"
-            title="Upload and extract expenses from Excel (.xlsx, .xls) or CSV"
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border text-xs font-bold shadow-2xs transition-colors ${
+              isOffline
+                ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 border-gray-200 dark:border-gray-700 cursor-not-allowed opacity-60'
+                : 'bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 cursor-pointer'
+            }`}
+            title={isOffline ? 'Offline Read-Only: Reconnect to upload Excel data' : 'Upload and extract expenses from Excel (.xlsx, .xls) or CSV'}
           >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <FileSpreadsheet className="w-3.5 h-3.5" />
             <span>Excel</span>
             <span className="w-4 h-4 rounded-full bg-emerald-600 text-white text-[10px] font-black flex items-center justify-center">
               {importLogs.length || 1}
@@ -1494,8 +1487,20 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
           <button
             type="button"
             id="btn-add-expense-primary"
-            onClick={() => openAddModal()}
-            className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-[#059669] hover:bg-[#047857] active:scale-98 text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
+            disabled={isOffline}
+            onClick={() => {
+              if (isOffline) {
+                toast.warning('Offline Mode (Read-Only): Cannot add expenses while offline to prevent multi-device sync conflicts.');
+                return;
+              }
+              openAddModal();
+            }}
+            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-bold shadow-xs transition-all ${
+              isOffline
+                ? 'bg-gray-300 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed opacity-60'
+                : 'bg-[#059669] hover:bg-[#047857] active:scale-98 text-white cursor-pointer'
+            }`}
+            title={isOffline ? 'Offline Read-Only: Reconnect to add new expenses' : 'Add Expense'}
           >
             <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
             <span>Add Expense</span>

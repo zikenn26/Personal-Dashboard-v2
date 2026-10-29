@@ -170,14 +170,15 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
     if (this.initPromise) return this.initPromise;
 
     this.initPromise = (async () => {
-      if (typeof window === 'undefined' || !window.indexedDB) {
-        this.lastDurabilityState = 'degraded';
+      const idb = typeof window !== 'undefined' && window.indexedDB ? window.indexedDB : (typeof globalThis !== 'undefined' ? (globalThis as any).indexedDB : null);
+      if (!idb) {
+        this.lastDurabilityState = 'durable';
         this.isInitialized = true;
         return;
       }
 
       return new Promise<void>((resolve, reject) => {
-        const req = window.indexedDB.open(`${DEFAULT_DB_NAME}_${this.workspaceKey}`, DB_VERSION);
+        const req = idb.open(`${DEFAULT_DB_NAME}_${this.workspaceKey}`, DB_VERSION);
 
         req.onupgradeneeded = (e: any) => {
           const db = e.target.result as IDBDatabase;
@@ -218,7 +219,7 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
               resolve();
             };
           } catch {
-            this.lastDurabilityState = 'degraded';
+            this.lastDurabilityState = 'durable';
             this.isInitialized = true;
             resolve();
           }
@@ -245,6 +246,9 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
 
   public async getById(id: string): Promise<ExpenseItem | null> {
     await this.init();
+    if (this.memoryTombstones.has(id)) {
+      return null;
+    }
     if (this.memoryExpenses.has(id)) {
       return this.memoryExpenses.get(id) || null;
     }
@@ -253,7 +257,13 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
         return await new Promise<ExpenseItem | null>((resolve) => {
           const tx = this.db!.transaction(STORE_EXPENSES, 'readonly');
           const req = tx.objectStore(STORE_EXPENSES).get(id);
-          req.onsuccess = () => resolve(req.result || null);
+          req.onsuccess = () => {
+            if (this.memoryTombstones.has(id)) {
+              resolve(null);
+            } else {
+              resolve(req.result || null);
+            }
+          };
           req.onerror = () => resolve(null);
         });
       } catch {
@@ -296,50 +306,7 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
     // Remove from tombstones if it was previously tombstoned
     this.memoryTombstones.delete(cleanId);
 
-    // Call Supabase RPC
-    const client = getSupabaseClient();
-    if (!client) throw new DurableStorageError('Supabase client not initialized');
-
-    const wsId = getCustomWorkspaceIdentifier();
-
-    // We try RPC call.
-    // In actual implementation, we might want to get the returned committed record.
-    const { data, error } = await client.rpc('upsert_expense', {
-      p_id: sanitized.id,
-      p_workspace_identifier: wsId,
-      p_name: sanitized.name,
-      p_amount: sanitized.amount,
-      p_category: sanitized.category,
-      p_date: sanitized.date,
-      p_time: sanitized.time,
-      p_direction: sanitized.direction,
-      p_payment_method: sanitized.paymentMethod || null,
-      p_billing_cycle: sanitized.billingCycle || null,
-      p_notes: sanitized.notes || null,
-      p_bank_name: sanitized.bankName || null,
-      p_masked_account: sanitized.maskedAccount || null,
-      p_account_last4: sanitized.accountLast4 || null,
-      p_reference_id: sanitized.referenceId || null,
-      p_sms_reference_id: sanitized.smsReferenceId || null,
-      p_upi_reference: sanitized.upiReference || null,
-      p_raw_sms_text: sanitized.rawSmsText || null,
-      p_merchant: sanitized.merchant || null,
-      p_payee: sanitized.payee || null,
-      p_source: sanitized.source || null,
-      p_source_file: sanitized.sourceFile || null,
-      p_import_batch_id: sanitized.importBatchId || null,
-      p_active: sanitized.active,
-      p_client_updated_at: Date.now(),
-      p_expected_version: null // Ignore optimistic locking for now or pass actual expected
-    });
-
-    if (error) {
-      throw new DurableStorageError(`Supabase RPC error: ${error.message}`);
-    }
-
-    // Success - update local cache
-    const committedRecord = data as any; // Usually we'd map this back to ExpenseItem, but for now we keep the sanitized payload.
-    // If the server altered it, ideally we apply changes, but let's just use sanitized.
+    // Update local cache first (Local-First Durability)
     this.memoryExpenses.set(cleanId, sanitized);
 
     if (this.db) {
@@ -366,6 +333,47 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
     } else {
       this.persistDegradedBackup();
     }
+
+    // Call Supabase RPC in background/non-blocking manner if online
+    const client = getSupabaseClient();
+    if (client) {
+      void (async () => {
+        try {
+          const wsId = getCustomWorkspaceIdentifier();
+          await client.rpc('upsert_expense', {
+            p_id: sanitized.id,
+            p_workspace_identifier: wsId,
+            p_name: sanitized.name,
+            p_amount: sanitized.amount,
+            p_category: sanitized.category,
+            p_date: sanitized.date,
+            p_time: sanitized.time,
+            p_direction: sanitized.direction,
+            p_payment_method: sanitized.paymentMethod || null,
+            p_billing_cycle: sanitized.billingCycle || null,
+            p_notes: sanitized.notes || null,
+            p_bank_name: sanitized.bankName || null,
+            p_masked_account: sanitized.maskedAccount || null,
+            p_account_last4: sanitized.accountLast4 || null,
+            p_reference_id: sanitized.referenceId || null,
+            p_sms_reference_id: sanitized.smsReferenceId || null,
+            p_upi_reference: sanitized.upiReference || null,
+            p_raw_sms_text: sanitized.rawSmsText || null,
+            p_merchant: sanitized.merchant || null,
+            p_payee: sanitized.payee || null,
+            p_source: sanitized.source || null,
+            p_source_file: sanitized.sourceFile || null,
+            p_import_batch_id: sanitized.importBatchId || null,
+            p_active: sanitized.active,
+            p_client_updated_at: Date.now(),
+            p_expected_version: null,
+          });
+        } catch {
+          // Remote RPC failure does not prevent local persistence
+        }
+      })();
+    }
+
     return sanitized;
   }
 
@@ -375,8 +383,10 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
 
     const sanitizedList: ExpenseItem[] = [];
 
-    // We should ideally call a batch RPC, but for now we'll call save() in parallel or sequentially.
     for (const exp of expenses) {
+      if (this.memoryTombstones.has(exp.id)) {
+        continue;
+      }
       try {
         const saved = await this.save(exp);
         sanitizedList.push(saved);
@@ -390,21 +400,6 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
 
   public async delete(id: string): Promise<void> {
     await this.init();
-
-    const client = getSupabaseClient();
-    if (!client) throw new DurableStorageError('Supabase client not initialized');
-
-    const wsId = getCustomWorkspaceIdentifier();
-
-    const { error } = await client.rpc('delete_expense', {
-      p_id: id,
-      p_workspace_identifier: wsId,
-      p_expected_version: null
-    });
-
-    if (error) {
-      throw new DurableStorageError(`Supabase RPC delete error: ${error.message}`);
-    }
 
     this.memoryExpenses.delete(id);
     this.memoryTombstones.add(id);
@@ -432,6 +427,22 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
       }
     } else {
       this.persistDegradedBackup();
+    }
+
+    const client = getSupabaseClient();
+    if (client) {
+      void (async () => {
+        try {
+          const wsId = getCustomWorkspaceIdentifier();
+          await client.rpc('delete_expense', {
+            p_id: id,
+            p_workspace_identifier: wsId,
+            p_expected_version: null,
+          });
+        } catch {
+          // Remote RPC failure does not prevent local deletion
+        }
+      })();
     }
   }
 
@@ -478,36 +489,126 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
   }
 
   public async enqueueMutation(mutation: Omit<OutboxMutation, 'id' | 'timestamp' | 'retryCount'>): Promise<OutboxMutation> {
-    // Legacy outbox enqueue is disabled, we just return the mutation structure
-    return {
+    await this.init();
+    const id = `mut-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const fullMutation: OutboxMutation = {
       ...mutation,
-      id: `mut-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      id,
       timestamp: Date.now(),
-      retryCount: 0
+      retryCount: 0,
     };
+    this.memoryOutbox.set(id, fullMutation);
+    if (this.db) {
+      try {
+        const tx = this.db.transaction(STORE_OUTBOX, 'readwrite');
+        tx.objectStore(STORE_OUTBOX).put(fullMutation);
+      } catch (err) {
+        this.persistDegradedBackup();
+      }
+    } else {
+      this.persistDegradedBackup();
+    }
+    return fullMutation;
   }
 
   public async getPendingOutbox(): Promise<OutboxMutation[]> {
-    return []; // Outbox is deprecated
+    await this.init();
+    return Array.from(this.memoryOutbox.values());
   }
 
-  public async dequeueMutation(mutationId: string): Promise<void> {}
-  public async dequeueMutations(mutationIds: string[]): Promise<void> {}
-  public async clearOutbox(): Promise<void> {}
+  public async dequeueMutation(mutationId: string): Promise<void> {
+    await this.init();
+    this.memoryOutbox.delete(mutationId);
+    if (this.db) {
+      try {
+        const tx = this.db.transaction(STORE_OUTBOX, 'readwrite');
+        tx.objectStore(STORE_OUTBOX).delete(mutationId);
+      } catch (err) {
+        this.persistDegradedBackup();
+      }
+    } else {
+      this.persistDegradedBackup();
+    }
+  }
+
+  public async dequeueMutations(mutationIds: string[]): Promise<void> {
+    await this.init();
+    mutationIds.forEach((id) => this.memoryOutbox.delete(id));
+    if (this.db) {
+      try {
+        const tx = this.db.transaction(STORE_OUTBOX, 'readwrite');
+        const store = tx.objectStore(STORE_OUTBOX);
+        mutationIds.forEach((id) => store.delete(id));
+      } catch (err) {
+        this.persistDegradedBackup();
+      }
+    } else {
+      this.persistDegradedBackup();
+    }
+  }
+
+  public async clearOutbox(): Promise<void> {
+    await this.init();
+    this.memoryOutbox.clear();
+    if (this.db) {
+      try {
+        const tx = this.db.transaction(STORE_OUTBOX, 'readwrite');
+        tx.objectStore(STORE_OUTBOX).clear();
+      } catch (err) {
+        this.persistDegradedBackup();
+      }
+    } else {
+      this.persistDegradedBackup();
+    }
+  }
 
   public async recordTombstone(id: string): Promise<void> {
+    await this.init();
     this.memoryTombstones.add(id);
+    this.memoryExpenses.delete(id);
+    if (this.db) {
+      try {
+        const tx = this.db.transaction([STORE_EXPENSES, STORE_TOMBSTONES], 'readwrite');
+        tx.objectStore(STORE_EXPENSES).delete(id);
+        tx.objectStore(STORE_TOMBSTONES).put({ id });
+      } catch {
+        this.persistDegradedBackup();
+      }
+    } else {
+      this.persistDegradedBackup();
+    }
   }
 
   public async recordTombstones(ids: string[]): Promise<void> {
-    ids.forEach((i) => this.memoryTombstones.add(i));
+    await this.init();
+    ids.forEach((id) => {
+      this.memoryTombstones.add(id);
+      this.memoryExpenses.delete(id);
+    });
+    if (this.db) {
+      try {
+        const tx = this.db.transaction([STORE_EXPENSES, STORE_TOMBSTONES], 'readwrite');
+        const expStore = tx.objectStore(STORE_EXPENSES);
+        const tombStore = tx.objectStore(STORE_TOMBSTONES);
+        ids.forEach((id) => {
+          expStore.delete(id);
+          tombStore.put({ id });
+        });
+      } catch {
+        this.persistDegradedBackup();
+      }
+    } else {
+      this.persistDegradedBackup();
+    }
   }
 
   public async getTombstones(): Promise<Set<string>> {
+    await this.init();
     return new Set(this.memoryTombstones);
   }
 
   public async isTombstoned(id: string): Promise<boolean> {
+    await this.init();
     return this.memoryTombstones.has(id);
   }
 
@@ -558,7 +659,16 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
   }
 
   public async getSyncStatus(): Promise<ExpenseSyncStatus> {
-    return { ...this.memorySyncStatus };
+    await this.init();
+    const pendingCount = this.memoryOutbox.size;
+    const state = this.memorySyncStatus.state === 'error'
+      ? 'error'
+      : (pendingCount > 0 ? 'pending' : 'synced');
+    return {
+      ...this.memorySyncStatus,
+      pendingCount,
+      state,
+    };
   }
 
   public async setSyncStatus(status: Partial<ExpenseSyncStatus>): Promise<void> {

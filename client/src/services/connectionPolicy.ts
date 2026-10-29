@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { getSupabaseClient, isSupabaseConfigured, Auth } from '../utils/supabase';
+import { getSupabaseClient, isSupabaseConfigured } from '../utils/supabase';
+import { Auth } from '../utils/auth';
 
 export type ConnectionState =
   | 'initializing'
@@ -40,7 +41,15 @@ class ConnectionPolicyManagerClass {
   }
 
   public isOnlineWriteReady(): boolean {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return false;
     return this.state === 'online_write_ready';
+  }
+
+  public isOfflineReadOnly(): boolean {
+    return (
+      (typeof navigator !== 'undefined' && !navigator.onLine) ||
+      this.state === 'offline_read_only'
+    );
   }
 
   public subscribe(listener: ConnectionStateListener): () => void {
