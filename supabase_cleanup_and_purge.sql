@@ -73,6 +73,28 @@ BEGIN
   END IF;
 END $$;
 
+-- 5. Reset gknayak workspace row in user_workspaces to pristine blank state
+UPDATE public.user_workspaces
+SET workspace_data = jsonb_build_object(
+  'profile', jsonb_build_object(
+    'name', 'Gulshan Kumar Nayak',
+    'contactEmail', 'gknayak@gmail.com',
+    'handle', '@gulshankumarnayak',
+    'avatarUrl', 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp'
+  ),
+  'todos', '[]'::jsonb,
+  'habits', '[]'::jsonb,
+  'habitHistory', '[]'::jsonb,
+  'goals', '[]'::jsonb,
+  'expenses', '[]'::jsonb,
+  'journal', '[]'::jsonb,
+  'media', '[]'::jsonb,
+  'achievements', '[]'::jsonb,
+  '_meta', jsonb_build_object('syncVersion', extract(epoch from now()) * 1000)
+),
+updated_at = now()
+WHERE LOWER(TRIM(user_email)) = 'gknayak@gmail.com';
+
 COMMIT;
 
 -- Verify surviving rows

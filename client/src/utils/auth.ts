@@ -138,8 +138,61 @@ export const purgeLegacyAccounts = () => {
   }
 };
 
-// Automatically run purge on module initialization
+export const GLOBAL_AUTH_EPOCH_KEY = 'notion_os_auth_epoch_v1';
+export const CURRENT_GLOBAL_AUTH_EPOCH = '2026_10_30_epoch_v6_clean_blank';
+
+/**
+ * Enforces global cross-device logout for gknayak@gmail.com and invalidates all previous code's data
+ * across all devices (Chrome web, Android APK, and mobile devices).
+ * When epoch mismatch is detected, it logs out the session, purges all cached/fragmented data,
+ * and sets up a fresh consistent environment.
+ */
+export const enforceGlobalAuthEpoch = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    const storedEpoch = localStorage.getItem(GLOBAL_AUTH_EPOCH_KEY);
+    if (storedEpoch !== CURRENT_GLOBAL_AUTH_EPOCH) {
+      console.info('[AUTH_SECURITY] Cross-device epoch invalidation triggered. Logging out gknayak@gmail.com and clearing previous data.');
+
+      // 1. Force logout
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+      localStorage.setItem('notion_os_auth_signed_out', 'true');
+      setCustomWorkspaceIdentifier('user_guest');
+      setCustomWorkspaceEmail('guest@workspace.local');
+
+      // 2. Erase all previous code's data and device caches
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (
+          k &&
+          (k.includes('offline_') ||
+           k.includes('lifeos_') ||
+           k.includes('user_036fe7d3') ||
+           k.includes('user_usr_') ||
+           k.includes('notion_os_v4_') ||
+           k.includes('account_auth_') ||
+           k.includes('gulnayak') ||
+           k.includes('gknayak')) &&
+          k !== USER_CREDENTIALS_KEY &&
+          k !== SAVED_USERS_KEY
+        ) {
+          keysToRemove.push(k);
+        }
+      }
+      keysToRemove.forEach((k) => localStorage.removeItem(k));
+
+      // 3. Mark device as upgraded to current epoch
+      localStorage.setItem(GLOBAL_AUTH_EPOCH_KEY, CURRENT_GLOBAL_AUTH_EPOCH);
+    }
+  } catch (e) {
+    console.warn('Error enforcing global auth epoch:', e);
+  }
+};
+
+// Automatically run global epoch invalidation and purge on module initialization
 if (typeof window !== 'undefined') {
+  enforceGlobalAuthEpoch();
   purgeLegacyAccounts();
 }
 

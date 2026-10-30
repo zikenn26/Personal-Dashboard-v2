@@ -1674,9 +1674,9 @@ export const Storage = {
       // Cold start or blank scoped storage: recover completely from persistent offline cache
       list = recoveredFromCache.filter((e) => !isExplicitlyDeleted(e.id, e));
       saveToStorage(STORAGE_KEYS.EXPENSES, list);
-    } else if ((!hasScopedItem || list.length === 0) && recoveredFromCache.length === 0 && isGknUser) {
-      // Cold start in preview sandbox or fresh browser session for gknayak: seed authentic owner expenses
-      list = [...OWNER_GKN_EXPENSES].filter((e) => !isExplicitlyDeleted(e.id, e));
+    } else if (!hasScopedItem && recoveredFromCache.length === 0) {
+      // Cold start with blank workspace: initialize empty expenses
+      list = [];
       saveToStorage(STORAGE_KEYS.EXPENSES, list);
     } else if (list.length > 0 && recoveredFromCache.length > 0) {
       // Merge historical expenses present in offline cache but absent from current scoped partition,
@@ -1788,12 +1788,12 @@ export const Storage = {
 
     Storage.setProfile(cleanProfile);
     Storage.setTodos([]);
-    Storage.setHabits(isGknUser ? [...OWNER_GKN_HABITS] : []);
+    Storage.setHabits([]);
     Storage.setHabitHistory([]);
     Storage.setHabitActiveWeek('');
     Storage.setHabitActivities([]);
     Storage.setGoals([]);
-    Storage.setExpenses(isGknUser ? [...OWNER_GKN_EXPENSES] : []);
+    Storage.setExpenses([]);
     Storage.setJournal([]);
     Storage.setMedia([]);
     Storage.setAchievements([]);

@@ -1,6 +1,6 @@
-# Account Sanitization, Expense Recovery & Preview Architecture Plan
+# Global Cross-Device Logout & Pristine Data Reset Plan
 
-Resolve the preview mode data disappearance for `gknayak@gmail.com`, permanently purge `gulnayak1206@gmail.com` and all non-whitelisted accounts from Supabase and local storage, and establish clean, reliable data recovery and account switching strictly between `gknayak@gmail.com` and `arpitapri125@gmail.com`.
+Enforce an immediate, global sign-out for `gknayak@gmail.com` across all devices (Chrome web, Android APK, and mobile browsers), thoroughly wipe all legacy fragmented caches, and initialize a completely fresh, blank workspace upon re-login to resolve all account and data consistency issues.
 
 ---
 
@@ -8,67 +8,50 @@ Resolve the preview mode data disappearance for `gknayak@gmail.com`, permanently
 
 > [!IMPORTANT]
 > **Confirmed Choices from Clarification (Phase 1)**:
-> 1. **Data Recovery under Egress Quota Restriction**: Automatically recover and merge local device caches into `gknayak@gmail.com` so the app is immediately populated and resilient even when Supabase returns HTTP 402 (`exceed_egress_quota`).
-> 2. **Handling `gulnayak1206@gmail.com`**: Permanently delete all `gulnayak1206` records, cache keys, aliases, and Supabase rows.
-> 3. **Preview Sign-In Experience**: Require manual email sign-in on every preview launch (no silent guest bypass or automatic credential assumption), presenting a clean, focused sign-in dialog on fresh tabs.
-> 4. **Strict Account Whitelist**: The only permitted accounts are `gknayak@gmail.com` (primary dashboard) and `arpitapri125@gmail.com` (secondary isolated account). All other mock, guest, or test accounts are removed.
+> 1. **Cache Purge Strategy**: Thoroughly wipe all legacy device caches (`offline_expenses_cache`, `lifeos_expenses_backup`, old partition keys, and historical transaction stores).
+> 2. **Global Cross-Device Invalidation**: Increment a global authentication epoch (`GLOBAL_AUTH_EPOCH`) so any existing session on any phone, browser, or device automatically detects the epoch mismatch, terminates the session, wipes local device caches, and redirects to the sign-in screen.
+> 3. **Workspace State on Re-Login**: Initialize a **completely blank workspace** (`expenses: []`, `habits: []`, `todos: []`, `goals: []`) with a clean profile ("Gulshan Kumar Nayak" / `gknayak@gmail.com`), ensuring zero residual or synthetic transactions carry over.
+> 4. **Strict Two-Account Whitelist**: Only `gknayak@gmail.com` and `arpitapri125@gmail.com` are permitted; all other accounts and `gulnayak1206` remain permanently purged.
 
 ---
 
 ### 1. Overview & Core Concept
 
-- **The Problem**: In preview mode, visitors experienced missing expense data because:
-  1. The remote Supabase backend (`amlegmbvqzbhqqqbrvjx.supabase.co`) is currently rejecting all network calls with `HTTP 402 (exceed_egress_quota)`.
-  2. Each preview sandbox starts with a fresh, empty browser `localStorage`.
-  3. When the cloud fetch failed with 402 and the local store had no prior cache, `Storage.getExpenses()` defaulted to `[]`.
-  4. Multiple device logins created fragmented workspace partition keys (`user_036fe7d3...`, `user_usr_gknayak...`, `user_usr_gulnayak1206...`), scattering transactions and causing cross-device confusion.
+- **The Problem**: Over multiple test cycles and device logins (Chrome, Android APK, mobile), multiple cache layers (`user_036fe7d3...`, `user_usr_gknayak...`, `gknayak@gmail.com_offline_expenses_cache`, `lifeos_offline_expenses_cache`, `lifeos_expenses_backup`) accumulated conflicting or phantom historical states.
 - **The Solution**:
-  1. Unify and standardize `gknayak@gmail.com` storage partitions so all legitimate cached data automatically consolidates into the active workspace.
-  2. Provide resilient offline/quota fallback dataset for `gknayak@gmail.com` so that upon sign-in in a fresh preview container, the dashboard, habits (Gym & Study), and expenses display immediately without blanking.
-  3. Completely purge `gulnayak1206@gmail.com` and all other accounts from local storage, credential registries, and code aliases.
-  4. Generate an idempotent Supabase SQL purge migration script to clean the cloud database tables (`user_workspaces` and `user_expenses`) down to only `gknayak@gmail.com` and `arpitapri125@gmail.com`.
-  5. Configure `arpitapri125@gmail.com` as a clean, isolated second account with its own independent credentials and workspace.
+  1. **Global Epoch Invalidation**: Set a new authoritative epoch constant (`GLOBAL_AUTH_EPOCH = '2026_10_30_epoch_v5_clean'`). On load or network sync, any device with an older epoch is forced to sign out immediately, deleting all local cached records.
+  2. **Pristine Reset on Fresh Login**: When `gknayak@gmail.com` signs back in, a clean, blank workspace partition is initialized with empty arrays across all modules.
+  3. **Strict Partition Consistency**: Single, immutable storage partition for `gknayak@gmail.com` (`user_036fe7d3-6a13-4740-b028-afb55e81e00e`) and `arpitapri125@gmail.com` (`user_usr_arpitapri125_gmail_com`), completely eliminating multi-device key divergence.
 
 ---
 
 ### 2. User Experience & Visual Design
 
-- **Key User Flows**:
-  1. **Preview Launch**:
-     - On cold start in preview mode, the app presents a clean, centered Authentication modal.
-     - The sign-in form explicitly highlights the two active whitelisted accounts for convenience (`gknayak@gmail.com` and `arpitapri125@gmail.com`).
-  2. **Signing In as `gknayak@gmail.com`**:
-     - User signs in with email/username and password.
-     - The app loads the authenticated workspace: Gulshan Kumar Nayak profile, Gym & Study habits, and full expense history.
-     - If Supabase returns 402, an unobtrusive banner notifies the user: *"Supabase cloud egress quota reached. Operating in full local offline mode with your verified data."* No data is lost and nothing is blanked.
-  3. **Signing In as `arpitapri125@gmail.com`**:
-     - Signs into an entirely separate, clean workspace partition.
-     - No cross-contamination of Gulshan's habits, avatar, or expenses.
-  4. **Purge of Legacy Data**:
-     - Any old browser keys mentioning `gulnayak1206` or legacy mock accounts are cleanly scrubbed on startup.
+- **Global Invalidation & Logout Experience**:
+  - Any device currently running an active session for `gknayak@gmail.com` will immediately recognize the epoch transition on page load or focus.
+  - The session is cleanly cleared, all cached transaction fragments are purged, and the clean centered Sign-In modal is presented.
+  - An informational notice confirms: *"Session reset across all devices. Please sign in to access your fresh workspace."*
 
-- **Visual Theme & Atmosphere**:
-  - Consistent with the Notion-inspired slate & obsidian theme:
-    - Neutral dark base (`#0F172A` / `#1E293B`) with indigo/emerald accents (`#6366F1` and `#10B981`).
-    - Clean typography (Inter / system sans-serif) with clear visual hierarchy.
-    - Zero pills, zero clutter: sharp, intentional card borders and crisp status indicators.
+- **Fresh Sign-In Experience**:
+  - User signs in with `gknayak@gmail.com` and password `Gulshan@12345!`.
+  - The dashboard opens into a pristine, zero-clutter workspace:
+    - Profile: Gulshan Kumar Nayak (`gknayak@gmail.com`) with clean initials/avatar.
+    - Money / Expense Tracker: Completely clean state (0 expenses, ₹0 spent, ready for real transactions).
+    - Habits: Fresh blank slate ready for custom habit creation.
+    - Tasks & Goals: Clean empty states with inviting zero-state illustrations.
 
 ---
 
 ### 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1: Handling Cloud 402 Egress Quota**:
-  - *Chosen Approach*: Resilient local-first fallback. When Supabase responds with 402 or is unreachable, the app operates gracefully from local verified storage and seeds authentic owner data on fresh preview launches.
-  - *Why*: Prevents the app from breaking or showing an empty screen when third-party cloud egress limits are hit.
-  - *Alternatives Considered*: Blocking the app entirely until quota is upgraded. Rejected because the user needs to inspect and use their data immediately.
+- **Decision 1: Global Auth Epoch Mechanism**:
+  - *Chosen Approach*: Embed a high-watermark version string `GLOBAL_AUTH_EPOCH` verified at app initialization in `Auth.getCurrentUser()` and `App.tsx`.
+  - *Why*: Instantly invalidates sessions on all devices without requiring Supabase server-side tokens to be individually revoked.
+  - *Alternatives Considered*: Waiting for remote Supabase token expiry. Rejected because Supabase egress quota is restricted (HTTP 402), which would fail to push remote invalidation to offline or cached devices.
 
-- **Decision 2: Complete Purge of `gulnayak1206@gmail.com`**:
-  - *Chosen Approach*: Permanent removal from code, credentials map, avatar resolution, and database tables.
-  - *Why*: User explicitly confirmed: *"Permanently delete all gulnayak1206 records"*. Eliminates all partition confusion between `gknayak` and `gulnayak1206`.
-
-- **Decision 3: Account Whitelist**:
-  - *Chosen Approach*: Strictly allow only `gknayak@gmail.com` and `arpitapri125@gmail.com`.
-  - *Why*: User explicitly requested: *"Remove all other accounts and the related data from the supabase storage except: gknayak@gmail.com, arpitapri125@gmail.com."*
+- **Decision 2: Blank Workspace vs Seed Data**:
+  - *Chosen Approach*: Completely blank workspace (`expenses: []`, `habits: []`), as explicitly requested by the user.
+  - *Why*: Eliminates all confusion from synthetic or historical mock items and guarantees that every transaction visible going forward is authentic and user-created.
 
 ---
 
@@ -76,63 +59,45 @@ Resolve the preview mode data disappearance for `gknayak@gmail.com`, permanently
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                        Authentication & Partition Layer                │
+│                        App Initialization & Auth Check                 │
 │                                                                        │
-│   Whitelisted Accounts:                                                │
-│   ├── gknayak@gmail.com       ──► Workspace: user_036fe7d3-...         │
-│   │                               (Gulshan Kumar Nayak)                │
-│   │                               • Gym & Study Habits                 │
-│   │                               • Full Expense Ledger                │
-│   │                                                                    │
-│   └── arpitapri125@gmail.com  ──► Workspace: user_usr_arpitapri125_... │
-│                                   (Arpita Priyadar)                    │
-│                                   • Independent Isolated Data          │
-│                                                                    │
-│   Purged / Rejected:                                                   │
-│   └── gulnayak1206@gmail.com & all mock/test accounts ──► BLOCKED/PURGED│
+│   Check: localStorage.getItem('notion_os_auth_epoch')                  │
+│                     │                                                  │
+│         Does it match GLOBAL_AUTH_EPOCH?                               │
+│         ├── NO (Stale Device / Previous Code Session):                 │
+│         │   1. Auth.setCurrentUser(null) (Forced Sign-Out)             │
+│         │   2. localStorage.clear() (Purge all legacy cache keys)      │
+│         │   3. Set 'notion_os_auth_epoch' = GLOBAL_AUTH_EPOCH          │
+│         │   4. Display clean AuthModal                                 │
+│         │                                                              │
+│         └── YES (Clean Epoch):                                         │
+│             Proceed to standard authenticated flow                     │
 └──────────────────────────────────┬─────────────────────────────────────┘
                                    │
                                    ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│                        Data Storage & Fallback Pipeline                │
+│                        Fresh Login (gknayak@gmail.com)                 │
 │                                                                        │
-│   1. Read Scoped Storage ──► 2. Check Local Device Caches              │
-│                              • Auto-consolidate gknayak caches         │
-│                              • Discard & purge gulnayak1206 caches     │
-│                                   │                                    │
-│                                   ▼                                    │
-│   3. Supabase Cloud Sync ◄── Try Network Request                       │
-│      ├── Success (200 OK)    ──► Sync Cloud Rows                       │
-│      └── Quota Error (402)   ──► Graceful Local-First Fallback         │
-│                                  (Serve cached & seeded owner data)    │
-└──────────────────────────────────┬─────────────────────────────────────┘
-                                   │
-                                   ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                       Supabase Cloud SQL Cleanup Script                │
+│   Credentials: gknayak@gmail.com / Gulshan@12345!                     │
+│   Workspace Key: user_036fe7d3-6a13-4740-b028-afb55e81e00e             │
 │                                                                        │
-│   DELETE FROM user_workspaces                                          │
-│   WHERE user_email NOT IN ('gknayak@gmail.com', 'arpitapri125@gmail.com')│
-│      OR user_identifier LIKE '%gulnayak1206%';                         │
-│                                                                        │
-│   DELETE FROM user_expenses                                            │
-│   WHERE user_email NOT IN ('gknayak@gmail.com', 'arpitapri125@gmail.com');│
+│   Initialized State:                                                   │
+│   ├── Profile: Gulshan Kumar Nayak (gknayak@gmail.com)                 │
+│   ├── Expenses: [] (Clean blank slate)                                 │
+│   ├── Habits: [] (Clean blank slate)                                   │
+│   ├── Todos: []                                                        │
+│   └── Offline Caches: Initialized with pristine []                     │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
 #### Detailed Execution Steps:
-1. **Clean up `client/src/utils/auth.ts`**:
-   - Keep only `DEFAULT_GKN_USER` (`gknayak@gmail.com`) and add default credential for `arpitapri125@gmail.com`.
-   - Remove `gulnayak1206@gmail.com` and all other mock accounts from `getLocalCredentialsMap()`.
-   - Add a startup cleanup routine that deletes all `localStorage` keys matching `gulnayak1206`.
-2. **Standardize Expense Storage in `client/src/utils/storage.ts`**:
-   - Provide an authentic seed dataset for `gknayak@gmail.com` when launching in a fresh preview browser so expenses never show empty `[]` when Supabase returns 402.
-   - Remove all legacy read/write cache paths for `gulnayak1206`.
-   - Ensure cache consolidation merges any existing local `gknayak` caches into the primary workspace.
-3. **Update `client/src/utils/userUtils.ts` and `client/src/App.tsx`**:
-   - Remove all `gulnayak1206` aliases and references.
-   - In `App.tsx`, enforce that cold preview starts on the sign-in modal as requested.
-4. **Provide `supabase_cleanup_and_purge.sql`**:
-   - Formulate the exact SQL statements to purge all non-whitelisted records from Supabase `user_workspaces` and `user_expenses`.
-5. **Validation**:
+1. **Define `GLOBAL_AUTH_EPOCH` in `client/src/utils/auth.ts`**:
+   - Add `GLOBAL_AUTH_EPOCH = '2026_10_30_epoch_v5_clean'`.
+   - On initialization, if the device's epoch doesn't match, force `Auth.setCurrentUser(null)` and purge all legacy keys.
+2. **Update Storage Defaults in `client/src/utils/storage.ts`**:
+   - Ensure `getExpenses()` and `getHabits()` for fresh logins initialize with clean blank arrays `[]` when no user data exists.
+   - Remove synthetic seed fallback in favor of the requested blank slate.
+3. **Update `supabase_cleanup_and_purge.sql`**:
+   - Include SQL to reset the cloud workspace row for `gknayak@gmail.com` to the blank initial state.
+4. **Verification**:
    - Run tests to confirm zero regressions and verify compilation via `compile_applet`.
