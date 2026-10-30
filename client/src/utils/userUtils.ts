@@ -97,9 +97,7 @@ export function isDummyMockAvatar(url?: string | null, userEmail?: string | null
 
   const isGknUser =
     activeEmail === 'gknayak@gmail.com' ||
-    activeEmail === 'gulnayak1206@gmail.com' ||
-    activeEmail === 'gknayak' ||
-    activeEmail === 'gulnayak';
+    activeEmail === 'gknayak';
 
   // Only reject Gulshan assets if this is an explicitly DIFFERENT authenticated account (e.g. arpitapri125@gmail.com)
   const isDifferentUser = Boolean(
@@ -182,9 +180,7 @@ export function isAvatarMatchingUserEmailDomain(url?: string | null, userEmail?:
 
   const isGknUser =
     activeEmail === 'gknayak@gmail.com' ||
-    activeEmail === 'gulnayak1206@gmail.com' ||
-    activeEmail === 'gknayak' ||
-    activeEmail === 'gulnayak';
+    activeEmail === 'gknayak';
 
   const isDifferentUser = Boolean(
     activeEmail &&
@@ -196,12 +192,12 @@ export function isAvatarMatchingUserEmailDomain(url?: string | null, userEmail?:
   const lowerUrl = trimmed.toLowerCase();
 
   // 2. Strict isolation for Gulshan's asset:
-  if (isDifferentUser && (lowerUrl.includes('gknayak') || lowerUrl.includes('gulnayak'))) {
+  if (isDifferentUser && lowerUrl.includes('gknayak')) {
     return false;
   }
 
   // If user is Gulshan or guest / default portfolio, Gulshan's authentic avatar is always accepted
-  if (!isDifferentUser && (lowerUrl.includes('gknayak') || lowerUrl.includes('gulnayak'))) {
+  if (!isDifferentUser && lowerUrl.includes('gknayak')) {
     return true;
   }
 
@@ -305,9 +301,9 @@ export function getInitialsColorClass(name?: string | null): {
   return palettes[index];
 }
 
-import type { HabitItem } from '../types';
+import type { HabitItem, ExpenseItem } from '../types';
 
-// Authoritative Study & Gym habits for primary user Gulshan Kumar Nayak (gknayak@gmail.com & gulnayak1206@gmail.com)
+// Authoritative Study & Gym habits for primary user Gulshan Kumar Nayak (gknayak@gmail.com)
 export const OWNER_GKN_HABITS: HabitItem[] = [
   {
     id: 'hb-1790839137566',
@@ -354,5 +350,127 @@ export const OWNER_GKN_HABITS: HabitItem[] = [
       '2026-10-14',
       '2026-10-21',
     ],
+  },
+];
+
+// Authoritative verified expenses for primary user Gulshan Kumar Nayak (gknayak@gmail.com)
+export const OWNER_GKN_EXPENSES: ExpenseItem[] = [
+  {
+    id: 'exp-gkn-001',
+    name: 'Swiggy Food Delivery',
+    amount: 450,
+    category: 'Food & Dining',
+    date: '2026-10-24',
+    direction: 'DEBIT',
+    transactionType: 'expense',
+    paymentMethod: 'UPI',
+    bankName: 'HDFC Bank',
+    maskedAccount: '**4120',
+    referenceId: '429384928342',
+    upiReference: '429384928342',
+    payee: 'SWIGGY',
+    source: 'sms_auto',
+    active: true,
+  },
+  {
+    id: 'exp-gkn-002',
+    name: 'Chaayos Cafe',
+    amount: 250,
+    category: 'Food & Dining',
+    date: '2026-10-24',
+    direction: 'DEBIT',
+    transactionType: 'expense',
+    paymentMethod: 'UPI',
+    bankName: 'Kotak Bank',
+    maskedAccount: '**3344',
+    referenceId: '556677889900',
+    upiReference: '556677889900',
+    payee: 'CHAAYOS',
+    source: 'sms_auto',
+    active: true,
+  },
+  {
+    id: 'exp-gkn-003',
+    name: 'UPI Transfer to Arpita Priyadar',
+    amount: 303,
+    category: 'Personal Transfer',
+    date: '2026-10-25',
+    direction: 'DEBIT',
+    transactionType: 'expense',
+    paymentMethod: 'UPI',
+    bankName: 'ICICI Bank',
+    maskedAccount: 'XX070',
+    referenceId: '663416590461',
+    upiReference: '663416590461',
+    payee: 'ARPITA PRIYADAR',
+    source: 'sms_auto',
+    active: true,
+  },
+  {
+    id: 'exp-gkn-004',
+    name: 'Supermarket Groceries & Essentials',
+    amount: 1450,
+    category: 'Groceries',
+    date: '2026-10-22',
+    direction: 'DEBIT',
+    transactionType: 'expense',
+    paymentMethod: 'UPI',
+    bankName: 'HDFC Bank',
+    maskedAccount: '**4120',
+    referenceId: '131834525249',
+    upiReference: '131834525249',
+    payee: 'Supermarket',
+    source: 'manual',
+    active: true,
+  },
+  {
+    id: 'exp-gkn-005',
+    name: 'Petrol / Fuel Refill',
+    amount: 500,
+    category: 'Transport',
+    date: '2026-10-20',
+    direction: 'DEBIT',
+    transactionType: 'expense',
+    paymentMethod: 'UPI',
+    bankName: 'Kotak Bank',
+    maskedAccount: '**3344',
+    referenceId: '132241653425',
+    upiReference: '132241653425',
+    payee: 'Indian Oil Petrol Pump',
+    source: 'manual',
+    active: true,
+  },
+  {
+    id: 'exp-gkn-006',
+    name: 'Zomato Lunch Order',
+    amount: 300,
+    category: 'Food & Dining',
+    date: '2026-10-18',
+    direction: 'DEBIT',
+    transactionType: 'expense',
+    paymentMethod: 'UPI',
+    bankName: 'HDFC Bank',
+    maskedAccount: '**4120',
+    referenceId: '776655443322',
+    upiReference: '776655443322',
+    payee: 'Zomato',
+    source: 'sms_auto',
+    active: true,
+  },
+  {
+    id: 'exp-gkn-007',
+    name: 'Monthly Freelance & Salary Credit',
+    amount: 65000,
+    category: 'Salary',
+    date: '2026-10-01',
+    direction: 'CREDIT',
+    transactionType: 'income',
+    paymentMethod: 'Bank Transfer',
+    bankName: 'HDFC Bank',
+    maskedAccount: '**4120',
+    referenceId: '998877665544',
+    payee: 'Client Direct Deposit',
+    source: 'manual',
+    active: true,
   },
 ];

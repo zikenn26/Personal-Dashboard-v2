@@ -34,8 +34,8 @@ beforeAll(() => {
 
 describe('User Profile Name, Avatar and Habits Persistence Tests', () => {
   const gknUser: AuthUser = {
-    id: 'user-gulnayak1206-uuid',
-    email: 'gulnayak1206@gmail.com',
+    id: '036fe7d3-6a13-4740-b028-afb55e81e00e',
+    email: 'gknayak@gmail.com',
     name: 'Gknayak',
     avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
     createdAt: Date.now() - 500000,
@@ -64,7 +64,7 @@ describe('User Profile Name, Avatar and Habits Persistence Tests', () => {
     const olderCloudPayload = {
       profile: {
         name: 'Gknayak',
-        contactEmail: 'gulnayak1206@gmail.com',
+        contactEmail: 'gknayak@gmail.com',
         avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
       },
     };
@@ -75,20 +75,20 @@ describe('User Profile Name, Avatar and Habits Persistence Tests', () => {
     expect(Storage.getProfile().name).toBe('Gulshan Kumar Nayak');
   });
 
-  it('2. Custom profile picture for gulnayak1206@gmail.com is accepted and not blanked out or reverted to initials', () => {
-    setCustomWorkspaceEmail('gulnayak1206@gmail.com');
+  it('2. Custom profile picture for gknayak@gmail.com is accepted and not blanked out or reverted to initials', () => {
+    setCustomWorkspaceEmail('gknayak@gmail.com');
 
     const gknCdnUrl =
       'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp';
 
-    // Must be valid for gulnayak1206@gmail.com
-    expect(isAvatarMatchingUserEmailDomain(gknCdnUrl, 'gulnayak1206@gmail.com')).toBe(true);
-    expect(isDummyMockAvatar(gknCdnUrl, 'gulnayak1206@gmail.com')).toBe(false);
+    // Must be valid for gknayak@gmail.com
+    expect(isAvatarMatchingUserEmailDomain(gknCdnUrl, 'gknayak@gmail.com')).toBe(true);
+    expect(isDummyMockAvatar(gknCdnUrl, 'gknayak@gmail.com')).toBe(false);
 
     // Uploaded data URL must also be valid
     const dataUrl = 'data:image/webp;base64,UklGRhoAAABXRUJQVlA4TAYAAAAvAAAAAAfQ//73v/+BiOh/AAA=';
-    expect(isAvatarMatchingUserEmailDomain(dataUrl, 'gulnayak1206@gmail.com')).toBe(true);
-    expect(isDummyMockAvatar(dataUrl, 'gulnayak1206@gmail.com')).toBe(false);
+    expect(isAvatarMatchingUserEmailDomain(dataUrl, 'gknayak@gmail.com')).toBe(true);
+    expect(isDummyMockAvatar(dataUrl, 'gknayak@gmail.com')).toBe(false);
 
     // Saving profile with CDN avatar preserves it
     const prof = Storage.getProfile();
@@ -102,13 +102,15 @@ describe('User Profile Name, Avatar and Habits Persistence Tests', () => {
     // Cross-account isolation: arpitapri125@gmail.com must still reject gknayak asset
     expect(isAvatarMatchingUserEmailDomain(gknCdnUrl, 'arpitapri125@gmail.com')).toBe(false);
     expect(isDummyMockAvatar(gknCdnUrl, 'arpitapri125@gmail.com')).toBe(true);
+
+    // Non-whitelisted / purged accounts also reject gknayak asset
+    expect(isAvatarMatchingUserEmailDomain(gknCdnUrl, 'gulnayak1206@gmail.com')).toBe(false);
   });
 
-  it('3. Habits of gulnayak1206@gmail.com and gknayak@gmail.com retain Gym and Study habits with real entries and never show empty', () => {
-    // gulnayak1206@gmail.com
+  it('3. Habits of gknayak@gmail.com retain Gym and Study habits with real entries and never show empty', () => {
     Auth.setCurrentUser(gknUser);
     setCustomWorkspaceIdentifier(getUserWorkspaceKey(gknUser));
-    setCustomWorkspaceEmail('gulnayak1206@gmail.com');
+    setCustomWorkspaceEmail('gknayak@gmail.com');
 
     // If local storage is empty or reset
     Storage.resetToCleanUserWorkspace(gknUser);

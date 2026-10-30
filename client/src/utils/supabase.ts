@@ -5,7 +5,7 @@ import {
   SUPABASE_ANON_KEY as BUILTIN_SUPABASE_ANON_KEY,
 } from './supabaseConfig';
 import { mergeExpenseLists, normalizeExpenseDateKey, getLocalDateKey } from './expenseUtils';
-import { OWNER_GKN_HABITS } from './userUtils';
+import { OWNER_GKN_HABITS, OWNER_GKN_EXPENSES } from './userUtils';
 import { ExpenseItem, OutboxMutation } from '../types';
 export { mergeExpenseLists };
 
@@ -1317,10 +1317,8 @@ export const fetchWorkspaceFromSupabase = async (): Promise<CloudSyncResult> => 
 
     // Migration fallback for existing accounts: check if existing workspace exists under user_email
     if (!error && (!data || !data.workspace_data) && activeUserEmail) {
-      const isGknUser = activeUserEmail === 'gknayak@gmail.com' || activeUserEmail === 'gulnayak1206@gmail.com';
-      const emailFilter = isGknUser
-        ? 'user_email.eq.gknayak@gmail.com,user_email.eq.gulnayak1206@gmail.com'
-        : `user_email.eq.${activeUserEmail}`;
+      const isGknUser = activeUserEmail === 'gknayak@gmail.com' || activeUserEmail === 'gknayak';
+      const emailFilter = `user_email.eq.${activeUserEmail}`;
 
       const { data: legacyRow, error: legacyErr } = await client
         .from('user_workspaces')
@@ -1349,10 +1347,15 @@ export const fetchWorkspaceFromSupabase = async (): Promise<CloudSyncResult> => 
       };
     }
 
-    // Ensure authentic habits for primary accounts are never returned as empty
-    const isGknAccount = activeUserEmail === 'gknayak@gmail.com' || activeUserEmail === 'gulnayak1206@gmail.com';
-    if (isGknAccount && data.workspace_data && (!Array.isArray(data.workspace_data.habits) || data.workspace_data.habits.length === 0)) {
-      data.workspace_data.habits = [...OWNER_GKN_HABITS];
+    // Ensure authentic habits and expenses for primary accounts are never returned as empty
+    const isGknAccount = activeUserEmail === 'gknayak@gmail.com' || activeUserEmail === 'gknayak';
+    if (isGknAccount && data.workspace_data) {
+      if (!Array.isArray(data.workspace_data.habits) || data.workspace_data.habits.length === 0) {
+        data.workspace_data.habits = [...OWNER_GKN_HABITS];
+      }
+      if (!Array.isArray(data.workspace_data.expenses) || data.workspace_data.expenses.length === 0) {
+        data.workspace_data.expenses = [...OWNER_GKN_EXPENSES];
+      }
     }
 
     const remoteVersion = getPayloadSyncTimestamp(

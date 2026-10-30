@@ -305,6 +305,58 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
             )}
 
+            {mode === 'signin' && (
+              <div className="mb-2">
+                <div className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400 mb-1.5 flex items-center justify-between">
+                  <span>Permitted Accounts:</span>
+                  <span className="text-[10px] text-neutral-400">Click to autofill</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmail('gknayak@gmail.com');
+                      setPassword('Gulshan@12345!');
+                      setErrorMessage(null);
+                    }}
+                    className={`p-2 rounded-xl text-left border transition-all cursor-pointer ${
+                      email.toLowerCase() === 'gknayak@gmail.com'
+                        ? 'border-indigo-500/50 bg-indigo-50/50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300'
+                        : 'border-neutral-200 dark:border-neutral-800 bg-neutral-50/80 dark:bg-neutral-800/40 hover:border-neutral-300 dark:hover:border-neutral-700'
+                    }`}
+                  >
+                    <div className="font-semibold text-xs text-neutral-900 dark:text-neutral-100 truncate">
+                      Gulshan Kumar Nayak
+                    </div>
+                    <div className="text-[10px] text-neutral-500 dark:text-neutral-400 truncate">
+                      gknayak@gmail.com
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmail('arpitapri125@gmail.com');
+                      setPassword('Arpita@12345!');
+                      setErrorMessage(null);
+                    }}
+                    className={`p-2 rounded-xl text-left border transition-all cursor-pointer ${
+                      email.toLowerCase() === 'arpitapri125@gmail.com'
+                        ? 'border-indigo-500/50 bg-indigo-50/50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300'
+                        : 'border-neutral-200 dark:border-neutral-800 bg-neutral-50/80 dark:bg-neutral-800/40 hover:border-neutral-300 dark:hover:border-neutral-700'
+                    }`}
+                  >
+                    <div className="font-semibold text-xs text-neutral-900 dark:text-neutral-100 truncate">
+                      Arpita Priyadar
+                    </div>
+                    <div className="text-[10px] text-neutral-500 dark:text-neutral-400 truncate">
+                      arpitapri125@gmail.com
+                    </div>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {mode !== 'reset' && (
               <div>
                 <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1">

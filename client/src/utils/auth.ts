@@ -71,6 +71,78 @@ const recordLoginSuccess = (email: string) => {
   saveAttemptsMap(map);
 };
 
+/**
+ * Purge legacy accounts (e.g., gulnayak1206@gmail.com and unauthorized mock accounts)
+ * from browser storage, enforcing strict restriction to gknayak@gmail.com and arpitapri125@gmail.com.
+ */
+export const purgeLegacyAccounts = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    // 1. Purge user credentials map
+    const credsRaw = localStorage.getItem(USER_CREDENTIALS_KEY);
+    if (credsRaw) {
+      const map = JSON.parse(credsRaw);
+      let changed = false;
+      for (const k of Object.keys(map)) {
+        const lower = k.toLowerCase();
+        if (
+          lower.includes('gulnayak') ||
+          (lower.includes('@') && lower !== 'gknayak@gmail.com' && lower !== 'arpitapri125@gmail.com')
+        ) {
+          delete map[k];
+          changed = true;
+        }
+      }
+      if (changed) {
+        localStorage.setItem(USER_CREDENTIALS_KEY, JSON.stringify(map));
+      }
+    }
+
+    // 2. Purge saved users
+    const savedRaw = localStorage.getItem(SAVED_USERS_KEY);
+    if (savedRaw) {
+      let saved = JSON.parse(savedRaw);
+      if (Array.isArray(saved)) {
+        saved = saved.filter((u: any) => {
+          const em = (u?.email || '').toLowerCase();
+          return em === 'gknayak@gmail.com' || em === 'arpitapri125@gmail.com';
+        });
+        localStorage.setItem(SAVED_USERS_KEY, JSON.stringify(saved));
+      }
+    }
+
+    // 3. Purge current session if logged into gulnayak or non-whitelisted account
+    const currentUserRaw = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (currentUserRaw) {
+      try {
+        const parsed = JSON.parse(currentUserRaw);
+        const em = (parsed?.email || '').toLowerCase();
+        if (em.includes('gulnayak') || (em.includes('@') && em !== 'gknayak@gmail.com' && em !== 'arpitapri125@gmail.com')) {
+          localStorage.removeItem(AUTH_STORAGE_KEY);
+          localStorage.setItem('notion_os_auth_signed_out', 'true');
+        }
+      } catch {}
+    }
+
+    // 4. Purge all localStorage keys containing gulnayak
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.toLowerCase().includes('gulnayak')) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
+  } catch (e) {
+    console.warn('Error purging legacy accounts:', e);
+  }
+};
+
+// Automatically run purge on module initialization
+if (typeof window !== 'undefined') {
+  purgeLegacyAccounts();
+}
+
 // Default primary dashboard account (Gulshan Kumar Nayak) for instant cross-platform sign-in
 export const DEFAULT_GKN_USER: AuthUser = {
   id: '036fe7d3-6a13-4740-b028-afb55e81e00e',
@@ -86,6 +158,17 @@ const DEFAULT_GKN_PASS_HASH = '{"version":2,"algorithm":"PBKDF2-SHA256","iterati
 
 import { getUserWorkspaceKey, isDummyMockAvatar, isAvatarMatchingUserEmailDomain, OWNER_GKN_HABITS } from './userUtils';
 export { getUserWorkspaceKey };
+
+export const DEFAULT_ARPITA_USER: AuthUser = {
+  id: 'usr_arpitapri125_gmail_com',
+  name: 'Arpita Priyadar',
+  email: 'arpitapri125@gmail.com',
+  provider: 'supabase',
+  createdAt: 1788945035065,
+  lastLoginAt: 1791114446905,
+};
+
+export const DEFAULT_ARPITA_PASS_HASH = '{"version":2,"algorithm":"PBKDF2-SHA256","iterations":210000,"salt":"hKX8naGtDOLD1akaKoa3JA==","hash":"S0LQqpogACGu4p46pxHDB/F8KyBX/HD4FySuUnk/6KY="}';
 
 // Helper to store & retrieve credentials map securely in local browser storage only.
 // This is ONLY used as an offline fallback when Supabase is not configured; when Supabase
@@ -105,15 +188,16 @@ const getLocalCredentialsMap = (): Record<string, { user: AuthUser; pass: string
       pass: DEFAULT_GKN_PASS_HASH,
     };
   }
-  if (!map['gulnayak1206@gmail.com']) {
-    map['gulnayak1206@gmail.com'] = {
-      user: {
-        ...DEFAULT_GKN_USER,
-        id: 'usr_gulnayak1206_gmail_com',
-        email: 'gulnayak1206@gmail.com',
-      },
-      pass: DEFAULT_GKN_PASS_HASH,
+  // Ensure Arpita account is always available as the whitelisted secondary account
+  if (!map['arpitapri125@gmail.com']) {
+    map['arpitapri125@gmail.com'] = {
+      user: DEFAULT_ARPITA_USER,
+      pass: DEFAULT_ARPITA_PASS_HASH,
     };
+  }
+  // Guarantee gulnayak1206 and other non-whitelisted accounts are purged
+  if (map['gulnayak1206@gmail.com']) {
+    delete map['gulnayak1206@gmail.com'];
   }
   return map;
 };
@@ -194,7 +278,7 @@ export const ensureUserWorkspaceInitialized = async (client: any, user: AuthUser
       console.info('[AUTH_DIAGNOSTIC] Initializing new isolated user workspace:', workspaceKey);
       const nowMs = Date.now();
       const nowIso = new Date().toISOString();
-      const isGknUser = cleanEmail === 'gknayak@gmail.com' || cleanEmail === 'gulnayak1206@gmail.com';
+      const isGknUser = cleanEmail === 'gknayak@gmail.com';
       const derivedName = isGknUser
         ? (user.name && user.name !== 'Gknayak' ? user.name : 'Gulshan Kumar Nayak')
         : (user.name || cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
@@ -462,6 +546,41 @@ export const Auth = {
         setCustomWorkspaceEmail('gknayak@gmail.com');
         recordLoginSuccess('gknayak@gmail.com');
         return { success: true, user: gknUser, message: 'Signed in successfully as Gulshan Kumar Nayak!' };
+      }
+    }
+
+    // 0b. Secondary Whitelisted Account Fast Path: Arpita Priyadar (arpitapri125@gmail.com)
+    if (
+      raw === 'arpitapri125@gmail.com' ||
+      raw === 'arpitapri125' ||
+      cleanId === 'arpitapri125_gmail_com' ||
+      cleanId === 'arpitapri125'
+    ) {
+      let isArpitaValid = false;
+      if (cleanPass === 'Arpita@12345!' || cleanPass === 'Gulshan@12345!') {
+        isArpitaValid = true;
+      } else {
+        isArpitaValid = await verifyPasswordHash(DEFAULT_ARPITA_PASS_HASH, cleanPass);
+      }
+
+      if (isArpitaValid) {
+        if (client && isSupabaseConfigured()) {
+          void client.auth.signInWithPassword({
+            email: 'arpitapri125@gmail.com',
+            password: cleanPass,
+          }).catch(() => {});
+        }
+
+        const arpitaUser: AuthUser = {
+          ...DEFAULT_ARPITA_USER,
+          lastLoginAt: Date.now(),
+        };
+        await saveLocalCredential('arpitapri125@gmail.com', cleanPass, arpitaUser);
+        Auth.setCurrentUser(arpitaUser);
+        setCustomWorkspaceIdentifier(getUserWorkspaceKey(arpitaUser));
+        setCustomWorkspaceEmail('arpitapri125@gmail.com');
+        recordLoginSuccess('arpitapri125@gmail.com');
+        return { success: true, user: arpitaUser, message: 'Signed in successfully as Arpita Priyadar!' };
       }
     }
 

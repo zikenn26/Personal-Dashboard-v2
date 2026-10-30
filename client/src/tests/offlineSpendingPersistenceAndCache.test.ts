@@ -29,8 +29,8 @@ describe('Offline Spending Persistence and Cache Resilience Suite', () => {
     localStorage.clear();
     Storage.clearMemoryCaches();
     Storage.setDeletedExpenseIds([]);
-    setCustomWorkspaceIdentifier('user_usr_gulnayak1206_gmail_com');
-    setCustomWorkspaceEmail('gulnayak1206@gmail.com');
+    setCustomWorkspaceIdentifier('user_usr_gknayak_gmail_com');
+    setCustomWorkspaceEmail('gknayak@gmail.com');
   });
 
   it('1. persists expenses to dedicated persistent offline cache on Storage.setExpenses', () => {
@@ -58,7 +58,7 @@ describe('Offline Spending Persistence and Cache Resilience Suite', () => {
     Storage.setExpenses(testExpenses);
 
     // Verify written to dedicated user offline cache
-    const userCacheRaw = localStorage.getItem('gulnayak1206@gmail.com_offline_expenses_cache');
+    const userCacheRaw = localStorage.getItem('gknayak@gmail.com_offline_expenses_cache');
     expect(userCacheRaw).toBeTruthy();
     const parsed = JSON.parse(userCacheRaw!);
     expect(parsed).toHaveLength(2);
@@ -93,10 +93,10 @@ describe('Offline Spending Persistence and Cache Resilience Suite', () => {
     ];
 
     // Seed only the user's offline cache (simulating fresh tab open before cloud or scoped key was populated)
-    localStorage.setItem('gulnayak1206@gmail.com_offline_expenses_cache', JSON.stringify(cachedItems));
+    localStorage.setItem('gknayak@gmail.com_offline_expenses_cache', JSON.stringify(cachedItems));
 
     // Scoped key is not present
-    const ws = 'user_usr_gulnayak1206_gmail_com';
+    const ws = 'user_usr_gknayak_gmail_com';
     expect(localStorage.getItem(`${ws}_${STORAGE_KEYS.EXPENSES}`)).toBeNull();
 
     // Call getExpenses()

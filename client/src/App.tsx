@@ -165,6 +165,7 @@ import {
   AlertTriangle,
   Smartphone,
   WifiOff,
+  CloudOff,
 } from 'lucide-react';
 
 // Framer Motion Page Transition Variants for Main Content View Area
@@ -293,7 +294,7 @@ export default function App() {
   const [isGlobalAvatarPickerOpen, setIsGlobalAvatarPickerOpen] = useState(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [showQuickCapture, setShowQuickCapture] = useState(false);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(() => authRequest === 'signup' || authRequest === 'signin');
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(() => !Auth.getCurrentUser() || authRequest === 'signup' || authRequest === 'signin');
   const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup' | 'reset'>(() => authRequest === 'signup' ? 'signup' : 'signin');
 
   // API Usage Threshold Warning Notification Banner
@@ -531,7 +532,7 @@ export default function App() {
               metaName = candidateName;
             }
 
-            const isGknUser = cleanEmail === 'gknayak@gmail.com' || cleanEmail === 'gulnayak1206@gmail.com';
+            const isGknUser = cleanEmail === 'gknayak@gmail.com';
             const defaultGknAvatar = 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp';
             const rawMetaAvatar = meta.avatar_url || meta.avatarUrl || meta.picture || '';
             if (rawMetaAvatar && isAvatarMatchingUserEmailDomain(rawMetaAvatar, cleanEmail)) {
@@ -589,7 +590,7 @@ export default function App() {
       hasProfileChanges = true;
     }
 
-    const isGknUserAccount = cleanEmail === 'gknayak@gmail.com' || cleanEmail === 'gulnayak1206@gmail.com';
+    const isGknUserAccount = cleanEmail === 'gknayak@gmail.com';
     const defaultGknAvatarUrl = 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp';
 
     // Ensure owner account never has empty avatar or falls back to initials

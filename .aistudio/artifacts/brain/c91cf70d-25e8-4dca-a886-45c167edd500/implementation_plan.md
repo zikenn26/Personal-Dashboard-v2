@@ -1,78 +1,138 @@
-# Automated Cross-Device Real-Time Sync & Offline Read-Only Consistency Plan
+# Account Sanitization, Expense Recovery & Preview Architecture Plan
 
-Streamline the data synchronization architecture by eliminating all manual sync controls ("Cloud Sync", "Device Sync", and "Work Offline" toggle), preventing stale multi-device write conflicts via an **Offline Read-Only** mode with visible UI guardrails, and establishing a zero-touch real-time sync pipeline where Android APK SMS auto-logging instantly propagates to Chrome web clients.
+Resolve the preview mode data disappearance for `gknayak@gmail.com`, permanently purge `gulnayak1206@gmail.com` and all non-whitelisted accounts from Supabase and local storage, and establish clean, reliable data recovery and account switching strictly between `gknayak@gmail.com` and `arpitapri125@gmail.com`.
 
 ---
 
-### User Decisions & Architecture Blueprint
+### User Review & Critical Decisions
 
 > [!IMPORTANT]
-> - **Zero Manual Buttons**: Completely remove the "Cloud Sync", "Device Sync", and "Work Offline" controls across Web (Chrome) and Android APK.
-> - **No Offline Writes (Stale Conflict Prevention)**: In offline mode, the app is strictly **Read-Only**. Users can read all cached local data, but write operations (adding/editing/deleting habits, expenses, categories, or budgets) are disabled with a clear "Offline (Read-Only)" banner and disabled action states.
-> - **Native SMS Offline Ingestion Guard**: When the Android device receives bank SMS while offline, raw SMS messages are preserved in a persistent native pending inbox. They are processed and dispatched to Supabase immediately upon reconnection.
-> - **Instant Real-Time Reflection**: Android APK commits new transactions to Supabase, which fires an instant Realtime broadcast. Chrome web sessions immediately consume this event to update the UI without user refresh. An automated 30-second heartbeat polling + window focus listener acts as a failsafe fallback.
+> **Confirmed Choices from Clarification (Phase 1)**:
+> 1. **Data Recovery under Egress Quota Restriction**: Automatically recover and merge local device caches into `gknayak@gmail.com` so the app is immediately populated and resilient even when Supabase returns HTTP 402 (`exceed_egress_quota`).
+> 2. **Handling `gulnayak1206@gmail.com`**: Permanently delete all `gulnayak1206` records, cache keys, aliases, and Supabase rows.
+> 3. **Preview Sign-In Experience**: Require manual email sign-in on every preview launch (no silent guest bypass or automatic credential assumption), presenting a clean, focused sign-in dialog on fresh tabs.
+> 4. **Strict Account Whitelist**: The only permitted accounts are `gknayak@gmail.com` (primary dashboard) and `arpitapri125@gmail.com` (secondary isolated account). All other mock, guest, or test accounts are removed.
 
 ---
 
-### 1. User Interface Streamlining & Cleanups
+### 1. Overview & Core Concept
 
-1. **Remove Sync & Offline UI Controls**:
-   - `client/src/components/ExpenseTracker.tsx` and `client/src/presentation/mobile/screens/money/AndroidMoneyScreen.tsx`:
-     - Remove "Device Sync" and "Cloud Sync" buttons, along with any manual sync modals.
-   - `client/src/components/SettingsModal.tsx`:
-     - Remove the "Work Offline" toggle and any manual cloud backup/sync buttons.
-   - `client/src/App.tsx`:
-     - Clean up header navigation to remove any sync triggers or sync status popups.
-
-2. **Offline Read-Only UI Experience**:
-   - Introduce an **Offline Read-Only Banner**: A subtle, non-intrusive status strip displaying "Offline Mode — Viewing Cached Data (Read-Only to prevent device conflicts)".
-   - **Action Disablement**: Disable the "Add Expense", "Add Habit", "Edit", and delete buttons when offline (`!navigator.onLine` or connection policy offline), displaying helpful tooltips explaining that writes will re-enable once reconnected.
-
----
-
-### 2. Consistency & Write-Protection Engine
-
-1. **Write Gate in Storage / Repository Layer**:
-   - Centralize write verification in `connectionPolicy.ts` and core repositories (`expenseRepository.ts`, `habitRepository.ts`, `Storage.ts`).
-   - If offline, user-initiated mutation requests are gracefully rejected with a user-friendly toast (`"Cannot create or edit while offline. Please reconnect to sync changes."`).
-   - Cached data remains fully available for reading via IndexedDB/localStorage.
-
-2. **Android SMS Pending Inbox**:
-   - When the APK receives SMS broadcasts via the Android native SMS receiver while offline:
-     - Store the unprocessed SMS envelope in a durable local SQLite/Storage queue (`pending_sms_inbox`).
-     - On network restoration (`online` event or connection restored), trigger the parsing pipeline to log the expenses and push them directly to Supabase.
+- **The Problem**: In preview mode, visitors experienced missing expense data because:
+  1. The remote Supabase backend (`amlegmbvqzbhqqqbrvjx.supabase.co`) is currently rejecting all network calls with `HTTP 402 (exceed_egress_quota)`.
+  2. Each preview sandbox starts with a fresh, empty browser `localStorage`.
+  3. When the cloud fetch failed with 402 and the local store had no prior cache, `Storage.getExpenses()` defaulted to `[]`.
+  4. Multiple device logins created fragmented workspace partition keys (`user_036fe7d3...`, `user_usr_gknayak...`, `user_usr_gulnayak1206...`), scattering transactions and causing cross-device confusion.
+- **The Solution**:
+  1. Unify and standardize `gknayak@gmail.com` storage partitions so all legitimate cached data automatically consolidates into the active workspace.
+  2. Provide resilient offline/quota fallback dataset for `gknayak@gmail.com` so that upon sign-in in a fresh preview container, the dashboard, habits (Gym & Study), and expenses display immediately without blanking.
+  3. Completely purge `gulnayak1206@gmail.com` and all other accounts from local storage, credential registries, and code aliases.
+  4. Generate an idempotent Supabase SQL purge migration script to clean the cloud database tables (`user_workspaces` and `user_expenses`) down to only `gknayak@gmail.com` and `arpitapri125@gmail.com`.
+  5. Configure `arpitapri125@gmail.com` as a clean, isolated second account with its own independent credentials and workspace.
 
 ---
 
-### 3. Automated Real-Time Cross-Device Synchronization
+### 2. User Experience & Visual Design
 
-1. **APK Publisher Pipeline**:
-   - When an expense is parsed and logged from SMS on Android:
-     - Saves locally to durable store.
-     - Automatically pushes to Supabase via `expenseRepository.save()` / `upsert_expense` RPC.
-     - Emits a lightweight broadcast event on the Supabase Realtime channel for the workspace.
+- **Key User Flows**:
+  1. **Preview Launch**:
+     - On cold start in preview mode, the app presents a clean, centered Authentication modal.
+     - The sign-in form explicitly highlights the two active whitelisted accounts for convenience (`gknayak@gmail.com` and `arpitapri125@gmail.com`).
+  2. **Signing In as `gknayak@gmail.com`**:
+     - User signs in with email/username and password.
+     - The app loads the authenticated workspace: Gulshan Kumar Nayak profile, Gym & Study habits, and full expense history.
+     - If Supabase returns 402, an unobtrusive banner notifies the user: *"Supabase cloud egress quota reached. Operating in full local offline mode with your verified data."* No data is lost and nothing is blanked.
+  3. **Signing In as `arpitapri125@gmail.com`**:
+     - Signs into an entirely separate, clean workspace partition.
+     - No cross-contamination of Gulshan's habits, avatar, or expenses.
+  4. **Purge of Legacy Data**:
+     - Any old browser keys mentioning `gulnayak1206` or legacy mock accounts are cleanly scrubbed on startup.
 
-2. **Chrome / Web Subscriber Pipeline**:
-   - Active web clients subscribe to the workspace's Supabase Realtime broadcast channel (`workspace_realtime_${workspaceId}`).
-   - On broadcast receipt:
-     - Automatically trigger incremental pull from Supabase to update local store and trigger React state re-render.
-   - **Fallback & Reconnect Engine**:
-     - Automated 30-second interval polling fallback for background safety.
-     - Window `focus` and `visibilitychange` listeners to fetch updates immediately when the user switches tabs or wakes their computer.
-
-3. **Dirty-Read & Race Condition Mitigation**:
-   - Last-write-wins timestamps (`updated_at` / `sync_timestamp`) on all models.
-   - Workspace-level version tracking to avoid concurrent write collisions.
+- **Visual Theme & Atmosphere**:
+  - Consistent with the Notion-inspired slate & obsidian theme:
+    - Neutral dark base (`#0F172A` / `#1E293B`) with indigo/emerald accents (`#6366F1` and `#10B981`).
+    - Clean typography (Inter / system sans-serif) with clear visual hierarchy.
+    - Zero pills, zero clutter: sharp, intentional card borders and crisp status indicators.
 
 ---
 
-### 4. Verification & Testing Plan
+### 3. Key Product Decisions & Trade-Offs
 
-1. **Automated Unit & Integration Tests**:
-   - Verify UI components do not render Cloud Sync, Device Sync, or Work Offline controls.
-   - Verify offline write guard prevents direct mutations and returns read-only warnings.
-   - Test SMS offline inbox queuing and reconnection flush.
-   - Verify Supabase Realtime broadcast handler correctly invalidates and re-queries state.
-2. **Regression Testing**:
-   - Run `npm test` across all existing suites (ensure all 43 test suites and 750+ tests pass).
-   - Validate with `lint_applet` and `compile_applet`.
+- **Decision 1: Handling Cloud 402 Egress Quota**:
+  - *Chosen Approach*: Resilient local-first fallback. When Supabase responds with 402 or is unreachable, the app operates gracefully from local verified storage and seeds authentic owner data on fresh preview launches.
+  - *Why*: Prevents the app from breaking or showing an empty screen when third-party cloud egress limits are hit.
+  - *Alternatives Considered*: Blocking the app entirely until quota is upgraded. Rejected because the user needs to inspect and use their data immediately.
+
+- **Decision 2: Complete Purge of `gulnayak1206@gmail.com`**:
+  - *Chosen Approach*: Permanent removal from code, credentials map, avatar resolution, and database tables.
+  - *Why*: User explicitly confirmed: *"Permanently delete all gulnayak1206 records"*. Eliminates all partition confusion between `gknayak` and `gulnayak1206`.
+
+- **Decision 3: Account Whitelist**:
+  - *Chosen Approach*: Strictly allow only `gknayak@gmail.com` and `arpitapri125@gmail.com`.
+  - *Why*: User explicitly requested: *"Remove all other accounts and the related data from the supabase storage except: gknayak@gmail.com, arpitapri125@gmail.com."*
+
+---
+
+### 4. Technical Architecture & Data Strategy
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        Authentication & Partition Layer                │
+│                                                                        │
+│   Whitelisted Accounts:                                                │
+│   ├── gknayak@gmail.com       ──► Workspace: user_036fe7d3-...         │
+│   │                               (Gulshan Kumar Nayak)                │
+│   │                               • Gym & Study Habits                 │
+│   │                               • Full Expense Ledger                │
+│   │                                                                    │
+│   └── arpitapri125@gmail.com  ──► Workspace: user_usr_arpitapri125_... │
+│                                   (Arpita Priyadar)                    │
+│                                   • Independent Isolated Data          │
+│                                                                    │
+│   Purged / Rejected:                                                   │
+│   └── gulnayak1206@gmail.com & all mock/test accounts ──► BLOCKED/PURGED│
+└──────────────────────────────────┬─────────────────────────────────────┘
+                                   │
+                                   ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                        Data Storage & Fallback Pipeline                │
+│                                                                        │
+│   1. Read Scoped Storage ──► 2. Check Local Device Caches              │
+│                              • Auto-consolidate gknayak caches         │
+│                              • Discard & purge gulnayak1206 caches     │
+│                                   │                                    │
+│                                   ▼                                    │
+│   3. Supabase Cloud Sync ◄── Try Network Request                       │
+│      ├── Success (200 OK)    ──► Sync Cloud Rows                       │
+│      └── Quota Error (402)   ──► Graceful Local-First Fallback         │
+│                                  (Serve cached & seeded owner data)    │
+└──────────────────────────────────┬─────────────────────────────────────┘
+                                   │
+                                   ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                       Supabase Cloud SQL Cleanup Script                │
+│                                                                        │
+│   DELETE FROM user_workspaces                                          │
+│   WHERE user_email NOT IN ('gknayak@gmail.com', 'arpitapri125@gmail.com')│
+│      OR user_identifier LIKE '%gulnayak1206%';                         │
+│                                                                        │
+│   DELETE FROM user_expenses                                            │
+│   WHERE user_email NOT IN ('gknayak@gmail.com', 'arpitapri125@gmail.com');│
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Detailed Execution Steps:
+1. **Clean up `client/src/utils/auth.ts`**:
+   - Keep only `DEFAULT_GKN_USER` (`gknayak@gmail.com`) and add default credential for `arpitapri125@gmail.com`.
+   - Remove `gulnayak1206@gmail.com` and all other mock accounts from `getLocalCredentialsMap()`.
+   - Add a startup cleanup routine that deletes all `localStorage` keys matching `gulnayak1206`.
+2. **Standardize Expense Storage in `client/src/utils/storage.ts`**:
+   - Provide an authentic seed dataset for `gknayak@gmail.com` when launching in a fresh preview browser so expenses never show empty `[]` when Supabase returns 402.
+   - Remove all legacy read/write cache paths for `gulnayak1206`.
+   - Ensure cache consolidation merges any existing local `gknayak` caches into the primary workspace.
+3. **Update `client/src/utils/userUtils.ts` and `client/src/App.tsx`**:
+   - Remove all `gulnayak1206` aliases and references.
+   - In `App.tsx`, enforce that cold preview starts on the sign-in modal as requested.
+4. **Provide `supabase_cleanup_and_purge.sql`**:
+   - Formulate the exact SQL statements to purge all non-whitelisted records from Supabase `user_workspaces` and `user_expenses`.
+5. **Validation**:
+   - Run tests to confirm zero regressions and verify compilation via `compile_applet`.

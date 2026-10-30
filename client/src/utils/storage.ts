@@ -50,7 +50,8 @@ import { normalizeExpenseDateKey, getLocalDateKey, mergeExpenseLists as mergeExp
 import { scratchpadWidgetService } from '../services/scratchpadWidgetService';
 import { spendingWidgetService } from '../services/spendingWidgetService';
 import { getLocalDateString, resolveCleanAppName } from './screenTimeCalculator';
-import { isDummyMockAvatar, isAvatarMatchingUserEmailDomain, getUserWorkspaceKey } from './userUtils';
+import { isDummyMockAvatar, isAvatarMatchingUserEmailDomain, getUserWorkspaceKey, OWNER_GKN_EXPENSES } from './userUtils';
+export { OWNER_GKN_EXPENSES };
 import { Capacitor } from '@capacitor/core';
 import { expenseRepo } from '../repositories/expenseRepository';
 import { expenseSyncService } from '../services/expenseSyncService';
@@ -1363,7 +1364,7 @@ export const Storage = {
   getHabits: (): HabitItem[] => {
     const activeEmail = (getCustomWorkspaceEmail() || '').toLowerCase().trim();
     const ws = getCustomWorkspaceIdentifier();
-    const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gulnayak1206@gmail.com';
+    const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gknayak';
     const scopedKey = getScopedKey(STORAGE_KEYS.HABITS);
     const hasScopedKey = localStorage.getItem(scopedKey) !== null;
     let loaded = loadFromStorage<HabitItem[]>(STORAGE_KEYS.HABITS, []);
@@ -1374,11 +1375,9 @@ export const Storage = {
         `${activeEmail}_offline_habits_cache`,
         `${ws}_offline_habits_cache`,
         'gknayak@gmail.com_offline_habits_cache',
-        'gulnayak1206@gmail.com_offline_habits_cache',
         'user_guest_offline_habits_cache',
         'user_guest_notion_os_v4_habits',
         'notion_os_v4_habits',
-        'user_usr_gulnayak1206_gmail_com_notion_os_v4_habits',
         'user_036fe7d3-6a13-4740-b028-afb55e81e00e_notion_os_v4_habits',
         'lifeos_habits_backup',
       ];
@@ -1571,6 +1570,7 @@ export const Storage = {
     const activeEmail = (getCustomWorkspaceEmail() || '').toLowerCase().trim();
     const ws = getCustomWorkspaceIdentifier();
     const isGuest = !activeEmail || activeEmail === 'guest@workspace.local' || ws === 'user_guest';
+    const isGknUser = !isGuest && (activeEmail === 'gknayak@gmail.com' || activeEmail === 'gknayak');
 
     // Strictly user-scoped offline cache recovery:
     // Gather all persistent offline caches to ensure spending data is always readable offline and never blanked
@@ -1582,22 +1582,17 @@ export const Storage = {
         `${ws}_lifeos_expenses_backup`
       );
 
-      const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gulnayak1206@gmail.com';
       if (isGknUser) {
         offlineCacheKeys.push(
           'user_guest_notion_os_v4_expenses',
           'notion_os_v4_expenses',
           'user_036fe7d3-6a13-4740-b028-afb55e81e00e_notion_os_v4_expenses',
-          'user_usr_gulnayak1206_gmail_com_notion_os_v4_expenses',
           'user_usr_gknayak_gmail_com_notion_os_v4_expenses',
           'user_gknayak@gmail.com_notion_os_v4_expenses',
-          'user_gulnayak1206@gmail.com_notion_os_v4_expenses',
           'user_guest_offline_expenses_cache',
           'user_guest_lifeos_expenses_backup',
           'gknayak@gmail.com_offline_expenses_cache',
-          'gulnayak1206@gmail.com_offline_expenses_cache',
           'lifeos_offline_expenses_cache',
-          'account_auth_gulnayak1206_gmail_com_notion_os_v4_expenses',
           'account_auth_gknayak_gmail_com_notion_os_v4_expenses',
           'lifeos_expenses_backup',
           'lifeos_last_imported_sheet_expenses'
@@ -1679,6 +1674,10 @@ export const Storage = {
       // Cold start or blank scoped storage: recover completely from persistent offline cache
       list = recoveredFromCache.filter((e) => !isExplicitlyDeleted(e.id, e));
       saveToStorage(STORAGE_KEYS.EXPENSES, list);
+    } else if ((!hasScopedItem || list.length === 0) && recoveredFromCache.length === 0 && isGknUser) {
+      // Cold start in preview sandbox or fresh browser session for gknayak: seed authentic owner expenses
+      list = [...OWNER_GKN_EXPENSES].filter((e) => !isExplicitlyDeleted(e.id, e));
+      saveToStorage(STORAGE_KEYS.EXPENSES, list);
     } else if (list.length > 0 && recoveredFromCache.length > 0) {
       // Merge historical expenses present in offline cache but absent from current scoped partition,
       // strictly excluding deleted and tombstoned items
@@ -1741,7 +1740,7 @@ export const Storage = {
     Storage.clearMemoryCaches();
     if (!user || !user.email) return;
     const cleanEmail = user.email.toLowerCase().trim();
-    const isGknUser = cleanEmail === 'gknayak@gmail.com' || cleanEmail === 'gulnayak1206@gmail.com';
+    const isGknUser = cleanEmail === 'gknayak@gmail.com';
     const cleanName = isGknUser
       ? (user.name && user.name !== 'Gknayak' ? user.name : 'Gulshan Kumar Nayak')
       : (user.name || cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
@@ -1794,7 +1793,7 @@ export const Storage = {
     Storage.setHabitActiveWeek('');
     Storage.setHabitActivities([]);
     Storage.setGoals([]);
-    Storage.setExpenses([]);
+    Storage.setExpenses(isGknUser ? [...OWNER_GKN_EXPENSES] : []);
     Storage.setJournal([]);
     Storage.setMedia([]);
     Storage.setAchievements([]);
@@ -1898,7 +1897,7 @@ export const Storage = {
       const activeEmail = (getCustomWorkspaceEmail() || '').toLowerCase().trim();
       const ws = getCustomWorkspaceIdentifier();
       const isGuest = !activeEmail || activeEmail === 'guest@workspace.local' || ws === 'user_guest';
-      const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gulnayak1206@gmail.com';
+      const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gknayak';
       const serialized = JSON.stringify(sanitized);
 
       if (isGknUser) {
@@ -2103,10 +2102,7 @@ export const Storage = {
       'lifeos_expenses_backup',
       'lifeos_offline_expenses_cache',
       'gknayak@gmail.com_offline_expenses_cache',
-      'gulnayak1206@gmail.com_offline_expenses_cache',
-      'user_usr_gulnayak1206_gmail_com_notion_os_v4_expenses',
       'user_usr_gknayak_gmail_com_notion_os_v4_expenses',
-      'account_auth_gulnayak1206_gmail_com_notion_os_v4_expenses',
       'account_auth_gknayak_gmail_com_notion_os_v4_expenses',
       'user_guest_offline_expenses_cache',
       'user_guest_lifeos_expenses_backup',
@@ -2571,8 +2567,8 @@ export const Storage = {
     const fallbackProfile: UserProfile = JSON.parse(JSON.stringify(BLANK_PROFILE));
     const rawData = loadFromStorage(STORAGE_KEYS.PROFILE, fallbackProfile);
     const data: UserProfile = { ...rawData };
-    const activeEmail = getCustomWorkspaceEmail();
-    const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gulnayak1206@gmail.com';
+    const activeEmail = (getCustomWorkspaceEmail() || '').toLowerCase().trim();
+    const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gknayak';
 
     if (!data.name || !data.name.trim() || (isGknUser && (data.name.toLowerCase() === 'gknayak' || data.name === 'Gknayak'))) {
       if (isGknUser) {
@@ -3257,15 +3253,11 @@ export const Storage = {
         const currentEmail = (currentProfile.contactEmail || activeEmail || getCustomWorkspaceEmail() || '').toLowerCase().trim();
         const incomingEmail = (data.profile.contactEmail || '').toLowerCase().trim();
         const isSameUser = Boolean(
-          (!incomingEmail || !currentEmail || currentEmail === incomingEmail || (
-            (currentEmail === 'gknayak@gmail.com' || currentEmail === 'gulnayak1206@gmail.com') &&
-            (incomingEmail === 'gknayak@gmail.com' || incomingEmail === 'gulnayak1206@gmail.com')
-          ))
+          (!incomingEmail || !currentEmail || currentEmail === incomingEmail)
         );
 
         const targetEmail = data.profile.contactEmail || currentEmail || '';
-        const isGknUser = targetEmail === 'gknayak@gmail.com' || targetEmail === 'gulnayak1206@gmail.com' ||
-                          currentEmail === 'gknayak@gmail.com' || currentEmail === 'gulnayak1206@gmail.com';
+        const isGknUser = targetEmail === 'gknayak@gmail.com' || currentEmail === 'gknayak@gmail.com' || targetEmail === 'gknayak';
 
         const mergedProfile = isSameUser
           ? { ...data.profile, ...currentProfile }
@@ -3310,7 +3302,7 @@ export const Storage = {
       if (data.todos) Storage.setTodos(data.todos);
       if (Array.isArray(data.habits)) {
         const targetEmail = activeEmail || getCustomWorkspaceEmail() || '';
-        const isGknUser = targetEmail === 'gknayak@gmail.com' || targetEmail === 'gulnayak1206@gmail.com';
+        const isGknUser = targetEmail === 'gknayak@gmail.com' || targetEmail === 'gknayak';
         const localHabits = Storage.getHabits();
         const trash = Storage.getTrash().filter((t) => t.module === 'habits');
         const trashedIds = new Set<string>();
