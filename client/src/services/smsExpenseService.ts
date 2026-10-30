@@ -455,7 +455,7 @@ class SmsExpenseService {
       const handle = await SmsTransaction.addListener('onSmsReceived', (data) => {
         if (!this.isAutoTrackingEnabled()) return;
         // Hold incoming SMS in native pending inbox while offline to prevent multi-device inconsistency
-        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
           logDeviceDiagnostic('info', 'LifeOS_SMS:OFFLINE_SMS_HELD', 'Incoming SMS held in native pending inbox until reconnected to prevent inconsistency', {
             sender: data.sender,
           });
@@ -1286,7 +1286,7 @@ class SmsExpenseService {
       typeof window !== 'undefined' &&
       localStorage.getItem('lifeos_sms_explicitly_disabled') === 'true';
     if (isExplicitlyDisabled) return 0;
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       // Hold incoming SMS in native pending inbox while offline to prevent multi-device dirty writes
       return 0;
     }

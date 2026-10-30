@@ -41,13 +41,13 @@ class ConnectionPolicyManagerClass {
   }
 
   public isOnlineWriteReady(): boolean {
-    if (typeof navigator !== 'undefined' && !navigator.onLine) return false;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
     return this.state === 'online_write_ready';
   }
 
   public isOfflineReadOnly(): boolean {
     return (
-      (typeof navigator !== 'undefined' && !navigator.onLine) ||
+      (typeof navigator !== 'undefined' && navigator.onLine === false) ||
       this.state === 'offline_read_only'
     );
   }
