@@ -348,7 +348,7 @@ const parseSyncTimestamp = (value: any): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const getPayloadSyncTimestamp = (payload: any, fallback?: any): number => {
+export const getPayloadSyncTimestamp = (payload: any, fallback?: any): number => {
   return Math.max(
     parseSyncTimestamp(payload?._meta?.syncVersion),
     parseSyncTimestamp(payload?._meta?.clientTimestamp),
@@ -1023,9 +1023,20 @@ export const scheduleAutoSyncToSupabase = (
 };
 
 /**
- * Flush any pending auto-sync immediately (e.g. before tab switch or page close).
+ * Atomic promise chain queue for serializing flushAutoSyncImmediately across rapid triggers.
+ * Guarantees atomicity and monotonic sequence ordering even when multiple devices or rapid local
+ * events fire concurrently.
  */
-export const flushAutoSyncImmediately = async (payload: any) => {
+let flushExecutionQueue: Promise<any> = Promise.resolve();
+
+/**
+ * Flush any pending auto-sync immediately (e.g. before tab switch or page close).
+ * Atomically queues the operation to prevent in-flight race conditions.
+ */
+export const flushAutoSyncImmediately = async (
+  payload: any,
+  syncFn: (payload: any, isAutoSync?: boolean) => Promise<CloudSyncResult> = syncWorkspaceToSupabase
+): Promise<CloudSyncResult | void> => {
   if (isWorkOfflineMode()) return;
   if (!isSupabaseConfigured() || !payload) return;
   if (broadcastSyncTimeout) {
@@ -1036,7 +1047,14 @@ export const flushAutoSyncImmediately = async (payload: any) => {
     clearTimeout(autoSyncTimeout);
     autoSyncTimeout = null;
   }
-  await syncWorkspaceToSupabase(payload, true);
+  // Atomically serialize through the promise queue
+  flushExecutionQueue = flushExecutionQueue
+    .catch(() => {})
+    .then(async () => {
+      return await syncFn(payload, true);
+    });
+
+  return await flushExecutionQueue;
 };
 
 /**

@@ -258,8 +258,10 @@ describe('Multi-User Workspace Isolation & Ownership Security Tests', { timeout:
     const device2WsKey = getUserWorkspaceKey(userB);
 
     expect(device1WsKey).not.toBe(device2WsKey);
-    expect(device1WsKey).toBe(`user_${userA.id}`);
-    expect(device2WsKey).toBe(`user_${userB.id}`);
+    // Two different devices logged in with userA share the identical canonical workspace key
+    const device1UserA = { ...userA, id: 'different-local-uuid-1' };
+    const device2UserA = { ...userA, id: 'different-local-uuid-2' };
+    expect(getUserWorkspaceKey(device1UserA)).toBe(getUserWorkspaceKey(device2UserA));
   });
 
   it('8. Realtime updates for A cannot modify or appear in B dashboard', () => {

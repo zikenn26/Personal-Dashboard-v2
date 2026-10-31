@@ -68,6 +68,8 @@ import { QuotesManagerView } from './components/QuotesManagerView';
 import { ExamsSection } from './components/ExamsSection';
 import { ScreenTimeView } from './components/screentime/ScreenTimeView';
 import { AuthModal } from './components/AuthModal';
+import { OnboardingTourModal, ONBOARDING_STORAGE_KEY } from './components/OnboardingTourModal';
+import { InitialSetupBanner } from './components/InitialSetupBanner';
 import { AvatarPickerModal } from './components/AvatarPickerModal';
 import { BrandLogo } from './components/BrandLogo';
 import { UserAvatar } from './components/UserAvatar';
@@ -106,6 +108,7 @@ import {
   setCustomWorkspaceEmail,
   checkHasNewerCloudWorkspace,
   setWorkOfflineMode,
+  getPayloadSyncTimestamp,
 } from './utils/supabase';
 import { nativeService } from './services/nativeService';
 import { normalizeExpenseDateKey, getLocalDateKey } from './utils/expenseUtils';
@@ -296,6 +299,15 @@ export default function App() {
   const [showQuickCapture, setShowQuickCapture] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(() => !Auth.getCurrentUser() || authRequest === 'signup' || authRequest === 'signin');
   const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup' | 'reset'>(() => authRequest === 'signup' ? 'signup' : 'signin');
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(() => {
+    try {
+      const u = Auth.getCurrentUser();
+      const seen = localStorage.getItem(ONBOARDING_STORAGE_KEY);
+      return Boolean(u && seen !== 'true');
+    } catch {
+      return false;
+    }
+  });
 
   // API Usage Threshold Warning Notification Banner
   const [apiThresholdWarning, setApiThresholdWarning] = useState<{
@@ -358,6 +370,7 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error' | 'idle'>(getAutoSyncStatus);
   const isInitialMount = useRef(true);
   const isRemoteUpdating = useRef(false);
+  const lastLocalMutationTimestamp = useRef<number>(Date.now());
   const isCloudReady = useRef(false);
 
   // Global Online / Offline Read-Only State
@@ -499,6 +512,14 @@ export default function App() {
     if (!Storage.hasUserData(user)) {
       Storage.resetToCleanUserWorkspace(user);
     }
+
+    // 6b. Trigger Onboarding Tour if user has not yet completed it
+    try {
+      const seen = localStorage.getItem(ONBOARDING_STORAGE_KEY);
+      if (seen !== 'true') {
+        setIsOnboardingOpen(true);
+      }
+    } catch {}
 
     const cleanEmail = (user.email || '').toLowerCase().trim();
     const [userLocalPart] = cleanEmail.split('@');
@@ -1006,8 +1027,25 @@ export default function App() {
       try {
         const result = await fetchWorkspaceFromSupabase();
         if (result.success && result.data && isMounted) {
+          const incomingVersion = getPayloadSyncTimestamp(result.data, result.timestamp);
+          const currentLocalPayload = Storage.getAllDataPayload();
+          const localVersion = Math.max(
+            lastLocalMutationTimestamp.current,
+            getPayloadSyncTimestamp(currentLocalPayload)
+          );
+
+          // If local storage has newer mutations than cloud snapshot, do not overwrite local state
+          if (incomingVersion > 0 && incomingVersion < localVersion) {
+            console.info('[SUPABASE_SYNC] Cloud snapshot is older than local mutation. Skipping overwrite.', {
+              incomingVersion,
+              localVersion,
+            });
+            return;
+          }
+
           console.info('[PROFILE_TRACE] autoSyncFromCloud applying snapshot. Incoming name:', result.data.profile?.name);
           isRemoteUpdating.current = true;
+          lastLocalMutationTimestamp.current = Math.max(incomingVersion, Date.now());
           Storage.importAllDataPayload(result.data);
 
           handleHydrateAllFromStorage(false);
@@ -1058,10 +1096,28 @@ export default function App() {
 
     // 2. Realtime WebSocket channel for instant cross-device updates (<30ms delivery, no lag, no refresh)
     const unsubRealtime = subscribeToRealtimeWorkspace(
-      (remoteData) => {
+      (remoteData, remoteTimestamp) => {
         if (remoteData && isMounted) {
-          console.info('[PROFILE_TRACE] Realtime workspace event applying snapshot. Incoming name:', remoteData.profile?.name);
+          // Explicit check: Compare updatedAt / syncVersion of incoming payload vs local state
+          const incomingVersion = getPayloadSyncTimestamp(remoteData, remoteTimestamp);
+          const currentLocalPayload = Storage.getAllDataPayload();
+          const localVersion = Math.max(
+            lastLocalMutationTimestamp.current,
+            getPayloadSyncTimestamp(currentLocalPayload)
+          );
+
+          // Strictly reject incoming remote updates that are older than or equal to local state
+          if (incomingVersion > 0 && incomingVersion <= localVersion) {
+            console.info('[REALTIME_SYNC] Discarded stale or echo remote update:', {
+              incomingVersion,
+              localVersion,
+            });
+            return;
+          }
+
+          console.info('[PROFILE_TRACE] Realtime workspace event applying strictly newer snapshot. Incoming name:', remoteData.profile?.name);
           isRemoteUpdating.current = true;
+          lastLocalMutationTimestamp.current = Math.max(incomingVersion, Date.now());
           Storage.importAllDataPayload(remoteData);
           handleHydrateAllFromStorage(false);
           setTimeout(() => {
@@ -4401,7 +4457,17 @@ export default function App() {
 
               {/* VIEW 0: Interactive Dynamic Notion Home Dashboard */}
               {activeView === 'home' && (
-                <DashboardHomeView
+                <>
+                  <InitialSetupBanner
+                    todosCount={todos.length}
+                    habitsCount={habits.length}
+                    expensesCount={expenses.length}
+                    userName={profile.name}
+                    onAddTask={() => setShowQuickCapture(true)}
+                    onSetupHabits={() => handleNavigate('habits')}
+                    onTrackSpending={() => handleNavigate('expenses')}
+                  />
+                  <DashboardHomeView
                   profile={profile}
                   todos={todos}
                   habits={habits}
@@ -4427,6 +4493,7 @@ export default function App() {
                   soundEnabled={settings.soundEnabled}
                   onOpenZikennPopup={() => setIsZikennPopupOpen(true)}
                 />
+                </>
               )}
 
               {/* VIEW: Personalized Zikenn AI */}
@@ -4726,6 +4793,13 @@ export default function App() {
         onClose={() => setIsAuthModalOpen(false)}
         onAuthenticated={handleAuthenticated}
         currentUser={currentUser}
+      />
+
+      {/* Global Onboarding Guided Walkthrough Tour Modal */}
+      <OnboardingTourModal
+        isOpen={isOnboardingOpen}
+        onClose={() => setIsOnboardingOpen(false)}
+        onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
       />
 
       {/* Global Profile Photo / Avatar Picker Modal */}

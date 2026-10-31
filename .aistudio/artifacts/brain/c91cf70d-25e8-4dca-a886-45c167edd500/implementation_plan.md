@@ -1,6 +1,6 @@
-# Global Cross-Device Logout & Pristine Data Reset Plan
+# Realtime Synchronization Hardening & Monotonic Timestamp Integrity Plan
 
-Enforce an immediate, global sign-out for `gknayak@gmail.com` across all devices (Chrome web, Android APK, and mobile browsers), thoroughly wipe all legacy fragmented caches, and initialize a completely fresh, blank workspace upon re-login to resolve all account and data consistency issues.
+Harden multi-device synchronization in `client/src/utils/supabase.ts` and `client/src/App.tsx` by introducing monotonic timestamp validation on incoming realtime payloads, preventing stale local overwrites, and establishing an atomic queue for `flushAutoSyncImmediately` to eliminate race conditions across concurrent devices.
 
 ---
 
@@ -8,50 +8,42 @@ Enforce an immediate, global sign-out for `gknayak@gmail.com` across all devices
 
 > [!IMPORTANT]
 > **Confirmed Choices from Clarification (Phase 1)**:
-> 1. **Cache Purge Strategy**: Thoroughly wipe all legacy device caches (`offline_expenses_cache`, `lifeos_expenses_backup`, old partition keys, and historical transaction stores).
-> 2. **Global Cross-Device Invalidation**: Increment a global authentication epoch (`GLOBAL_AUTH_EPOCH`) so any existing session on any phone, browser, or device automatically detects the epoch mismatch, terminates the session, wipes local device caches, and redirects to the sign-in screen.
-> 3. **Workspace State on Re-Login**: Initialize a **completely blank workspace** (`expenses: []`, `habits: []`, `todos: []`, `goals: []`) with a clean profile ("Gulshan Kumar Nayak" / `gknayak@gmail.com`), ensuring zero residual or synthetic transactions carry over.
-> 4. **Strict Two-Account Whitelist**: Only `gknayak@gmail.com` and `arpitapri125@gmail.com` are permitted; all other accounts and `gulnayak1206` remain permanently purged.
+> 1. **Realtime Event Presentation**: Silently apply newer remote state in place and seamlessly re-render UI components without page refreshes or disruptive banners.
+> 2. **Concurrency Control in `flushAutoSyncImmediately`**: Atomic promise queue with a monotonic timestamp guard to serialize in-flight writes, preventing parallel race conditions when multiple devices are logged in simultaneously.
+> 3. **Strict Timestamp Precedence**: Compare incoming payload timestamps against local state (`lastLocalMutationTimestamp` and `_meta.syncVersion`); discard any incoming remote updates that are older than or equal to current local state.
+> 4. **Deduplication Safeguards**: Ensure list imports (expenses, habits, tasks) strictly maintain unique entity IDs so that repeated cloud synchronizations never produce duplicated records.
 
 ---
 
 ### 1. Overview & Core Concept
 
-- **The Problem**: Over multiple test cycles and device logins (Chrome, Android APK, mobile), multiple cache layers (`user_036fe7d3...`, `user_usr_gknayak...`, `gknayak@gmail.com_offline_expenses_cache`, `lifeos_offline_expenses_cache`, `lifeos_expenses_backup`) accumulated conflicting or phantom historical states.
+- **The Problem**:
+  - `subscribeToRealtimeWorkspace` previously received remote workspace snapshots and applied them directly to localStorage and React state without verifying whether the incoming payload was newer than the local state. A delayed broadcast or echo event from an older device state could overwrite a newer local edit.
+  - `flushAutoSyncImmediately` could be invoked in quick succession (e.g. rapid edits or tab changes across devices), potentially issuing concurrent HTTP requests that race against each other.
 - **The Solution**:
-  1. **Global Epoch Invalidation**: Set a new authoritative epoch constant (`GLOBAL_AUTH_EPOCH = '2026_10_30_epoch_v5_clean'`). On load or network sync, any device with an older epoch is forced to sign out immediately, deleting all local cached records.
-  2. **Pristine Reset on Fresh Login**: When `gknayak@gmail.com` signs back in, a clean, blank workspace partition is initialized with empty arrays across all modules.
-  3. **Strict Partition Consistency**: Single, immutable storage partition for `gknayak@gmail.com` (`user_036fe7d3-6a13-4740-b028-afb55e81e00e`) and `arpitapri125@gmail.com` (`user_usr_arpitapri125_gmail_com`), completely eliminating multi-device key divergence.
+  - **Timestamp Guard in `App.tsx`**: Track the authoritative local mutation timestamp. In `subscribeToRealtimeWorkspace`, parse the incoming payload's timestamp (`_meta.syncVersion` / `updatedAt`) and strictly reject any payload where `remoteTimestamp <= localTimestamp`.
+  - **Atomic Sync Queue in `supabase.ts`**: Wrap `flushAutoSyncImmediately` and `syncWorkspaceToSupabase` in a serialized execution queue (`syncExecutionPromiseChain`) with monotonic timestamps (`Math.max(Date.now(), latestKnownRemoteTimestamp + 1)`).
+  - **Deduplicated Ingestion in `Storage.importAllDataPayload`**: Ensure array reconciliations enforce set-based ID uniqueness across all collections.
 
 ---
 
-### 2. User Experience & Visual Design
+### 2. User Experience & Visual Flow
 
-- **Global Invalidation & Logout Experience**:
-  - Any device currently running an active session for `gknayak@gmail.com` will immediately recognize the epoch transition on page load or focus.
-  - The session is cleanly cleared, all cached transaction fragments are purged, and the clean centered Sign-In modal is presented.
-  - An informational notice confirms: *"Session reset across all devices. Please sign in to access your fresh workspace."*
-
-- **Fresh Sign-In Experience**:
-  - User signs in with `gknayak@gmail.com` and password `Gulshan@12345!`.
-  - The dashboard opens into a pristine, zero-clutter workspace:
-    - Profile: Gulshan Kumar Nayak (`gknayak@gmail.com`) with clean initials/avatar.
-    - Money / Expense Tracker: Completely clean state (0 expenses, ₹0 spent, ready for real transactions).
-    - Habits: Fresh blank slate ready for custom habit creation.
-    - Tasks & Goals: Clean empty states with inviting zero-state illustrations.
+- **Silent & Seamless In-Place Updates**:
+  - When you add a task or mark a habit on your phone, your desktop screen reflects the update within milliseconds (<30ms).
+  - No page reload, no scroll position loss, and no interruption to your active work.
+  - If a device receives a stale update (e.g. from an offline device syncing late), the stale payload is discarded silently without resetting your current progress.
 
 ---
 
 ### 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1: Global Auth Epoch Mechanism**:
-  - *Chosen Approach*: Embed a high-watermark version string `GLOBAL_AUTH_EPOCH` verified at app initialization in `Auth.getCurrentUser()` and `App.tsx`.
-  - *Why*: Instantly invalidates sessions on all devices without requiring Supabase server-side tokens to be individually revoked.
-  - *Alternatives Considered*: Waiting for remote Supabase token expiry. Rejected because Supabase egress quota is restricted (HTTP 402), which would fail to push remote invalidation to offline or cached devices.
-
-- **Decision 2: Blank Workspace vs Seed Data**:
-  - *Chosen Approach*: Completely blank workspace (`expenses: []`, `habits: []`), as explicitly requested by the user.
-  - *Why*: Eliminates all confusion from synthetic or historical mock items and guarantees that every transaction visible going forward is authentic and user-created.
+- **Decision 1: Monotonic Sequence + Millisecond Timestamp Comparison**:
+  - *Chosen Approach*: Compare `Math.max(remoteSyncVersion, remoteUpdatedAtMs)` against `Math.max(localSyncVersion, localMutationMs)`.
+  - *Why*: Accommodates small clock skews between devices by using the payload's embedded `_meta.syncVersion` as a logical sequence counter.
+- **Decision 2: Serialized Promise Chain Queue for Immediate Flushes**:
+  - *Chosen Approach*: Chain `flushAutoSyncImmediately` operations into an atomic task queue.
+  - *Why*: Guarantees that even if three quick capture operations or device sync triggers fire within 10ms of each other, they execute strictly in order with increasing sync versions rather than colliding on the network.
 
 ---
 
@@ -59,45 +51,42 @@ Enforce an immediate, global sign-out for `gknayak@gmail.com` across all devices
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                        App Initialization & Auth Check                 │
+│                        Incoming Realtime Event                         │
 │                                                                        │
-│   Check: localStorage.getItem('notion_os_auth_epoch')                  │
+│   Incoming: remoteData (_meta.syncVersion, updatedAt)                  │
 │                     │                                                  │
-│         Does it match GLOBAL_AUTH_EPOCH?                               │
-│         ├── NO (Stale Device / Previous Code Session):                 │
-│         │   1. Auth.setCurrentUser(null) (Forced Sign-Out)             │
-│         │   2. localStorage.clear() (Purge all legacy cache keys)      │
-│         │   3. Set 'notion_os_auth_epoch' = GLOBAL_AUTH_EPOCH          │
-│         │   4. Display clean AuthModal                                 │
+│   Compare: remoteTimestamp vs localMutationTimestamp                   │
+│                     │                                                  │
+│         Is remoteTimestamp > localTimestamp?                           │
+│         ├── NO: Discard silently (stale snapshot / echo)               │
 │         │                                                              │
-│         └── YES (Clean Epoch):                                         │
-│             Proceed to standard authenticated flow                     │
-└──────────────────────────────────┬─────────────────────────────────────┘
-                                   │
-                                   ▼
+│         └── YES: Apply newer remote state                              │
+│             1. Storage.importAllDataPayload(remoteData)                │
+│             2. handleHydrateAllFromStorage(false)                      │
+│             3. localMutationTimestamp = remoteTimestamp                │
+└────────────────────────────────────────────────────────────────────────┘
+
 ┌────────────────────────────────────────────────────────────────────────┐
-│                        Fresh Login (gknayak@gmail.com)                 │
+│                        Atomic flushAutoSyncImmediately                 │
 │                                                                        │
-│   Credentials: gknayak@gmail.com / Gulshan@12345!                     │
-│   Workspace Key: user_036fe7d3-6a13-4740-b028-afb55e81e00e             │
-│                                                                        │
-│   Initialized State:                                                   │
-│   ├── Profile: Gulshan Kumar Nayak (gknayak@gmail.com)                 │
-│   ├── Expenses: [] (Clean blank slate)                                 │
-│   ├── Habits: [] (Clean blank slate)                                   │
-│   ├── Todos: []                                                        │
-│   └── Offline Caches: Initialized with pristine []                     │
+│   Caller triggers: flushAutoSyncImmediately(payload)                   │
+│                     │                                                  │
+│   Enqueue onto serialized syncExecutionQueue                           │
+│   ├── Assign Monotonic Version: syncVersion = Math.max(now, lastVersion+1)│
+│   ├── Execute write to Supabase user_workspaces                       │
+│   └── Update latestKnownRemoteTimestamp upon success                   │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
 #### Detailed Execution Steps:
-1. **Define `GLOBAL_AUTH_EPOCH` in `client/src/utils/auth.ts`**:
-   - Add `GLOBAL_AUTH_EPOCH = '2026_10_30_epoch_v5_clean'`.
-   - On initialization, if the device's epoch doesn't match, force `Auth.setCurrentUser(null)` and purge all legacy keys.
-2. **Update Storage Defaults in `client/src/utils/storage.ts`**:
-   - Ensure `getExpenses()` and `getHabits()` for fresh logins initialize with clean blank arrays `[]` when no user data exists.
-   - Remove synthetic seed fallback in favor of the requested blank slate.
-3. **Update `supabase_cleanup_and_purge.sql`**:
-   - Include SQL to reset the cloud workspace row for `gknayak@gmail.com` to the blank initial state.
+1. **Export Timestamp Extraction Utility**:
+   - Ensure `getPayloadSyncTimestamp` in `client/src/utils/supabase.ts` is exported and handles all timestamp formats (`_meta.syncVersion`, `updated_at`, `updatedAt`, numeric or ISO string).
+2. **Implement Atomic Sync Queue in `client/src/utils/supabase.ts`**:
+   - Implement `syncExecutionQueue` serialization so rapid calls to `flushAutoSyncImmediately` execute sequentially and atomically.
+3. **Enhance Realtime Subscriber in `client/src/App.tsx`**:
+   - Track `lastLocalMutationTimestamp` ref.
+   - In `subscribeToRealtimeWorkspace`, extract `remoteTimestamp` and compare against `localTimestamp`.
+   - Apply only strictly newer remote updates.
 4. **Verification**:
-   - Run tests to confirm zero regressions and verify compilation via `compile_applet`.
+   - Run vitest across all test files.
+   - Run linter and compiler.

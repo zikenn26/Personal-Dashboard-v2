@@ -7,9 +7,15 @@
  */
 
 export function getUserWorkspaceKey(user: { id?: string; email?: string } | null): string {
-  if (!user || !user.id || user.id === 'guest') return 'user_guest';
-  // Workspace key generation explicitly depends only on the authenticated user's immutable UUID
-  return `user_${user.id}`;
+  if (!user) return 'user_guest';
+  if (user.id === 'guest') return 'user_guest';
+  // Canonical normalized email-based workspace key guarantees identical partition across all devices (Web, APK, Mobile)
+  if (user.email && user.email.includes('@') && user.email !== 'guest@workspace.local') {
+    const cleanEmail = user.email.toLowerCase().trim().replace(/[^a-z0-9]/g, '_');
+    return `user_usr_${cleanEmail}`;
+  }
+  if (user.id) return `user_${user.id}`;
+  return 'user_guest';
 }
 
 

@@ -129,4 +129,48 @@ describe('Automated Realtime Sync & Offline Read-Only Consistency Suite', () => 
     expect(settings).toBeDefined();
     expect(typeof settings.soundEnabled).toBe('boolean');
   });
+
+  it('6. getPayloadSyncTimestamp correctly identifies latest version and prevents stale overwrites', () => {
+    const olderRemote = {
+      _meta: { syncVersion: 1000000, clientTimestamp: 1000000 },
+      profile: { name: 'Old Snapshot' },
+    };
+    const newerLocal = {
+      _meta: { syncVersion: 2000000, clientTimestamp: 2000000 },
+      profile: { name: 'Fresh Local Edit' },
+    };
+
+    const remoteVersion = supabaseModule.getPayloadSyncTimestamp(olderRemote);
+    const localVersion = supabaseModule.getPayloadSyncTimestamp(newerLocal);
+
+    expect(remoteVersion).toBe(1000000);
+    expect(localVersion).toBe(2000000);
+    // Remote is older than local, so it must be rejected
+    expect(remoteVersion > localVersion).toBe(false);
+  });
+
+  it('7. flushAutoSyncImmediately serializes sequential writes atomically', async () => {
+    const order: number[] = [];
+    const syncSpy = vi.spyOn(supabaseModule, 'syncWorkspaceToSupabase').mockImplementation(async (payload: any) => {
+      // Simulate network latency
+      await new Promise((r) => setTimeout(r, 20));
+      order.push(payload.order);
+      return { success: true, message: 'Synced' };
+    });
+
+    const isSupabaseConfiguredSpy = vi.spyOn(supabaseModule, 'isSupabaseConfigured').mockReturnValue(true);
+
+    // Call 3 flushAutoSyncImmediately operations in quick succession
+    const p1 = supabaseModule.flushAutoSyncImmediately({ order: 1 }, syncSpy as any);
+    const p2 = supabaseModule.flushAutoSyncImmediately({ order: 2 }, syncSpy as any);
+    const p3 = supabaseModule.flushAutoSyncImmediately({ order: 3 }, syncSpy as any);
+
+    await Promise.all([p1, p2, p3]);
+
+    // Must have executed in exact sequential order without race conditions
+    expect(order).toEqual([1, 2, 3]);
+
+    syncSpy.mockRestore();
+    isSupabaseConfiguredSpy.mockRestore();
+  });
 });
