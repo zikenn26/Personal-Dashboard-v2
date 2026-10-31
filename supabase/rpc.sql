@@ -168,3 +168,128 @@ BEGIN
     RETURN to_jsonb(v_result);
 END;
 $$;
+
+-- =========================================================================
+-- PHASE 3 RPC: Expense Authority & Reconciliation Functions
+-- =========================================================================
+
+/**
+ * Record expense authority when an expense is created/modified on a device
+ * Establishes which device/platform is authoritative for conflict resolution
+ */
+CREATE OR REPLACE FUNCTION public.record_expense_authority(
+    p_expense_id TEXT,
+    p_workspace_identifier TEXT,
+    p_source_device_type TEXT,  -- 'apk', 'web', 'desktop', 'other'
+    p_device_id TEXT
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_user_id UUID;
+    v_result RECORD;
+BEGIN
+    v_user_id := auth.uid();
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'Not authenticated';
+    END IF;
+
+    INSERT INTO public.expense_authority (
+        expense_id,
+        user_id,
+        workspace_identifier,
+        source_device_type,
+        authoritative_device_id,
+        last_authoritative_modification_ms,
+        requires_platform_reconciliation,
+        is_synced_to_all_devices,
+        apk_version,
+        web_version
+    )
+    VALUES (
+        p_expense_id,
+        v_user_id,
+        p_workspace_identifier,
+        p_source_device_type,
+        p_device_id,
+        EXTRACT(EPOCH FROM now()) * 1000,
+        false,
+        false,
+        CASE WHEN p_source_device_type = 'apk' THEN 1 ELSE 0 END,
+        CASE WHEN p_source_device_type = 'web' THEN 1 ELSE 0 END
+    )
+    ON CONFLICT (expense_id)
+    DO UPDATE SET
+        source_device_type = EXCLUDED.source_device_type,
+        authoritative_device_id = EXCLUDED.authoritative_device_id,
+        last_authoritative_modification_ms = EXTRACT(EPOCH FROM now()) * 1000,
+        apk_version = CASE WHEN EXCLUDED.source_device_type = 'apk' THEN expense_authority.apk_version + 1 ELSE expense_authority.apk_version END,
+        web_version = CASE WHEN EXCLUDED.source_device_type = 'web' THEN expense_authority.web_version + 1 ELSE expense_authority.web_version END
+    RETURNING * INTO v_result;
+
+    RETURN to_jsonb(v_result);
+END;
+$$;
+
+/**
+ * Mark an expense as needing APK reconciliation
+ * Called when a non-APK device modifies an APK-created expense
+ */
+CREATE OR REPLACE FUNCTION public.mark_expense_for_apk_reconciliation(
+    p_expense_id TEXT
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_user_id UUID;
+    v_result RECORD;
+BEGIN
+    v_user_id := auth.uid();
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'Not authenticated';
+    END IF;
+
+    UPDATE public.expense_authority
+    SET
+        requires_platform_reconciliation = true,
+        is_synced_to_all_devices = false,
+        updated_at = timezone('utc'::text, now())
+    WHERE expense_id = p_expense_id AND user_id = v_user_id
+    RETURNING * INTO v_result;
+
+    RETURN to_jsonb(v_result);
+END;
+$$;
+
+/**
+ * Mark an expense as synced across all platforms
+ * Called by APK after syncing updates to other devices
+ */
+CREATE OR REPLACE FUNCTION public.mark_expense_synced_to_all_devices(
+    p_expense_id TEXT
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_user_id UUID;
+    v_result RECORD;
+BEGIN
+    v_user_id := auth.uid();
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'Not authenticated';
+    END IF;
+
+    UPDATE public.expense_authority
+    SET
+        is_synced_to_all_devices = true,
+        requires_platform_reconciliation = false,
+        updated_at = timezone('utc'::text, now())
+    WHERE expense_id = p_expense_id AND user_id = v_user_id
+    RETURNING * INTO v_result;
+
+    RETURN to_jsonb(v_result);
+END;
+$$;
