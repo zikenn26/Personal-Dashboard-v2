@@ -93,6 +93,15 @@ import {
 } from './utils/habitWeekManager';
 import { Auth, getUserWorkspaceKey } from './utils/auth';
 import { registerCurrentDevice } from './utils/devices';
+import { deviceService } from './services/deviceService';
+import {
+  initializeOfflineDetection,
+  subscribeToOfflineStateChanges,
+  getOfflineState,
+  isOnline,
+  canModifyData,
+  getOfflineStatusMessage,
+} from './utils/offlineDetection';
 import { AuthUser } from './types';
 import {
   isSupabaseConfigured,
@@ -505,8 +514,10 @@ export default function App() {
     setExpenseUndoToast(null);
     setAtomicPendingDeletion(null);
 
-    // 5. Register active device session in cloud & storage
+    // 5. Register active device session in cloud & storage (persistent + ephemeral)
     registerCurrentDevice(user.email);
+    // Register in persistent device registry (Phase 1: New device tracking system)
+    deviceService.registerDevice(user).catch(err => console.warn('Device registration failed:', err));
 
     // 6. If user has no existing local storage records on this device, initialize a clean default workspace
     if (!Storage.hasUserData(user)) {
@@ -706,6 +717,12 @@ export default function App() {
     isCloudReady.current = false;
     isRemoteUpdating.current = true;
     Sound.click(settings.soundEnabled);
+    
+    // Logout device from persistent registry (Phase 1)
+    if (currentUser) {
+      deviceService.logoutDevice(currentUser).catch(err => console.warn('Device logout failed:', err));
+    }
+    
     await Auth.signOut();
     Storage.clearMemoryCaches();
     setCustomWorkspaceIdentifier('user_guest');
@@ -1008,6 +1025,24 @@ export default function App() {
 
     let isMounted = true;
 
+    // OFFLINE-FIRST: Initialize offline detection and monitoring
+    void initializeOfflineDetection();
+
+    // OFFLINE-FIRST: Subscribe to offline state changes
+    let unsubscribeOfflineState: (() => void) | undefined;
+    try {
+      unsubscribeOfflineState = subscribeToOfflineStateChanges((state) => {
+        // Update UI if needed (e.g., show offline indicator)
+        console.info('[OFFLINE_DETECTION] State changed:', {
+          isOnline: state.isOnline,
+          canModify: state.canModify,
+          message: getOfflineStatusMessage(),
+        });
+      });
+    } catch (err) {
+      console.warn('[APP] Failed to subscribe to offline state:', err);
+    }
+
     // Safety timeout: ensure cloud readiness is established within 1500ms even if network hangs
     const readyTimer = setTimeout(() => {
       if (isMounted) {
@@ -1064,9 +1099,11 @@ export default function App() {
 
     autoSyncFromCloud();
 
-    // Register active device session for this account
+    // Register active device session for this account (persistent + ephemeral)
     if (currentUser?.email) {
       registerCurrentDevice(currentUser.email);
+      // Register in persistent device registry (Phase 1)
+      deviceService.registerDevice(currentUser).catch(err => console.warn('Device heartbeat failed:', err));
     }
 
     // Periodic check to auto-logout deleted or revoked sessions
@@ -1093,6 +1130,57 @@ export default function App() {
         // ignore background poll error
       }
     }, 30000);
+
+    // Periodic device heartbeat to keep device active in persistent registry (Phase 1)
+    // FIXED: Enhanced with device verification, proper cleanup, and offline detection
+    let deviceHeartbeatInterval: NodeJS.Timeout | null = null;
+
+    const startDeviceHeartbeat = () => {
+      // Clear existing interval if any
+      if (deviceHeartbeatInterval) {
+        clearInterval(deviceHeartbeatInterval);
+      }
+
+      deviceHeartbeatInterval = setInterval(async () => {
+        if (!isMounted || !currentUser) {
+          return;
+        }
+
+        try {
+          // Verify device still exists before updating heartbeat
+          const deviceInfo = await deviceService.getCurrentDeviceInfo(currentUser);
+          
+          if (!deviceInfo) {
+            console.warn('[APP_HEARTBEAT] Device was deleted, stopping heartbeat');
+            if (deviceHeartbeatInterval) {
+              clearInterval(deviceHeartbeatInterval);
+              deviceHeartbeatInterval = null;
+            }
+            return;
+          }
+
+          if (!deviceInfo.is_active) {
+            console.warn('[APP_HEARTBEAT] Device marked inactive, stopping heartbeat');
+            if (deviceHeartbeatInterval) {
+              clearInterval(deviceHeartbeatInterval);
+              deviceHeartbeatInterval = null;
+            }
+            return;
+          }
+
+          // Only update heartbeat if online
+          if (navigator.onLine) {
+            await deviceService.updateDeviceHeartbeat(currentUser);
+          }
+        } catch (err) {
+          console.warn('[APP_HEARTBEAT] Heartbeat verification/update failed:', err);
+        }
+      }, 60000); // Every 60 seconds
+    };
+
+    if (currentUser) {
+      startDeviceHeartbeat();
+    }
 
     // 2. Realtime WebSocket channel for instant cross-device updates (<30ms delivery, no lag, no refresh)
     const unsubRealtime = subscribeToRealtimeWorkspace(
@@ -1176,9 +1264,25 @@ export default function App() {
 
     return () => {
       isMounted = false;
-      clearTimeout(readyTimer);
-      clearInterval(sessionPollInterval);
-      clearInterval(cloudSyncInterval);
+      
+      // OFFLINE-FIRST: Clean up offline state subscription
+      if (unsubscribeOfflineState) {
+        try {
+          unsubscribeOfflineState();
+        } catch (err) {
+          console.warn('[APP] Error unsubscribing from offline state:', err);
+        }
+      }
+
+      // FIXED: Properly clear all intervals to prevent memory leaks
+      if (readyTimer) clearTimeout(readyTimer);
+      if (sessionPollInterval) clearInterval(sessionPollInterval);
+      if (cloudSyncInterval) clearInterval(cloudSyncInterval);
+      if (deviceHeartbeatInterval) {
+        clearInterval(deviceHeartbeatInterval);
+        deviceHeartbeatInterval = null;
+      }
+      
       unsubRealtime();
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleFocus);
