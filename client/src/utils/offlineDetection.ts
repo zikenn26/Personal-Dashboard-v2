@@ -4,9 +4,9 @@
  * In offline mode: read-only access to cached data, no modifications allowed
  */
 
+import { Capacitor } from '@capacitor/core';
+import { Network } from '@capacitor/network';
 import { logger } from './logger';
-
-type CapacitorNetwork = any;
 
 const TAG = 'OFFLINE_DETECTION';
 
@@ -15,22 +15,15 @@ const TAG = 'OFFLINE_DETECTION';
  * Safely checks for Capacitor without importing it
  */
 function isNativePlatform(): boolean {
-  // Capacitor is injected into window by the native container
-  if (typeof window !== 'undefined' && (window as any).Capacitor) {
-    return (window as any).Capacitor.isNativePlatform?.() ?? false;
-  }
-  return false;
+  return Capacitor.isNativePlatform();
 }
 
 /**
  * Get Network API from Capacitor if available
  * Only call this on native platforms
  */
-function getCapacitorNetwork(): CapacitorNetwork | null {
-  if (typeof window !== 'undefined' && (window as any).CapacitorPlugins?.Network) {
-    return (window as any).CapacitorPlugins.Network;
-  }
-  return null;
+function getCapacitorNetwork(): typeof Network {
+  return Network;
 }
 
 /**
