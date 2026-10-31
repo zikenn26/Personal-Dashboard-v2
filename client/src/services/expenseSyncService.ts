@@ -20,6 +20,11 @@ import {
 import { mergeExpenseLists } from '../utils/expenseUtils';
 import { Storage } from '../utils/storage';
 import { Capacitor } from '@capacitor/core';
+import { expenseAuthorityService } from './expenseAuthorityService';
+import { logger } from '../utils/logger';
+import { validateExpenseBatch } from '../utils/validator';
+import { retryWithBackoff } from '../utils/retry';
+import { canModifyData, isOnline } from '../utils/offlineDetection';
 
 export interface SyncExpensesResult {
   success: boolean;
@@ -170,6 +175,126 @@ class ExpenseSyncService {
     this.syncDebounceTimer = setTimeout(() => {
       void this.syncExpenses({ background: true });
     }, delayMs);
+  }
+
+  /**
+   * Check if current device is APK (native platform)
+   * APK devices have authoritative expense data for SMS-sourced expenses
+   */
+  private async isAPKDevice(): Promise<boolean> {
+    if (typeof Capacitor === 'undefined') return false;
+    return Capacitor.isNativePlatform();
+  }
+
+  /**
+   * Record expense authority after successful sync
+   * APK devices are marked as authoritative source
+   */
+  private async recordExpenseAuthorities(
+    expenses: ExpenseItem[],
+    workspaceIdentifier: string
+  ): Promise<void> {
+    if (!isSupabaseConfigured()) return;
+
+    try {
+      // CRITICAL FIX: Validate user context before proceeding
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        logger.error('EXPENSE_SYNC', 'Supabase not initialized');
+        return;
+      }
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || !user.id) {
+        logger.error('EXPENSE_SYNC', 'No authenticated user during recordExpenseAuthorities()');
+        throw new Error('User context lost during sync');
+      }
+
+      // CRITICAL FIX: Validate workspace identifier
+      if (!workspaceIdentifier || workspaceIdentifier.trim() === '') {
+        logger.error('EXPENSE_SYNC', 'Invalid workspace identifier');
+        throw new Error('Invalid workspace identifier');
+      }
+
+      // Validate all expenses first
+      const { valid: validExpenses, invalid, count } = validateExpenseBatch(expenses);
+
+      if (invalid.length > 0) {
+        logger.warn('EXPENSE_SYNC', `${count.invalid} invalid expenses filtered out`);
+      }
+
+      const isAPK = await this.isAPKDevice();
+
+      // Record authority for each valid expense
+      for (const expense of validExpenses) {
+        try {
+          await retryWithBackoff(
+            async () => {
+              const result = await expenseAuthorityService.recordExpenseAuthority(
+                expense.id,
+                workspaceIdentifier,
+                isAPK
+              );
+
+              if (!result) {
+                logger.error('EXPENSE_SYNC', `Failed to record authority for expense ${expense.id}`);
+              }
+
+              // Mark as synced if this is APK
+              if (isAPK && result) {
+                await expenseAuthorityService.markExpenseAsSyncedToAllDevices(expense.id);
+              }
+            },
+            'EXPENSE_AUTHORITY',
+            { maxRetries: 2, initialDelayMs: 500 }
+          );
+        } catch (err) {
+          logger.error('EXPENSE_SYNC', `Error recording authority for ${expense.id}`, err);
+          // Continue with next expense instead of failing entire batch
+        }
+      }
+    } catch (err) {
+      logger.error('EXPENSE_SYNC', 'Error recording authorities:', err);
+      // Don't fail sync if authority recording fails
+    }
+  }
+
+  /**
+   * Apply authority-based conflict resolution for an expense
+   * APK wins for SMS-sourced expenses
+   */
+  private async applyAuthorityBasedResolution(
+    expenseId: string,
+    local: ExpenseItem,
+    remote: ExpenseItem
+  ): Promise<ExpenseItem> {
+    try {
+      const authority = await expenseAuthorityService.getExpenseAuthority(expenseId);
+      const isAPK = await this.isAPKDevice();
+
+      // If APK is authoritative and current device is APK, use local
+      if (authority && authority.source_device_type === 'apk' && isAPK) {
+        return local;
+      }
+
+      // If APK is authoritative and current device is NOT APK
+      // Mark for reconciliation and use remote (APK version)
+      if (authority && authority.source_device_type === 'apk' && !isAPK) {
+        await expenseAuthorityService.markForAPKReconciliation(expenseId);
+        return remote;
+      }
+
+      // Fallback: use latest wall-clock timestamp
+      const localTime = new Date(local.updatedAt || local.createdAt || 0).getTime();
+      const remoteTime = new Date(remote.updatedAt || remote.createdAt || 0).getTime();
+      return localTime >= remoteTime ? local : remote;
+    } catch (err) {
+      console.warn('[EXPENSE_CONFLICT] Authority resolution failed:', err);
+      // Fallback: use wall-clock
+      const localTime = new Date(local.updatedAt || local.createdAt || 0).getTime();
+      const remoteTime = new Date(remote.updatedAt || remote.createdAt || 0).getTime();
+      return localTime >= remoteTime ? local : remote;
+    }
   }
 
   /**
@@ -462,6 +587,54 @@ class ExpenseSyncService {
           lastError: null,
           syncMode: this.syncMode,
         });
+
+        // PHASE 3: Record expense authorities and handle reconciliation (APK-first model)
+        try {
+          const currentExpenses = await expenseRepo.getAll();
+          const workspaceIdentifier = getCustomWorkspaceIdentifier();
+          
+          // Generate idempotency key for this batch (prevents duplicate processing on retry)
+          const reconciliationBatchId = `batch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          
+          // Record authorities for all successfully synced expenses
+          if (currentExpenses.length > 0) {
+            await this.recordExpenseAuthorities(currentExpenses, workspaceIdentifier);
+          }
+
+          // Handle expenses requiring APK reconciliation
+          const reconcileNeeded = await expenseAuthorityService.getExpensesRequiringAPKReconciliation(workspaceIdentifier);
+          if (reconcileNeeded.length > 0) {
+            logger.info('EXPENSE_SYNC', `Found expenses requiring APK reconciliation: ${reconcileNeeded.length}`, {
+              batchId: reconciliationBatchId,
+            });
+
+            // APK devices will auto-accept and sync these; other devices just wait for APK sync
+            const isAPK = await this.isAPKDevice();
+            if (isAPK) {
+              // Process reconciliation with idempotency protection
+              for (const auth of reconcileNeeded) {
+                try {
+                  // Add idempotency check: only process if not already marked as synced
+                  if (!auth.is_synced_to_all_devices) {
+                    await retryWithBackoff(
+                      async () => {
+                        await expenseAuthorityService.markExpenseAsSyncedToAllDevices(auth.expense_id);
+                      },
+                      'EXPENSE_RECONCILE',
+                      { maxRetries: 2, initialDelayMs: 500 }
+                    );
+                  }
+                } catch (err) {
+                  logger.error('EXPENSE_SYNC', `Failed to reconcile expense ${auth.expense_id}`, err);
+                  // Continue with next expense instead of failing entire batch
+                }
+              }
+            }
+          }
+        } catch (err) {
+          logger.error('EXPENSE_SYNC', 'Reconciliation phase failed:', err);
+          // Don't fail sync if authority reconciliation fails
+        }
 
         return {
           success: true,
