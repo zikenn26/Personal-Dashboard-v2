@@ -24,8 +24,10 @@ async function getDevicePlugin(): Promise<CapacitorDevice | null> {
 
   if (devicePlugin === null) {
     try {
-      const { Device } = await import('@capacitor/device');
-      devicePlugin = Device;
+      // Use string-based import to prevent Vite build-time resolution
+      const moduleName = '@capacitor/device';
+      const module = await import(/* @vite-ignore */ moduleName);
+      devicePlugin = module.Device;
     } catch (err) {
       console.warn('[DEVICE] Failed to load Capacitor Device plugin:', err);
       return null;
