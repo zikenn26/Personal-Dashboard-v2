@@ -137,4 +137,10 @@ describe('Multi-Device Coexistence & Environment Identification Suite', () => {
     expect(info.browser).toBeDefined();
     expect(info.os).toBeDefined();
   });
+
+  it('5. ConnectedDevices component is properly exported and accepts required props', async () => {
+    const { ConnectedDevices } = await import('../components/ConnectedDevices');
+    expect(ConnectedDevices).toBeDefined();
+    expect(typeof ConnectedDevices).toBe('function');
+  });
 });

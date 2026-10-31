@@ -21,18 +21,14 @@ import {
   CloudOff,
   WifiOff,
 } from 'lucide-react';
-import { AppSettings, AuthUser, DeviceSession } from '../types';
+import { AppSettings, AuthUser } from '../types';
 import { Sound } from '../utils/audio';
 import { STOCK_IMAGES } from '../assets/stockImages';
 import { UserAvatar } from './UserAvatar';
 import { Storage } from '../utils/storage';
 import { testGroqApiKey, SUPPORTED_GROQ_MODELS, DEFAULT_GROQ_MODEL } from '../services/groqService';
 import { testGeminiApiKey } from '../services/geminiService';
-import {
-  fetchAccountDevices,
-  revokeDeviceSession,
-  subscribeToDevicePresence,
-} from '../utils/devices';
+import { ConnectedDevices } from './ConnectedDevices';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -96,12 +92,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [displayName, setDisplayName] = useState(userName || currentUser?.name || '');
   const [nameSaved, setNameSaved] = useState(false);
 
-  // Multi-device management state
-  const [devices, setDevices] = useState<DeviceSession[]>([]);
-  const [loadingDevices, setLoadingDevices] = useState(false);
-  const [revokingId, setRevokingId] = useState<string | null>(null);
-  const [confirmRevokeId, setConfirmRevokeId] = useState<string | null>(null);
-  const [deviceNotice, setDeviceNotice] = useState<string | null>(null);
+
 
   // Keep displayName in sync when modal opens or userName updates
   useEffect(() => {
@@ -118,32 +109,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   }, [userName, currentUser?.name, isOpen, settings.geminiApiKey, settings.groqApiKey]);
 
-  // Load active devices whenever the modal opens
+  // Active account email for connected devices and workspace syncing
   const activeEmail = currentUser?.email || 'user@workspace.local';
-
-  const loadDevices = async () => {
-    setLoadingDevices(true);
-    try {
-      const list = await fetchAccountDevices(activeEmail);
-      setDevices(list);
-    } catch (err) {
-      console.warn('Error loading active devices:', err);
-    } finally {
-      setLoadingDevices(false);
-    }
-  };
-
-  useEffect(() => {
-    if (isOpen) {
-      loadDevices();
-      const unsub = subscribeToDevicePresence(activeEmail, (liveDevices) => {
-        setDevices(liveDevices);
-      });
-      return () => {
-        unsub?.();
-      };
-    }
-  }, [isOpen, activeEmail]);
 
   if (!isOpen) return null;
 
@@ -166,32 +133,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     onClose();
   };
 
-  const executeRevoke = async (device: DeviceSession) => {
-    setConfirmRevokeId(null);
-    setRevokingId(device.id);
-    Sound.click(settings.soundEnabled);
 
-    try {
-      const res = await revokeDeviceSession(activeEmail, device.id);
-      if (res.isSelf) {
-        onClose();
-        if (onSignOut) onSignOut();
-      } else {
-        Sound.success(settings.soundEnabled);
-        setDevices((prev) => prev.filter((d) => d.id !== device.id));
-        setDeviceNotice(`Successfully logged out ${device.deviceName}.`);
-        setTimeout(() => setDeviceNotice(null), 3000);
-      }
-    } catch (err) {
-      console.warn('Failed to revoke device session:', err);
-    } finally {
-      setRevokingId(null);
-    }
-  };
-
-  const handleRevokeClick = (device: DeviceSession) => {
-    setConfirmRevokeId(device.id);
-  };
 
   const handleSavePin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -319,25 +261,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  const formatLastActive = (timestamp: number, isCurrent?: boolean) => {
-    if (isCurrent) return 'Active now';
-    const diff = Date.now() - timestamp;
-    if (diff < 60 * 1000) return 'Just now';
-    if (diff < 60 * 60 * 1000) return `${Math.floor(diff / (60 * 1000))}m ago`;
-    if (diff < 24 * 60 * 60 * 1000) return `${Math.floor(diff / (60 * 60 * 1000))}h ago`;
-    return new Date(timestamp).toLocaleDateString();
-  };
 
-  const getDeviceIcon = (type: string) => {
-    switch (type) {
-      case 'mobile':
-        return <Smartphone className="w-4 h-4 text-emerald-500" />;
-      case 'tablet':
-        return <Tablet className="w-4 h-4 text-blue-500" />;
-      default:
-        return <Laptop className="w-4 h-4 text-[#6366F1]" />;
-    }
-  };
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
@@ -465,117 +389,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
 
           {/* SECTION 2: MULTI-DEVICE SESSIONS & REMOTE LOGOUT */}
-          <div className="space-y-2.5 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold block">
-                  Active Connected Devices
-                </span>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Logged in on {devices.length} {devices.length === 1 ? 'device' : 'devices'}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={loadDevices}
-                  disabled={loadingDevices}
-                  className="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-xs p-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                  title="Refresh device list"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${loadingDevices ? 'animate-spin' : ''}`} />
-                </button>
-              </div>
-            </div>
-
-            {deviceNotice && (
-              <div className="p-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-900/60 text-xs text-indigo-700 dark:text-indigo-300 flex items-center gap-2 animate-in fade-in">
-                <Check className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                <span>{deviceNotice}</span>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              {devices.map((device) => {
-                const isSelf = device.isCurrent;
-                const isRevoking = revokingId === device.id;
-
-                return (
-                  <div
-                    key={device.id}
-                    className={`p-3 rounded-xl border transition-all flex items-center justify-between gap-3 ${
-                      isSelf
-                        ? 'border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/40 dark:bg-indigo-950/20'
-                        : 'border-[#E5E7EB] dark:border-[#1F2937] bg-[#F9FAFB] dark:bg-[#1F2937]/40'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="p-2 rounded-xl bg-white dark:bg-[#111827] border border-gray-200 dark:border-gray-800 shrink-0">
-                        {getDeviceIcon(device.deviceType)}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-xs font-bold text-[#111827] dark:text-white truncate">
-                            {device.deviceName}
-                          </p>
-                          {device.isApk && (
-                            <span className="px-1.5 py-0.5 rounded-md bg-violet-600 text-white text-[10px] font-bold">
-                              Native APK (Primary Data Source)
-                            </span>
-                          )}
-                          {isSelf && (
-                            <span className="px-1.5 py-0.2 rounded-md bg-[#6366F1] text-white text-[10px] font-bold">
-                              This Device
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
-                          {formatLastActive(device.lastActive, isSelf)} • {device.browser}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Logout button for this device */}
-                    {confirmRevokeId === device.id ? (
-                      <div className="flex items-center gap-1.5 shrink-0 animate-in fade-in">
-                        <button
-                          type="button"
-                          onClick={() => setConfirmRevokeId(null)}
-                          className="px-2 py-1 rounded-md text-[11px] font-medium text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 cursor-pointer"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isRevoking}
-                          onClick={() => executeRevoke(device)}
-                          className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-2xs cursor-pointer flex items-center gap-1"
-                        >
-                          {isRevoking ? 'Logging out...' : 'Confirm'}
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={isRevoking}
-                        onClick={() => handleRevokeClick(device)}
-                        className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
-                          isSelf
-                            ? 'border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40'
-                            : 'bg-rose-600 hover:bg-rose-700 text-white shadow-2xs'
-                        }`}
-                        title={isSelf ? 'Sign out of this browser' : `Log out ${device.deviceName}`}
-                      >
-                        <LogOut className="w-3.5 h-3.5" />
-                        <span>{isRevoking ? 'Logging out...' : isSelf ? 'Sign out' : 'Log Out'}</span>
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <ConnectedDevices
+            email={activeEmail}
+            soundEnabled={settings.soundEnabled}
+            onSignOut={() => {
+              onClose();
+              if (onSignOut) onSignOut();
+            }}
+          />
 
           {/* SECTION: VAULT PIN */}
           <div className="space-y-3 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">

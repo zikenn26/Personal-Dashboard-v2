@@ -7,6 +7,8 @@ import {
   getCustomWorkspaceIdentifier,
 } from './supabase';
 
+export { DEVICE_SESSION_ID };
+
 const DEVICE_STORAGE_PREFIX = 'notion_os_device_sessions_';
 
 /**
