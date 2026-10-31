@@ -1,30 +1,23 @@
+import { Capacitor } from '@capacitor/core';
+import { Device } from '@capacitor/device';
 import { AuthUser } from '../types';
 import { getSupabaseClient } from '../utils/supabase';
-
-type CapacitorDevice = any;
+type CapacitorDevice = typeof Device;
 
 /**
  * Check if running on native platform (synchronous, feature-based)
  * Safely checks for Capacitor without importing it
  */
 function isNativePlatform(): boolean {
-  // Capacitor is injected into window by the native container
-  // This is safe - it won't throw if Capacitor is not available
-  if (typeof window !== 'undefined' && (window as any).Capacitor) {
-    return (window as any).Capacitor.isNativePlatform?.() ?? false;
-  }
-  return false;
+  return Capacitor.isNativePlatform();
 }
 
 /**
  * Get Device API from Capacitor if available
  * Only call this on native platforms
  */
-function getCapacitorDevice(): CapacitorDevice | null {
-  if (typeof window !== 'undefined' && (window as any).CapacitorPlugins?.Device) {
-    return (window as any).CapacitorPlugins.Device;
-  }
-  return null;
+function getCapacitorDevice(): CapacitorDevice {
+  return Device;
 }
 
 export interface RegisteredDevice {
