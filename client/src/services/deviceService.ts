@@ -1,5 +1,5 @@
 import { Capacitor } from '@capacitor/core';
-import { Device } from '@capacitor/device';
+import type { Device as CapacitorDevice } from '@capacitor/device';
 import { AuthUser } from '../types';
 import { getSupabaseClient } from '../utils/supabase';
 
@@ -21,6 +21,28 @@ const DEVICE_ID_STORAGE_KEY = 'app_device_id_v1';
 const DEVICE_FINGERPRINT_STORAGE_KEY = 'app_device_fingerprint_v1';
 
 /**
+ * Lazy load Capacitor Device plugin (only available on native platforms)
+ */
+let devicePlugin: typeof CapacitorDevice | null = null;
+async function getDevicePlugin(): Promise<typeof CapacitorDevice | null> {
+  if (!Capacitor.isNativePlatform()) {
+    return null;
+  }
+
+  if (devicePlugin === null) {
+    try {
+      const { Device } = await import('@capacitor/device');
+      devicePlugin = Device;
+    } catch (err) {
+      console.warn('[DEVICE] Failed to load Capacitor Device plugin:', err);
+      return null;
+    }
+  }
+
+  return devicePlugin;
+}
+
+/**
  * Generate a stable, consistent device fingerprint that survives app reinstalls
  * by combining hardware identifiers when possible (native) or browser fingerprint (web)
  */
@@ -29,6 +51,11 @@ async function generateDeviceFingerprint(): Promise<string> {
   
   if (isNative) {
     try {
+      const Device = await getDevicePlugin();
+      if (!Device) {
+        console.warn('[DEVICE] Device plugin not available, using fallback');
+        return generateBrowserFingerprint();
+      }
       const deviceInfo = await Device.getId();
       const deviceId = deviceInfo.identifier || 'unknown';
       const platform = await Device.getInfo();
@@ -126,12 +153,15 @@ async function getDeviceType(): Promise<'web' | 'native' | 'desktop'> {
   }
   
   try {
+    const Device = await getDevicePlugin();
+    if (!Device) return 'desktop';
+    
     const info = await Device.getInfo();
     if (info.platform === 'android' || info.platform === 'ios') {
       return 'native';
     }
   } catch (err) {
-    console.warn('Could not determine device type:', err);
+    console.warn('[DEVICE] Could not determine device type:', err);
   }
   
   return 'desktop';
@@ -150,9 +180,13 @@ async function getPlatformName(): Promise<string> {
   }
   
   try {
+    const Device = await getDevicePlugin();
+    if (!Device) return 'unknown';
+    
     const info = await Device.getInfo();
     return info.platform || 'unknown';
   } catch (err) {
+    console.warn('[DEVICE] Could not get platform name:', err);
     return 'unknown';
   }
 }
@@ -163,9 +197,13 @@ async function getPlatformName(): Promise<string> {
 async function getBrowserInfo(): Promise<string> {
   if (Capacitor.isNativePlatform()) {
     try {
+      const Device = await getDevicePlugin();
+      if (!Device) return 'APK/unknown';
+      
       const info = await Device.getInfo();
       return `APK/${info.osVersion || 'unknown'}`;
     } catch (err) {
+      console.warn('[DEVICE] Could not get browser info:', err);
       return 'APK/unknown';
     }
   }
