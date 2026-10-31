@@ -326,3 +326,156 @@ FOR EACH ROW EXECUTE FUNCTION public.handle_user_expense_upsert();
 
 ALTER PUBLICATION supabase_realtime ADD TABLE public.user_expenses;
 
+-- =========================================================================
+-- PHASE 1: DEVICE REGISTRATION & MANAGEMENT
+-- =========================================================================
+
+-- Track physical devices logged into accounts (persistent device registry)
+CREATE TABLE IF NOT EXISTS public.user_devices (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    device_id TEXT NOT NULL,                    -- Stable device fingerprint hash
+    device_name TEXT,                           -- "Chrome on Windows", "APK on Android", etc.
+    device_type TEXT NOT NULL DEFAULT 'web',    -- 'web', 'native', 'desktop'
+    platform TEXT NOT NULL DEFAULT 'unknown',   -- 'windows', 'android', 'macos', 'ios', 'linux'
+    browser_info TEXT,                          -- Browser/app version info
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    last_seen_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+    first_login_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    UNIQUE(user_id, device_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_devices_user_id ON public.user_devices(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_devices_last_seen ON public.user_devices(user_id, last_seen_at);
+CREATE INDEX IF NOT EXISTS idx_user_devices_device_id ON public.user_devices(device_id);
+
+ALTER TABLE public.user_devices ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can read own devices" ON public.user_devices;
+DROP POLICY IF EXISTS "Users can insert own devices" ON public.user_devices;
+DROP POLICY IF EXISTS "Users can update own devices" ON public.user_devices;
+DROP POLICY IF EXISTS "Users can delete own devices" ON public.user_devices;
+
+CREATE POLICY "Users can read own devices"
+ON public.user_devices FOR SELECT TO authenticated
+USING (user_id = auth.uid());
+
+CREATE POLICY "Users can insert own devices"
+ON public.user_devices FOR INSERT TO authenticated
+WITH CHECK (user_id = auth.uid());
+
+CREATE POLICY "Users can update own devices"
+ON public.user_devices FOR UPDATE TO authenticated
+USING (user_id = auth.uid())
+WITH CHECK (user_id = auth.uid());
+
+CREATE POLICY "Users can delete own devices"
+ON public.user_devices FOR DELETE TO authenticated
+USING (user_id = auth.uid());
+
+-- =========================================================================
+-- PHASE 2: VERSION VECTOR SYSTEM FOR MULTI-DEVICE CONSISTENCY
+-- =========================================================================
+
+-- Track causality and ordering of all mutations across devices (version history)
+CREATE TABLE IF NOT EXISTS public.data_versions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    device_id TEXT NOT NULL,                    -- Which device made this change
+    module TEXT NOT NULL,                       -- 'habits', 'expenses', 'tasks', 'todos', etc.
+    entity_id TEXT NOT NULL,                    -- ID of the changed entity
+    logical_clock BIGINT NOT NULL,              -- Per-device sequence number (lamport clock)
+    wall_clock_ms BIGINT NOT NULL,              -- Actual timestamp in milliseconds
+    operation TEXT NOT NULL,                    -- 'create', 'update', 'delete'
+    payload_hash TEXT,                          -- SHA256 hash of the change payload (for dedup)
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_data_versions_user_module ON public.data_versions(user_id, module, entity_id);
+CREATE INDEX IF NOT EXISTS idx_data_versions_device ON public.data_versions(device_id, logical_clock);
+CREATE INDEX IF NOT EXISTS idx_data_versions_created ON public.data_versions(user_id, created_at);
+
+ALTER TABLE public.data_versions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can read own data versions"
+ON public.data_versions FOR SELECT TO authenticated
+USING (user_id = auth.uid());
+
+CREATE POLICY "Users can insert own data versions"
+ON public.data_versions FOR INSERT TO authenticated
+WITH CHECK (user_id = auth.uid());
+
+-- =========================================================================
+-- PHASE 3: EXPENSE AUTHORITY & RECONCILIATION SYSTEM
+-- =========================================================================
+
+-- Track which device is authoritative for each expense (APK is primary for SMS expenses)
+CREATE TABLE IF NOT EXISTS public.expense_authority (
+    expense_id TEXT PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    workspace_identifier TEXT NOT NULL,
+    source_device_type TEXT NOT NULL,           -- 'apk' (native/SMS), 'web', etc.
+    authoritative_device_id TEXT,               -- Device that created/last modified authoritatively
+    last_authoritative_modification_ms BIGINT,
+    requires_platform_reconciliation BOOLEAN DEFAULT false,
+    is_synced_to_all_devices BOOLEAN DEFAULT false,
+    apk_version BIGINT DEFAULT 1,               -- Version as seen on APK (source of truth)
+    web_version BIGINT DEFAULT 0,               -- Last synced version to web
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Add foreign key constraint with CASCADE delete to prevent orphaned authority records
+-- When an expense is deleted, its authority record is automatically deleted
+ALTER TABLE public.expense_authority
+ADD CONSTRAINT fk_expense_authority_expense_id 
+FOREIGN KEY (expense_id) REFERENCES public.user_expenses(id) ON DELETE CASCADE;
+
+CREATE INDEX IF NOT EXISTS idx_expense_authority_user ON public.expense_authority(user_id, workspace_identifier);
+CREATE INDEX IF NOT EXISTS idx_expense_authority_sync_status ON public.expense_authority(requires_platform_reconciliation, is_synced_to_all_devices);
+
+ALTER TABLE public.expense_authority ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can read own expense authority"
+ON public.expense_authority FOR SELECT TO authenticated
+USING (user_id = auth.uid());
+
+CREATE POLICY "Users can insert own expense authority"
+ON public.expense_authority FOR INSERT TO authenticated
+WITH CHECK (user_id = auth.uid());
+
+CREATE POLICY "Users can update own expense authority"
+ON public.expense_authority FOR UPDATE TO authenticated
+USING (user_id = auth.uid())
+WITH CHECK (user_id = auth.uid());
+
+-- Conflict resolution log for debugging (optional but helpful)
+CREATE TABLE IF NOT EXISTS public.data_conflicts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    module TEXT NOT NULL,                       -- 'habits', 'expenses', etc.
+    entity_id TEXT NOT NULL,
+    device_a_id TEXT,
+    device_b_id TEXT,
+    device_a_value JSONB,
+    device_b_value JSONB,
+    resolution TEXT,                            -- 'device_a_won', 'device_b_won', 'merged'
+    resolved_value JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_data_conflicts_user ON public.data_conflicts(user_id, created_at);
+
+ALTER TABLE public.data_conflicts ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can read own conflicts"
+ON public.data_conflicts FOR SELECT TO authenticated
+USING (user_id = auth.uid());
+
+-- Realtime publications
+ALTER PUBLICATION supabase_realtime ADD TABLE public.user_devices;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.data_versions;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.expense_authority;
+
