@@ -12,38 +12,25 @@ const TAG = 'OFFLINE_DETECTION';
 
 /**
  * Check if running on native platform (synchronous, feature-based)
+ * Safely checks for Capacitor without importing it
  */
 function isNativePlatform(): boolean {
-  // Check for Capacitor presence in window/global scope
+  // Capacitor is injected into window by the native container
   if (typeof window !== 'undefined' && (window as any).Capacitor) {
     return (window as any).Capacitor.isNativePlatform?.() ?? false;
   }
-  // Not on native platform
   return false;
 }
 
 /**
- * Lazy load Capacitor Network plugin (only available on native platforms)
+ * Get Network API from Capacitor if available
+ * Only call this on native platforms
  */
-let networkPlugin: CapacitorNetwork | null = null;
-async function getNetworkPlugin(): Promise<CapacitorNetwork | null> {
-  if (!isNativePlatform()) {
-    return null;
+function getCapacitorNetwork(): CapacitorNetwork | null {
+  if (typeof window !== 'undefined' && (window as any).CapacitorPlugins?.Network) {
+    return (window as any).CapacitorPlugins.Network;
   }
-
-  if (networkPlugin === null) {
-    try {
-      // Use string-based import to prevent Vite build-time resolution
-      const moduleName = '@capacitor/network';
-      const module = await import(/* @vite-ignore */ moduleName);
-      networkPlugin = module.Network;
-    } catch (err) {
-      console.warn('[OFFLINE_DETECTION] Failed to load Capacitor Network plugin:', err);
-      return null;
-    }
-  }
-
-  return networkPlugin;
+  return null;
 }
 
 /**
@@ -177,7 +164,7 @@ export async function initializeOfflineDetection(): Promise<void> {
     // Check initial network status
     if (isNativePlatform()) {
       try {
-        const Network = await getNetworkPlugin();
+        const Network = getCapacitorNetwork();
         if (!Network) {
           // Plugin not available, fallback to browser API
           initializeBrowserNetworkMonitoring();
