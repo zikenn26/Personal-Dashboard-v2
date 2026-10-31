@@ -33,8 +33,10 @@ async function getNetworkPlugin(): Promise<CapacitorNetwork | null> {
 
   if (networkPlugin === null) {
     try {
-      const { Network } = await import('@capacitor/network');
-      networkPlugin = Network;
+      // Use string-based import to prevent Vite build-time resolution
+      const moduleName = '@capacitor/network';
+      const module = await import(/* @vite-ignore */ moduleName);
+      networkPlugin = module.Network;
     } catch (err) {
       console.warn('[OFFLINE_DETECTION] Failed to load Capacitor Network plugin:', err);
       return null;
