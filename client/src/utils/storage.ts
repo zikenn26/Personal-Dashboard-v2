@@ -98,6 +98,7 @@ export const STORAGE_KEYS = {
   SCREEN_TIME_HISTORY: 'notion_os_v4_screentime_history',
   SMS_WRITE_RETRY_QUEUE: 'notion_os_v4_sms_write_retry_queue',
   TOMBSTONED_REFS: 'notion_os_v4_tombstoned_refs',
+  DEVICES: 'notion_os_v4_devices',
 };
 
 export const DEFAULT_COMMAND_MAPPINGS: CommandMapping[] = [
@@ -2946,6 +2947,27 @@ export const Storage = {
     }
   },
 
+  getDevices: (): any[] => {
+    try {
+      const saved = loadFromStorage<any[]>(STORAGE_KEYS.DEVICES, []);
+      return Array.isArray(saved) ? saved : [];
+    } catch {
+      return [];
+    }
+  },
+  setDevices: (devices: any[]) => {
+    try {
+      if (Array.isArray(devices)) {
+        saveToStorage(STORAGE_KEYS.DEVICES, devices);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('devices-updated', { detail: { devices } }));
+        }
+      }
+    } catch (e) {
+      console.error('Failed to persist devices:', e);
+    }
+  },
+
   sanitizeScreenTime: (data: ScreenTimeData): ScreenTimeData => {
     return sanitizeScreenTimeForStorage(data);
   },
@@ -3172,6 +3194,7 @@ export const Storage = {
       commandMappings: Storage.getCommandMappings(),
       trash: Storage.getTrash(),
       deletedExpenseIds: Storage.getDeletedExpenseIds(),
+      devices: Storage.getDevices(),
     };
   },
 
@@ -3183,7 +3206,7 @@ export const Storage = {
         'expenses', 'excelImportLogs', 'deletedSheetIds', 'deletedExpenseIds', 'journal', 'media', 'achievements', 'doodles',
         'timeline', 'projects', 'skills', 'settings', 'sections',
         'photos', 'resume', 'quotes', 'exams', 'schedule', 'version', 'activeAlarm', 'alarmSnoozeInterval',
-        'commandMappings', 'trash', 'scratchpad', 'screenTime', 'screenTimeHistory'
+        'commandMappings', 'trash', 'scratchpad', 'screenTime', 'screenTimeHistory', 'devices'
       ];
       const hasKnownKey = knownKeys.some((k) => k in data && data[k] !== undefined);
       if (!hasKnownKey) return false;
@@ -3526,6 +3549,30 @@ export const Storage = {
       }
       if (Array.isArray(data.commandMappings)) {
         Storage.setCommandMappings(data.commandMappings);
+      }
+      if (Array.isArray(data.devices)) {
+        const currentDevices = Storage.getDevices();
+        const deviceMap = new Map<string, any>();
+        currentDevices.forEach((d) => {
+          if (d && d.id) deviceMap.set(d.id, d);
+        });
+        data.devices.forEach((d: any) => {
+          if (d && d.id) {
+            const existing = deviceMap.get(d.id);
+            if (!existing) {
+              deviceMap.set(d.id, d);
+            } else {
+              deviceMap.set(d.id, {
+                ...existing,
+                ...d,
+                deviceName: d.deviceName || existing.deviceName,
+                lastActive: Math.max(existing.lastActive || 0, d.lastActive || 0),
+                createdAt: Math.min(existing.createdAt || Date.now(), d.createdAt || Date.now()),
+              });
+            }
+          }
+        });
+        Storage.setDevices(Array.from(deviceMap.values()));
       }
       if (data.screenTime && typeof data.screenTime === 'object') {
         const isCurrentNativeApk =

@@ -357,6 +357,34 @@ export const getPayloadSyncTimestamp = (payload: any, fallback?: any): number =>
 };
 const statusListeners = new Set<(status: 'synced' | 'syncing' | 'error' | 'idle') => void>();
 
+const presenceListeners = new Set<(onlineDeviceIds: Set<string>) => void>();
+let latestOnlineDeviceIds = new Set<string>([DEVICE_SESSION_ID]);
+
+export const subscribeToPresenceState = (callback: (onlineDeviceIds: Set<string>) => void): (() => void) => {
+  presenceListeners.add(callback);
+  callback(latestOnlineDeviceIds);
+  return () => {
+    presenceListeners.delete(callback);
+  };
+};
+
+export const getOnlineDeviceIds = (): Set<string> => latestOnlineDeviceIds;
+
+const notifyPresenceListeners = (presenceState: Record<string, any[]>) => {
+  const ids = new Set<string>([DEVICE_SESSION_ID]);
+  if (presenceState && typeof presenceState === 'object') {
+    Object.keys(presenceState).forEach((key) => {
+      if (key) ids.add(key);
+    });
+  }
+  latestOnlineDeviceIds = ids;
+  presenceListeners.forEach((listener) => {
+    try {
+      listener(ids);
+    } catch {}
+  });
+};
+
 export const getAutoSyncStatus = () => currentSyncStatus;
 
 /**
@@ -834,6 +862,33 @@ export const syncWorkspaceToSupabase = async (
         payloadToSave.workspace_data.screenTimeHistory = mergedHistory;
       }
 
+      // Reconcile registered devices across local payload and existing cloud workspace
+      const remoteDevices = Array.isArray(existing.workspace_data?.devices) ? existing.workspace_data.devices : [];
+      const localDevices = Array.isArray(payloadToSave.workspace_data?.devices) ? payloadToSave.workspace_data.devices : [];
+      const deviceMap = new Map<string, any>();
+      remoteDevices.forEach((d: any) => {
+        if (d && d.id) deviceMap.set(d.id, d);
+      });
+      localDevices.forEach((d: any) => {
+        if (d && d.id) {
+          const ex = deviceMap.get(d.id);
+          if (!ex) {
+            deviceMap.set(d.id, d);
+          } else {
+            deviceMap.set(d.id, {
+              ...ex,
+              ...d,
+              deviceName: d.deviceName || ex.deviceName,
+              lastActive: Math.max(ex.lastActive || 0, d.lastActive || 0),
+              createdAt: Math.min(ex.createdAt || Date.now(), d.createdAt || Date.now()),
+            });
+          }
+        }
+      });
+      if (payloadToSave.workspace_data) {
+        payloadToSave.workspace_data.devices = Array.from(deviceMap.values());
+      }
+
       if (remoteVersion >= syncTimestampMs) {
         // Monotonically advance sync clock ahead of remote snapshot to ensure user's local mutation is preserved
         syncTimestampMs = remoteVersion + 1000;
@@ -1091,7 +1146,26 @@ export const subscribeToRealtimeWorkspace = (
       .channel(channelName, {
         config: {
           broadcast: { self: false, ack: false },
+          presence: { key: DEVICE_SESSION_ID },
         },
+      })
+      .on('presence', { event: 'sync' }, () => {
+        try {
+          const state = channel.presenceState();
+          notifyPresenceListeners(state);
+        } catch {}
+      })
+      .on('presence', { event: 'join' }, () => {
+        try {
+          const state = channel.presenceState();
+          notifyPresenceListeners(state);
+        } catch {}
+      })
+      .on('presence', { event: 'leave' }, () => {
+        try {
+          const state = channel.presenceState();
+          notifyPresenceListeners(state);
+        } catch {}
       })
       // 1. Instant WebSocket broadcast channel from peer devices (sub-30ms)
       .on(
@@ -1268,6 +1342,13 @@ export const subscribeToRealtimeWorkspace = (
         if (status === 'SUBSCRIBED') {
           notifyStatus('synced');
           realtimeReconnectAttempts = 0;
+          try {
+            channel.track({
+              id: DEVICE_SESSION_ID,
+              email: activeUserEmail,
+              onlineAt: Date.now(),
+            });
+          } catch {}
         } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           console.warn('Realtime channel disconnected or timed out:', status);
           notifyStatus('idle');
@@ -1305,6 +1386,8 @@ export const subscribeToRealtimeWorkspace = (
     return () => {};
   }
 };
+
+export const getActiveRealtimeChannel = () => activeRealtimeChannel;
 
 /**
  * Fetch latest workspace payload from Supabase database.

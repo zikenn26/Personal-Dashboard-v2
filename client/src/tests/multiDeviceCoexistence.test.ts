@@ -143,4 +143,60 @@ describe('Multi-Device Coexistence & Environment Identification Suite', () => {
     expect(ConnectedDevices).toBeDefined();
     expect(typeof ConnectedDevices).toBe('function');
   });
+
+  it('6. Storage payload atomically carries and merges devices across instances', async () => {
+    const { Storage } = await import('../utils/storage');
+
+    // Local device
+    Storage.setDevices([
+      {
+        id: 'dev_laptop_cloudflare',
+        deviceName: 'Google Chrome (Web • Cloudflare)',
+        browser: 'Google Chrome',
+        os: 'Windows 11/10',
+        deviceType: 'desktop',
+        lastActive: 1000,
+      },
+    ]);
+
+    const payload = Storage.getAllDataPayload();
+    expect(payload.devices).toBeDefined();
+    expect(payload.devices.length).toBe(1);
+
+    // Incoming remote payload from AI Studio instance
+    const remotePayload = {
+      version: '4.0.0',
+      devices: [
+        {
+          id: 'dev_aistudio_instance',
+          deviceName: 'Google Chrome (AI Studio Preview)',
+          browser: 'Google Chrome',
+          os: 'Windows 11/10',
+          deviceType: 'desktop',
+          lastActive: 2000,
+        },
+      ],
+    };
+
+    Storage.importAllDataPayload(remotePayload);
+
+    const merged = Storage.getDevices();
+    // Both instances must now exist in Storage!
+    expect(merged.length).toBe(2);
+    expect(merged.some((d) => d.id === 'dev_laptop_cloudflare')).toBe(true);
+    expect(merged.some((d) => d.id === 'dev_aistudio_instance')).toBe(true);
+  });
+
+  it('7. subscribeToPresenceState immediately reports active device ID', async () => {
+    const { subscribeToPresenceState, DEVICE_SESSION_ID } = await import('../utils/supabase');
+
+    let reportedIds: Set<string> | null = null;
+    const unsub = subscribeToPresenceState((ids) => {
+      reportedIds = ids;
+    });
+
+    expect(reportedIds).not.toBeNull();
+    expect(reportedIds!.has(DEVICE_SESSION_ID)).toBe(true);
+    unsub();
+  });
 });

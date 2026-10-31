@@ -19,6 +19,8 @@ import {
   revokeDeviceSession,
   subscribeToDevicePresence,
   DEVICE_SESSION_ID,
+  subscribeToPresenceState,
+  getOnlineDeviceIds,
 } from '../utils/devices';
 import { Sound } from '../utils/audio';
 
@@ -34,6 +36,7 @@ export const ConnectedDevices: React.FC<ConnectedDevicesProps> = ({
   onSignOut,
 }) => {
   const [devices, setDevices] = useState<DeviceSession[]>([]);
+  const [onlineIds, setOnlineIds] = useState<Set<string>>(() => getOnlineDeviceIds());
   const [loading, setLoading] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [confirmRevokeId, setConfirmRevokeId] = useState<string | null>(null);
@@ -63,11 +66,15 @@ export const ConnectedDevices: React.FC<ConnectedDevicesProps> = ({
 
   useEffect(() => {
     loadDevices();
-    const unsub = subscribeToDevicePresence(activeEmail, (liveDevices) => {
+    const unsubPresence = subscribeToPresenceState((ids) => {
+      setOnlineIds(new Set(ids));
+    });
+    const unsubDevices = subscribeToDevicePresence(activeEmail, (liveDevices) => {
       setDevices(liveDevices);
     });
     return () => {
-      unsub?.();
+      unsubPresence?.();
+      unsubDevices?.();
     };
   }, [activeEmail, loadDevices]);
 
@@ -192,6 +199,8 @@ export const ConnectedDevices: React.FC<ConnectedDevicesProps> = ({
 
   const otherDevicesCount = devices.filter((d) => d.id !== DEVICE_SESSION_ID).length;
 
+  const onlineCount = devices.filter((d) => d.id === DEVICE_SESSION_ID || onlineIds.has(d.id)).length;
+
   return (
     <div className="space-y-3 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">
       {/* Header bar */}
@@ -203,7 +212,7 @@ export const ConnectedDevices: React.FC<ConnectedDevicesProps> = ({
           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
             <span>
-              {devices.length} {devices.length === 1 ? 'instance' : 'instances'} online
+              {devices.length} {devices.length === 1 ? 'instance' : 'instances'} ({onlineCount} online)
             </span>
           </span>
         </div>
@@ -273,6 +282,7 @@ export const ConnectedDevices: React.FC<ConnectedDevicesProps> = ({
       <div className="space-y-2">
         {devices.map((device) => {
           const isSelf = device.isCurrent || device.id === DEVICE_SESSION_ID;
+          const isOnlineNow = isSelf || onlineIds.has(device.id);
           const isRevoking = revokingId === device.id;
           const isConfirming = confirmRevokeId === device.id;
 
@@ -307,7 +317,16 @@ export const ConnectedDevices: React.FC<ConnectedDevicesProps> = ({
                   </div>
 
                   <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
-                    <span className="font-medium">{formatLastActive(device.lastActive, isSelf)}</span>
+                    {isOnlineNow ? (
+                      <span className="inline-flex items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span>Active now • Online</span>
+                      </span>
+                    ) : (
+                      <span className="font-medium text-neutral-500">
+                        Last active {formatLastActive(device.lastActive, false)}
+                      </span>
+                    )}
                     <span>•</span>
                     <span>{device.browser}</span>
                     <span>•</span>
