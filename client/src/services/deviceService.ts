@@ -5,36 +5,26 @@ type CapacitorDevice = any;
 
 /**
  * Check if running on native platform (synchronous, feature-based)
+ * Safely checks for Capacitor without importing it
  */
 function isNativePlatform(): boolean {
-  // Check for Capacitor presence in window/global scope
+  // Capacitor is injected into window by the native container
+  // This is safe - it won't throw if Capacitor is not available
   if (typeof window !== 'undefined' && (window as any).Capacitor) {
     return (window as any).Capacitor.isNativePlatform?.() ?? false;
   }
-  // Not on native platform
   return false;
 }
 
-// Lazy-load Capacitor Device plugin
-let devicePlugin: CapacitorDevice | null = null;
-async function getDevicePlugin(): Promise<CapacitorDevice | null> {
-  if (!isNativePlatform()) {
-    return null;
+/**
+ * Get Device API from Capacitor if available
+ * Only call this on native platforms
+ */
+function getCapacitorDevice(): CapacitorDevice | null {
+  if (typeof window !== 'undefined' && (window as any).CapacitorPlugins?.Device) {
+    return (window as any).CapacitorPlugins.Device;
   }
-
-  if (devicePlugin === null) {
-    try {
-      // Use string-based import to prevent Vite build-time resolution
-      const moduleName = '@capacitor/device';
-      const module = await import(/* @vite-ignore */ moduleName);
-      devicePlugin = module.Device;
-    } catch (err) {
-      console.warn('[DEVICE] Failed to load Capacitor Device plugin:', err);
-      return null;
-    }
-  }
-
-  return devicePlugin;
+  return null;
 }
 
 export interface RegisteredDevice {
@@ -63,7 +53,7 @@ async function generateDeviceFingerprint(): Promise<string> {
   
   if (isNative) {
     try {
-      const Device = await getDevicePlugin();
+      const Device = getCapacitorDevice();
       if (!Device) {
         console.warn('[DEVICE] Device plugin not available, using fallback');
         return generateBrowserFingerprint();
@@ -165,7 +155,7 @@ async function getDeviceType(): Promise<'web' | 'native' | 'desktop'> {
   }
   
   try {
-    const Device = await getDevicePlugin();
+    const Device = getCapacitorDevice();
     if (!Device) return 'desktop';
     
     const info = await Device.getInfo();
@@ -192,7 +182,7 @@ async function getPlatformName(): Promise<string> {
   }
   
   try {
-    const Device = await getDevicePlugin();
+    const Device = getCapacitorDevice();
     if (!Device) return 'unknown';
     
     const info = await Device.getInfo();
@@ -209,7 +199,7 @@ async function getPlatformName(): Promise<string> {
 async function getBrowserInfo(): Promise<string> {
   if (isNativePlatform()) {
     try {
-      const Device = await getDevicePlugin();
+      const Device = getCapacitorDevice();
       if (!Device) return 'APK/unknown';
       
       const info = await Device.getInfo();
