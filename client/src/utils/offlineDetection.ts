@@ -4,18 +4,30 @@
  * In offline mode: read-only access to cached data, no modifications allowed
  */
 
-import { Capacitor } from '@capacitor/core';
-import type { Network as CapacitorNetwork } from '@capacitor/network';
 import { logger } from './logger';
+
+type CapacitorNetwork = any;
 
 const TAG = 'OFFLINE_DETECTION';
 
 /**
+ * Check if running on native platform (synchronous, feature-based)
+ */
+function isNativePlatform(): boolean {
+  // Check for Capacitor presence in window/global scope
+  if (typeof window !== 'undefined' && (window as any).Capacitor) {
+    return (window as any).Capacitor.isNativePlatform?.() ?? false;
+  }
+  // Not on native platform
+  return false;
+}
+
+/**
  * Lazy load Capacitor Network plugin (only available on native platforms)
  */
-let networkPlugin: typeof CapacitorNetwork | null = null;
-async function getNetworkPlugin(): Promise<typeof CapacitorNetwork | null> {
-  if (!Capacitor.isNativePlatform()) {
+let networkPlugin: CapacitorNetwork | null = null;
+async function getNetworkPlugin(): Promise<CapacitorNetwork | null> {
+  if (!isNativePlatform()) {
     return null;
   }
 
@@ -49,7 +61,7 @@ export interface OfflineState {
  */
 let offlineState: OfflineState = {
   isOnline: true,
-  isAPK: Capacitor.isNativePlatform(),
+  isAPK: isNativePlatform(),
   isOfflineMode: false,
   canModify: true,
   lastOnlineTime: Date.now(),
@@ -161,7 +173,7 @@ export function setOfflineMode(enabled: boolean): void {
 export async function initializeOfflineDetection(): Promise<void> {
   try {
     // Check initial network status
-    if (Capacitor.isNativePlatform()) {
+    if (isNativePlatform()) {
       try {
         const Network = await getNetworkPlugin();
         if (!Network) {
