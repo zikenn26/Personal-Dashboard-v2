@@ -5,10 +5,32 @@
  */
 
 import { Capacitor } from '@capacitor/core';
-import { Network } from '@capacitor/network';
+import type { Network as CapacitorNetwork } from '@capacitor/network';
 import { logger } from './logger';
 
 const TAG = 'OFFLINE_DETECTION';
+
+/**
+ * Lazy load Capacitor Network plugin (only available on native platforms)
+ */
+let networkPlugin: typeof CapacitorNetwork | null = null;
+async function getNetworkPlugin(): Promise<typeof CapacitorNetwork | null> {
+  if (!Capacitor.isNativePlatform()) {
+    return null;
+  }
+
+  if (networkPlugin === null) {
+    try {
+      const { Network } = await import('@capacitor/network');
+      networkPlugin = Network;
+    } catch (err) {
+      console.warn('[OFFLINE_DETECTION] Failed to load Capacitor Network plugin:', err);
+      return null;
+    }
+  }
+
+  return networkPlugin;
+}
 
 /**
  * Offline mode state
@@ -141,6 +163,13 @@ export async function initializeOfflineDetection(): Promise<void> {
     // Check initial network status
     if (Capacitor.isNativePlatform()) {
       try {
+        const Network = await getNetworkPlugin();
+        if (!Network) {
+          // Plugin not available, fallback to browser API
+          initializeBrowserNetworkMonitoring();
+          return;
+        }
+
         const status = await Network.getStatus();
         updateOfflineState({
           isOnline: status.connected,
