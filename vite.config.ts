@@ -42,13 +42,6 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: path.resolve(import.meta.dirname, "dist/public"),
       emptyOutDir: true,
-      rollupOptions: {
-        external: [
-          '@capacitor/core',
-          '@capacitor/device',
-          '@capacitor/network',
-        ],
-      },
     },
     server: {
       port: 3000,
