@@ -1,6 +1,6 @@
-# Realtime Synchronization Hardening & Monotonic Timestamp Integrity Plan
+# Multi-Device Session Coexistence & Realtime Presence Plan
 
-Harden multi-device synchronization in `client/src/utils/supabase.ts` and `client/src/App.tsx` by introducing monotonic timestamp validation on incoming realtime payloads, preventing stale local overwrites, and establishing an atomic queue for `flushAutoSyncImmediately` to eliminate race conditions across concurrent devices.
+Fix the multi-device consistency issue where sessions on Laptop Chrome (Cloudflare Pages) and AI Studio Preview overwrote each other and showed only 1 connected device, by identifying sessions strictly by their unique persistent session ID, adding environment context tags, and broadcasting presence updates in real time.
 
 ---
 
@@ -8,85 +8,88 @@ Harden multi-device synchronization in `client/src/utils/supabase.ts` and `clien
 
 > [!IMPORTANT]
 > **Confirmed Choices from Clarification (Phase 1)**:
-> 1. **Realtime Event Presentation**: Silently apply newer remote state in place and seamlessly re-render UI components without page refreshes or disruptive banners.
-> 2. **Concurrency Control in `flushAutoSyncImmediately`**: Atomic promise queue with a monotonic timestamp guard to serialize in-flight writes, preventing parallel race conditions when multiple devices are logged in simultaneously.
-> 3. **Strict Timestamp Precedence**: Compare incoming payload timestamps against local state (`lastLocalMutationTimestamp` and `_meta.syncVersion`); discard any incoming remote updates that are older than or equal to current local state.
-> 4. **Deduplication Safeguards**: Ensure list imports (expenses, habits, tasks) strictly maintain unique entity IDs so that repeated cloud synchronizations never produce duplicated records.
+> 1. **Environment-Aware Device Naming**: Include clear environment tags in device names (e.g. `Google Chrome (Web • Cloudflare)` vs `Google Chrome (AI Studio Preview)`) so the user can easily distinguish different sessions from the same browser/OS.
+> 2. **Realtime Presence Updates**: Broadcast device registrations and disconnections over the Supabase Realtime channel so that open Settings dialogs on other devices update instantly (<30ms) without needing a manual refresh click.
+> 3. **Session Uniqueness by Persistent ID**: Eliminate the flawed `os + browser + deviceType` grouping that collapsed distinct sessions into a single item, keying device records strictly by persistent `DEVICE_SESSION_ID`.
 
 ---
 
-### 1. Overview & Core Concept
+### 1. Root Cause Analysis
 
-- **The Problem**:
-  - `subscribeToRealtimeWorkspace` previously received remote workspace snapshots and applied them directly to localStorage and React state without verifying whether the incoming payload was newer than the local state. A delayed broadcast or echo event from an older device state could overwrite a newer local edit.
-  - `flushAutoSyncImmediately` could be invoked in quick succession (e.g. rapid edits or tab changes across devices), potentially issuing concurrent HTTP requests that race against each other.
-- **The Solution**:
-  - **Timestamp Guard in `App.tsx`**: Track the authoritative local mutation timestamp. In `subscribeToRealtimeWorkspace`, parse the incoming payload's timestamp (`_meta.syncVersion` / `updatedAt`) and strictly reject any payload where `remoteTimestamp <= localTimestamp`.
-  - **Atomic Sync Queue in `supabase.ts`**: Wrap `flushAutoSyncImmediately` and `syncWorkspaceToSupabase` in a serialized execution queue (`syncExecutionPromiseChain`) with monotonic timestamps (`Math.max(Date.now(), latestKnownRemoteTimestamp + 1)`).
-  - **Deduplicated Ingestion in `Storage.importAllDataPayload`**: Ensure array reconciliations enforce set-based ID uniqueness across all collections.
-
----
-
-### 2. User Experience & Visual Flow
-
-- **Silent & Seamless In-Place Updates**:
-  - When you add a task or mark a habit on your phone, your desktop screen reflects the update within milliseconds (<30ms).
-  - No page reload, no scroll position loss, and no interruption to your active work.
-  - If a device receives a stale update (e.g. from an offline device syncing late), the stale payload is discarded silently without resetting your current progress.
-
----
-
-### 3. Key Product Decisions & Trade-Offs
-
-- **Decision 1: Monotonic Sequence + Millisecond Timestamp Comparison**:
-  - *Chosen Approach*: Compare `Math.max(remoteSyncVersion, remoteUpdatedAtMs)` against `Math.max(localSyncVersion, localMutationMs)`.
-  - *Why*: Accommodates small clock skews between devices by using the payload's embedded `_meta.syncVersion` as a logical sequence counter.
-- **Decision 2: Serialized Promise Chain Queue for Immediate Flushes**:
-  - *Chosen Approach*: Chain `flushAutoSyncImmediately` operations into an atomic task queue.
-  - *Why*: Guarantees that even if three quick capture operations or device sync triggers fire within 10ms of each other, they execute strictly in order with increasing sync versions rather than colliding on the network.
+- **Why were both devices showing "Logged in on 1 device"?**:
+  1. In `client/src/utils/devices.ts`, `registerCurrentDevice` used:
+     ```ts
+     const existingIdx = existingDevices.findIndex(d =>
+       d.id === DEVICE_SESSION_ID ||
+       (d.os === info.os && d.browser === info.browser && d.deviceType === info.deviceType)
+     );
+     ```
+     Because both Laptop Chrome (`personal-dashboard-3ag.pages.dev`) and AI Studio Preview were accessed on Google Chrome on Windows, `existingIdx` matched the other device and overwrote its ID and record!
+  2. In `deduplicateDevices`, sessions were keyed as:
+     ```ts
+     const key = `${d.os}___${d.browser}___${d.deviceType}`;
+     ```
+     This deliberately pruned any two sessions sharing the same browser and OS down to a single device.
+  3. Device registration was isolated in an asynchronous row without realtime broadcast, meaning neither device was alerted when the other logged in.
 
 ---
 
-### 4. Technical Architecture & Data Strategy
+### 2. User Experience & Visual Presentation
+
+- **Connected Devices List in Settings**:
+  - Device 1: `Google Chrome (Web • Cloudflare)` — `This Device` (if viewing from laptop) / `Active now`
+  - Device 2: `Google Chrome (AI Studio Preview)` — `Active now • Remote` with `Sign out` button
+  - Badge dynamically reflects: `Logged in on 2 devices`
+- **Instant Updates**:
+  - When you log into AI Studio or Cloudflare Pages, the other screen's Settings modal immediately displays the new device without clicking refresh.
+  - Clicking `Sign out` on a remote device sends an immediate command that logs out that remote session and updates both lists.
+
+---
+
+### 3. Key Technical Decisions & Trade-Offs
+
+- **Decision 1: Persistent ID (`d.id`) as Primary Key**:
+  - *Chosen Approach*: Only update an existing device if its exact `d.id === DEVICE_SESSION_ID`.
+  - *Why*: Allows multiple sessions of the same browser (different tabs, profiles, preview environments, or physical computers with identical OS) to coexist harmoniously.
+- **Decision 2: Stale Session Expiration**:
+  - *Chosen Approach*: Sessions inactive for more than 30 days are automatically pruned during registration.
+  - *Why*: Prevents ghost devices from lingering indefinitely if a browser session is permanently deleted without logging out.
+
+---
+
+### 4. Technical Architecture & Component Mapping
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                        Incoming Realtime Event                         │
+│                        Device Registration Flow                        │
 │                                                                        │
-│   Incoming: remoteData (_meta.syncVersion, updatedAt)                  │
-│                     │                                                  │
-│   Compare: remoteTimestamp vs localMutationTimestamp                   │
-│                     │                                                  │
-│         Is remoteTimestamp > localTimestamp?                           │
-│         ├── NO: Discard silently (stale snapshot / echo)               │
-│         │                                                              │
-│         └── YES: Apply newer remote state                              │
-│             1. Storage.importAllDataPayload(remoteData)                │
-│             2. handleHydrateAllFromStorage(false)                      │
-│             3. localMutationTimestamp = remoteTimestamp                │
-└────────────────────────────────────────────────────────────────────────┘
-
-┌────────────────────────────────────────────────────────────────────────┐
-│                        Atomic flushAutoSyncImmediately                 │
-│                                                                        │
-│   Caller triggers: flushAutoSyncImmediately(payload)                   │
-│                     │                                                  │
-│   Enqueue onto serialized syncExecutionQueue                           │
-│   ├── Assign Monotonic Version: syncVersion = Math.max(now, lastVersion+1)│
-│   ├── Execute write to Supabase user_workspaces                       │
-│   └── Update latestKnownRemoteTimestamp upon success                   │
+│   Device A (Cloudflare Pages)                Device B (AI Studio)     │
+│   ID: dev_cf_abc123                          ID: dev_ais_xyz789       │
+│   Name: Google Chrome (Web • Cloudflare)     Name: Google Chrome (AI Studio)
+│            │                                          │                │
+│            ▼                                          ▼                │
+│   ┌────────────────────────────────────────────────────────┐           │
+│   │   Supabase `account_devices_${cleanEmail}` Row          │           │
+│   │   devices: [                                           │           │
+│   │     { id: dev_cf_abc123, name: "Web • Cloudflare" },   │           │
+│   │     { id: dev_ais_xyz789, name: "AI Studio Preview" }  │           │
+│   │   ]                                                    │           │
+│   └──────────────────────────┬─────────────────────────────┘           │
+│                              │                                         │
+│                              ▼                                         │
+│        Supabase Realtime Broadcast: `device_presence_update`           │
+│          ├── Device A receives event ──► Updates UI: 2 devices         │
+│          └── Device B receives event ──► Updates UI: 2 devices         │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-#### Detailed Execution Steps:
-1. **Export Timestamp Extraction Utility**:
-   - Ensure `getPayloadSyncTimestamp` in `client/src/utils/supabase.ts` is exported and handles all timestamp formats (`_meta.syncVersion`, `updated_at`, `updatedAt`, numeric or ISO string).
-2. **Implement Atomic Sync Queue in `client/src/utils/supabase.ts`**:
-   - Implement `syncExecutionQueue` serialization so rapid calls to `flushAutoSyncImmediately` execute sequentially and atomically.
-3. **Enhance Realtime Subscriber in `client/src/App.tsx`**:
-   - Track `lastLocalMutationTimestamp` ref.
-   - In `subscribeToRealtimeWorkspace`, extract `remoteTimestamp` and compare against `localTimestamp`.
-   - Apply only strictly newer remote updates.
-4. **Verification**:
+#### Files to Modify:
+1. `client/src/utils/devices.ts`:
+   - Enhance `getDeviceInfo()` to append environment tags (`Web • Cloudflare`, `AI Studio Preview`, `Localhost`, `Android Native APK`).
+   - Fix `registerCurrentDevice` and `deduplicateDevices` to key strictly by `d.id`.
+   - Broadcast `device_presence_update` on Realtime channel when devices register or change.
+2. `client/src/components/SettingsModal.tsx`:
+   - Subscribe to `device_presence_update` events via Supabase channel when modal is open to update device list live.
+3. Verification:
    - Run vitest across all test files.
    - Run linter and compiler.

@@ -69,8 +69,28 @@ export const getDeviceInfo = (): {
     deviceType = 'mobile';
   }
 
+  // Detect runtime host environment context (Cloudflare Pages, AI Studio Preview, Localhost)
+  let envTag = '';
+  if (typeof window !== 'undefined' && window.location) {
+    const host = (window.location.hostname || '').toLowerCase();
+    if (host.includes('pages.dev')) {
+      envTag = 'Web • Cloudflare';
+    } else if (
+      host.includes('ais-') ||
+      host.includes('aistudio') ||
+      host.includes('googleusercontent') ||
+      host.includes('run.app')
+    ) {
+      envTag = 'AI Studio Preview';
+    } else if (host === 'localhost' || host === '127.0.0.1') {
+      envTag = 'Localhost Dev';
+    }
+  }
+
+  const deviceName = envTag ? `${browser} (${envTag})` : `${browser} on ${os}`;
+
   return {
-    deviceName: `${browser} on ${os}`,
+    deviceName,
     browser,
     os,
     deviceType,
@@ -96,8 +116,9 @@ const saveLocalDevices = (cleanEmail: string, devices: DeviceSession[]) => {
 };
 
 /**
- * Deduplicate device sessions so that each physical device (identified by exact ID or OS + Browser + DeviceType)
- * is displayed ONLY ONCE in the account settings device list.
+ * Deduplicate device sessions strictly by persistent Session ID.
+ * Each separate device/browser instance (with its own persistent ID) is preserved,
+ * while stale sessions inactive for more than 30 days are pruned.
  */
 export const deduplicateDevices = (
   devices: DeviceSession[],
@@ -106,40 +127,32 @@ export const deduplicateDevices = (
   if (!Array.isArray(devices) || devices.length === 0) return [];
 
   const deviceMap = new Map<string, DeviceSession>();
+  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000; // 30 days inactivity cutoff
 
   for (const d of devices) {
-    if (!d || !d.os || !d.browser) continue;
+    if (!d || !d.id) continue;
 
-    // Normalize device key by OS, Browser, and Device Type
-    const key = `${d.os.trim().toLowerCase()}___${d.browser.trim().toLowerCase()}___${d.deviceType || 'desktop'}`;
+    // Prune stale sessions older than 30 days unless it is the active device
+    if (d.id !== currentDeviceId && d.lastActive && d.lastActive < cutoff) {
+      continue;
+    }
 
-    const existing = deviceMap.get(key);
+    const existing = deviceMap.get(d.id);
     if (!existing) {
-      deviceMap.set(key, { ...d });
+      deviceMap.set(d.id, {
+        ...d,
+        isCurrent: d.id === currentDeviceId,
+      });
     } else {
-      // Prioritize keeping the current device ID if one of them matches
-      const isCurrentEntry = d.id === currentDeviceId || existing.id === currentDeviceId;
-      const idToKeep =
-        d.id === currentDeviceId
-          ? d.id
-          : existing.id === currentDeviceId
-          ? existing.id
-          : (d.lastActive || 0) >= (existing.lastActive || 0)
-          ? d.id
-          : existing.id;
-
-      deviceMap.set(key, {
+      // Merge records for the exact same session ID
+      deviceMap.set(d.id, {
         ...existing,
-        id: idToKeep,
+        ...d,
+        id: d.id,
         deviceName: d.deviceName || existing.deviceName,
-        os: existing.os,
-        browser: existing.browser,
-        deviceType: existing.deviceType || d.deviceType,
-        // Retain the latest activity
         lastActive: Math.max(d.lastActive || 0, existing.lastActive || 0),
-        // Retain the earliest registration
         createdAt: Math.min(d.createdAt || Date.now(), existing.createdAt || Date.now()),
-        isCurrent: isCurrentEntry,
+        isCurrent: d.id === currentDeviceId,
       });
     }
   }
@@ -151,7 +164,8 @@ export const deduplicateDevices = (
 };
 
 /**
- * Register current device session in cloud & local database
+ * Register current device session in cloud & local database.
+ * Preserves peer device sessions and broadcasts presence updates in real time.
  */
 export const registerCurrentDevice = async (email: string): Promise<DeviceSession[]> => {
   if (!email) return [];
@@ -173,18 +187,8 @@ export const registerCurrentDevice = async (email: string): Promise<DeviceSessio
   // 1. Load existing devices
   let existingDevices = await fetchAccountDevices(cleanEmail);
 
-  // 2. Filter out stale sessions older than 45 days
-  const cutoff = Date.now() - 45 * 24 * 60 * 60 * 1000;
-  existingDevices = existingDevices.filter((d) => d.lastActive > cutoff);
-
-  // 3. Upsert current device: match by exact persistent ID or exact device fingerprint (OS + Browser + Type)
-  const existingIdx = existingDevices.findIndex(
-    (d) =>
-      d.id === DEVICE_SESSION_ID ||
-      (d.os.trim().toLowerCase() === info.os.trim().toLowerCase() &&
-        d.browser.trim().toLowerCase() === info.browser.trim().toLowerCase() &&
-        d.deviceType === info.deviceType)
-  );
+  // 2. Upsert current device strictly by unique persistent ID
+  const existingIdx = existingDevices.findIndex((d) => d.id === DEVICE_SESSION_ID);
 
   if (existingIdx >= 0) {
     existingDevices[existingIdx] = {
@@ -199,13 +203,13 @@ export const registerCurrentDevice = async (email: string): Promise<DeviceSessio
     existingDevices.unshift(currentDevice);
   }
 
-  // 4. Deduplicate to guarantee exactly one entry per physical device
+  // 3. Deduplicate strictly by ID
   existingDevices = deduplicateDevices(existingDevices, DEVICE_SESSION_ID);
 
   // Save to local cache
   saveLocalDevices(cleanEmail, existingDevices);
 
-  // Save to Supabase Cloud
+  // Save to Supabase Cloud & Broadcast Presence Update
   const client = getSupabaseClient();
   if (client && isSupabaseConfigured()) {
     try {
@@ -222,6 +226,19 @@ export const registerCurrentDevice = async (email: string): Promise<DeviceSessio
         },
         { onConflict: 'user_identifier' }
       );
+
+      // Broadcast live device presence update to all active sessions in real time
+      const channelName = `realtime_workspace_${getCustomWorkspaceIdentifier()}`;
+      const channel = client.channel(channelName);
+      await channel.send({
+        type: 'broadcast',
+        event: 'device_presence_update',
+        payload: {
+          devices: existingDevices,
+          email: cleanEmail,
+          timestamp: new Date().toISOString(),
+        },
+      });
     } catch (err) {
       console.warn('Could not sync device registration to Supabase:', err);
     }
@@ -473,5 +490,47 @@ export const launchNativeApkIntent = (): void => {
   if (typeof window === 'undefined') return;
   const intentUri = 'intent://open#Intent;scheme=zikenn;package=com.zikenn.dashboard;end';
   window.location.href = intentUri;
+};
+
+/**
+ * Subscribe to live device presence changes broadcasted across active sessions.
+ */
+export const subscribeToDevicePresence = (
+  email: string,
+  onDevicesChange: (devices: DeviceSession[]) => void
+): (() => void) => {
+  const client = getSupabaseClient();
+  if (!client || !isSupabaseConfigured() || !email) return () => {};
+
+  const cleanEmail = email.trim().toLowerCase();
+  const channelName = `realtime_workspace_${getCustomWorkspaceIdentifier()}`;
+  const channel = client.channel(channelName);
+
+  channel
+    .on('broadcast', { event: 'device_presence_update' }, (res: any) => {
+      try {
+        const payload = res?.payload;
+        if (payload?.email === cleanEmail && Array.isArray(payload?.devices)) {
+          const fresh = deduplicateDevices(payload.devices, DEVICE_SESSION_ID);
+          saveLocalDevices(cleanEmail, fresh);
+          onDevicesChange(
+            fresh
+              .map((d) => ({ ...d, isCurrent: d.id === DEVICE_SESSION_ID }))
+              .sort((a, b) => (b.isCurrent ? 1 : 0) - (a.isCurrent ? 1 : 0))
+          );
+        }
+      } catch (err) {
+        console.warn('Error handling live device presence update:', err);
+      }
+    })
+    .subscribe();
+
+  return () => {
+    try {
+      client.removeChannel(channel);
+    } catch {
+      // ignore
+    }
+  };
 };
 

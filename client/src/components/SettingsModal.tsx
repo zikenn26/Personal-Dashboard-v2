@@ -31,6 +31,7 @@ import { testGeminiApiKey } from '../services/geminiService';
 import {
   fetchAccountDevices,
   revokeDeviceSession,
+  subscribeToDevicePresence,
 } from '../utils/devices';
 
 interface SettingsModalProps {
@@ -135,6 +136,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       loadDevices();
+      const unsub = subscribeToDevicePresence(activeEmail, (liveDevices) => {
+        setDevices(liveDevices);
+      });
+      return () => {
+        unsub?.();
+      };
     }
   }, [isOpen, activeEmail]);
 
