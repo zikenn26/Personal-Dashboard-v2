@@ -1,7 +1,39 @@
-import { Capacitor } from '@capacitor/core';
-import type { Device as CapacitorDevice } from '@capacitor/device';
 import { AuthUser } from '../types';
 import { getSupabaseClient } from '../utils/supabase';
+
+type CapacitorDevice = any;
+
+/**
+ * Check if running on native platform (synchronous, feature-based)
+ */
+function isNativePlatform(): boolean {
+  // Check for Capacitor presence in window/global scope
+  if (typeof window !== 'undefined' && (window as any).Capacitor) {
+    return (window as any).Capacitor.isNativePlatform?.() ?? false;
+  }
+  // Not on native platform
+  return false;
+}
+
+// Lazy-load Capacitor Device plugin
+let devicePlugin: CapacitorDevice | null = null;
+async function getDevicePlugin(): Promise<CapacitorDevice | null> {
+  if (!isNativePlatform()) {
+    return null;
+  }
+
+  if (devicePlugin === null) {
+    try {
+      const { Device } = await import('@capacitor/device');
+      devicePlugin = Device;
+    } catch (err) {
+      console.warn('[DEVICE] Failed to load Capacitor Device plugin:', err);
+      return null;
+    }
+  }
+
+  return devicePlugin;
+}
 
 export interface RegisteredDevice {
   id: string;
@@ -21,33 +53,11 @@ const DEVICE_ID_STORAGE_KEY = 'app_device_id_v1';
 const DEVICE_FINGERPRINT_STORAGE_KEY = 'app_device_fingerprint_v1';
 
 /**
- * Lazy load Capacitor Device plugin (only available on native platforms)
- */
-let devicePlugin: typeof CapacitorDevice | null = null;
-async function getDevicePlugin(): Promise<typeof CapacitorDevice | null> {
-  if (!Capacitor.isNativePlatform()) {
-    return null;
-  }
-
-  if (devicePlugin === null) {
-    try {
-      const { Device } = await import('@capacitor/device');
-      devicePlugin = Device;
-    } catch (err) {
-      console.warn('[DEVICE] Failed to load Capacitor Device plugin:', err);
-      return null;
-    }
-  }
-
-  return devicePlugin;
-}
-
-/**
  * Generate a stable, consistent device fingerprint that survives app reinstalls
  * by combining hardware identifiers when possible (native) or browser fingerprint (web)
  */
 async function generateDeviceFingerprint(): Promise<string> {
-  const isNative = Capacitor.isNativePlatform();
+  const isNative = isNativePlatform();
   
   if (isNative) {
     try {
@@ -148,7 +158,7 @@ export async function getOrCreateDeviceId(): Promise<string> {
  * Get device type based on platform
  */
 async function getDeviceType(): Promise<'web' | 'native' | 'desktop'> {
-  if (!Capacitor.isNativePlatform()) {
+  if (!isNativePlatform()) {
     return 'web';
   }
   
@@ -171,7 +181,7 @@ async function getDeviceType(): Promise<'web' | 'native' | 'desktop'> {
  * Get platform name
  */
 async function getPlatformName(): Promise<string> {
-  if (!Capacitor.isNativePlatform()) {
+  if (!isNativePlatform()) {
     const ua = navigator.userAgent;
     if (ua.indexOf('Windows') !== -1) return 'windows';
     if (ua.indexOf('Mac') !== -1) return 'macos';
@@ -195,7 +205,7 @@ async function getPlatformName(): Promise<string> {
  * Get browser/app version info
  */
 async function getBrowserInfo(): Promise<string> {
-  if (Capacitor.isNativePlatform()) {
+  if (isNativePlatform()) {
     try {
       const Device = await getDevicePlugin();
       if (!Device) return 'APK/unknown';
