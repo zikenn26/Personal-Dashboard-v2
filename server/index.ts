@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import { registerGeminiRoutes, setupGeminiLiveWebSocket } from "./geminiService.js";
 import { registerScreenTimeRoutes } from "./screenTimeService.js";
 import { registerSyncRoutes } from "./syncService.js";
+import { initDb } from "./db.js";
 import { rateLimit, requireAuthForServerKeyUsage } from "./security.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -64,6 +65,9 @@ async function startServer() {
 
   // Register multi-device cloud workspace sync and device presence routes on /api/sync/*
   registerSyncRoutes(app);
+
+  // Init DB
+  await initDb();
 
   // Baseline rate limiting on every API route to blunt abuse/DoS attempts
   app.use("/api/", rateLimit({ windowMs: 60_000, max: 60, keyPrefix: "api" }));

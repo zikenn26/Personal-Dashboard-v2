@@ -26,29 +26,17 @@ export {
  * master dataset to seed the fresh cloud project.
  */
 export const checkAndTriggerMasterApkSeed = async (): Promise<boolean> => {
-  const client = getSupabaseClient();
-  if (!client) return false;
-
   try {
     const activeId = getCustomWorkspaceIdentifier();
     if (activeId === 'user_guest' || activeId.startsWith('user_guest')) return false;
 
-    // Check if the cloud has existing valid data
-    const { data: existing, error } = await client
-      .from('user_workspaces')
-      .select('workspace_data')
-      .eq('user_identifier', activeId)
-      .maybeSingle();
+    // Check if the cloud has existing valid data via server
+    const remoteWorkspace = await fetchWorkspaceFromServer();
 
-    if (error) {
-      console.warn('Master seed check failed:', error);
-      return false;
-    }
-
-    const remoteExpenses = existing?.workspace_data?.expenses || [];
+    const remoteExpenses = remoteWorkspace.data?.expenses || [];
 
     // If the database is completely empty or missing expenses, we assume it's fresh
-    if (!existing || remoteExpenses.length === 0) {
+    if (!remoteWorkspace.success || remoteExpenses.length === 0) {
       // Are we the master source of truth? (Android Native APK)
       // Or in the context of the migration, if we have local expenses, we'll assume we are the seeder.
       let localWorkspaceStr = localStorage.getItem('lifeos_workspace_snapshot') || localStorage.getItem('lifeos_data_v4');
@@ -65,7 +53,7 @@ export const checkAndTriggerMasterApkSeed = async (): Promise<boolean> => {
       if (!localWorkspace._meta) localWorkspace._meta = {};
       localWorkspace._meta.isMasterApkSeed = true;
 
-      const res = await syncWorkspaceToSupabase(localWorkspace);
+      const res = await syncWorkspaceToServer(localWorkspace);
       return res.success;
     }
 
@@ -221,47 +209,17 @@ export const supabaseFetch: typeof fetch = async (input, init) => {
 /**
  * Lazy getter for the Supabase client.
  */
-export const getSupabaseClient = (): SupabaseClient | null => {
-  if (!isSupabaseConfigured()) {
-    return null;
-  }
-  const currentUrl = cleanSupabaseUrl(getEffectiveSupabaseUrl());
-  const currentKey = getEffectiveSupabaseAnonKey().trim();
-
-  if (!supabaseInstance || currentUrl !== lastConfiguredUrl || currentKey !== lastConfiguredKey) {
-    try {
-      lastConfiguredUrl = currentUrl;
-      lastConfiguredKey = currentKey;
-      supabaseInstance = createClient(currentUrl, currentKey, {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-        },
-        global: {
-          fetch: supabaseFetch,
-        },
-      });
-    } catch (err) {
-      console.warn('Failed to initialize Supabase client:', err);
-      return null;
-    }
-  }
-  return supabaseInstance;
+export const getSupabaseClient = (): any | null => {
+  // Disabled for Neon DB migration: routes all sync to server hub via syncWorkspaceToServer
+  return null;
 };
 
 export const validateSupabaseConnection = async (): Promise<boolean> => {
-  if (!isSupabaseConfigured()) return false;
+  // We're migrating to Neon, just check if the server is healthy
   try {
-    const currentUrl = cleanSupabaseUrl(getEffectiveSupabaseUrl());
-    const currentKey = getEffectiveSupabaseAnonKey().trim();
-    const response = await supabaseFetch(`${currentUrl}/auth/v1/settings`, {
-      headers: {
-        apikey: currentKey,
-        Authorization: `Bearer ${currentKey}`,
-      },
-    });
-    return response.ok;
-  } catch (e) {
+    const res = await fetch('/api/sync/devices');
+    return res.ok;
+  } catch {
     return false;
   }
 };
@@ -564,40 +522,11 @@ export const testSupabaseConnection = async (): Promise<{
   message: string;
   details?: any;
 }> => {
-  const client = getSupabaseClient();
-  if (!client) {
-    return {
-      connected: false,
-      message: 'Supabase credentials not configured in .env (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)',
-    };
-  }
-
   try {
-    const { data, error } = await client
-      .from('user_workspaces')
-      .select('id')
-      .limit(1);
-
-    if (error) {
-      // Table might not exist yet
-      if (error.code === '42P01' || error.message.includes('does not exist')) {
-        return {
-          connected: false,
-          message: 'Connected to Supabase project, but "user_workspaces" table is missing. Run the SQL schema to create it.',
-          details: error,
-        };
-      }
-      return {
-        connected: false,
-        message: `Supabase query error: ${error.message}`,
-        details: error,
-      };
-    }
-
+    const response = await fetch('/api/sync/workspace?user_identifier=test');
     return {
-      connected: true,
-      message: 'Successfully connected to Supabase Cloud Database',
-      details: data,
+      connected: response.ok,
+      message: response.ok ? 'Successfully connected to Neon Cloud Database' : 'Neon DB connection error',
     };
   } catch (err: any) {
     return {

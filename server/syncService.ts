@@ -1,14 +1,5 @@
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 import type { Express, Request, Response } from "express";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const DATA_DIR = path.resolve(__dirname, "data");
-const WORKSPACES_FILE = path.join(DATA_DIR, "workspaces_store.json");
-const DEVICES_FILE = path.join(DATA_DIR, "devices_store.json");
+import { pool } from "./db.js";
 
 interface StoredWorkspace {
   user_identifier: string;
@@ -32,63 +23,6 @@ interface DeviceSession {
   user_agent?: string;
   is_revoked?: boolean;
 }
-
-let workspacesStore: Record<string, StoredWorkspace> = {};
-let devicesStore: Record<string, DeviceSession> = {};
-
-function ensureDataDir(): void {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-  } catch (e) {
-    console.warn("[SyncService] Data dir creation notice:", e);
-  }
-}
-
-function loadFromDisk(): void {
-  ensureDataDir();
-  try {
-    if (fs.existsSync(WORKSPACES_FILE)) {
-      const raw = fs.readFileSync(WORKSPACES_FILE, "utf-8");
-      workspacesStore = JSON.parse(raw);
-    }
-  } catch (err) {
-    console.warn("[SyncService] Failed to load workspaces_store.json:", err);
-    workspacesStore = {};
-  }
-
-  try {
-    if (fs.existsSync(DEVICES_FILE)) {
-      const raw = fs.readFileSync(DEVICES_FILE, "utf-8");
-      devicesStore = JSON.parse(raw);
-    }
-  } catch (err) {
-    console.warn("[SyncService] Failed to load devices_store.json:", err);
-    devicesStore = {};
-  }
-}
-
-function persistWorkspacesToDisk(): void {
-  try {
-    ensureDataDir();
-    fs.writeFileSync(WORKSPACES_FILE, JSON.stringify(workspacesStore, null, 2), "utf-8");
-  } catch (err) {
-    console.warn("[SyncService] Failed to persist workspaces:", err);
-  }
-}
-
-function persistDevicesToDisk(): void {
-  try {
-    ensureDataDir();
-    fs.writeFileSync(DEVICES_FILE, JSON.stringify(devicesStore, null, 2), "utf-8");
-  } catch (err) {
-    console.warn("[SyncService] Failed to persist devices:", err);
-  }
-}
-
-// Initial load
-loadFromDisk();
 
 /**
  * Reconciles expense lists ensuring Android Native APK transactions (like the ₹2.53 lakh dataset)
@@ -159,7 +93,7 @@ function reconcileExpenses(
   return Array.from(expenseMap.values());
 }
 
-export function handleGetWorkspace(req: any, res: any): void {
+export async function handleGetWorkspace(req: any, res: any): Promise<void> {
   try {
     const userIdentifier = ((req.query?.user_identifier || "") as string).trim();
     const userEmail = ((req.query?.user_email || "") as string).trim().toLowerCase();
@@ -171,11 +105,13 @@ export function handleGetWorkspace(req: any, res: any): void {
       });
     }
 
-    let record = userIdentifier ? workspacesStore[userIdentifier] : null;
-    if (!record && userEmail) {
-      record = Object.values(workspacesStore).find(
-        (w) => w.user_email && w.user_email.toLowerCase() === userEmail
-      ) || null;
+    let record = null;
+    if (userIdentifier) {
+      const { rows } = await pool.query("SELECT * FROM workspaces WHERE user_identifier = $1", [userIdentifier]);
+      record = rows[0];
+    } else if (userEmail) {
+      const { rows } = await pool.query("SELECT * FROM workspaces WHERE user_email = $1", [userEmail]);
+      record = rows[0];
     }
 
     if (!record || !record.workspace_data) {
@@ -204,7 +140,7 @@ export function handleGetWorkspace(req: any, res: any): void {
   }
 }
 
-export function handlePostWorkspace(req: any, res: any): void {
+export async function handlePostWorkspace(req: any, res: any): Promise<void> {
   try {
     const {
       user_identifier,
@@ -230,7 +166,8 @@ export function handlePostWorkspace(req: any, res: any): void {
       workspace_data?._meta?.isNativeAndroid
     );
 
-    const existingRecord = workspacesStore[activeKey];
+    const { rows } = await pool.query("SELECT * FROM workspaces WHERE user_identifier = $1", [activeKey]);
+    const existingRecord = rows[0];
     const now = new Date().toISOString();
     const incomingVersion = Number(sync_version || Date.now());
 
@@ -291,15 +228,24 @@ export function handlePostWorkspace(req: any, res: any): void {
     mergedWorkspace._meta.syncVersion = finalVersion;
     mergedWorkspace._meta.serverSyncedAt = now;
 
-    workspacesStore[activeKey] = {
-      user_identifier: activeKey,
-      user_email: cleanEmail || existingRecord?.user_email || "",
-      workspace_data: mergedWorkspace,
-      updated_at: updated_at || now,
-      sync_version: finalVersion,
-    };
+    const upsertQuery = `
+      INSERT INTO workspaces (user_identifier, user_email, workspace_data, updated_at, sync_version)
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (user_identifier)
+      DO UPDATE SET
+        user_email = EXCLUDED.user_email,
+        workspace_data = EXCLUDED.workspace_data,
+        updated_at = EXCLUDED.updated_at,
+        sync_version = EXCLUDED.sync_version
+    `;
 
-    persistWorkspacesToDisk();
+    await pool.query(upsertQuery, [
+      activeKey,
+      cleanEmail || existingRecord?.user_email || "",
+      JSON.stringify(mergedWorkspace),
+      updated_at || now,
+      finalVersion
+    ]);
 
     return res.status(200).json({
       success: true,
@@ -314,7 +260,7 @@ export function handlePostWorkspace(req: any, res: any): void {
   }
 }
 
-export function handleGetDevices(req: any, res: any): void {
+export async function handleGetDevices(req: any, res: any): Promise<void> {
   try {
     const email = ((req.query?.user_email || "") as string).trim().toLowerCase();
     const identifier = ((req.query?.user_identifier || "") as string).trim();
@@ -322,18 +268,23 @@ export function handleGetDevices(req: any, res: any): void {
     const now = Date.now();
     const TWO_MINUTES_MS = 2 * 60 * 1000;
 
-    const devices = Object.values(devicesStore)
-      .filter((d) => {
-        if (d.is_revoked) return false;
-        if (email && d.user_email && d.user_email.toLowerCase() === email) return true;
-        if (identifier && d.user_identifier === identifier) return true;
-        return false;
-      })
-      .map((d) => ({
+    let query = "SELECT * FROM devices WHERE is_revoked = false";
+    const queryParams: any[] = [];
+    if (email) {
+        query += " AND user_email = $1";
+        queryParams.push(email);
+    } else if (identifier) {
+        query += " AND user_identifier = $1";
+        queryParams.push(identifier);
+    }
+
+    const { rows } = await pool.query(query, queryParams);
+
+    const devices = rows.map((d) => ({
         ...d,
-        isOnline: now - (d.last_active || 0) <= TWO_MINUTES_MS,
+        isOnline: now - Number(d.last_active) <= TWO_MINUTES_MS,
       }))
-      .sort((a, b) => b.last_active - a.last_active);
+      .sort((a, b) => Number(b.last_active) - Number(a.last_active));
 
     return res.status(200).json({
       success: true,
@@ -347,7 +298,7 @@ export function handleGetDevices(req: any, res: any): void {
   }
 }
 
-export function handlePostHeartbeat(req: any, res: any): void {
+export async function handlePostHeartbeat(req: any, res: any): Promise<void> {
   try {
     const {
       device_id,
@@ -368,24 +319,39 @@ export function handlePostHeartbeat(req: any, res: any): void {
     const cleanEmail = (user_email || "").trim().toLowerCase();
     const cleanIdentifier = (user_identifier || "").trim();
 
-    const existing = devicesStore[id];
+    const { rows } = await pool.query("SELECT * FROM devices WHERE id = $1", [id]);
+    const existing = rows[0];
 
-    devicesStore[id] = {
+    const upsertQuery = `
+      INSERT INTO devices (id, user_email, user_identifier, device_name, platform, environment, app_version, created_at, last_active, ip_address, user_agent, is_revoked)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, false)
+      ON CONFLICT (id)
+      DO UPDATE SET
+        user_email = EXCLUDED.user_email,
+        user_identifier = EXCLUDED.user_identifier,
+        device_name = EXCLUDED.device_name,
+        platform = EXCLUDED.platform,
+        environment = EXCLUDED.environment,
+        app_version = EXCLUDED.app_version,
+        last_active = EXCLUDED.last_active,
+        ip_address = EXCLUDED.ip_address,
+        user_agent = EXCLUDED.user_agent,
+        is_revoked = false
+    `;
+
+    await pool.query(upsertQuery, [
       id,
-      user_email: cleanEmail || existing?.user_email || "gknayak@gmail.com",
-      user_identifier: cleanIdentifier || existing?.user_identifier || "user_guest",
-      device_name: device_name || existing?.device_name || "Active Session",
-      platform: platform || existing?.platform || "web_browser",
-      environment: environment || existing?.environment || "Web Browser",
-      app_version: app_version || existing?.app_version || "1.0.0",
-      created_at: existing ? existing.created_at : now,
-      last_active: now,
-      ip_address: req.ip || req.socket?.remoteAddress || undefined,
-      user_agent: (req.headers?.["user-agent"] as string) || undefined,
-      is_revoked: false,
-    };
-
-    persistDevicesToDisk();
+      cleanEmail || existing?.user_email || "gknayak@gmail.com",
+      cleanIdentifier || existing?.user_identifier || "user_guest",
+      device_name || existing?.device_name || "Active Session",
+      platform || existing?.platform || "web_browser",
+      environment || existing?.environment || "Web Browser",
+      app_version || existing?.app_version || "1.0.0",
+      existing ? existing.created_at : now,
+      now,
+      req.ip || req.socket?.remoteAddress || undefined,
+      (req.headers?.["user-agent"] as string) || undefined,
+    ]);
 
     return res.status(200).json({
       success: true,
@@ -399,12 +365,11 @@ export function handlePostHeartbeat(req: any, res: any): void {
   }
 }
 
-export function handleDeleteDevice(req: any, res: any): void {
+export async function handleDeleteDevice(req: any, res: any): Promise<void> {
   try {
     const deviceId = req.params?.deviceId || req.url?.split("/").pop();
-    if (deviceId && devicesStore[deviceId]) {
-      devicesStore[deviceId].is_revoked = true;
-      persistDevicesToDisk();
+    if (deviceId) {
+      await pool.query("UPDATE devices SET is_revoked = true WHERE id = $1", [deviceId]);
     }
     return res.status(200).json({ success: true, message: "Device revoked" });
   } catch (err: any) {
