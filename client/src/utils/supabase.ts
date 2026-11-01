@@ -1,4 +1,5 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+// Database client types and connectors
+export type SupabaseClient = any;
 import { Capacitor } from '@capacitor/core';
 import {
   SUPABASE_URL as BUILTIN_SUPABASE_URL,
@@ -1518,23 +1519,27 @@ export const getActiveRealtimeChannel = () => activeRealtimeChannel;
  * Fetch latest workspace payload from Supabase database.
  */
 export const fetchWorkspaceFromSupabase = async (): Promise<CloudSyncResult> => {
-  const client = getSupabaseClient();
-  if (!client) {
+  const activeId = getCustomWorkspaceIdentifier();
+  if (activeId === 'user_guest' || activeId.startsWith('user_guest') || !activeUserEmail || activeUserEmail === 'guest@workspace.local') {
     return {
       success: false,
-      message: 'Supabase not configured. Using local data.',
+      message: 'Guest workspace is local-only.',
+    };
+  }
+
+  const client = getSupabaseClient();
+  if (!client) {
+    const serverResult = await fetchWorkspaceFromServer();
+    if (serverResult.success && serverResult.data) {
+      return serverResult;
+    }
+    return {
+      success: false,
+      message: 'Server hub query returned no existing snapshot. Local data remains active.',
     };
   }
 
   try {
-    const activeId = getCustomWorkspaceIdentifier();
-    if (activeId === 'user_guest' || activeId.startsWith('user_guest') || !activeUserEmail || activeUserEmail === 'guest@workspace.local') {
-      return {
-        success: false,
-        message: 'Guest workspace is local-only.',
-      };
-    }
-
     let { data, error } = await client
       .from('user_workspaces')
       .select('workspace_data, updated_at')

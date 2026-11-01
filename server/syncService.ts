@@ -172,11 +172,12 @@ export async function handlePostWorkspace(req: any, res: any): Promise<void> {
     const incomingVersion = Number(sync_version || Date.now());
 
     let mergedWorkspace = { ...workspace_data };
+    let reconciledExpenses: any[] = [];
+    const deletedIds = new Set<string>();
 
     if (existingRecord && existingRecord.workspace_data) {
       const existingData = existingRecord.workspace_data;
 
-      const deletedIds = new Set<string>();
       if (Array.isArray(existingData?._meta?.deletedExpenseIds)) {
         existingData._meta.deletedExpenseIds.forEach((id: string) => deletedIds.add(id));
       }
@@ -187,7 +188,7 @@ export async function handlePostWorkspace(req: any, res: any): Promise<void> {
       const existingExpenses = Array.isArray(existingData.expenses) ? existingData.expenses : [];
       const incomingExpenses = Array.isArray(workspace_data.expenses) ? workspace_data.expenses : [];
 
-      const reconciledExpenses = reconcileExpenses(
+      reconciledExpenses = reconcileExpenses(
         incomingExpenses,
         existingExpenses,
         isFromApk,
@@ -217,6 +218,8 @@ export async function handlePostWorkspace(req: any, res: any): Promise<void> {
           ...(mergedWorkspace.screenTimeHistory || {}),
         };
       }
+    } else {
+      reconciledExpenses = Array.isArray(workspace_data.expenses) ? workspace_data.expenses : [];
     }
 
     const finalVersion = Math.max(
@@ -247,9 +250,127 @@ export async function handlePostWorkspace(req: any, res: any): Promise<void> {
       finalVersion
     ]);
 
+    // Mirror individual reconciled transactions into Neon `transactions` table
+    if (Array.isArray(reconciledExpenses) && reconciledExpenses.length > 0) {
+      try {
+        for (const exp of reconciledExpenses) {
+          if (!exp || !exp.id) continue;
+          const expId = String(exp.id).trim();
+          const amount = Number(exp.amount) || 0;
+          const name = String(exp.name || 'Expense').trim();
+          const category = String(exp.category || 'Other').trim();
+          const date = String(exp.date || now.split('T')[0]);
+          const direction = String(exp.direction || 'DEBIT').toUpperCase();
+
+          const upsertTxQuery = `
+            INSERT INTO transactions (
+              id, workspace_identifier, user_email, name, amount, category, date, time,
+              direction, payment_method, billing_cycle, notes, bank_name, masked_account,
+              account_last4, reference_id, sms_reference_id, upi_reference, raw_sms_text,
+              merchant, payee, source, source_file, import_batch_id, active, is_deleted,
+              client_updated_at
+            ) VALUES (
+              $1, $2, $3, $4, $5, $6, $7, $8,
+              $9, $10, $11, $12, $13, $14,
+              $15, $16, $17, $18, $19,
+              $20, $21, $22, $23, $24, $25, $26,
+              $27
+            )
+            ON CONFLICT (id) DO UPDATE SET
+              name = EXCLUDED.name,
+              amount = EXCLUDED.amount,
+              category = EXCLUDED.category,
+              date = EXCLUDED.date,
+              time = EXCLUDED.time,
+              direction = EXCLUDED.direction,
+              payment_method = EXCLUDED.payment_method,
+              billing_cycle = EXCLUDED.billing_cycle,
+              notes = EXCLUDED.notes,
+              bank_name = EXCLUDED.bank_name,
+              masked_account = EXCLUDED.masked_account,
+              account_last4 = EXCLUDED.account_last4,
+              reference_id = EXCLUDED.reference_id,
+              sms_reference_id = EXCLUDED.sms_reference_id,
+              upi_reference = EXCLUDED.upi_reference,
+              raw_sms_text = EXCLUDED.raw_sms_text,
+              merchant = EXCLUDED.merchant,
+              payee = EXCLUDED.payee,
+              source = EXCLUDED.source,
+              active = EXCLUDED.active,
+              is_deleted = EXCLUDED.is_deleted,
+              client_updated_at = EXCLUDED.client_updated_at,
+              updated_at = CURRENT_TIMESTAMP
+          `;
+
+          await pool.query(upsertTxQuery, [
+            expId,
+            activeKey,
+            cleanEmail || existingRecord?.user_email || '',
+            name,
+            amount,
+            category,
+            date,
+            exp.time || null,
+            direction,
+            exp.paymentMethod || null,
+            exp.billingCycle || null,
+            exp.notes || null,
+            exp.bankName || exp.bank || null,
+            exp.maskedAccount || null,
+            exp.accountLast4 || null,
+            exp.referenceId || null,
+            exp.smsReferenceId || null,
+            exp.upiReference || null,
+            exp.rawSmsText || null,
+            exp.merchant || null,
+            exp.payee || null,
+            exp.source || (isFromApk ? 'sms_auto' : 'manual'),
+            exp.sourceFile || null,
+            exp.importBatchId || null,
+            exp.active !== false,
+            Boolean(exp.isDeleted),
+            Number(exp.updatedAt || exp.createdAt || Date.now()),
+          ]);
+        }
+      } catch (txErr) {
+        console.warn('[SyncService] Notice syncing individual transactions into Neon:', txErr);
+      }
+    }
+
+    // Process tombstoned/deleted expense IDs in Neon
+    if (deletedIds && deletedIds.size > 0) {
+      try {
+        await pool.query(
+          "UPDATE transactions SET is_deleted = true, deleted_at = CURRENT_TIMESTAMP WHERE workspace_identifier = $1 AND id = ANY($2)",
+          [activeKey, Array.from(deletedIds)]
+        );
+      } catch (delErr) {
+        console.warn('[SyncService] Notice marking deleted transactions in Neon:', delErr);
+      }
+    }
+
+    // Update expense authority records for Android Native APK source transactions
+    if (isFromApk && Array.isArray(reconciledExpenses)) {
+      try {
+        for (const exp of reconciledExpenses) {
+          if (!exp || !exp.id) continue;
+          await pool.query(`
+            INSERT INTO expense_authority (
+              expense_id, workspace_identifier, source_device_type, is_synced_to_all_devices
+            ) VALUES ($1, $2, 'apk', true)
+            ON CONFLICT (expense_id) DO UPDATE SET
+              is_synced_to_all_devices = true,
+              updated_at = CURRENT_TIMESTAMP
+          `, [String(exp.id).trim(), activeKey]);
+        }
+      } catch (authErr) {
+        console.warn('[SyncService] Notice updating expense_authority:', authErr);
+      }
+    }
+
     return res.status(200).json({
       success: true,
-      message: "Workspace successfully synchronized with server cloud hub",
+      message: "Workspace successfully synchronized with Neon Serverless Postgres",
       updated_at: now,
       sync_version: finalVersion,
       expense_count: Array.isArray(mergedWorkspace.expenses) ? mergedWorkspace.expenses.length : 0,
@@ -271,20 +392,20 @@ export async function handleGetDevices(req: any, res: any): Promise<void> {
     let query = "SELECT * FROM devices WHERE is_revoked = false";
     const queryParams: any[] = [];
     if (email) {
-        query += " AND user_email = $1";
-        queryParams.push(email);
+      query += " AND user_email = $1";
+      queryParams.push(email);
     } else if (identifier) {
-        query += " AND user_identifier = $1";
-        queryParams.push(identifier);
+      query += " AND user_identifier = $1";
+      queryParams.push(identifier);
     }
 
     const { rows } = await pool.query(query, queryParams);
 
     const devices = rows.map((d) => ({
-        ...d,
-        isOnline: now - Number(d.last_active) <= TWO_MINUTES_MS,
-      }))
-      .sort((a, b) => Number(b.last_active) - Number(a.last_active));
+      ...d,
+      isOnline: now - Number(d.last_active) <= TWO_MINUTES_MS,
+    }))
+    .sort((a, b) => Number(b.last_active) - Number(a.last_active));
 
     return res.status(200).json({
       success: true,
@@ -353,6 +474,39 @@ export async function handlePostHeartbeat(req: any, res: any): Promise<void> {
       (req.headers?.["user-agent"] as string) || undefined,
     ]);
 
+    // Also update connected_devices table
+    try {
+      await pool.query(`
+        INSERT INTO connected_devices (id, user_email, user_identifier, device_name, platform, environment, app_version, created_at, last_active, ip_address, user_agent, is_revoked)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, false)
+        ON CONFLICT (id) DO UPDATE SET
+          user_email = EXCLUDED.user_email,
+          user_identifier = EXCLUDED.user_identifier,
+          device_name = EXCLUDED.device_name,
+          platform = EXCLUDED.platform,
+          environment = EXCLUDED.environment,
+          app_version = EXCLUDED.app_version,
+          last_active = EXCLUDED.last_active,
+          ip_address = EXCLUDED.ip_address,
+          user_agent = EXCLUDED.user_agent,
+          is_revoked = false
+      `, [
+        id,
+        cleanEmail || existing?.user_email || "gknayak@gmail.com",
+        cleanIdentifier || existing?.user_identifier || "user_guest",
+        device_name || existing?.device_name || "Active Session",
+        platform || existing?.platform || "web_browser",
+        environment || existing?.environment || "Web Browser",
+        app_version || existing?.app_version || "1.0.0",
+        existing ? existing.created_at : now,
+        now,
+        req.ip || req.socket?.remoteAddress || undefined,
+        (req.headers?.["user-agent"] as string) || undefined,
+      ]);
+    } catch {
+      // Non-fatal if connected_devices is a view
+    }
+
     return res.status(200).json({
       success: true,
       message: "Heartbeat recorded successfully",
@@ -370,6 +524,9 @@ export async function handleDeleteDevice(req: any, res: any): Promise<void> {
     const deviceId = req.params?.deviceId || req.url?.split("/").pop();
     if (deviceId) {
       await pool.query("UPDATE devices SET is_revoked = true WHERE id = $1", [deviceId]);
+      try {
+        await pool.query("UPDATE connected_devices SET is_revoked = true WHERE id = $1", [deviceId]);
+      } catch {}
     }
     return res.status(200).json({ success: true, message: "Device revoked" });
   } catch (err: any) {
@@ -378,9 +535,113 @@ export async function handleDeleteDevice(req: any, res: any): Promise<void> {
   }
 }
 
+export async function handleGetTransactions(req: any, res: any): Promise<void> {
+  try {
+    const workspaceId = ((req.query?.workspace_identifier || req.query?.user_identifier || "") as string).trim();
+    if (!workspaceId) {
+      return res.status(400).json({ success: false, error: "Missing workspace_identifier" });
+    }
+
+    const { rows } = await pool.query(
+      "SELECT * FROM transactions WHERE workspace_identifier = $1 AND is_deleted = false ORDER BY date DESC, created_at DESC",
+      [workspaceId]
+    );
+
+    return res.status(200).json({
+      success: true,
+      transactions: rows,
+      count: rows.length,
+    });
+  } catch (err: any) {
+    console.error("[SyncService] Error retrieving transactions:", err);
+    return res.status(500).json({ success: false, error: "Internal server error" });
+  }
+}
+
+export async function handlePostTransactions(req: any, res: any): Promise<void> {
+  try {
+    const { workspace_identifier, user_email, transactions: incomingTxs, is_apk } = req.body || {};
+    if (!workspace_identifier || !Array.isArray(incomingTxs)) {
+      return res.status(400).json({ success: false, error: "Invalid payload format" });
+    }
+
+    const activeKey = String(workspace_identifier).trim();
+    const cleanEmail = (user_email || "").trim().toLowerCase();
+
+    for (const exp of incomingTxs) {
+      if (!exp || !exp.id) continue;
+      const expId = String(exp.id).trim();
+      const amount = Number(exp.amount) || 0;
+      const name = String(exp.name || 'Expense').trim();
+      const category = String(exp.category || 'Other').trim();
+      const date = String(exp.date || new Date().toISOString().split('T')[0]);
+
+      await pool.query(`
+        INSERT INTO transactions (
+          id, workspace_identifier, user_email, name, amount, category, date, time,
+          direction, payment_method, billing_cycle, notes, bank_name, masked_account,
+          account_last4, reference_id, sms_reference_id, upi_reference, raw_sms_text,
+          merchant, payee, source, active, is_deleted, client_updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8,
+          $9, $10, $11, $12, $13, $14,
+          $15, $16, $17, $18, $19,
+          $20, $21, $22, $23, $24, $25
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          name = EXCLUDED.name,
+          amount = EXCLUDED.amount,
+          category = EXCLUDED.category,
+          date = EXCLUDED.date,
+          direction = EXCLUDED.direction,
+          bank_name = EXCLUDED.bank_name,
+          sms_reference_id = EXCLUDED.sms_reference_id,
+          upi_reference = EXCLUDED.upi_reference,
+          active = EXCLUDED.active,
+          is_deleted = EXCLUDED.is_deleted,
+          client_updated_at = EXCLUDED.client_updated_at,
+          updated_at = CURRENT_TIMESTAMP
+      `, [
+        expId,
+        activeKey,
+        cleanEmail,
+        name,
+        amount,
+        category,
+        date,
+        exp.time || null,
+        exp.direction || 'DEBIT',
+        exp.paymentMethod || null,
+        exp.billingCycle || null,
+        exp.notes || null,
+        exp.bankName || exp.bank || null,
+        exp.maskedAccount || null,
+        exp.accountLast4 || null,
+        exp.referenceId || null,
+        exp.smsReferenceId || null,
+        exp.upiReference || null,
+        exp.rawSmsText || null,
+        exp.merchant || null,
+        exp.payee || null,
+        exp.source || (is_apk ? 'sms_auto' : 'manual'),
+        exp.active !== false,
+        Boolean(exp.isDeleted),
+        Number(exp.updatedAt || exp.createdAt || Date.now()),
+      ]);
+    }
+
+    return res.status(200).json({ success: true, count: incomingTxs.length });
+  } catch (err: any) {
+    console.error("[SyncService] Error posting transactions:", err);
+    return res.status(500).json({ success: false, error: "Internal server error" });
+  }
+}
+
 export function registerSyncRoutes(app: Express): void {
   app.get("/api/sync/workspace", handleGetWorkspace);
   app.post("/api/sync/workspace", handlePostWorkspace);
+  app.get("/api/sync/transactions", handleGetTransactions);
+  app.post("/api/sync/transactions", handlePostTransactions);
   app.get("/api/sync/devices", handleGetDevices);
   app.post("/api/sync/devices/heartbeat", handlePostHeartbeat);
   app.delete("/api/sync/devices/:deviceId", handleDeleteDevice);
@@ -458,6 +719,14 @@ export function syncVitePlugin() {
 
         if (pathname === "/api/sync/workspace" && method === "POST") {
           return handlePostWorkspace(req, enhancedRes);
+        }
+
+        if (pathname === "/api/sync/transactions" && method === "GET") {
+          return handleGetTransactions(req, enhancedRes);
+        }
+
+        if (pathname === "/api/sync/transactions" && method === "POST") {
+          return handlePostTransactions(req, enhancedRes);
         }
 
         if (pathname === "/api/sync/devices" && method === "GET") {

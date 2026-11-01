@@ -355,7 +355,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
 
   const handleCopySql = () => {
-    const sqlUrl = window.location.origin + '/supabase/schema.sql';
+    const sqlUrl = window.location.origin + '/neon_schema.sql';
     // Fallback if not hosted: We provide a condensed version of the essential SQL for 1-click copy
     const fallbackSql = `-- Supabase Initialization
 CREATE TABLE IF NOT EXISTS public.user_workspaces (
