@@ -1,130 +1,121 @@
-# Implementation Plan: Singular & Synchronized Multi-Device Data Architecture
+# Implementation Plan: Fresh Supabase Project Migration & Master Dataset Seeding
 
-Eliminate cross-device data divergence for `gknayak@gmail.com` across Android APK, Web browser, and AI Studio environments by addressing the Supabase egress quota lockout, establishing a fresh cloud database connection with high-availability fallback, implementing APK-authoritative data reconciliation, and enabling seamless background synchronization.
+Migrate the backend infrastructure to a fresh, unrestricted Supabase cloud project by generating a production SQL schema initialization script with strict JWT Row Level Security (RLS), verifying dynamic configuration across client and server runtimes, providing a 1-click Migration Studio in Settings, and establishing automatic authoritative master seeding from the Android APK.
 
 ---
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The following architectural decisions have been finalized based on your answers:
-> - **Sync Backend Infrastructure**: Configure a **fresh cloud database instance with zero quota restrictions**, coupled with an automatic applet-hosted cloud sync relay (`/api/sync`) so devices remain synchronized even if external third-party quotas are exceeded.
-> - **Authoritative Merge Strategy**: **APK as Master Source**. Financial transactions, SMS-derived expenses (such as the current ₹2,53,691.45 balance), and native records originating from the Android APK will always be treated as authoritative and will never be overwritten, downgraded, or zeroed out by web sessions.
-> - **User Interface Experience**: **Auto-sync in background only** without extra header buttons to keep the top navigation clean, minimal, and non-intrusive. Sync health and credentials can be inspected and updated in the Settings modal.
+> The following architectural decisions have been aligned based on your preferences:
+> - **Row Level Security (RLS) Policy**: **Strict RLS requiring authenticated Supabase JWT tokens**. Unauthenticated anonymous requests are blocked; all reads, inserts, and updates are bound strictly to `auth.uid() = user_id`.
+> - **Schema Script Accessibility**: **Dedicated Migration tab in Settings plus repository file**. You will have a 1-click "Copy SQL Script" button, a "Download schema.sql" action in the Settings modal, and a persistent `/supabase/schema.sql` file in the codebase.
+> - **APK Master Repopulation**: **Automatic seamless push upon detecting empty database**. When the Android APK connects to the new Supabase instance and detects no existing workspace, it will automatically publish its full master dataset (including the ₹2,53,691.45 transaction history) to the cloud without requiring manual intervention.
 
 ---
 
-## 1. Problem Diagnosis & Root Cause Analysis
-
-### Why different devices currently show different data for `gknayak@gmail.com`:
-
-1. **Supabase Cloud Quota Lockout (`HTTP 402 exceed_egress_quota`)**:
-   - The current configured Supabase project (`amlegmbvqzbhqqqbrvjx.supabase.co`) has exceeded its bandwidth egress quota.
-   - Every read and write request sent to Supabase fails with:
-     ```json
-     {"message":"Service for this project is restricted due to the following violations: exceed_egress_quota. The project owner must upgrade their plan or remove spend caps to restore service."}
-     ```
-   - Because the cloud database rejects all connections, **the APK cannot push its ₹2,53,691.45 dataset to the cloud**, and **the Web/AI Studio browser cannot pull it**.
-   - As a result, each device remains partitioned in its local storage cache, appearing as disconnected silos.
-
-2. **Presence & Heartbeat Isolation**:
-   - Because Supabase Realtime channels fail to establish due to the project lockout, presence pulses are not delivered between the APK and Web sessions. Each client only sees itself (`1 instance`).
-
----
-
-## 2. Proposed Architecture & System Design
+## 1. System Architecture & Migration Pipeline
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│              UNIFIED MULTI-DEVICE CLOUD SYNCHRONIZATION ENGINE                   │
-├──────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│   [Android Native APK]               [Web Browser]            [AI Studio]        │
-│   - Holds Master ₹2.53 Lakh          - Local Cache            - Preview Tab      │
-│   - SMS Auto-Capture Engine          - Realtime Listener      - Diagnostic View  │
-│            │                               │                        │            │
-│            └───────────────────────┬───────┴────────────────────────┘            │
-│                                    │                                             │
-│               ┌────────────────────▼────────────────────┐                        │
-│               │   Multi-Tier Cloud Transport Router     │                        │
-│               │   - Primary: Fresh Cloud Database       │                        │
-│               │   - Secondary: Applet Relay (/api/sync) │                        │
-│               └────────────────────┬────────────────────┘                        │
-│                                    │                                             │
-│               ┌────────────────────▼────────────────────┐                        │
-│               │ APK-Authoritative Reconciliation Engine │                        │
-│               │ - Preserves ₹2,53,691.45 Master Data    │                        │
-│               │ - Merges Web manual additions           │                        │
-│               │ - Reconciles Connected Devices & Heart  │                        │
-│               └────────────────────┬────────────────────┘                        │
-│                                    │                                             │
-│                     ┌──────────────┴──────────────┐                              │
-│                     ▼                             ▼                              │
-│         [Fresh Cloud Database]          [Local Durable Storage]                  │
-│         - Unrestricted Quota            - IndexedDB & LocalStorage               │
-│         - Realtime Broadcast            - Zero-Loss Local Cache                  │
-│                                                                                  │
-└──────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│                   SUPABASE FRESH PROJECT MIGRATION                     │
+├────────────────────────────────────────────────────────────────────────┤
+│                                                                        │
+│   Step 1: SQL Schema Initialization (New Supabase SQL Editor)          │
+│   ┌──────────────────────────────────────────────────────────────┐     │
+│   │ /supabase/schema.sql & Settings Migration Tab                │     │
+│   │ - user_workspaces (JSONB, indexes, updated_at trigger)       │     │
+│   │ - user_devices (UUID, device_id UNIQUE, presence tracking)   │     │
+│   │ - Strict RLS: auth.uid() = user_id on SELECT/INSERT/UPDATE   │     │
+│   │ - supabase_realtime publication enabled                      │     │
+│   └──────────────────────────────┬───────────────────────────────┘     │
+│                                  │                                     │
+│   Step 2: Connect Fresh Project in Applet Settings                     │
+│   ┌──────────────────────────────▼───────────────────────────────┐     │
+│   │ Dynamic Config (supabaseConfig.ts & SettingsModal.tsx)       │     │
+│   │ - Enter New Project URL & Anon Key                           │     │
+│   │ - Instant 1-tap connection handshake test                    │     │
+│   │ - Server Relay keeps sync alive during switchover            │     │
+│   └──────────────────────────────┬───────────────────────────────┘     │
+│                                  │                                     │
+│   Step 3: Authoritative Master Seeding (Android APK)                   │
+│   ┌──────────────────────────────▼───────────────────────────────┐     │
+│   │ APK Master Seed Engine (client/src/utils/supabase.ts)        │     │
+│   │ - Detects native APK environment & empty cloud database      │     │
+│   │ - Automatically uploads master ₹2.53 Lakh dataset            │     │
+│   │ - Deduplicates by primary ID and SMS/UPI reference hashes    │     │
+│   │ - Peer Web/AI Studio instances pull fresh seeded dataset     │     │
+│   └──────────────────────────────────────────────────────────────┘     │
+│                                                                        │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 3. Implementation Steps
+## 2. Proposed Technical Implementation
 
-### Step 1: Fresh Cloud Database Configuration & Connection Switcher
-- **File**: `client/src/utils/supabaseConfig.ts` & `client/src/utils/supabase.ts`
-- Implement dynamic cloud database configuration supporting:
-  1. A fresh Supabase project URL and anon key (configurable in Settings or via environment).
-  2. Automatic failover to the local applet backend endpoint `/api/sync/workspace` when external Supabase endpoints report `exceed_egress_quota` (HTTP 402).
-  3. Add Cloud Database settings panel in `SettingsModal.tsx` allowing the user to view cloud status and input fresh database credentials at any time.
+### Step 1: Complete SQL Initialization Script (`/supabase/schema.sql`)
+- Create a complete, self-contained SQL file runnable in the Supabase SQL Editor:
+  1. **UUID & Cryptographic Extensions**: Ensure `pgcrypto` is available.
+  2. **`user_workspaces` Table**:
+     - `id` UUID PRIMARY KEY DEFAULT gen_random_uuid()
+     - `user_id` UUID REFERENCES auth.users(id) ON DELETE CASCADE
+     - `user_identifier` TEXT NOT NULL UNIQUE
+     - `user_email` TEXT NOT NULL
+     - `workspace_data` JSONB NOT NULL DEFAULT '{}'::jsonb
+     - `created_at` TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+     - `updated_at` TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+     - B-tree indexes on `user_id`, `user_identifier`, `user_email`, and `updated_at`.
+  3. **`user_devices` Table**:
+     - `id` UUID PRIMARY KEY DEFAULT gen_random_uuid()
+     - `user_id` UUID REFERENCES auth.users(id) ON DELETE CASCADE
+     - `device_id` TEXT NOT NULL
+     - `device_name` TEXT NOT NULL
+     - `device_type` TEXT DEFAULT 'web'
+     - `platform` TEXT DEFAULT 'web'
+     - `browser_info` TEXT
+     - `is_active` BOOLEAN DEFAULT true
+     - `first_login_at` TIMESTAMPTZ DEFAULT timezone('utc'::text, now())
+     - `last_seen_at` TIMESTAMPTZ DEFAULT timezone('utc'::text, now())
+     - `created_at` TIMESTAMPTZ DEFAULT timezone('utc'::text, now())
+     - `updated_at` TIMESTAMPTZ DEFAULT timezone('utc'::text, now())
+     - UNIQUE constraint on `(user_id, device_id)`.
+  4. **Strict JWT Row Level Security (RLS)**:
+     - Enable RLS on both tables.
+     - Policies verifying `auth.uid() = user_id` for `SELECT`, `INSERT`, `UPDATE`, and `DELETE`.
+  5. **Realtime Replication**:
+     - `ALTER PUBLICATION supabase_realtime ADD TABLE user_workspaces;`
+     - `ALTER PUBLICATION supabase_realtime ADD TABLE user_devices;`
+  6. **Automated Timestamp Triggers**:
+     - Trigger function updating `updated_at` on every row modification.
 
-### Step 2: Applet-Hosted Cloud Sync Relay Server (`/api/sync`)
-- **File**: `server/syncService.ts` & `server/index.ts`
-- Implement durable server-side workspace persistence in Node/Express:
-  - `GET /api/sync/workspace`: Retrieves the latest authoritative workspace snapshot for `user_identifier` / `user_email`.
-  - `POST /api/sync/workspace`: Atomically stores and updates the workspace snapshot with optimistic concurrency control and monotonic sync versions.
-  - `GET /api/sync/devices`: Returns all active devices with real-time heartbeat status for the user account.
-- This gives `gknayak@gmail.com` an immediate, unrestricted, zero-egress cloud sync pipeline accessible by all browser and mobile instances.
+### Step 2: Dedicated Migration Tab in Settings (`SettingsModal.tsx`)
+- Add a dedicated **Database Migration & SQL** tab/section in the Settings modal:
+  - **1-Click Copy**: Copies the exact SQL initialization script directly to the user's clipboard.
+  - **Download `.sql`**: Generates `supabase_schema_init.sql` for offline backup or command-line execution.
+  - **Supabase Console Quick Link**: Direct button opening the Supabase Dashboard SQL Editor.
+  - **Connection Switcher**: Input fields for Project URL and Anon Key with immediate health validation check and clear success/error feedback.
 
-### Step 3: APK-Authoritative Master Reconciliation Engine
-- **File**: `client/src/utils/supabase.ts` & `client/src/utils/expenseUtils.ts`
-- When syncing data across devices:
-  - Detect whether the payload originates from an Android Native APK (via Capacitor platform check or `_meta.apkInstalled: true`).
-  - If a device is APK-identified, its financial transactions (including the ₹2,53,691.45 balance) are treated as the master dataset.
-  - Non-native web clients fetching remote data will never discard or zero out SMS-derived transactions.
-  - Tombstoned (deleted) records are tracked in a persistent tombstone set (`_meta.deletedExpenseIds`) so deleted items stay deleted across all devices without causing resurrection loops.
-
-### Step 4: Silent Background Auto-Sync Engine
-- **File**: `client/src/App.tsx` & `client/src/utils/supabase.ts`
-- As requested, no extra header button will be added. Auto-sync operates completely in the background:
-  - **On Application Focus / Resume**: Automatically pulls the latest cloud workspace snapshot and synchronizes local state.
-  - **On Local Changes**: Debounces local changes by 500ms and sends an optimistic push to the cloud backend.
-  - **Periodic Pulse**: Runs a lightweight background sync check every 30 seconds to catch remote changes from other active instances.
-  - **Anti-Overwrite Guard**: Prevents an empty or unhydrated snapshot from replacing existing local expenses.
-
-### Step 5: Enhanced Connected Devices Presence Diagnostics
-- **File**: `client/src/components/ConnectedDevices.tsx` & `client/src/services/deviceService.ts`
-- Unify device tracking using both WebSocket presence and server-backed heartbeat records:
-  - Display all connected sessions for `gknayak@gmail.com` (APK, Desktop Chrome, AI Studio Preview) with live green indicators.
-  - Provide a clear tag showing device type: `Android Native APK`, `Web Browser`, `AI Studio`.
-  - Include last active timestamp and sync state.
+### Step 3: APK Master Seed Engine (`client/src/utils/supabase.ts` & `client/src/App.tsx`)
+- Implement automatic detection and seeding logic:
+  - When the app starts or connects to the new Supabase project:
+    1. Query `user_workspaces` for the active account.
+    2. If the cloud returns `data: null` or `workspace_data.expenses: []`:
+    3. Check if the current device is the Android Native APK (or holds the master local expense dataset).
+    4. Automatically trigger an atomic `syncWorkspaceToSupabase(masterPayload)` tagged with `_meta.isMasterApkSeed: true`.
+    5. Deduplicate transactions using stable IDs and normalized SMS/UPI references (`mergeExpenseLists`) so no item is ever duplicated or lost.
+    6. Emit a confirmation notification confirming the master repopulation.
 
 ---
 
-## 4. Verification Plan
+## 3. Verification & Validation Plan
 
 ### Automated Checks
-1. `npm run check` (`tsc --noEmit`): Verify strict TypeScript compilation with zero type errors.
-2. `compile_applet`: Verify that the entire frontend and backend build cleanly without bundling errors.
+1. `npm run check` (`tsc --noEmit`): Verify strict TypeScript type compliance.
+2. `compile_applet`: Verify that the entire app builds with zero errors.
 
-### Cross-Device Sync Verification
-1. **Cloud Egress Bypass Verification**:
-   - Test sync push/pull to verify that HTTP 402 egress errors no longer block data persistence.
-   - Verify that data submitted on one device is persisted to the server/cloud database.
-2. **Authoritative Expense Preservation**:
-   - Verify that the APK expense dataset (e.g. ₹2,53,691.45) is properly recognized as the master source and is not wiped out on web app load.
-   - Verify that transactions added on the APK sync across to Web sessions, and manual additions on Web reconcile smoothly into the APK.
-3. **Background Sync Behavior**:
-   - Confirm that synchronization occurs smoothly in the background without requiring user intervention or cluttering the header UI.
-4. **Connected Devices List**:
-   - Verify that the Connected Devices modal correctly lists multiple active instances when multiple browsers/apps are open with the same email (`gknayak@gmail.com`).
+### Manual Verification
+1. **SQL Script Integrity**: Verify that `/supabase/schema.sql` syntax is valid PostgreSQL and adheres to Supabase RLS conventions.
+2. **Settings Migration Tab**: Verify that the Migration UI renders cleanly, copies the SQL script to clipboard, and triggers `.sql` download.
+3. **Connection Handshake**: Test URL and anon key validation logic with simulated input.
+4. **Master Seeding Flow**: Verify that when remote storage reports an empty database, the APK automatically seeds the full transaction dataset without duplicates.
