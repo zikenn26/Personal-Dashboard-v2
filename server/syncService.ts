@@ -106,12 +106,47 @@ export async function handleGetWorkspace(req: any, res: any): Promise<void> {
     }
 
     let record = null;
-    if (userIdentifier) {
-      const { rows } = await pool.query("SELECT * FROM workspaces WHERE user_identifier = $1", [userIdentifier]);
+    if (userIdentifier && userEmail) {
+      const { rows } = await pool.query(
+        "SELECT * FROM workspaces WHERE user_identifier = $1 OR LOWER(user_email) = $2 ORDER BY updated_at DESC LIMIT 1",
+        [userIdentifier, userEmail]
+      );
+      record = rows[0];
+    } else if (userIdentifier) {
+      const { rows } = await pool.query(
+        "SELECT * FROM workspaces WHERE user_identifier = $1 ORDER BY updated_at DESC LIMIT 1",
+        [userIdentifier]
+      );
       record = rows[0];
     } else if (userEmail) {
-      const { rows } = await pool.query("SELECT * FROM workspaces WHERE user_email = $1", [userEmail]);
+      const { rows } = await pool.query(
+        "SELECT * FROM workspaces WHERE LOWER(user_email) = $1 ORDER BY updated_at DESC LIMIT 1",
+        [userEmail]
+      );
       record = rows[0];
+    }
+
+    // Fallback: check user_workspaces table if workspaces table didn't have it
+    if (!record || !record.workspace_data) {
+      if (userIdentifier && userEmail) {
+        const { rows } = await pool.query(
+          "SELECT * FROM user_workspaces WHERE user_identifier = $1 OR LOWER(user_email) = $2 ORDER BY updated_at DESC LIMIT 1",
+          [userIdentifier, userEmail]
+        );
+        record = rows[0];
+      } else if (userIdentifier) {
+        const { rows } = await pool.query(
+          "SELECT * FROM user_workspaces WHERE user_identifier = $1 ORDER BY updated_at DESC LIMIT 1",
+          [userIdentifier]
+        );
+        record = rows[0];
+      } else if (userEmail) {
+        const { rows } = await pool.query(
+          "SELECT * FROM user_workspaces WHERE LOWER(user_email) = $1 ORDER BY updated_at DESC LIMIT 1",
+          [userEmail]
+        );
+        record = rows[0];
+      }
     }
 
     if (!record || !record.workspace_data) {

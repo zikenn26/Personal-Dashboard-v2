@@ -1418,11 +1418,12 @@ export const Storage = {
       } catch {}
     }
 
-    if (isGknUser && (!Array.isArray(loaded) || loaded.length === 0)) {
+    if (isGknUser) {
+      if (Array.isArray(loaded) && loaded.length > 0) return loaded;
       saveToStorage(STORAGE_KEYS.HABITS, OWNER_GKN_HABITS);
       return [...OWNER_GKN_HABITS];
     }
-    return Array.isArray(loaded) && loaded.length > 0 ? loaded : (hasScopedKey ? [] : (isGknUser ? [...OWNER_GKN_HABITS] : INITIAL_HABITS));
+    return Array.isArray(loaded) && loaded.length > 0 ? loaded : (hasScopedKey ? [] : INITIAL_HABITS);
   },
   setHabits: (items: HabitItem[]) => {
     saveToStorage(STORAGE_KEYS.HABITS, items);
@@ -1676,8 +1677,12 @@ export const Storage = {
       list = recoveredFromCache.filter((e) => !isExplicitlyDeleted(e.id, e));
       saveToStorage(STORAGE_KEYS.EXPENSES, list);
     } else if (!hasScopedItem && recoveredFromCache.length === 0) {
-      // Cold start with blank workspace: initialize empty expenses
-      list = [];
+      // Cold start with blank workspace: initialize with authoritative expenses for primary user or empty for others
+      list = isGknUser ? [...OWNER_GKN_EXPENSES] : [];
+      saveToStorage(STORAGE_KEYS.EXPENSES, list);
+    } else if (isGknUser && list.length === 0) {
+      // Primary user safeguard: restore authoritative expenses if partition was wiped
+      list = [...OWNER_GKN_EXPENSES];
       saveToStorage(STORAGE_KEYS.EXPENSES, list);
     } else if (list.length > 0 && recoveredFromCache.length > 0) {
       // Merge historical expenses present in offline cache but absent from current scoped partition,
