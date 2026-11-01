@@ -23,6 +23,9 @@ import {
   Upload,
   Download,
   FileSpreadsheet,
+  Database,
+  Server,
+  Globe,
 } from 'lucide-react';
 import { AppSettings, AuthUser } from '../types';
 import { Sound } from '../utils/audio';
@@ -33,6 +36,14 @@ import { testGroqApiKey, SUPPORTED_GROQ_MODELS, DEFAULT_GROQ_MODEL } from '../se
 import { testGeminiApiKey } from '../services/geminiService';
 import { ConnectedDevices } from './ConnectedDevices';
 import { downloadExpenseBundle } from '../utils/expenseExport';
+import {
+  getEffectiveSupabaseUrl,
+  getEffectiveSupabaseAnonKey,
+  setCustomSupabaseCredentials,
+  hasCustomSupabaseCredentials,
+  resetSupabaseClient,
+  validateSupabaseConnection,
+} from '../utils/supabase';
 import { toast } from 'sonner';
 
 interface SettingsModalProps {
@@ -93,11 +104,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [groqTestStatus, setGroqTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [groqTestMsg, setGroqTestMsg] = useState('');
 
+  // Cloud Database state (Fresh Quota Instance)
+  const [supabaseUrlInput, setSupabaseUrlInput] = useState(() => getEffectiveSupabaseUrl());
+  const [supabaseKeyInput, setSupabaseKeyInput] = useState(() => getEffectiveSupabaseAnonKey());
+  const [showSupabaseKey, setShowSupabaseKey] = useState(false);
+  const [isCustomDb, setIsCustomDb] = useState(() => hasCustomSupabaseCredentials());
+  const [supabaseTestStatus, setSupabaseTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [supabaseTestMsg, setSupabaseTestMsg] = useState('');
+
   // Name update state
   const [displayName, setDisplayName] = useState(userName || currentUser?.name || '');
   const [nameSaved, setNameSaved] = useState(false);
-
-
 
   // Keep displayName in sync when modal opens or userName updates
   useEffect(() => {
@@ -109,8 +126,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     if (isOpen) {
       setShowGeminiKey(false);
       setShowGroqKey(false);
+      setShowSupabaseKey(false);
       setGeminiKey(settings.geminiApiKey || Storage.getGeminiApiKey() || '');
       setGroqKey(settings.groqApiKey || Storage.getGroqApiKey() || '');
+      setSupabaseUrlInput(getEffectiveSupabaseUrl());
+      setSupabaseKeyInput(getEffectiveSupabaseAnonKey());
+      setIsCustomDb(hasCustomSupabaseCredentials());
+      setSupabaseTestStatus('idle');
+      setSupabaseTestMsg('');
     }
   }, [userName, currentUser?.name, isOpen, settings.geminiApiKey, settings.groqApiKey]);
 
@@ -118,6 +141,62 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const activeEmail = currentUser?.email || 'user@workspace.local';
 
   if (!isOpen) return null;
+
+  const handleSaveCloudDb = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanUrl = supabaseUrlInput.trim();
+    const cleanKey = supabaseKeyInput.trim();
+
+    if (!cleanUrl || !cleanKey) {
+      setCustomSupabaseCredentials('', '');
+      resetSupabaseClient();
+      setIsCustomDb(false);
+      setSupabaseUrlInput(getEffectiveSupabaseUrl());
+      setSupabaseKeyInput(getEffectiveSupabaseAnonKey());
+      setSupabaseTestStatus('idle');
+      setSupabaseTestMsg('');
+      toast.info('Restored default cloud database configuration');
+      return;
+    }
+
+    setSupabaseTestStatus('testing');
+    setSupabaseTestMsg('Pinging cloud database instance...');
+    Sound.click(settings.soundEnabled);
+
+    try {
+      setCustomSupabaseCredentials(cleanUrl, cleanKey);
+      resetSupabaseClient();
+      const isValid = await validateSupabaseConnection();
+      if (isValid) {
+        Sound.success(settings.soundEnabled);
+        setIsCustomDb(true);
+        setSupabaseTestStatus('success');
+        setSupabaseTestMsg('Successfully connected to fresh cloud database!');
+        toast.success('Connected to fresh cloud database instance with unrestricted quota!');
+      } else {
+        Sound.error(settings.soundEnabled);
+        setSupabaseTestStatus('error');
+        setSupabaseTestMsg('Authentication failed. Check your Supabase URL & anon key.');
+        toast.error('Could not authenticate with provided Supabase credentials.');
+      }
+    } catch (err: any) {
+      Sound.error(settings.soundEnabled);
+      setSupabaseTestStatus('error');
+      setSupabaseTestMsg(err?.message || 'Failed to connect to cloud database.');
+    }
+  };
+
+  const handleResetCloudDb = () => {
+    Sound.click(settings.soundEnabled);
+    setCustomSupabaseCredentials('', '');
+    resetSupabaseClient();
+    setIsCustomDb(false);
+    setSupabaseUrlInput(getEffectiveSupabaseUrl());
+    setSupabaseKeyInput(getEffectiveSupabaseAnonKey());
+    setSupabaseTestStatus('idle');
+    setSupabaseTestMsg('');
+    toast.success('Reset cloud database to default configuration');
+  };
 
   const handleSaveName = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -402,6 +481,122 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               if (onSignOut) onSignOut();
             }}
           />
+
+          {/* SECTION: CLOUD DATABASE & FRESH QUOTA INSTANCE */}
+          <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                <Database className="w-3.5 h-3.5 text-indigo-500" />
+                <span>Cloud Database &amp; Sync Architecture</span>
+              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60">
+                  <Server className="w-2.5 h-2.5 text-emerald-500" />
+                  <span>Cloud Hub Active</span>
+                </span>
+                {isCustomDb && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60">
+                    <span>Custom Instance</span>
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+              Data is synced across all your devices using the persistent Server Cloud Hub with APK-authoritative master reconciliation. To connect your own fresh Supabase project with zero egress restrictions, configure credentials below:
+            </p>
+
+            <form onSubmit={handleSaveCloudDb} className="space-y-2.5">
+              <div>
+                <label className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 block mb-1">
+                  Supabase Project URL
+                </label>
+                <input
+                  type="text"
+                  value={supabaseUrlInput}
+                  onChange={(e) => setSupabaseUrlInput(e.target.value)}
+                  placeholder="https://xyzcompany.supabase.co"
+                  className="w-full px-3 py-1.5 rounded-lg text-xs font-mono bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 block mb-1">
+                  Supabase Anon Key
+                </label>
+                <div className="relative">
+                  <input
+                    type={showSupabaseKey ? 'text' : 'password'}
+                    value={supabaseKeyInput}
+                    onChange={(e) => setSupabaseKeyInput(e.target.value)}
+                    placeholder="eyJhbGciOiJIUzI1NiIsIn..."
+                    className="w-full pl-3 pr-8 py-1.5 rounded-lg text-xs font-mono bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowSupabaseKey(!showSupabaseKey)}
+                    className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                    title={showSupabaseKey ? 'Hide key' : 'Show key'}
+                  >
+                    {showSupabaseKey ? <EyeOff className="w-3.5 h-3.5 text-indigo-500" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+
+              {supabaseTestStatus !== 'idle' && (
+                <div
+                  className={`text-[11px] p-2 rounded-lg flex items-center gap-1.5 leading-snug border ${
+                    supabaseTestStatus === 'success'
+                      ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                      : supabaseTestStatus === 'error'
+                      ? 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                      : 'bg-indigo-50 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
+                  }`}
+                >
+                  {supabaseTestStatus === 'success' ? (
+                    <Check className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
+                  ) : supabaseTestStatus === 'error' ? (
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
+                  ) : (
+                    <RefreshCw className="w-3.5 h-3.5 shrink-0 animate-spin text-indigo-600" />
+                  )}
+                  <span className="break-all">{supabaseTestMsg}</span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between pt-1">
+                {isCustomDb ? (
+                  <button
+                    type="button"
+                    onClick={handleResetCloudDb}
+                    className="text-xs text-slate-500 hover:text-rose-500 font-semibold cursor-pointer transition-colors"
+                  >
+                    Reset to Default
+                  </button>
+                ) : (
+                  <span className="text-[11px] text-slate-400">Default cloud cluster</span>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={supabaseTestStatus === 'testing'}
+                  className="px-3.5 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                >
+                  {supabaseTestStatus === 'testing' ? (
+                    <>
+                      <RefreshCw className="w-3 h-3 animate-spin" />
+                      <span>Validating...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3 h-3" />
+                      <span>Connect Fresh Database</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
 
           {/* SECTION: VAULT PIN */}
           <div className="space-y-3 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">

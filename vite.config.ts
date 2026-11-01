@@ -4,6 +4,7 @@ import path from "node:path";
 import { defineConfig, loadEnv } from "vite";
 import { geminiVitePlugin } from "./server/geminiService";
 import { screenTimeVitePlugin } from "./server/screenTimeService";
+import { syncVitePlugin } from "./server/syncService";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, path.resolve(import.meta.dirname), "");
@@ -13,7 +14,7 @@ export default defineConfig(({ mode }) => {
   const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || defaultSupabaseKey;
 
   return {
-    plugins: [react(), tailwindcss(), geminiVitePlugin(), screenTimeVitePlugin()],
+    plugins: [react(), tailwindcss(), geminiVitePlugin(), screenTimeVitePlugin(), syncVitePlugin()],
     resolve: {
       dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime"],
       alias: {

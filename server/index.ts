@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { registerGeminiRoutes, setupGeminiLiveWebSocket } from "./geminiService.js";
 import { registerScreenTimeRoutes } from "./screenTimeService.js";
+import { registerSyncRoutes } from "./syncService.js";
 import { rateLimit, requireAuthForServerKeyUsage } from "./security.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -60,6 +61,9 @@ async function startServer() {
 
   // Register Screen Time sync, daily, and history routes on /api/screentime/*
   registerScreenTimeRoutes(app);
+
+  // Register multi-device cloud workspace sync and device presence routes on /api/sync/*
+  registerSyncRoutes(app);
 
   // Baseline rate limiting on every API route to blunt abuse/DoS attempts
   app.use("/api/", rateLimit({ windowMs: 60_000, max: 60, keyPrefix: "api" }));

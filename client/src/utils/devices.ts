@@ -224,6 +224,54 @@ export const fetchAccountDevices = async (email: string): Promise<DeviceSession[
     stored.unshift(currentDevice);
   }
 
+  // Cross-Device Server Hub Sync: Emit heartbeat and pull all instances
+  try {
+    fetch('/api/sync/devices/heartbeat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        device_id: DEVICE_SESSION_ID,
+        user_email: cleanEmail,
+        user_identifier: getCustomWorkspaceIdentifier(),
+        device_name: currentInfo.deviceName,
+        platform: currentInfo.isApk ? 'android' : currentInfo.deviceType,
+        environment: currentInfo.browser,
+      }),
+    }).catch(() => {});
+
+    const sRes = await fetch(`/api/sync/devices?user_email=${encodeURIComponent(cleanEmail)}`);
+    if (sRes.ok) {
+      const sJson = await sRes.json();
+      if (sJson.success && Array.isArray(sJson.devices)) {
+        sJson.devices.forEach((sd: any) => {
+          if (!sd.id) return;
+          const exIdx = stored.findIndex((x) => x.id === sd.id);
+          const devItem: DeviceSession = {
+            id: sd.id,
+            deviceName: sd.device_name || 'Active Session',
+            browser: sd.environment || sd.user_agent || 'Web Browser',
+            os: sd.platform || 'Web',
+            deviceType: (sd.platform === 'android' || sd.platform === 'ios') ? 'mobile' : 'desktop',
+            lastActive: sd.last_active || Date.now(),
+            createdAt: sd.created_at || Date.now(),
+            isCurrent: sd.id === DEVICE_SESSION_ID,
+            isApk: Boolean(sd.platform === 'android' || sd.device_name?.includes('APK') || sd.environment?.includes('APK')),
+          };
+          if (exIdx >= 0) {
+            stored[exIdx] = {
+              ...stored[exIdx],
+              ...devItem,
+              lastActive: Math.max(stored[exIdx].lastActive || 0, devItem.lastActive || 0),
+              isCurrent: sd.id === DEVICE_SESSION_ID,
+            };
+          } else {
+            stored.push(devItem);
+          }
+        });
+      }
+    }
+  } catch {}
+
   const deduplicated = deduplicateDevices(stored, DEVICE_SESSION_ID);
   Storage.setDevices(deduplicated);
   saveLocalDevices(cleanEmail, deduplicated);
@@ -252,6 +300,11 @@ export const revokeDeviceSession = async (
   const updatedList = currentList.filter((d) => d.id !== targetDeviceId);
   Storage.setDevices(updatedList);
   saveLocalDevices(cleanEmail, updatedList);
+
+  // Revoke in Server Cloud Hub
+  try {
+    fetch(`/api/sync/devices/${encodeURIComponent(targetDeviceId)}`, { method: 'DELETE' }).catch(() => {});
+  } catch {}
 
   // Broadcast revocation command over Supabase Realtime websocket
   const client = getSupabaseClient();
@@ -412,7 +465,10 @@ export const subscribeToDevicePresence = (
     window.addEventListener('devices-updated', handleStorageUpdate);
   }
 
-  // 2. Listen to Supabase Realtime presence state changes
+  // 2. Continuous cross-browser heartbeat polling every 8s
+  const pollTimer = setInterval(handleStorageUpdate, 8000);
+
+  // 3. Listen to Supabase Realtime presence state changes
   const unsubPresence = subscribeToPresenceState(async () => {
     const list = await fetchAccountDevices(cleanEmail);
     onDevicesChange(list);
@@ -422,6 +478,7 @@ export const subscribeToDevicePresence = (
     if (typeof window !== 'undefined') {
       window.removeEventListener('devices-updated', handleStorageUpdate);
     }
+    clearInterval(pollTimer);
     unsubPresence();
   };
 };

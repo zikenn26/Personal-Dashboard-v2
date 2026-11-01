@@ -3,15 +3,21 @@ import { Capacitor } from '@capacitor/core';
 import {
   SUPABASE_URL as BUILTIN_SUPABASE_URL,
   SUPABASE_ANON_KEY as BUILTIN_SUPABASE_ANON_KEY,
+  getEffectiveSupabaseUrl,
+  getEffectiveSupabaseAnonKey,
+  setCustomSupabaseCredentials,
+  hasCustomSupabaseCredentials,
 } from './supabaseConfig';
 import { mergeExpenseLists, normalizeExpenseDateKey, getLocalDateKey } from './expenseUtils';
 import { OWNER_GKN_HABITS, OWNER_GKN_EXPENSES } from './userUtils';
 import { ExpenseItem, OutboxMutation } from '../types';
-export { mergeExpenseLists };
-
-// Environment variables for Supabase (Vite client)
-const rawUrl = import.meta.env.VITE_SUPABASE_URL || BUILTIN_SUPABASE_URL || '';
-const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY || BUILTIN_SUPABASE_ANON_KEY || '';
+export {
+  mergeExpenseLists,
+  getEffectiveSupabaseUrl,
+  getEffectiveSupabaseAnonKey,
+  setCustomSupabaseCredentials,
+  hasCustomSupabaseCredentials,
+};
 
 // Clean Supabase URL (strip /rest/v1 or trailing slashes if passed)
 const cleanSupabaseUrl = (url: string): string => {
@@ -22,21 +28,28 @@ const cleanSupabaseUrl = (url: string): string => {
   return cleaned;
 };
 
-const supabaseUrl = cleanSupabaseUrl(rawUrl);
-const supabaseAnonKey = rawKey.trim();
-
 let supabaseInstance: SupabaseClient | null = null;
+let lastConfiguredUrl = '';
+let lastConfiguredKey = '';
+
+export const resetSupabaseClient = (): void => {
+  supabaseInstance = null;
+  lastConfiguredUrl = '';
+  lastConfiguredKey = '';
+};
 
 /**
  * Checks if Supabase credentials are configured in the environment.
  */
 export const isSupabaseConfigured = (): boolean => {
+  const url = cleanSupabaseUrl(getEffectiveSupabaseUrl());
+  const key = getEffectiveSupabaseAnonKey().trim();
   return Boolean(
-    supabaseUrl &&
-      supabaseAnonKey &&
-      supabaseUrl !== 'https://your-project-id.supabase.co' &&
-      !supabaseUrl.includes('your-project-id') &&
-      supabaseAnonKey !== 'your-supabase-anon-key'
+    url &&
+      key &&
+      url !== 'https://your-project-id.supabase.co' &&
+      !url.includes('your-project-id') &&
+      key !== 'your-supabase-anon-key'
   );
 };
 
@@ -102,11 +115,13 @@ export const supabaseFetch: typeof fetch = async (input, init) => {
       ? input.toString()
       : (input as Request)?.url || '';
 
-  if (urlStr && supabaseUrl && urlStr.startsWith(supabaseUrl)) {
+  const activeSupabaseUrl = cleanSupabaseUrl(getEffectiveSupabaseUrl());
+
+  if (urlStr && activeSupabaseUrl && urlStr.startsWith(activeSupabaseUrl)) {
     // In iframe or preview container, route through same-origin proxy first
     // On native mobile (Android APK), NEVER route through same-origin proxy (/api/supabase)
     if (!isMobile && isIframeOrPreview()) {
-      const proxiedUrl = urlStr.replace(supabaseUrl, '/api/supabase');
+      const proxiedUrl = urlStr.replace(activeSupabaseUrl, '/api/supabase');
       try {
         const proxyRes = await fetch(proxiedUrl, init);
         // If proxy handled the request successfully (not 404 from static hosts), return
@@ -127,7 +142,7 @@ export const supabaseFetch: typeof fetch = async (input, init) => {
     } catch (directErr) {
       // If direct fetch fails, only retry via proxy on web preview environments (never in native APK)
       if (!isMobile && isIframeOrPreview()) {
-        const proxiedUrl = urlStr.replace(supabaseUrl, '/api/supabase');
+        const proxiedUrl = urlStr.replace(activeSupabaseUrl, '/api/supabase');
         try {
           const fallbackRes = await fetch(proxiedUrl, init);
           const contentType = fallbackRes.headers.get('content-type') || '';
@@ -152,9 +167,14 @@ export const getSupabaseClient = (): SupabaseClient | null => {
   if (!isSupabaseConfigured()) {
     return null;
   }
-  if (!supabaseInstance) {
+  const currentUrl = cleanSupabaseUrl(getEffectiveSupabaseUrl());
+  const currentKey = getEffectiveSupabaseAnonKey().trim();
+
+  if (!supabaseInstance || currentUrl !== lastConfiguredUrl || currentKey !== lastConfiguredKey) {
     try {
-      supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
+      lastConfiguredUrl = currentUrl;
+      lastConfiguredKey = currentKey;
+      supabaseInstance = createClient(currentUrl, currentKey, {
         auth: {
           persistSession: true,
           autoRefreshToken: true,
@@ -174,10 +194,12 @@ export const getSupabaseClient = (): SupabaseClient | null => {
 export const validateSupabaseConnection = async (): Promise<boolean> => {
   if (!isSupabaseConfigured()) return false;
   try {
-    const response = await supabaseFetch(`${supabaseUrl}/auth/v1/settings`, {
+    const currentUrl = cleanSupabaseUrl(getEffectiveSupabaseUrl());
+    const currentKey = getEffectiveSupabaseAnonKey().trim();
+    const response = await supabaseFetch(`${currentUrl}/auth/v1/settings`, {
       headers: {
-        apikey: supabaseAnonKey,
-        Authorization: `Bearer ${supabaseAnonKey}`,
+        apikey: currentKey,
+        Authorization: `Bearer ${currentKey}`,
       },
     });
     return response.ok;
@@ -529,6 +551,123 @@ export const testSupabaseConnection = async (): Promise<{
 };
 
 /**
+ * Helper to detect Supabase egress quota violation errors (HTTP 402).
+ */
+export const isEgressQuotaError = (err: any): boolean => {
+  if (!err) return false;
+  const str = (typeof err === 'string' ? err : err.message || JSON.stringify(err)).toLowerCase();
+  return (
+    str.includes('exceed_egress_quota') ||
+    str.includes('spend caps') ||
+    str.includes('restricted') ||
+    err.status === 402 ||
+    err.code === '402'
+  );
+};
+
+/**
+ * Push workspace payload to applet-hosted sync relay server (/api/sync/workspace).
+ */
+export const syncWorkspaceToServer = async (payload: any): Promise<CloudSyncResult> => {
+  try {
+    const activeId = getCustomWorkspaceIdentifier();
+    const activeEmail = getCustomWorkspaceEmail();
+    const isNativeApk = isNativeOrMobile();
+
+    const response = await fetch('/api/sync/workspace', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        user_identifier: activeId,
+        user_email: activeEmail,
+        workspace_data: payload,
+        updated_at: new Date().toISOString(),
+        sync_version: Date.now(),
+        is_apk: isNativeApk,
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      return { success: false, message: err?.error || 'Server sync error' };
+    }
+
+    const res = await response.json();
+    return {
+      success: true,
+      message: 'Workspace synced with Server Cloud Hub',
+      timestamp: res.updated_at,
+      data: res,
+    };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Server network error' };
+  }
+};
+
+/**
+ * Fetch workspace payload from applet-hosted sync relay server (/api/sync/workspace).
+ */
+export const fetchWorkspaceFromServer = async (): Promise<CloudSyncResult> => {
+  try {
+    const activeId = getCustomWorkspaceIdentifier();
+    const activeEmail = getCustomWorkspaceEmail();
+    const query = new URLSearchParams({
+      user_identifier: activeId,
+      user_email: activeEmail,
+    });
+    const response = await fetch(`/api/sync/workspace?${query.toString()}`);
+    if (!response.ok) {
+      return { success: false, message: 'Server hub query failed' };
+    }
+    const res = await response.json();
+    if (res.exists && res.workspace_data) {
+      const remoteVersion = getPayloadSyncTimestamp(
+        res.workspace_data,
+        res.updated_at
+      );
+      lastAppliedRemoteVersion = Math.max(lastAppliedRemoteVersion, remoteVersion);
+      latestKnownRemoteTimestamp = Math.max(latestKnownRemoteTimestamp, remoteVersion);
+      latestLocalMutationTimestamp = Math.max(latestLocalMutationTimestamp, remoteVersion);
+
+      return {
+        success: true,
+        message: 'Retrieved authoritative workspace from Server Cloud Hub',
+        timestamp: res.updated_at,
+        data: res.workspace_data,
+      };
+    }
+    return { success: false, message: 'No server snapshot found' };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Server fetch error' };
+  }
+};
+
+/**
+ * Lightweight check if server hub has a newer workspace snapshot.
+ */
+export const checkHasNewerServerWorkspace = async (): Promise<boolean> => {
+  try {
+    const activeId = getCustomWorkspaceIdentifier();
+    const activeEmail = getCustomWorkspaceEmail();
+    const query = new URLSearchParams({
+      user_identifier: activeId,
+      user_email: activeEmail,
+    });
+    const response = await fetch(`/api/sync/workspace?${query.toString()}`);
+    if (!response.ok) return false;
+    const res = await response.json();
+    if (res.exists && res.updated_at) {
+      return res.updated_at !== lastAppliedRemoteUpdatedAt;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+};
+
+/**
  * Upload whole workspace state payload to Supabase database.
  */
 export const syncWorkspaceToSupabase = async (
@@ -537,11 +676,10 @@ export const syncWorkspaceToSupabase = async (
 ): Promise<CloudSyncResult> => {
   const client = getSupabaseClient();
   if (!client) {
-    notifyStatus('idle');
-    return {
-      success: false,
-      message: 'Supabase not configured. Data is stored safely in LocalStorage.',
-    };
+    // If Supabase is unconfigured, sync to server relay directly
+    const serverRes = await syncWorkspaceToServer(workspacePayload);
+    notifyStatus(serverRes.success ? 'synced' : 'idle');
+    return serverRes;
   }
 
   // Serialize cloud writes from this device. This prevents two local flushes
@@ -1434,14 +1572,18 @@ export const fetchWorkspaceFromSupabase = async (): Promise<CloudSyncResult> => 
       }
     }
 
-    if (error) {
-      return {
-        success: false,
-        message: `Failed to retrieve cloud data: ${error.message}`,
-      };
-    }
-
-    if (!data || !data.workspace_data) {
+    if (error || !data || !data.workspace_data) {
+      // Check server hub fallback
+      const serverResult = await fetchWorkspaceFromServer();
+      if (serverResult.success && serverResult.data) {
+        return serverResult;
+      }
+      if (error) {
+        return {
+          success: false,
+          message: `Failed to retrieve cloud data: ${error.message}`,
+        };
+      }
       return {
         success: false,
         message: 'No existing cloud data found for this workspace. Ready for initial migration.',
@@ -1495,9 +1637,10 @@ export const fetchWorkspaceFromSupabase = async (): Promise<CloudSyncResult> => 
  * this device has currently applied. Ideal for lightweight visibility/periodic polling.
  */
 export const checkHasNewerCloudWorkspace = async (): Promise<boolean> => {
-  if (!isSupabaseConfigured()) return false;
   const client = getSupabaseClient();
-  if (!client) return false;
+  if (!client || !isSupabaseConfigured()) {
+    return await checkHasNewerServerWorkspace();
+  }
 
   try {
     const activeId = getCustomWorkspaceIdentifier();
@@ -1511,15 +1654,17 @@ export const checkHasNewerCloudWorkspace = async (): Promise<boolean> => {
       .eq('user_identifier', activeId)
       .maybeSingle();
 
-    if (error || !data) return false;
+    if (error || !data) {
+      return await checkHasNewerServerWorkspace();
+    }
 
     const remoteUpdatedAt = data.updated_at || '';
     if (remoteUpdatedAt && remoteUpdatedAt !== lastAppliedRemoteUpdatedAt) {
       return true;
     }
-    return false;
+    return await checkHasNewerServerWorkspace();
   } catch {
-    return false;
+    return await checkHasNewerServerWorkspace();
   }
 };
 

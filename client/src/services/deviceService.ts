@@ -330,6 +330,22 @@ export async function registerDevice(user: AuthUser): Promise<RegisteredDevice |
       timestamp: now,
     });
 
+    // Notify Server Cloud Hub with current device pulse
+    try {
+      fetch('/api/sync/devices/heartbeat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          device_id: deviceId,
+          user_email: (user.email || '').trim().toLowerCase(),
+          user_identifier: user.id.startsWith('user_') ? user.id : `user_${user.id}`,
+          device_name: deviceName,
+          platform,
+          environment: browserInfo,
+        }),
+      }).catch(() => {});
+    } catch {}
+
     // Step 1: Try INSERT (fails silently if already exists due to UNIQUE constraint)
     let { data, error } = await supabase
       .from('user_devices')
@@ -404,6 +420,31 @@ export async function getActiveDevices(user: AuthUser): Promise<RegisteredDevice
     const localDev = await getCurrentDeviceInfo(user);
     const fallbackList = localDev ? [localDev] : [];
 
+    // Query Server Cloud Hub first for active cross-device sessions
+    try {
+      const email = (user.email || '').trim().toLowerCase();
+      const res = await fetch(`/api/sync/devices?user_email=${encodeURIComponent(email)}`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.devices) && json.devices.length > 0) {
+          const serverList: RegisteredDevice[] = json.devices.map((d: any) => ({
+            id: d.id,
+            device_id: d.id,
+            device_name: d.device_name || 'Active Device',
+            device_type: (d.platform === 'android' || d.platform === 'ios') ? 'native' : 'web',
+            platform: d.platform,
+            browser_info: d.environment || d.user_agent,
+            is_active: d.isOnline,
+            last_seen_at: new Date(d.last_active).toISOString(),
+            first_login_at: new Date(d.created_at).toISOString(),
+            created_at: new Date(d.created_at).toISOString(),
+            updated_at: new Date(d.last_active).toISOString(),
+          }));
+          return serverList;
+        }
+      }
+    } catch {}
+
     const supabase = getSupabaseClient();
     if (!supabase) return fallbackList;
 
@@ -449,6 +490,24 @@ export async function updateDeviceHeartbeat(user: AuthUser): Promise<boolean> {
       timestamp: now,
       environment: typeof window !== 'undefined' ? window.location.hostname : 'node',
     });
+
+    // Pulse Server Cloud Hub immediately
+    try {
+      const platform = await getPlatformName();
+      const browserInfo = await getBrowserInfo();
+      fetch('/api/sync/devices/heartbeat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          device_id: deviceId,
+          user_email: userEmail,
+          user_identifier: user.id.startsWith('user_') ? user.id : `user_${user.id}`,
+          device_name: `${browserInfo.split('/')[0]} on ${platform.charAt(0).toUpperCase() + platform.slice(1)}`,
+          platform,
+          environment: typeof window !== 'undefined' ? (window.location.hostname.includes('run.app') ? 'AI Studio' : window.location.hostname) : 'Web',
+        }),
+      }).catch(() => {});
+    } catch {}
 
     // Always keep local registration updated
     try {
