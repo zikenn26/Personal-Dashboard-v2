@@ -86,7 +86,7 @@ import {
   normalizeExpenseDateKey,
   getLocalDateKey,
 } from '../utils/expenseUtils';
-import { downloadExpenseExcel, downloadExpenseCSV } from '../utils/expenseExport';
+import { downloadExpenseExcel, downloadExpenseCSV, downloadExpenseBundle } from '../utils/expenseExport';
 
 interface ExpenseTrackerProps {
   expenses: ExpenseItem[];
@@ -739,6 +739,29 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     return `₹${Math.round(val).toLocaleString('en-IN')}`;
   };
 
+  const renderNetHeroValue = (net: number, _debits?: number, _credits?: number) => {
+    const roundNet = Math.round(net);
+    if (roundNet > 0) {
+      return (
+        <span className="text-emerald-400 font-black">
+          +{formatCurrency(roundNet)}
+        </span>
+      );
+    }
+    if (roundNet < 0) {
+      return (
+        <span className="text-rose-400 font-black">
+          -{formatCurrency(Math.abs(roundNet))}
+        </span>
+      );
+    }
+    return (
+      <span className="text-white font-black">
+        ₹0
+      </span>
+    );
+  };
+
   // Helper to open Add Modal cleanly
   const openAddModal = (preset?: { name: string; amount: number; category: string; icon: string; note?: string }) => {
     if (isOffline) {
@@ -867,48 +890,49 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     const now = new Date();
     const todayKey = getLocalDateKey(now);
     const monday = getStartOfLocalWeek(now);
-
-    // TODAY = exact local calendar day on the user's device/browser.
-    // Expense dates are treated as calendar dates, never UTC timestamps.
-    const todayTotal = currentExpenses
-      .filter((e) => normalizeExpenseDateKey(e.date) === todayKey && isDebit(e))
-      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-
-    // THIS WEEK = Monday through the current local calendar day, inclusive.
-    // Compare YYYY-MM-DD keys so timezone/DST cannot move a transaction into
-    // the previous or next day.
     const mondayKey = getLocalDateKey(monday);
-    const weekTotal = currentExpenses
-      .filter((e) => {
-        const key = normalizeExpenseDateKey(e.date);
-        return Boolean(key) && key >= mondayKey && key <= todayKey && isDebit(e);
-      })
-      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
 
-    // SELECTED MONTH = selected calendar month, debits only.
+    // TODAY: exact local calendar day
+    const todayItems = currentExpenses.filter((e) => normalizeExpenseDateKey(e.date) === todayKey);
+    const todayDebits = todayItems.filter(isDebit).reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const todayCredits = todayItems.filter((e) => !isDebit(e)).reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const todayNet = todayCredits - todayDebits; // positive if credits > debits, negative if debits > credits
+
+    // THIS WEEK: Monday through today
+    const weekItems = currentExpenses.filter((e) => {
+      const key = normalizeExpenseDateKey(e.date);
+      return Boolean(key) && key >= mondayKey && key <= todayKey;
+    });
+    const weekDebits = weekItems.filter(isDebit).reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const weekCredits = weekItems.filter((e) => !isDebit(e)).reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const weekNet = weekCredits - weekDebits;
+
+    // SELECTED MONTH
     const selectedPrefix = `${selectedYear}-${pad2(selectedMonthIndex + 1)}`;
     const monthExpenses = currentExpenses.filter(
       (e) => normalizeExpenseDateKey(e.date).startsWith(selectedPrefix)
     );
-    const monthDebits = monthExpenses.filter(isDebit);
-    const monthCredits = monthExpenses.filter((e) => !isDebit(e));
-    const monthTotal = monthDebits.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-    const monthCreditsTotal = monthCredits.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const monthDebits = monthExpenses.filter(isDebit).reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const monthCreditsTotal = monthExpenses.filter((e) => !isDebit(e)).reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const monthNet = monthCreditsTotal - monthDebits;
 
-    // PREVIOUS MONTH = selected month - 1, debits only.
+    // PREVIOUS MONTH
     const prevMonthIndex = selectedMonthIndex === 0 ? 11 : selectedMonthIndex - 1;
     const prevYear = selectedMonthIndex === 0 ? selectedYear - 1 : selectedYear;
     const prevPrefix = `${prevYear}-${pad2(prevMonthIndex + 1)}`;
-    const prevMonthTotal = currentExpenses
-      .filter((e) => normalizeExpenseDateKey(e.date).startsWith(prevPrefix) && isDebit(e))
-      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const prevMonthExpenses = currentExpenses.filter(
+      (e) => normalizeExpenseDateKey(e.date).startsWith(prevPrefix)
+    );
+    const prevMonthDebits = prevMonthExpenses.filter(isDebit).reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const prevMonthCredits = prevMonthExpenses.filter((e) => !isDebit(e)).reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const prevMonthNet = prevMonthCredits - prevMonthDebits;
 
     const monthDiffPercent =
-      prevMonthTotal > 0
-        ? Math.round(((monthTotal - prevMonthTotal) / prevMonthTotal) * 100)
+      prevMonthDebits > 0
+        ? Math.round(((monthDebits - prevMonthDebits) / prevMonthDebits) * 100)
         : 0;
 
-    // Active recurring debits only.
+    // Active recurring debits only
     const recurringTotal = currentExpenses
       .filter(
         (e) =>
@@ -923,23 +947,35 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
         return sum + e.amount;
       }, 0);
 
-    // All-time debits total
+    // All-time debits and credits
     const allTimeDebits = currentExpenses
       .filter(isDebit)
       .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const allTimeCredits = currentExpenses
+      .filter((e) => !isDebit(e))
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const allTimeNet = allTimeCredits - allTimeDebits;
 
-    // Invariant: todayDisplay can ONLY contain debit records whose normalized
-    // calendar date equals today's local YYYY-MM-DD key. Yesterday's records
-    // therefore cannot leak into the Today card.
     return {
-      monthDisplay: monthTotal,
+      todayDebits,
+      todayCredits,
+      todayNet,
+      weekDebits,
+      weekCredits,
+      weekNet,
+      monthDisplay: monthDebits,
       monthCreditsTotal,
+      monthNet,
       monthCount: monthExpenses.length,
-      prevMonthTotal,
+      prevMonthTotal: prevMonthDebits,
+      prevMonthCredits,
+      prevMonthNet,
       monthDiffPercent,
-      weekDisplay: weekTotal,
-      todayDisplay: todayTotal,
+      weekDisplay: weekDebits,
+      todayDisplay: todayDebits,
       allTimeDisplay: allTimeDebits,
+      allTimeCredits,
+      allTimeNet,
       recurringDisplay: recurringTotal,
       hasRealData: currentExpenses.length > 0,
     };
@@ -1190,6 +1226,9 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     // Sort all filtered transactions first
     list.sort(sortFn);
     const totalFilteredCount = list.length;
+    const filteredDebits = list.filter(isDebit).reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+    const filteredCredits = list.filter((item) => !isDebit(item)).reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+    const filteredNet = filteredCredits - filteredDebits;
     const filteredTotalAmount = list.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
     const totalPages = Math.max(1, Math.ceil(totalFilteredCount / TX_PAGE_SIZE));
     const safePage = Math.min(Math.max(1, txCurrentPage), totalPages);
@@ -1246,6 +1285,9 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       isEmpty: visibleSlice.length === 0,
       totalFilteredCount,
       filteredTotalAmount,
+      filteredDebits,
+      filteredCredits,
+      filteredNet,
       displayedCount: visibleSlice.length,
       currentPage: safePage,
       totalPages,
@@ -1357,7 +1399,8 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
       await downloadExpenseExcel(listToExport, filename);
     } catch (err: any) {
       console.error('[EXPORT] Excel download error:', err);
-      toast.error('Failed to export Excel sheet. Please try again.');
+      toast.error('Failed to export Excel sheet. Falling back to CSV...');
+      await downloadExpenseCSV(listToExport);
     }
 
     setIsExportMenuOpen(false);
@@ -1391,6 +1434,32 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     setIsExportMenuOpen(false);
   };
 
+  const handleDownloadBundle = async () => {
+    Sound.success(soundEnabled);
+    triggerConfetti();
+
+    let listToExport = currentExpenses && currentExpenses.length > 0 ? currentExpenses : [];
+    if (listToExport.length === 0) {
+      listToExport = Storage.getExpenses();
+    }
+    if (listToExport.length === 0 && Array.isArray(expenses) && expenses.length > 0) {
+      listToExport = expenses;
+    }
+
+    try {
+      const count = listToExport.length;
+      toast.success(`Exporting universal bundle (.xlsx + .csv)...`, {
+        description: `Downloading 2 files for ${count} transactions`,
+      });
+      await downloadExpenseBundle(listToExport);
+    } catch (err: any) {
+      console.error('[EXPORT] Bundle export error:', err);
+      toast.error('Failed to export bundle.');
+    }
+
+    setIsExportMenuOpen(false);
+  };
+
   return (
     <div id="spending-view-root" className="space-y-6 max-w-7xl mx-auto pb-16">
       {/* ========================================================================= */}
@@ -1419,14 +1488,27 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                 setIsExportMenuOpen((prev) => !prev);
               }}
               className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white dark:bg-[#1A202C] hover:bg-gray-50 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 text-xs font-semibold shadow-2xs transition-all cursor-pointer"
-              title="Export Expense: Download Excel sheet (.xlsx) or CSV (.csv)"
+              title="Export Expense: Download Excel sheet (.xlsx), CSV (.csv), or bundle"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Export</span>
             </button>
 
             {isExportMenuOpen && (
-              <div className="absolute right-0 mt-1.5 w-56 rounded-2xl bg-white dark:bg-[#1A202C] border border-gray-200 dark:border-gray-700 shadow-xl z-50 p-1.5 space-y-1 animate-in fade-in slide-in-from-top-2 duration-150">
+              <div className="absolute right-0 mt-1.5 w-60 rounded-2xl bg-white dark:bg-[#1A202C] border border-gray-200 dark:border-gray-700 shadow-xl z-50 p-1.5 space-y-1 animate-in fade-in slide-in-from-top-2 duration-150">
+                <button
+                  type="button"
+                  id="btn-download-bundle"
+                  onClick={handleDownloadBundle}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/50 transition-colors text-left cursor-pointer border border-purple-200/50 dark:border-purple-800/50"
+                >
+                  <Download className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                  <div>
+                    <span className="block font-bold">Download Bundle</span>
+                    <span className="block text-[10px] text-purple-500/80">XLSX + CSV Universal Pair</span>
+                  </div>
+                </button>
+
                 <button
                   type="button"
                   id="btn-download-excel"
@@ -1632,19 +1714,21 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
 
         {/* 4 Stat Boxes inside Hero Card */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          {/* Box 1: SPENT TODAY */}
+          {/* Box 1: NET SPENT TODAY */}
           <div className="p-4 rounded-2xl bg-[#092B20]/80 border border-emerald-800/60 flex flex-col justify-between space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-[11px] uppercase font-bold tracking-wider text-emerald-300/90">
-                Spent Today
+                Net Today
               </span>
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             </div>
-            <div className="text-xl sm:text-2xl font-black text-white tracking-tight">
-              {formatCurrency(stats.todayDisplay)}
+            <div className="text-xl sm:text-2xl font-black tracking-tight">
+              {renderNetHeroValue(stats.todayNet, stats.todayDebits, stats.todayCredits)}
             </div>
-            <span className="text-[11px] text-emerald-200/70">
-              Debit only • {getLocalDateKey()}
+            <span className="text-[10px] text-emerald-200/70 truncate">
+              {stats.todayDebits > 0 || stats.todayCredits > 0
+                ? `-${formatCurrency(stats.todayDebits)} spent • +${formatCurrency(stats.todayCredits)} rec'd`
+                : `₹0 activity • ${getLocalDateKey()}`}
             </span>
           </div>
 
@@ -1652,15 +1736,15 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
           <div className="p-4 rounded-2xl bg-[#092B20]/80 border border-emerald-800/60 flex flex-col justify-between space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-[11px] uppercase font-bold tracking-wider text-emerald-300/90">
-                This Week
+                Net This Week
               </span>
               <ArrowUpRight className="w-3.5 h-3.5 text-emerald-300" />
             </div>
-            <div className="text-xl sm:text-2xl font-black text-white tracking-tight">
-              {formatCurrency(stats.weekDisplay)}
+            <div className="text-xl sm:text-2xl font-black tracking-tight">
+              {renderNetHeroValue(stats.weekNet, stats.weekDebits, stats.weekCredits)}
             </div>
-            <span className="text-[11px] text-emerald-200/70">
-              Current week debits
+            <span className="text-[10px] text-emerald-200/70 truncate">
+              -{formatCurrency(stats.weekDebits)} spent • +${formatCurrency(stats.weekCredits)} rec&apos;d
             </span>
           </div>
 
@@ -1668,17 +1752,17 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
           <div className="p-4 rounded-2xl bg-[#092B20]/80 border border-emerald-800/60 flex flex-col justify-between space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-[11px] uppercase font-bold tracking-wider text-emerald-300/90">
-                This Month
+                Net This Month
               </span>
               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                {stats.monthDiffPercent >= 0 ? `+${stats.monthDiffPercent}% PREV` : `${stats.monthDiffPercent}% PREV`}
+                {stats.monthCount} items
               </span>
             </div>
-            <div className="text-xl sm:text-2xl font-black text-white tracking-tight">
-              {formatCurrency(stats.monthDisplay)}
+            <div className="text-xl sm:text-2xl font-black tracking-tight">
+              {renderNetHeroValue(stats.monthNet, stats.monthDisplay, stats.monthCreditsTotal)}
             </div>
-            <span className="text-[11px] text-emerald-200/70">
-              {stats.monthCount} items logged
+            <span className="text-[10px] text-emerald-200/70 truncate">
+              -{formatCurrency(stats.monthDisplay)} spent • +${formatCurrency(stats.monthCreditsTotal)} rec&apos;d
             </span>
           </div>
 
@@ -1686,15 +1770,15 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
           <div className="p-4 rounded-2xl bg-[#092B20]/80 border border-emerald-800/60 flex flex-col justify-between space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-[11px] uppercase font-bold tracking-wider text-emerald-300/90">
-                All / Lifetime
+                Net Lifetime
               </span>
               <RotateCcw className="w-3.5 h-3.5 text-emerald-300" />
             </div>
-            <div className="text-xl sm:text-2xl font-black text-white tracking-tight">
-              {formatCurrency(stats.allTimeDisplay)}
+            <div className="text-xl sm:text-2xl font-black tracking-tight">
+              {renderNetHeroValue(stats.allTimeNet, stats.allTimeDisplay, stats.allTimeCredits)}
             </div>
-            <span className="text-[11px] text-emerald-200/70">
-              Recurring: {formatCurrency(stats.recurringDisplay)} / mo
+            <span className="text-[10px] text-emerald-200/70 truncate">
+              -{formatCurrency(stats.allTimeDisplay)} spent • +${formatCurrency(stats.allTimeCredits)} rec&apos;d
             </span>
           </div>
         </div>
@@ -1935,7 +2019,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                       Showing {groupedTransactions.totalFilteredCount} transactions
                     </span>
                     <span className="text-purple-300 dark:text-purple-700">•</span>
-                    <span>Total: <strong className="font-mono font-bold text-purple-800 dark:text-purple-200">{formatCurrency(groupedTransactions.filteredTotalAmount)}</strong></span>
+                    <span>Net: <strong className={`font-mono font-bold ${groupedTransactions.filteredNet > 0 ? 'text-emerald-600 dark:text-emerald-400' : groupedTransactions.filteredNet < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-purple-800 dark:text-purple-200'}`}>{groupedTransactions.filteredNet > 0 ? `+${formatCurrency(groupedTransactions.filteredNet)}` : groupedTransactions.filteredNet < 0 ? `-${formatCurrency(Math.abs(groupedTransactions.filteredNet))}` : '₹0.00'}</strong></span>
 
                     {searchQuery.trim() && (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white dark:bg-[#1F2937] text-[11px] font-medium border border-purple-200 dark:border-purple-800 shadow-2xs">
@@ -2051,16 +2135,22 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                           <span>{group.label}</span>
                         </div>
                         <div className="flex items-center gap-2 font-mono text-xs">
-                          {group.totalDebits > 0 && (
-                            <span className="text-[#37352F] dark:text-white font-semibold">
-                              Spent: {formatCurrency(group.totalDebits)}
+                          {group.totalDebits > 0 && group.totalCredits > 0 && (
+                            <span className="text-[10px] text-gray-500 dark:text-gray-400 font-normal hidden sm:inline">
+                              (-{formatCurrency(group.totalDebits)} / +{formatCurrency(group.totalCredits)})
                             </span>
                           )}
-                          {group.totalCredits > 0 && (
-                            <span className="text-emerald-600 dark:text-emerald-400 font-bold">
-                              +{formatCurrency(group.totalCredits)}
-                            </span>
-                          )}
+                          <span
+                            className={`font-bold ${
+                              group.netTotal > 0
+                                ? 'text-emerald-600 dark:text-emerald-400 font-extrabold'
+                                : group.netTotal < 0
+                                ? 'text-rose-600 dark:text-rose-400 font-extrabold'
+                                : 'text-gray-500 dark:text-gray-400 font-medium'
+                            }`}
+                          >
+                            Net: {group.netTotal > 0 ? `+${formatCurrency(group.netTotal)}` : group.netTotal < 0 ? `-${formatCurrency(Math.abs(group.netTotal))}` : '₹0'}
+                          </span>
                         </div>
                       </div>
 
@@ -2142,7 +2232,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                                       className={`text-xs sm:text-sm font-black ${
                                         isCredit
                                           ? 'text-emerald-600 dark:text-emerald-400'
-                                          : 'text-[#37352F] dark:text-white'
+                                          : 'text-rose-600 dark:text-rose-400'
                                       }`}
                                     >
                                       {isCredit ? '+' : '-'}{formatCurrency(tx.amount)}

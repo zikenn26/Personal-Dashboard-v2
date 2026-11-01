@@ -199,4 +199,49 @@ describe('Multi-Device Coexistence & Environment Identification Suite', () => {
     expect(reportedIds!.has(DEVICE_SESSION_ID)).toBe(true);
     unsub();
   });
+
+  it('8. deviceService handles cloud quota restrictions (exceed_egress_quota) gracefully', async () => {
+    const { deviceService, isCloudQuotaOrNetworkError } = await import('../services/deviceService');
+    
+    // Verify quota detector
+    const quotaErr = {
+      message: 'Service for this project is restricted due to the following violations: exceed_egress_quota. The project owner must upgrade their plan or remove spend caps to restore service.',
+      status: 402,
+    };
+    expect(isCloudQuotaOrNetworkError(quotaErr)).toBe(true);
+
+    const testUser = {
+      id: 'test-user-quota',
+      email: 'gknayak@gmail.com',
+      name: 'Gulshan Kumar Nayak',
+      createdAt: Date.now(),
+      lastLoginAt: Date.now(),
+      provider: 'supabase' as const,
+    };
+
+    // Should return a valid fallback RegisteredDevice without crashing or throwing
+    const device = await deviceService.registerDevice(testUser);
+    expect(device).toBeDefined();
+    expect(device?.device_id).toBeDefined();
+    expect(device?.is_active).toBe(true);
+  });
+
+  it('9. deviceService.getCurrentDeviceInfo returns device even under quota restrictions', async () => {
+    const { deviceService } = await import('../services/deviceService');
+
+    const testUser = {
+      id: 'test-user-quota',
+      email: 'gknayak@gmail.com',
+      name: 'Gulshan Kumar Nayak',
+      createdAt: Date.now(),
+      lastLoginAt: Date.now(),
+      provider: 'supabase' as const,
+    };
+
+    const info = await deviceService.getCurrentDeviceInfo(testUser);
+    expect(info).toBeDefined();
+    expect(info?.device_id).toBeDefined();
+    expect(info?.is_active).toBe(true);
+  });
 });
+

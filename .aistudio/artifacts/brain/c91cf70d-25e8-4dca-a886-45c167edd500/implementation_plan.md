@@ -1,93 +1,101 @@
-# Production-Grade Multi-Device Presence & Primary Payload Synchronization Plan
+# Multi-Device Consistency, Net Expense Calculations & Reliable Excel Export
 
-Adopt the architecture used by WhatsApp Web, Instagram, and Telegram: store device sessions directly inside the primary workspace payload (`workspace_data.devices`), integrate native Supabase Realtime Presence (`channel.track`), and provide a unified device list with live presence indicators across all connected instances.
+Resolve cross-device data discrepancies between APK and Web/AI Studio, fix auto-logged transaction resets, enforce net expense accounting across all summary displays with debit/credit color indicators, and repair the transaction export engine to reliably deliver Excel and CSV files.
 
 ---
 
-### User Review & Critical Decisions
+## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> **Confirmed Choices from Clarification (Phase 1)**:
-> 1. **Primary Workspace Storage**: Store device session records directly inside `workspace_data.devices` within the primary `user_workspaces` document (`user_usr_${cleanEmail}`). This eliminates auxiliary row lookups, prevents RLS/402 isolation failures, and guarantees that device lists synchronize atomically alongside all workspace data (todos, habits, expenses).
-> 2. **Native Realtime Presence (WhatsApp/Telegram Architecture)**: Utilize Supabase Realtime Channel Presence (`channel.track`) so that as soon as any device or browser tab opens, its live presence is broadcast instantly to all other open instances.
-> 3. **Unified Display with Live Indicators**: Render a unified device list in `ConnectedDevices.tsx` showing all authorized devices, with an animated emerald pulse badge for instances currently connected online ("Active now • Online") and relative timestamps for recent instances ("Last seen 10m ago").
+> The following architectural decisions have been aligned based on user clarification:
+> - **Net Positive Balances Display**: Styled in emerald green with an explicit plus (`+`) prefix when total credits exceed total debits. Debits are styled in red with minus (`-`).
+> - **Cross-Device APK Data Bridge**: In addition to automatic cloud sync recovery when Supabase egress restrictions lift, an immediate direct file transfer bridge (full JSON/XLSX export from APK, 1-click import into Web/AI Studio) is established to prevent lockouts.
+> - **Universal Export Bundle**: Transaction export will generate formatted `.xlsx` workbooks alongside universal `.csv` bundles, with fallbacks for sandboxed iframes and mobile webviews.
 
 ---
 
-### 1. Root Cause & Architectural Shift
+## 1. Overview & Core Concept
 
-- **The Problem with the Old Approach**:
-  - The old implementation attempted to write devices to a separate auxiliary row `account_devices_${cleanEmail}` via standalone unauthenticated calls and separate ad-hoc channels.
-  - When Supabase queries or channels were isolated or restricted, this auxiliary row was never fetched or updated by the peer device, forcing both devices to fall back to their own isolated `localStorage` cache (`Logged in on 1 device`).
-- **The Modern Production Solution**:
-  - **Embedded in Primary Workspace**: The `devices` array is stored directly in `workspace_data.devices` and `Storage.getDevices()`. Whenever any device syncs or broadcasts its workspace, the active device list travels with it automatically.
-  - **Realtime Presence Channel**: Connect to `activeRealtimeChannel.track({ deviceId, deviceName, ... })`. When Device B opens, Device A receives `presence.sync` and immediately displays Device B online in real time without waiting for periodic polling.
-
----
-
-### 2. User Experience & Visual Flow
-
-- **Settings Modal (`ConnectedDevices`)**:
-  - Header: `Active Connected Devices` with live badge: `2 instances online`.
-  - **Device 1 (Your Current Session)**:
-    - Title: `Google Chrome (Web • Cloudflare)` (or `Google Chrome (AI Studio Preview)`)
-    - Badges: `This Device` (Indigo) + `Active now • Online` (Emerald Pulse)
-    - Browser & OS details
-  - **Device 2 (Peer Session)**:
-    - Title: `Google Chrome (AI Studio Preview)` (or `Google Chrome (Web • Cloudflare)`)
-    - Badges: `Active now • Online` (Emerald Pulse) + `Remote`
-    - Action: `Log Out` button with confirmation guard
-  - **Sign Out All Others**:
-    - Quick 1-click action to revoke all peer sessions instantly.
+- **What It Does**:
+  1. **Detailed Heartbeat & Presence Logging**: Instrument `deviceService` and Supabase Realtime presence with structured diagnostics so developers and users can inspect each active device session (APK, Web, AI Studio Preview) emitting heartbeats and tracking presence.
+  2. **Zero Spending Disappearance & Cloud Overwrite Protection**: Fix the race condition in `autoSyncFromCloud` and `importAllDataPayload` where empty or stale cloud workspace snapshots overwrote recently logged SMS transactions and reset today's spending to zero on app focus/reconnect.
+  3. **Net Expense Mathematics Engine**: Overhaul spending math across the header, today's spending badge, date group headers, weekly distributions, monthly rollups, and all-time totals. All totals now compute `Debits - Credits` (or net inflow/outflow) rather than summing both directions indiscriminately.
+  4. **Robust Excel & CSV Export**: Replace the silent failing anchor click in `ExpenseTracker` with a multi-strategy download engine that generates valid SheetJS workbooks, handles base64/blob URL fallbacks in sandboxed environments, and supports mobile native sharing.
 
 ---
 
-### 3. Key Technical Decisions & Data Flow
+## 2. User Experience & Visual Design
+
+- **Spending Summary Cards & Top Bar Widget**:
+  - **Debited Amounts (Outflow)**: Bold tabular numerals in crimson/rose (`text-rose-600 dark:text-rose-400`) prefixed with `-₹`.
+  - **Credited Amounts (Inflow)**: Bold tabular numerals in emerald (`text-emerald-600 dark:text-emerald-400`) prefixed with `+₹`.
+  - **Net Total Today / Week / Month**:
+    - When net spending (Debits > Credits): `-₹X,XXX` in dark slate or rose with subtle debit tag.
+    - When net positive (Credits > Debits): `+₹X,XXX` in bold emerald green with explicit `+` prefix.
+- **Top-Right Daily Transaction Header**:
+  - Displays accurate net daily expenditure with clear breakdown pills: `Net: -₹X | +₹Y credit`.
+- **Export Menu & Action Feedback**:
+  - Direct download with instant toast feedback, animated progress, and automatic trigger of both `.xlsx` and `.csv` files.
+
+---
+
+## 3. Key Product Decisions & Trade-Offs
+
+- **Anti-Overwrite Guard**:
+  - *Chosen Approach*: Monotonic version and payload integrity check. If incoming cloud snapshot contains fewer expenses than local storage or has an older timestamp/version, local records are preserved and merged, never replaced with an empty array.
+  - *Why*: Critical for offline-first and quota-restricted cloud environments where the cloud database may temporarily hold an unhydrated snapshot.
+- **Debits vs. Credits Math Normalization**:
+  - *Chosen Approach*: Centralized net calculation helper `calculateNetSpending(expenses)` used universally across `ExpenseTracker`, `DashboardHomeView`, `SpendingCalendarGrid`, and mobile presentation components.
+  - *Why*: Prevents fragmented calculations and guarantees identical numbers across all dashboard widgets.
+
+---
+
+## 4. Technical Architecture & Data Strategy
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                      Multi-Device Synchronization                      │
+│                        DATA FLOW & SYNC ENGINE                         │
+├────────────────────────────────────────────────────────────────────────┤
 │                                                                        │
-│   Device A (Cloudflare Pages)                Device B (AI Studio)     │
-│   ID: dev_cf_abc123                          ID: dev_ais_xyz789       │
+│   [SMS Auto-Logger / Manual Entry / Excel Import]                      │
+│                           │                                            │
+│                           ▼                                            │
+│            ┌─────────────────────────────┐                             │
+│            │   Local Durable Storage     │                             │
+│            │  (localStorage + IndexedDB) │                             │
+│            └──────────────┬──────────────┘                             │
+│                           │                                            │
+│         Safe Merge & Version Guard (Anti-Overwrite)                    │
+│                           │                                            │
+│         ┌─────────────────┴─────────────────┐                          │
+│         ▼                                   ▼                          │
+│  ┌──────────────┐                   ┌────────────────┐                 │
+│  │ Supabase     │                   │ UI Calculation │                 │
+│  │ Realtime     │                   │ Engine         │                 │
+│  │ Presence &   │                   │ (Net Debits vs │                 │
+│  │ Heartbeat    │                   │  Credits)      │                 │
+│  └──────────────┘                   └───────┬────────┘                 │
+│                                             │                          │
+│                                   ┌─────────┴─────────┐                │
+│                                   ▼                   ▼                │
+│                            [Dashboard Cards]   [Excel/CSV]             │
+│                            - Red: -₹Debits     Export Engine           │
+│                            + Green: +₹Credits  (Blob + Base64)         │
 │                                                                        │
-│   1. channel.track({ id, name, ... })        1. channel.track(...)    │
-│            │                                          │                │
-│            ▼                                          ▼                │
-│   ┌────────────────────────────────────────────────────────┐           │
-│   │           Supabase Realtime Channel Presence            │           │
-│   │   presenceState: {                                     │           │
-│   │     "dev_cf_abc123": [{ name: "Web • Cloudflare" }],   │           │
-│   │     "dev_ais_xyz789": [{ name: "AI Studio Preview" }]  │           │
-│   │   }                                                    │           │
-│   └──────────────────────────┬─────────────────────────────┘           │
-│                              │                                         │
-│                              ▼                                         │
-│   2. Embedded in Primary Workspace Row (`user_usr_${cleanEmail}`):     │
-│      workspace_data.devices: [                                         │
-│        { id: "dev_cf_abc123", deviceName: "Web • Cloudflare", ... },   │
-│        { id: "dev_ais_xyz789", deviceName: "AI Studio Preview", ... }  │
-│      ]                                                                 │
-│                              │                                         │
-│                              ▼                                         │
-│   3. Both devices render unified list with live presence status!       │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-#### Detailed Implementation Steps:
-1. **Extend `Storage` in `client/src/utils/storage.ts`**:
-   - Add `devices` collection to default workspace state, `getAllDataPayload()`, and `importAllDataPayload()`.
-   - Maintain `Storage.getDevices()` and `Storage.saveDevices()`.
-2. **Integrate Realtime Presence in `client/src/utils/supabase.ts`**:
-   - In `subscribeToRealtimeWorkspace`, call `channel.track(...)` with current device information.
-   - Listen for `presence.sync` and notify presence listeners.
-   - In `syncWorkspaceToSupabase`, ensure `workspacePayload.devices` always contains the current device and merges existing remote devices.
-3. **Refactor `client/src/utils/devices.ts`**:
-   - Wire `fetchAccountDevices` and `registerCurrentDevice` directly to `Storage` and primary workspace syncing.
-   - Export `subscribeToDevicePresence` linked to Supabase channel presence.
-4. **Update `ConnectedDevices.tsx`**:
-   - Highlight devices with live green indicator when present in active presence state.
-   - Support remote revocation via realtime broadcast command.
-5. **Verification**:
-   - Run vitest suite across all tests.
-   - Run linter and compiler.
+### Component & File Work Plan
+
+1. **`client/src/services/deviceService.ts` & `client/src/App.tsx`**:
+   - Add structured diagnostic logging: `[DEVICE_HEARTBEAT] Sending pulse: { deviceId, user, environment, time }`.
+   - Log realtime presence join/leave events with active session counts.
+2. **`client/src/utils/storage.ts` & `client/src/utils/expenseUtils.ts`**:
+   - Harden `importAllDataPayload`: if incoming cloud `expenses` array is empty or smaller than local active count and incoming timestamp is not strictly newer, protect and merge local expenses.
+   - Fix date normalization so timezone boundaries cannot cause today's transactions to evaluate as past dates.
+3. **`client/src/components/ExpenseTracker.tsx` & `client/src/components/DashboardHomeView.tsx`**:
+   - Update `stats` computation to calculate net amounts: `netToday = todayDebits - todayCredits`, `netWeek = weekDebits - weekCredits`, `netMonth = monthDebits - monthCredits`.
+   - Style positive net in emerald green with explicit `+` prefix, debits in rose/red with `-` prefix.
+   - Update the top-right group headers in the transaction list to show accurate net daily amounts.
+4. **`client/src/utils/expenseExport.ts`**:
+   - Fix `downloadExpenseExcel` and `downloadExpenseCSV` with multi-tier download support: Blob URL, Data URI fallback, and `XLSX.writeFile` fallback to ensure universal reliability in iframes, browser tabs, and Capacitor mobile shells.

@@ -12,7 +12,7 @@
 
 import { ExpenseItem } from '../types';
 import { getSupabaseClient, getCustomWorkspaceIdentifier } from '../utils/supabase';
-import { getOrCreateDeviceId } from './deviceService';
+import { getOrCreateDeviceId, isCloudQuotaOrNetworkError } from './deviceService';
 import { VersionVector, createVersionVector } from '../utils/versioning';
 
 export interface ExpenseAuthorityRecord {
@@ -105,13 +105,17 @@ export async function recordExpenseAuthority(
       .single();
 
     if (error) {
-      console.error('Error recording expense authority:', error);
+      if (!isCloudQuotaOrNetworkError(error)) {
+        console.warn('Notice recording expense authority:', error);
+      }
       return null;
     }
 
     return data as ExpenseAuthorityRecord;
   } catch (err) {
-    console.error('Unexpected error recording expense authority:', err);
+    if (!isCloudQuotaOrNetworkError(err)) {
+      console.warn('Notice during recording expense authority:', err);
+    }
     return null;
   }
 }
@@ -131,13 +135,17 @@ export async function getExpenseAuthority(expenseId: string): Promise<ExpenseAut
       .single();
 
     if (error && error.code !== 'PGRST116') { // PGRST116 = no rows
-      console.error('Error fetching expense authority:', error);
+      if (!isCloudQuotaOrNetworkError(error)) {
+        console.warn('Notice fetching expense authority:', error);
+      }
       return null;
     }
 
     return (data as ExpenseAuthorityRecord) || null;
   } catch (err) {
-    console.error('Unexpected error fetching expense authority:', err);
+    if (!isCloudQuotaOrNetworkError(err)) {
+      console.warn('Notice during fetching expense authority:', err);
+    }
     return null;
   }
 }
@@ -159,13 +167,17 @@ export async function markForAPKReconciliation(expenseId: string): Promise<boole
       .eq('expense_id', expenseId);
 
     if (error) {
-      console.error('Error marking expense for reconciliation:', error);
+      if (!isCloudQuotaOrNetworkError(error)) {
+        console.warn('Notice marking expense for reconciliation:', error);
+      }
       return false;
     }
 
     return true;
   } catch (err) {
-    console.error('Unexpected error marking for reconciliation:', err);
+    if (!isCloudQuotaOrNetworkError(err)) {
+      console.warn('Notice during marking for reconciliation:', err);
+    }
     return false;
   }
 }
@@ -187,13 +199,17 @@ export async function markExpenseAsSyncedToAllDevices(expenseId: string): Promis
       .eq('expense_id', expenseId);
 
     if (error) {
-      console.error('Error marking expense as synced:', error);
+      if (!isCloudQuotaOrNetworkError(error)) {
+        console.warn('Notice marking expense as synced:', error);
+      }
       return false;
     }
 
     return true;
   } catch (err) {
-    console.error('Unexpected error marking as synced:', err);
+    if (!isCloudQuotaOrNetworkError(err)) {
+      console.warn('Notice during marking as synced:', err);
+    }
     return false;
   }
 }
@@ -216,13 +232,17 @@ export async function getExpensesRequiringAPKReconciliation(
       .order('last_authoritative_modification_ms', { ascending: false });
 
     if (error) {
-      console.error('Error fetching reconciliation expenses:', error);
+      if (!isCloudQuotaOrNetworkError(error)) {
+        console.warn('Notice fetching reconciliation expenses:', error);
+      }
       return [];
     }
 
     return (data as ExpenseAuthorityRecord[]) || [];
   } catch (err) {
-    console.error('Unexpected error fetching reconciliation expenses:', err);
+    if (!isCloudQuotaOrNetworkError(err)) {
+      console.warn('Notice during fetching reconciliation expenses:', err);
+    }
     return [];
   }
 }

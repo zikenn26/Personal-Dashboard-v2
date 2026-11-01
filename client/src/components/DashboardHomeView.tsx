@@ -22,6 +22,7 @@ import { DynamicScheduleCard } from './DynamicScheduleCard';
 import { CommandCenterGrid } from './CommandCenterGrid';
 import { FlipClock } from './FlipClock';
 import { CurrentWeatherWidget } from './CurrentWeatherWidget';
+import { isCreditTransaction } from '../utils/expenseUtils';
 import {
   CheckCircle2,
   Circle,
@@ -407,16 +408,19 @@ export const DashboardHomeView: React.FC<DashboardHomeViewProps> = ({
       const cleanDate = e.date.split('T')[0];
       const dayIdx = weekDates.indexOf(cleanDate);
       if (dayIdx >= 0 && dayIdx <= 6) {
-        dayTotals[dayIdx] += (Number(e.amount) || 0);
+        const amt = Number(e.amount) || 0;
+        const isCredit = isCreditTransaction(e);
+        // Net: debits increase spending, credits decrease spending (or negative expense = net surplus)
+        dayTotals[dayIdx] += isCredit ? -amt : amt;
       }
     });
 
     const weeklyTotal = dayTotals.reduce((a, b) => a + b, 0);
 
-    const maxDay = Math.max(...dayTotals, 1);
+    const maxDay = Math.max(...dayTotals.map(Math.abs), 1);
     const dayPercentages = dayTotals.map((tot) => {
       if (tot === 0) return 0;
-      return Math.min(100, Math.max(16, Math.round((tot / maxDay) * 100)));
+      return Math.min(100, Math.max(16, Math.round((Math.abs(tot) / maxDay) * 100)));
     });
 
     // Dynamic Category Breakdown strictly for THIS WEEK (Mon-Sun)

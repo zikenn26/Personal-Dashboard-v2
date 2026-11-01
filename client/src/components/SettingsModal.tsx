@@ -20,6 +20,9 @@ import {
   Cloud,
   CloudOff,
   WifiOff,
+  Upload,
+  Download,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { AppSettings, AuthUser } from '../types';
 import { Sound } from '../utils/audio';
@@ -29,6 +32,8 @@ import { Storage } from '../utils/storage';
 import { testGroqApiKey, SUPPORTED_GROQ_MODELS, DEFAULT_GROQ_MODEL } from '../services/groqService';
 import { testGeminiApiKey } from '../services/geminiService';
 import { ConnectedDevices } from './ConnectedDevices';
+import { downloadExpenseBundle } from '../utils/expenseExport';
+import { toast } from 'sonner';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -610,6 +615,86 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+
+          {/* SECTION: DATA BRIDGE & CROSS-DEVICE TRANSFER (APK ↔ WEB) */}
+          <div className="p-3.5 rounded-xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-900/60 space-y-3">
+            <div>
+              <span className="text-xs font-bold text-purple-900 dark:text-purple-200 flex items-center gap-1.5">
+                <Download className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                <span>Data Bridge &amp; Backup (APK &harr; Web)</span>
+              </span>
+              <p className="text-[11px] text-purple-700/80 dark:text-purple-300/80 mt-0.5">
+                Transfer transactions &amp; workspace records directly between your APK, Web browser, and AI Studio without cloud quota restrictions.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {/* 1. Export JSON */}
+              <button
+                type="button"
+                onClick={() => {
+                  Sound.click(settings.soundEnabled);
+                  onExportData();
+                }}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white dark:bg-[#1E293B] hover:bg-purple-100/70 dark:hover:bg-purple-900/40 border border-purple-200 dark:border-purple-800 text-purple-800 dark:text-purple-200 shadow-2xs transition-colors cursor-pointer"
+                title="Download full JSON workspace backup including all transactions"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export JSON</span>
+              </button>
+
+              {/* 2. Import JSON */}
+              <label className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white dark:bg-[#1E293B] hover:bg-purple-100/70 dark:hover:bg-purple-900/40 border border-purple-200 dark:border-purple-800 text-purple-800 dark:text-purple-200 shadow-2xs transition-colors cursor-pointer">
+                <Upload className="w-3.5 h-3.5" />
+                <span>Import JSON</span>
+                <input
+                  type="file"
+                  accept=".json"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                      try {
+                        const content = event.target?.result as string;
+                        const success = onImportData(content);
+                        if (success) {
+                          toast.success('Successfully imported workspace data and transactions!');
+                        } else {
+                          toast.error('Invalid workspace file format.');
+                        }
+                      } catch {
+                        toast.error('Failed to parse JSON file.');
+                      }
+                    };
+                    reader.readAsText(file);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+
+              {/* 3. Export Excel & CSV Bundle */}
+              <button
+                type="button"
+                onClick={async () => {
+                  Sound.click(settings.soundEnabled);
+                  const exps = Storage.getExpenses();
+                  if (exps.length === 0) {
+                    toast.info('No expenses recorded to export.');
+                    return;
+                  }
+                  toast.success(`Exporting universal bundle (.xlsx + .csv) for ${exps.length} transactions...`);
+                  await downloadExpenseBundle(exps);
+                }}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white dark:bg-[#1E293B] hover:bg-purple-100/70 dark:hover:bg-purple-900/40 border border-purple-200 dark:border-purple-800 text-purple-800 dark:text-purple-200 shadow-2xs transition-colors cursor-pointer"
+                title="Export all transactions in Excel (.xlsx) and CSV formats"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Export Excel</span>
+              </button>
+            </div>
           </div>
         </div>
 

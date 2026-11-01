@@ -3505,8 +3505,14 @@ export const Storage = {
             return true;
           });
 
-          const finalExpenses = Storage.mergeExpenseLists(currentLocal, validCloudExpenses);
-          Storage.setExpenses(finalExpenses);
+          // Safeguard: If incoming validCloudExpenses is empty, but local has active expenses,
+          // NEVER wipe local expenses with an empty array unless explicitly cleared
+          if (validCloudExpenses.length === 0 && currentLocal.length > 0) {
+            console.info('[STORAGE] Preserved local expenses against empty cloud sync payload:', currentLocal.length);
+          } else {
+            const finalExpenses = Storage.mergeExpenseLists(currentLocal, validCloudExpenses);
+            Storage.setExpenses(finalExpenses);
+          }
         }
       }
       if (Array.isArray(data.excelImportLogs)) {

@@ -1069,13 +1069,25 @@ export default function App() {
             getPayloadSyncTimestamp(currentLocalPayload)
           );
 
-          // If local storage has newer mutations than cloud snapshot, do not overwrite local state
-          if (incomingVersion > 0 && incomingVersion < localVersion) {
-            console.info('[SUPABASE_SYNC] Cloud snapshot is older than local mutation. Skipping overwrite.', {
+          // If local storage has newer or equal mutations than cloud snapshot, do not overwrite local state
+          if (localVersion > 0 && incomingVersion <= localVersion) {
+            console.info('[SUPABASE_SYNC] Local storage has newer or equal mutations. Skipping cloud overwrite.', {
               incomingVersion,
               localVersion,
             });
             return;
+          }
+
+          // Anti-Zero-Spending Protection:
+          // If local storage has transactions (e.g. freshly auto-logged SMS transactions)
+          // and the incoming cloud snapshot has no expenses, merge and safeguard local records!
+          const localExpenses = Storage.getExpenses();
+          const incomingExpenses = Array.isArray(result.data?.expenses) ? result.data.expenses : [];
+          if (localExpenses.length > 0 && incomingExpenses.length === 0 && !result.data?._meta?.clearedAllExpenses) {
+            console.info('[SUPABASE_SYNC] Safeguarding local expenses against empty cloud overwrite. Retaining local count:', localExpenses.length);
+            result.data.expenses = localExpenses;
+          } else if (localExpenses.length > 0 && incomingExpenses.length > 0) {
+            result.data.expenses = Storage.mergeExpenseLists(localExpenses, incomingExpenses);
           }
 
           console.info('[PROFILE_TRACE] autoSyncFromCloud applying snapshot. Incoming name:', result.data.profile?.name);

@@ -743,11 +743,28 @@ export const CommandCenterGrid: React.FC<CommandCenterGridProps> = ({
 
           <div className="flex items-baseline justify-between">
             <div>
-              <span className="text-2xl font-bold text-[#37352F] dark:text-white font-mono tracking-tight">
-                {selectedSpendDayIdx !== null
-                  ? `₹${spendingStats.dayTotals[selectedSpendDayIdx].toLocaleString()}`
-                  : `₹${spendingStats.weekly.toLocaleString()}`}
-              </span>
+              {(() => {
+                const val = selectedSpendDayIdx !== null ? spendingStats.dayTotals[selectedSpendDayIdx] : spendingStats.weekly;
+                const isSurplus = val < 0; // credits exceed debits
+                const isDebitSpent = val > 0;
+                return (
+                  <span
+                    className={`text-2xl font-bold font-mono tracking-tight ${
+                      isSurplus
+                        ? 'text-emerald-600 dark:text-emerald-400 font-black'
+                        : isDebitSpent
+                        ? 'text-rose-600 dark:text-rose-400'
+                        : 'text-[#37352F] dark:text-white'
+                    }`}
+                  >
+                    {isSurplus
+                      ? `+₹${Math.abs(val).toLocaleString()}`
+                      : isDebitSpent
+                      ? `-₹${val.toLocaleString()}`
+                      : '₹0'}
+                  </span>
+                );
+              })()}
               <span className="text-xs text-[#787774] dark:text-[#9CA3AF] ml-2 font-medium">
                 {selectedSpendDayIdx !== null ? (
                   <span className="inline-flex items-center gap-1">

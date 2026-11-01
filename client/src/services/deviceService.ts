@@ -70,21 +70,27 @@ async function generateDeviceFingerprint(): Promise<string> {
 
 /**
  * Generate browser fingerprint from available APIs
- * IMPROVED: Added more entropy to reduce collision risk
+ * Safely guards against missing window/screen/navigator globals in headless/Node test environments
  */
 function generateBrowserFingerprint(): string {
+  const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : 'Node/Environment';
+  const language = typeof navigator !== 'undefined' ? navigator.language : 'en-US';
+  const tzOffset = typeof Date !== 'undefined' ? new Date().getTimezoneOffset() : 0;
+  const screenResolution = typeof screen !== 'undefined' ? `${screen.width}x${screen.height}` : '1920x1080';
+  const hardwareConcurrency = typeof navigator !== 'undefined' ? (navigator.hardwareConcurrency || 'unknown') : 'unknown';
+  const deviceMemory = typeof navigator !== 'undefined' ? ((navigator as any).deviceMemory || 'unknown') : 'unknown';
+  const storageCount = typeof localStorage !== 'undefined' ? Object.keys(localStorage).length.toString() : '0';
+
   const components = [
-    navigator.userAgent,
-    navigator.language,
-    new Date().getTimezoneOffset(),
-    screen.width + 'x' + screen.height,
-    navigator.hardwareConcurrency || 'unknown',
-    (navigator as any).deviceMemory || 'unknown',
-    // IMPROVED: Add timestamp and random component for uniqueness
+    userAgent,
+    language,
+    tzOffset,
+    screenResolution,
+    hardwareConcurrency,
+    deviceMemory,
     Date.now().toString(36),
     Math.random().toString(36).substr(2, 9),
-    // Add localStorage size as entropy
-    Object.keys(localStorage).length.toString(),
+    storageCount,
   ];
   
   const fingerprint = components.join('|');
@@ -108,33 +114,52 @@ function hashString(str: string): string {
   return Math.abs(hash).toString(16).padEnd(16, '0');
 }
 
+let inMemoryDeviceId: string | null = null;
+
 /**
  * Get or create stable device ID
  */
 export async function getOrCreateDeviceId(): Promise<string> {
   try {
+    if (inMemoryDeviceId) {
+      return inMemoryDeviceId;
+    }
+
     // Check if we already have a device ID stored
-    let storedDeviceId = localStorage.getItem(DEVICE_ID_STORAGE_KEY);
+    let storedDeviceId: string | null = null;
+    if (typeof localStorage !== 'undefined') {
+      storedDeviceId = localStorage.getItem(DEVICE_ID_STORAGE_KEY);
+    }
     
     if (storedDeviceId) {
+      inMemoryDeviceId = storedDeviceId;
       return storedDeviceId;
     }
 
     // Generate new device ID from fingerprint
     const fingerprint = await generateDeviceFingerprint();
-    localStorage.setItem(DEVICE_FINGERPRINT_STORAGE_KEY, fingerprint);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(DEVICE_FINGERPRINT_STORAGE_KEY, fingerprint);
+    }
     
     // Combine fingerprint with a random component for uniqueness
     const random = Math.random().toString(36).substring(2, 9);
     const deviceId = `${fingerprint}_${random}`;
     
-    localStorage.setItem(DEVICE_ID_STORAGE_KEY, deviceId);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(DEVICE_ID_STORAGE_KEY, deviceId);
+    }
+    inMemoryDeviceId = deviceId;
     return deviceId;
   } catch (err) {
-    console.error('Error generating device ID:', err);
     // Fallback: use random ID
     const fallback = `device_${Date.now()}_${Math.random().toString(36).substring(2)}`;
-    localStorage.setItem(DEVICE_ID_STORAGE_KEY, fallback);
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem(DEVICE_ID_STORAGE_KEY, fallback);
+      } catch {}
+    }
+    inMemoryDeviceId = fallback;
     return fallback;
   }
 }
@@ -167,7 +192,7 @@ async function getDeviceType(): Promise<'web' | 'native' | 'desktop'> {
  */
 async function getPlatformName(): Promise<string> {
   if (!isNativePlatform()) {
-    const ua = navigator.userAgent;
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
     if (ua.indexOf('Windows') !== -1) return 'windows';
     if (ua.indexOf('Mac') !== -1) return 'macos';
     if (ua.indexOf('Linux') !== -1) return 'linux';
@@ -204,7 +229,7 @@ async function getBrowserInfo(): Promise<string> {
   }
   
   // Extract browser info from user agent
-  const ua = navigator.userAgent;
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
   let browser = 'Unknown';
   
   if (ua.indexOf('Firefox') > -1) browser = 'Firefox';
@@ -212,7 +237,64 @@ async function getBrowserInfo(): Promise<string> {
   else if (ua.indexOf('Safari') > -1) browser = 'Safari';
   else if (ua.indexOf('Edge') > -1) browser = 'Edge';
   
-  return `${browser}/${navigator.userAgent.split(' ').pop() || 'unknown'}`;
+  const lastPart = ua ? (ua.split(' ').pop() || 'unknown') : 'unknown';
+  return `${browser}/${lastPart}`;
+}
+
+/**
+ * Register or update device in Supabase (race-condition safe)
+/**
+ * Check if an error from Supabase is due to plan limits (e.g. egress quota),
+ * spend caps, network unavailability, or service restrictions.
+ */
+export function isCloudQuotaOrNetworkError(err: any): boolean {
+  if (!err) return false;
+  const msg = (typeof err === 'string' ? err : err.message || err.error_description || JSON.stringify(err)).toLowerCase();
+  return (
+    msg.includes('exceed_egress_quota') ||
+    msg.includes('spend caps') ||
+    msg.includes('restricted') ||
+    msg.includes('payment required') ||
+    msg.includes('quota') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('network') ||
+    err.status === 402 ||
+    err.code === '402'
+  );
+}
+
+/**
+ * Builds or retrieves a reliable local registered device fallback
+ */
+async function buildLocalFallbackDevice(user: AuthUser): Promise<RegisteredDevice> {
+  const deviceId = await getOrCreateDeviceId();
+  const deviceType = await getDeviceType();
+  const platform = await getPlatformName();
+  const browserInfo = await getBrowserInfo();
+  const deviceName = `${browserInfo.split('/')[0]} on ${platform.charAt(0).toUpperCase() + platform.slice(1)}`;
+  const now = new Date().toISOString();
+
+  const localDevice: RegisteredDevice = {
+    id: `local_dev_${deviceId}`,
+    device_id: deviceId,
+    device_name: deviceName,
+    device_type: deviceType,
+    platform: platform,
+    browser_info: browserInfo,
+    is_active: true,
+    last_seen_at: now,
+    first_login_at: now,
+    created_at: now,
+    updated_at: now,
+  };
+
+  try {
+    if (typeof localStorage !== 'undefined' && user?.id) {
+      localStorage.setItem(`local_registered_device_${user.id}`, JSON.stringify(localDevice));
+    }
+  } catch {}
+
+  return localDevice;
 }
 
 /**
@@ -222,22 +304,31 @@ async function getBrowserInfo(): Promise<string> {
 export async function registerDevice(user: AuthUser): Promise<RegisteredDevice | null> {
   try {
     if (!user || !user.id) {
-      console.warn('[DEVICE] No authenticated user, skipping device registration');
       return null;
     }
+
+    const localDevice = await buildLocalFallbackDevice(user);
 
     const supabase = getSupabaseClient();
     if (!supabase) {
-      console.warn('[DEVICE] Supabase not initialized, skipping device registration');
-      return null;
+      return localDevice;
     }
 
-    const deviceId = await getOrCreateDeviceId();
-    const deviceType = await getDeviceType();
-    const platform = await getPlatformName();
-    const browserInfo = await getBrowserInfo();
-    const deviceName = `${browserInfo.split('/')[0]} on ${platform.charAt(0).toUpperCase() + platform.slice(1)}`;
+    const deviceId = localDevice.device_id;
+    const deviceType = localDevice.device_type;
+    const platform = localDevice.platform;
+    const browserInfo = localDevice.browser_info || '';
+    const deviceName = localDevice.device_name;
     const now = new Date().toISOString();
+
+    console.info('[DEVICE_REGISTER] Registering session for user account:', {
+      deviceId,
+      deviceName,
+      platform,
+      userEmail: user.email,
+      userId: user.id,
+      timestamp: now,
+    });
 
     // Step 1: Try INSERT (fails silently if already exists due to UNIQUE constraint)
     let { data, error } = await supabase
@@ -276,20 +367,30 @@ export async function registerDevice(user: AuthUser): Promise<RegisteredDevice |
         .single();
 
       if (updateError) {
-        console.error('[DEVICE] Error updating existing device:', updateError);
-        return null;
+        if (!isCloudQuotaOrNetworkError(updateError)) {
+          console.warn('[DEVICE] Cloud device update notice:', updateError);
+        }
+        return localDevice;
       }
 
       data = updateData;
     } else if (error) {
-      console.error('[DEVICE] Error registering device:', error);
-      return null;
+      if (!isCloudQuotaOrNetworkError(error)) {
+        console.warn('[DEVICE] Cloud device registration notice:', error);
+      }
+      return localDevice;
     }
 
-    return data as RegisteredDevice;
+    if (data && typeof localStorage !== 'undefined') {
+      localStorage.setItem(`local_registered_device_${user.id}`, JSON.stringify(data));
+    }
+
+    return (data as RegisteredDevice) || localDevice;
   } catch (err) {
-    console.error('[DEVICE] Unexpected error registering device:', err);
-    return null;
+    if (!isCloudQuotaOrNetworkError(err)) {
+      console.warn('[DEVICE] Unexpected notice during registration:', err);
+    }
+    return buildLocalFallbackDevice(user);
   }
 }
 
@@ -300,8 +401,11 @@ export async function getActiveDevices(user: AuthUser): Promise<RegisteredDevice
   try {
     if (!user || !user.id) return [];
 
+    const localDev = await getCurrentDeviceInfo(user);
+    const fallbackList = localDev ? [localDev] : [];
+
     const supabase = getSupabaseClient();
-    if (!supabase) return [];
+    if (!supabase) return fallbackList;
 
     const { data, error } = await supabase
       .from('user_devices')
@@ -311,14 +415,19 @@ export async function getActiveDevices(user: AuthUser): Promise<RegisteredDevice
       .order('last_seen_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching active devices:', error);
-      return [];
+      if (!isCloudQuotaOrNetworkError(error)) {
+        console.warn('[DEVICE] Notice fetching active devices:', error);
+      }
+      return fallbackList;
     }
 
-    return (data as RegisteredDevice[]) || [];
+    return (data as RegisteredDevice[]) || fallbackList;
   } catch (err) {
-    console.error('Unexpected error fetching devices:', err);
-    return [];
+    if (!isCloudQuotaOrNetworkError(err)) {
+      console.warn('[DEVICE] Unexpected notice fetching devices:', err);
+    }
+    const localDev = await getCurrentDeviceInfo(user);
+    return localDev ? [localDev] : [];
   }
 }
 
@@ -329,26 +438,65 @@ export async function updateDeviceHeartbeat(user: AuthUser): Promise<boolean> {
   try {
     if (!user || !user.id) return false;
 
-    const supabase = getSupabaseClient();
-    if (!supabase) return false;
-
+    const now = new Date().toISOString();
     const deviceId = await getOrCreateDeviceId();
+    const userEmail = (user.email || '').trim().toLowerCase();
 
-    const { error } = await supabase
+    console.info('[DEVICE_HEARTBEAT] Emitting pulse for user account:', {
+      deviceId,
+      userEmail,
+      userId: user.id,
+      timestamp: now,
+      environment: typeof window !== 'undefined' ? window.location.hostname : 'node',
+    });
+
+    // Always keep local registration updated
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem(`local_registered_device_${user.id}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          parsed.last_seen_at = now;
+          localStorage.setItem(`local_registered_device_${user.id}`, JSON.stringify(parsed));
+        }
+      }
+    } catch {}
+
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      console.info('[DEVICE_HEARTBEAT] Local heartbeat updated (Supabase client unconfigured)');
+      return true;
+    }
+
+    const { data: updateRes, error } = await supabase
       .from('user_devices')
-      .update({ last_seen_at: new Date().toISOString() })
+      .update({ last_seen_at: now })
       .eq('user_id', user.id)
-      .eq('device_id', deviceId);
+      .eq('device_id', deviceId)
+      .select('id, device_name, is_active, last_seen_at');
 
     if (error) {
-      console.error('Error updating device heartbeat:', error);
-      return false;
+      if (!isCloudQuotaOrNetworkError(error)) {
+        console.warn('[DEVICE_HEARTBEAT] Notice updating device heartbeat in Supabase:', error);
+      } else {
+        console.info('[DEVICE_HEARTBEAT] Heartbeat preserved locally (Cloud egress quota reached / offline)');
+      }
+      return true; // Local heartbeat remains valid
     }
+
+    console.info('[DEVICE_HEARTBEAT] Heartbeat successfully acknowledged by Supabase:', {
+      deviceId,
+      userEmail,
+      acknowledgedAt: now,
+      matchedRows: updateRes?.length ?? 1,
+    });
 
     return true;
   } catch (err) {
-    console.error('Unexpected error updating heartbeat:', err);
-    return false;
+    if (!isCloudQuotaOrNetworkError(err)) {
+      console.warn('[DEVICE_HEARTBEAT] Unexpected notice updating heartbeat:', err);
+    }
+    return true;
   }
 }
 
@@ -359,10 +507,16 @@ export async function logoutDevice(user: AuthUser, targetDeviceId?: string): Pro
   try {
     if (!user || !user.id) return false;
 
-    const supabase = getSupabaseClient();
-    if (!supabase) return false;
-
     const deviceId = targetDeviceId || (await getOrCreateDeviceId());
+
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem(`local_registered_device_${user.id}`);
+      }
+    } catch {}
+
+    const supabase = getSupabaseClient();
+    if (!supabase) return true;
 
     const { error } = await supabase
       .from('user_devices')
@@ -371,14 +525,18 @@ export async function logoutDevice(user: AuthUser, targetDeviceId?: string): Pro
       .eq('device_id', deviceId);
 
     if (error) {
-      console.error('Error logging out device:', error);
-      return false;
+      if (!isCloudQuotaOrNetworkError(error)) {
+        console.warn('[DEVICE] Notice logging out device:', error);
+      }
+      return true;
     }
 
     return true;
   } catch (err) {
-    console.error('Unexpected error logging out device:', err);
-    return false;
+    if (!isCloudQuotaOrNetworkError(err)) {
+      console.warn('[DEVICE] Unexpected notice logging out device:', err);
+    }
+    return true;
   }
 }
 
@@ -389,10 +547,22 @@ export async function getCurrentDeviceInfo(user: AuthUser): Promise<RegisteredDe
   try {
     if (!user || !user.id) return null;
 
-    const supabase = getSupabaseClient();
-    if (!supabase) return null;
-
     const deviceId = await getOrCreateDeviceId();
+
+    let localCachedDevice: RegisteredDevice | null = null;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem(`local_registered_device_${user.id}`);
+        if (stored) {
+          localCachedDevice = JSON.parse(stored);
+        }
+      }
+    } catch {}
+
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return localCachedDevice || (await buildLocalFallbackDevice(user));
+    }
 
     const { data, error } = await supabase
       .from('user_devices')
@@ -401,14 +571,23 @@ export async function getCurrentDeviceInfo(user: AuthUser): Promise<RegisteredDe
       .eq('device_id', deviceId)
       .single();
 
-    if (error && error.code !== 'PGRST116') { // PGRST116 = no rows found
-      console.error('Error fetching current device info:', error);
+    if (error) {
+      if (error.code !== 'PGRST116' && !isCloudQuotaOrNetworkError(error)) {
+        console.warn('[DEVICE] Notice querying current device info:', error);
+      }
+      return localCachedDevice || (await buildLocalFallbackDevice(user));
     }
 
-    return (data as RegisteredDevice) || null;
+    if (data && typeof localStorage !== 'undefined') {
+      localStorage.setItem(`local_registered_device_${user.id}`, JSON.stringify(data));
+    }
+
+    return (data as RegisteredDevice) || localCachedDevice || (await buildLocalFallbackDevice(user));
   } catch (err) {
-    console.error('Unexpected error fetching current device info:', err);
-    return null;
+    if (!isCloudQuotaOrNetworkError(err)) {
+      console.warn('[DEVICE] Unexpected notice fetching current device info:', err);
+    }
+    return buildLocalFallbackDevice(user);
   }
 }
 

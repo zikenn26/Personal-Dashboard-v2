@@ -118,7 +118,7 @@ export function generateExpenseJSON(expenses: ExpenseItem[]): string {
 }
 
 /**
- * Downloads a file onto the device using standard browser/WebView blob download with mobile Web Share and data URI fallback.
+ * Downloads a file onto the device using standard browser/WebView blob download with data URI and DOM fallback.
  */
 export async function downloadExpenseFile(
   content: string | Uint8Array,
@@ -128,30 +128,14 @@ export async function downloadExpenseFile(
   const blobPart = content instanceof Uint8Array ? content : content;
   const blob = new Blob([blobPart], { type: mimeType });
 
-  // 1. Mobile Web Share API Level 2 (Android / iOS / Mobile WebView)
-  if (typeof navigator !== 'undefined' && 'canShare' in navigator && typeof File !== 'undefined') {
-    try {
-      const file = new File([blob], filename, { type: mimeType });
-      if (navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: filename,
-        });
-        return;
-      }
-    } catch {
-      // User cancelled share or device declined, fall through to browser link download
-    }
-  }
-
   try {
-    // 2. Check for legacy IE/Edge msSaveOrOpenBlob
+    // 1. Check for legacy IE/Edge msSaveOrOpenBlob
     if (typeof window !== 'undefined' && (window.navigator as any)?.msSaveOrOpenBlob) {
       (window.navigator as any).msSaveOrOpenBlob(blob, filename);
       return;
     }
 
-    // 3. Off-screen anchor download (ensures element is in layout tree without display: none)
+    // 2. Off-screen anchor download (ensures element is in layout tree without display: none)
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -188,7 +172,7 @@ export async function downloadExpenseFile(
     }, 60000);
   } catch (blobErr) {
     console.warn('[EXPORT] Blob download failed, attempting data URI fallback:', blobErr);
-    // 4. Data URI fallback for sandboxed iframes
+    // 3. Data URI fallback for sandboxed iframes
     try {
       let dataUri = '';
       if (typeof content === 'string') {
@@ -239,32 +223,46 @@ export async function downloadExpenseCSV(expenses: ExpenseItem[], filename?: str
 }
 
 /**
- * Convenience helper to download Excel (.xlsx) directly using Blob with
- * 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' and anchor link download.
+ * Convenience helper to download Excel (.xlsx) directly with dual fallback:
+ * SheetJS native XLSX.writeFile -> Blob Anchor -> Base64 Data URI.
  */
 export async function downloadExpenseExcel(expenses: ExpenseItem[], filename?: string): Promise<void> {
   const dateStr = getLocalDateKey();
   const name = filename || `expense_transactions_${dateStr}.xlsx`;
   const workbook = generateExpenseWorkbook(expenses);
 
-  // Binary array buffer through SheetJS
-  const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-  const uint8Array = new Uint8Array(buffer);
-
-  // Trigger file save using Blob with explicit MIME type 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-  // and anchor link creation with download attribute
   try {
-    await downloadExpenseFile(
-      uint8Array,
-      name,
-      EXCEL_MIME_TYPE
-    );
-  } catch (err) {
-    console.warn('[EXPORT] downloadExpenseFile notice, falling back to XLSX.writeFile:', err);
+    // Primary browser download method via SheetJS's built-in file saver
     if (typeof window !== 'undefined') {
       XLSX.writeFile(workbook, name, { bookType: 'xlsx' });
+      return;
     }
+  } catch (sheetJsErr) {
+    console.warn('[EXPORT] XLSX.writeFile direct attempt encountered issue, falling back to Blob:', sheetJsErr);
   }
+
+  // Secondary fallback: ArrayBuffer -> Blob -> Anchor download
+  try {
+    const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const uint8Array = new Uint8Array(buffer);
+    await downloadExpenseFile(uint8Array, name, EXCEL_MIME_TYPE);
+  } catch (err) {
+    console.error('[EXPORT] Excel export failed across all methods:', err);
+    throw err;
+  }
+}
+
+/**
+ * Universal bundle export helper: Generates both XLSX and CSV files simultaneously
+ * so the user has immediate access to their data in any program.
+ */
+export async function downloadExpenseBundle(expenses: ExpenseItem[]): Promise<void> {
+  const dateStr = getLocalDateKey();
+  await downloadExpenseExcel(expenses, `expense_transactions_${dateStr}.xlsx`);
+  // Stagger slightly so browser doesn't block parallel downloads
+  setTimeout(() => {
+    void downloadExpenseCSV(expenses, `expense_transactions_${dateStr}.csv`);
+  }, 400);
 }
 
 /**
