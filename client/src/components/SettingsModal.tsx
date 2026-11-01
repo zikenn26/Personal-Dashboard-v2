@@ -43,6 +43,7 @@ import {
   hasCustomSupabaseCredentials,
   resetSupabaseClient,
   validateSupabaseConnection,
+  checkAndTriggerMasterApkSeed,
 } from '../utils/supabase';
 import { toast } from 'sonner';
 
@@ -173,6 +174,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setSupabaseTestStatus('success');
         setSupabaseTestMsg('Successfully connected to fresh cloud database!');
         toast.success('Connected to fresh cloud database instance with unrestricted quota!');
+        // Master Repopulation on connection
+        checkAndTriggerMasterApkSeed().then((didSeed) => {
+          if (didSeed) {
+            toast.success('Authoritative master dataset successfully published to the cloud.');
+          }
+        });
       } else {
         Sound.error(settings.soundEnabled);
         setSupabaseTestStatus('error');
@@ -347,6 +354,101 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
 
 
+  const handleCopySql = () => {
+    const sqlUrl = window.location.origin + '/supabase/schema.sql';
+    // Fallback if not hosted: We provide a condensed version of the essential SQL for 1-click copy
+    const fallbackSql = `-- Supabase Initialization
+CREATE TABLE IF NOT EXISTS public.user_workspaces (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_identifier TEXT NOT NULL UNIQUE,
+  user_email TEXT NOT NULL,
+  workspace_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+CREATE TABLE IF NOT EXISTS public.user_devices (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  device_id TEXT NOT NULL,
+  device_name TEXT NOT NULL,
+  device_type TEXT DEFAULT 'web',
+  platform TEXT DEFAULT 'web',
+  browser_info TEXT,
+  is_active BOOLEAN DEFAULT true,
+  first_login_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
+  last_seen_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
+  created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
+  updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
+  UNIQUE (user_id, device_id)
+);
+ALTER TABLE public.user_workspaces ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_devices ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Strict auth select workspaces" ON public.user_workspaces FOR SELECT TO authenticated USING (auth.uid() = user_id);
+CREATE POLICY "Strict auth insert workspaces" ON public.user_workspaces FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Strict auth update workspaces" ON public.user_workspaces FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Strict auth select devices" ON public.user_devices FOR SELECT TO authenticated USING (auth.uid() = user_id);
+CREATE POLICY "Strict auth insert devices" ON public.user_devices FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Strict auth update devices" ON public.user_devices FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+ALTER PUBLICATION supabase_realtime ADD TABLE user_workspaces, user_devices;
+CREATE OR REPLACE FUNCTION update_updated_at_column() RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = timezone('utc'::text, now()); RETURN NEW; END; $$ language 'plpgsql';
+CREATE TRIGGER trg_user_workspaces_updated_at BEFORE UPDATE ON public.user_workspaces FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER trg_user_devices_updated_at BEFORE UPDATE ON public.user_devices FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+`;
+    navigator.clipboard.writeText(fallbackSql).then(() => {
+      toast.success('SQL Script copied to clipboard!');
+      Sound.success(settings.soundEnabled);
+    }).catch(() => toast.error('Failed to copy.'));
+  };
+
+  const handleDownloadSql = () => {
+    const sql = `-- Follow the documentation to run this script in your Supabase SQL Editor.
+CREATE TABLE IF NOT EXISTS public.user_workspaces (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_identifier TEXT NOT NULL UNIQUE,
+  user_email TEXT NOT NULL,
+  workspace_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+CREATE TABLE IF NOT EXISTS public.user_devices (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  device_id TEXT NOT NULL,
+  device_name TEXT NOT NULL,
+  device_type TEXT DEFAULT 'web',
+  platform TEXT DEFAULT 'web',
+  browser_info TEXT,
+  is_active BOOLEAN DEFAULT true,
+  first_login_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
+  last_seen_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
+  created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
+  updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
+  UNIQUE (user_id, device_id)
+);
+ALTER TABLE public.user_workspaces ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_devices ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Strict auth select workspaces" ON public.user_workspaces FOR SELECT TO authenticated USING (auth.uid() = user_id);
+CREATE POLICY "Strict auth insert workspaces" ON public.user_workspaces FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Strict auth update workspaces" ON public.user_workspaces FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Strict auth select devices" ON public.user_devices FOR SELECT TO authenticated USING (auth.uid() = user_id);
+CREATE POLICY "Strict auth insert devices" ON public.user_devices FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Strict auth update devices" ON public.user_devices FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+ALTER PUBLICATION supabase_realtime ADD TABLE user_workspaces, user_devices;
+CREATE OR REPLACE FUNCTION update_updated_at_column() RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = timezone('utc'::text, now()); RETURN NEW; END; $$ language 'plpgsql';
+CREATE TRIGGER trg_user_workspaces_updated_at BEFORE UPDATE ON public.user_workspaces FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER trg_user_devices_updated_at BEFORE UPDATE ON public.user_devices FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+`;
+    const blob = new Blob([sql], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'supabase_schema_init.sql';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
       <div className="w-full max-w-xl max-h-[90vh] flex flex-col rounded-2xl bg-white dark:bg-[#111827] border border-[#E5E7EB] dark:border-[#1F2937] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 my-auto">
@@ -505,6 +607,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
               Data is synced across all your devices using the persistent Server Cloud Hub with APK-authoritative master reconciliation. To connect your own fresh Supabase project with zero egress restrictions, configure credentials below:
             </p>
+
+            <div className="flex items-center gap-2 mt-2 mb-4">
+              <button
+                type="button"
+                onClick={handleCopySql}
+                className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-md transition-colors cursor-pointer shadow-sm"
+              >
+                Copy SQL Script
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadSql}
+                className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-md transition-colors cursor-pointer shadow-sm"
+              >
+                Download .sql
+              </button>
+              <a
+                href="https://supabase.com/dashboard/project/_/sql"
+                target="_blank"
+                rel="noreferrer"
+                className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 rounded-md transition-colors cursor-pointer shadow-sm flex items-center gap-1 ml-auto"
+              >
+                Open SQL Editor <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
 
             <form onSubmit={handleSaveCloudDb} className="space-y-2.5">
               <div>

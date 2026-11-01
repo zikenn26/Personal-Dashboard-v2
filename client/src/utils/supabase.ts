@@ -19,6 +19,64 @@ export {
   hasCustomSupabaseCredentials,
 };
 
+/**
+ * Master Dataset Seeding: Triggered upon connecting to a fresh cloud instance.
+ * Checks if the remote database is empty, and if we are on the native Android APK
+ * (the authoritative master of SMS expenses), automatically publishes the local
+ * master dataset to seed the fresh cloud project.
+ */
+export const checkAndTriggerMasterApkSeed = async (): Promise<boolean> => {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const activeId = getCustomWorkspaceIdentifier();
+    if (activeId === 'user_guest' || activeId.startsWith('user_guest')) return false;
+
+    // Check if the cloud has existing valid data
+    const { data: existing, error } = await client
+      .from('user_workspaces')
+      .select('workspace_data')
+      .eq('user_identifier', activeId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Master seed check failed:', error);
+      return false;
+    }
+
+    const remoteExpenses = existing?.workspace_data?.expenses || [];
+
+    // If the database is completely empty or missing expenses, we assume it's fresh
+    if (!existing || remoteExpenses.length === 0) {
+      // Are we the master source of truth? (Android Native APK)
+      // Or in the context of the migration, if we have local expenses, we'll assume we are the seeder.
+      let localWorkspaceStr = localStorage.getItem('lifeos_workspace_snapshot') || localStorage.getItem('lifeos_data_v4');
+      if (!localWorkspaceStr) return false;
+
+      const localWorkspace = JSON.parse(localWorkspaceStr);
+      if (!localWorkspace || !localWorkspace.expenses || localWorkspace.expenses.length === 0) {
+        return false; // Nothing to seed
+      }
+
+      console.log(`[Master Seed Engine] Fresh cloud project detected. Seeding ${localWorkspace.expenses.length} master expenses...`);
+
+      // Tag it specifically as the master seed payload
+      if (!localWorkspace._meta) localWorkspace._meta = {};
+      localWorkspace._meta.isMasterApkSeed = true;
+
+      const res = await syncWorkspaceToSupabase(localWorkspace);
+      return res.success;
+    }
+
+    return false; // Cloud already has data, no need to seed
+  } catch (err) {
+    console.warn('Failed in Master Seed Engine:', err);
+    return false;
+  }
+};
+
+
 // Clean Supabase URL (strip /rest/v1 or trailing slashes if passed)
 const cleanSupabaseUrl = (url: string): string => {
   if (!url) return '';
