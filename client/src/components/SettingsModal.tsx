@@ -40,12 +40,7 @@ import { testGroqApiKey, SUPPORTED_GROQ_MODELS, DEFAULT_GROQ_MODEL } from '../se
 import { testGeminiApiKey } from '../services/geminiService';
 import { ConnectedDevices } from './ConnectedDevices';
 import { downloadExpenseBundle } from '../utils/expenseExport';
-import { NEON_SCHEMA_SQL, SUPABASE_SCHEMA_SQL } from '../utils/databaseSchemas';
-import {
-  getEffectiveSupabaseUrl,
-  getEffectiveSupabaseAnonKey,
-  setCustomSupabaseCredentials,
-} from '../utils/supabaseConfig';
+import { NEON_SCHEMA_SQL } from '../utils/databaseSchemas';
 import { toast } from 'sonner';
 
 interface SettingsModalProps {
@@ -129,10 +124,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [activeTab, setActiveTab] = useState<'general' | 'devices' | 'database' | 'ai'>('general');
 
   // Database & Migration tab state
-  const [selectedSchemaType, setSelectedSchemaType] = useState<'neon' | 'supabase'>('neon');
   const [copiedSchema, setCopiedSchema] = useState(false);
-  const [customSbUrl, setCustomSbUrl] = useState(() => getEffectiveSupabaseUrl());
-  const [customSbKey, setCustomSbKey] = useState(() => getEffectiveSupabaseAnonKey());
   const [customNeonUrl, setCustomNeonUrl] = useState(() => {
     if (typeof window !== 'undefined') {
       return (
@@ -144,38 +136,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   });
   const [dbConfigSaved, setDbConfigSaved] = useState(false);
 
-  const handleCopySql = async (type: 'neon' | 'supabase') => {
-    const sql = type === 'neon' ? NEON_SCHEMA_SQL : SUPABASE_SCHEMA_SQL;
+  const handleCopySql = async () => {
     try {
-      await navigator.clipboard.writeText(sql);
+      await navigator.clipboard.writeText(NEON_SCHEMA_SQL);
       setCopiedSchema(true);
       Sound.success(settings.soundEnabled);
-      toast.success(`Copied ${type === 'neon' ? 'Neon Postgres' : 'Supabase'} SQL Schema to clipboard!`);
+      toast.success('Copied Neon Postgres SQL Schema to clipboard!');
       setTimeout(() => setCopiedSchema(false), 2000);
     } catch {
       toast.error('Could not copy to clipboard.');
     }
   };
 
-  const handleDownloadSql = (type: 'neon' | 'supabase') => {
-    const content = type === 'neon' ? NEON_SCHEMA_SQL : SUPABASE_SCHEMA_SQL;
-    const filename = type === 'neon' ? 'neon_schema.sql' : 'supabase_schema.sql';
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const handleDownloadSql = () => {
+    const blob = new Blob([NEON_SCHEMA_SQL], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = filename;
+    a.download = 'neon_schema.sql';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     Sound.success(settings.soundEnabled);
-    toast.success(`Downloaded ${filename}`);
+    toast.success('Downloaded neon_schema.sql');
   };
 
   const handleSaveDbConfig = (e: React.FormEvent) => {
     e.preventDefault();
-    setCustomSupabaseCredentials(customSbUrl, customSbKey);
     if (typeof window !== 'undefined') {
       if (customNeonUrl.trim()) {
         localStorage.setItem('lifeos_custom_neon_url', customNeonUrl.trim());
@@ -185,7 +173,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
     Sound.success(settings.soundEnabled);
     setDbConfigSaved(true);
-    toast.success('Database configuration updated and saved!');
+    toast.success('Neon PostgreSQL configuration updated and saved!');
     setTimeout(() => setDbConfigSaved(false), 2500);
   };
 
@@ -671,7 +659,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </span>
                 </div>
                 <p className="text-xs text-indigo-900/80 dark:text-indigo-300 leading-relaxed">
-                  Your Android APK holds your authoritative transactions dataset. When connecting to a fresh Neon or Supabase database, the APK automatically detects an empty or migrating backend and cleanly pushes your transactions without data loss or duplicates.
+                  Your Android APK holds your authoritative transactions dataset. When connecting to your fresh Neon database, the APK automatically detects an empty backend and cleanly pushes your transactions without data loss or duplicates.
                 </p>
                 <div className="text-[11px] text-indigo-700 dark:text-indigo-300/80 font-mono flex items-center gap-2 pt-1">
                   <span>Authoritative Account:</span>
@@ -684,7 +672,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
                     <Server className="w-4 h-4 text-emerald-500" />
-                    <span>Cloud Database Configuration</span>
+                    <span>Neon Serverless Postgres Cloud Hub</span>
                   </span>
                   {dbConfigSaved && (
                     <span className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
@@ -703,45 +691,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       type="text"
                       value={customNeonUrl}
                       onChange={(e) => setCustomNeonUrl(e.target.value)}
-                      placeholder="postgresql://user:pass@ep-xyz.neon.tech/neondb?sslmode=require"
-                      className="w-full px-3 py-2 rounded-xl text-xs font-mono bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      placeholder="postgresql://neondb_owner:...@ep-...neon.tech/neondb?sslmode=require"
+                      className="w-full px-3 py-2 rounded-xl text-xs font-mono bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
                     />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                        Supabase Project URL
-                      </label>
-                      <input
-                        type="text"
-                        value={customSbUrl}
-                        onChange={(e) => setCustomSbUrl(e.target.value)}
-                        placeholder="https://xyz.supabase.co"
-                        className="w-full px-3 py-2 rounded-xl text-xs font-mono bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                        Supabase Anon Key
-                      </label>
-                      <input
-                        type="password"
-                        value={customSbKey}
-                        onChange={(e) => setCustomSbKey(e.target.value)}
-                        placeholder="eyJhbGciOiJIUzI1NiIsIn..."
-                        className="w-full px-3 py-2 rounded-xl text-xs font-mono bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                      />
-                    </div>
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+                      Direct cloud connection configured with pooled SSL. All workspace transactions and devices are persisted safely to Neon.
+                    </p>
                   </div>
 
                   <div className="flex justify-end pt-1">
                     <button
                       type="submit"
-                      className="px-4 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+                      className="px-4 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
                     >
                       <Check className="w-3.5 h-3.5" />
-                      <span>Save Cloud Credentials</span>
+                      <span>Save Neon Configuration</span>
                     </button>
                   </div>
                 </form>
@@ -752,38 +716,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
                     <span className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
-                      <FileCode className="w-4 h-4 text-indigo-500" />
-                      <span>SQL Schema Initialization Scripts</span>
+                      <FileCode className="w-4 h-4 text-emerald-500" />
+                      <span>Neon PostgreSQL Schema Script</span>
                     </span>
                     <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
-                      Tables, indexes, triggers, and security rules ready to execute in your SQL Editor.
+                      Tables, indexes, and views initialized for Neon Serverless PostgreSQL.
                     </p>
-                  </div>
-
-                  {/* Schema Target Toggle */}
-                  <div className="flex items-center p-1 bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-700 gap-1 shrink-0 self-start sm:self-auto">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedSchemaType('neon')}
-                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                        selectedSchemaType === 'neon'
-                          ? 'bg-emerald-600 text-white shadow-2xs'
-                          : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
-                      }`}
-                    >
-                      Neon Postgres
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedSchemaType('supabase')}
-                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                        selectedSchemaType === 'supabase'
-                          ? 'bg-emerald-600 text-white shadow-2xs'
-                          : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
-                      }`}
-                    >
-                      Supabase RLS
-                    </button>
                   </div>
                 </div>
 
@@ -791,16 +729,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => handleCopySql(selectedSchemaType)}
+                    onClick={handleCopySql}
                     className="flex-1 py-2 px-3 rounded-xl text-xs font-bold bg-white dark:bg-zinc-900 hover:bg-gray-100 dark:hover:bg-zinc-800 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
                   >
-                    {copiedSchema ? <CheckCheck className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5 text-indigo-500" />}
-                    <span>{copiedSchema ? 'Copied to Clipboard!' : `Copy ${selectedSchemaType === 'neon' ? 'Neon' : 'Supabase'} SQL`}</span>
+                    {copiedSchema ? <CheckCheck className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5 text-emerald-500" />}
+                    <span>{copiedSchema ? 'Copied to Clipboard!' : 'Copy Neon SQL Schema'}</span>
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => handleDownloadSql(selectedSchemaType)}
+                    onClick={handleDownloadSql}
                     className="py-2 px-3 rounded-xl text-xs font-bold bg-white dark:bg-zinc-900 hover:bg-gray-100 dark:hover:bg-zinc-800 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs shrink-0"
                     title="Download .sql schema file"
                   >
@@ -812,18 +750,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 {/* Code Preview Box */}
                 <div className="relative rounded-xl overflow-hidden border border-gray-300 dark:border-zinc-700 bg-[#0D1117] text-gray-200">
                   <div className="flex items-center justify-between px-3 py-1.5 bg-[#161B22] border-b border-gray-800 text-[11px] font-mono text-gray-400">
-                    <span>{selectedSchemaType === 'neon' ? 'supabase/neon_schema.sql' : 'supabase/schema.sql'}</span>
+                    <span>supabase/neon_schema.sql</span>
                     <button
                       type="button"
-                      onClick={() => handleCopySql(selectedSchemaType)}
-                      className="text-xs text-indigo-400 hover:text-indigo-300 cursor-pointer flex items-center gap-1"
+                      onClick={handleCopySql}
+                      className="text-xs text-emerald-400 hover:text-emerald-300 cursor-pointer flex items-center gap-1"
                     >
                       <Copy className="w-3 h-3" />
                       <span>Copy</span>
                     </button>
                   </div>
                   <pre className="p-3 text-[11px] font-mono overflow-x-auto max-h-48 leading-relaxed select-all">
-                    {selectedSchemaType === 'neon' ? NEON_SCHEMA_SQL : SUPABASE_SCHEMA_SQL}
+                    {NEON_SCHEMA_SQL}
                   </pre>
                 </div>
               </div>

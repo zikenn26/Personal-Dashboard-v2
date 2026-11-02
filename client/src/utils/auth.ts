@@ -80,7 +80,7 @@ export const DEFAULT_GKN_USER: AuthUser = {
   id: '036fe7d3-6a13-4740-b028-afb55e81e00e',
   name: 'Gulshan Kumar Nayak',
   email: 'gknayak@gmail.com',
-  provider: 'supabase',
+  provider: 'neon',
   avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
   createdAt: 1788945035065,
   lastLoginAt: 1791114446905,
@@ -95,7 +95,7 @@ export const DEFAULT_ARPITA_USER: AuthUser = {
   id: 'usr_arpitapri125_gmail_com',
   name: 'Arpita Priyadar',
   email: 'arpitapri125@gmail.com',
-  provider: 'supabase',
+  provider: 'neon',
   createdAt: 1788945035065,
   lastLoginAt: 1791114446905,
 };
@@ -278,39 +278,31 @@ export const ensureUserWorkspaceInitialized = async (client: any, user: AuthUser
 };
 
 /**
- * Helper to check whether an account or username is already registered in Supabase Cloud or locally.
+ * Helper to check whether an account or username is already registered in Neon DB or locally.
  */
 export const isAccountAlreadyRegistered = async (identifier: string): Promise<boolean> => {
   const clean = identifier.trim().toLowerCase();
   if (!clean) return false;
   const cleanId = clean.replace(/[^a-z0-9]/g, '_');
 
-  // Disable hardcoded fallback for local authentication checks
-  // (We now trust the backend/supabase rules entirely to dictate allowed users)
-  if (
-    cleanId === 'some_reserved_name_or_test_value'
-  ) {
-    return true;
-  }
-
-  const client = getSupabaseClient();
-  if (client && isSupabaseConfigured()) {
-    try {
-      const emailVariant = clean.includes('@') ? clean : `${cleanId}@workspace.local`;
-      const { data: cloudRow } = await client
-        .from('user_workspaces')
-        .select('id')
-        .or(`user_identifier.eq.account_auth_${cleanId},user_identifier.eq.user_${cleanId},user_email.eq.${clean},user_email.eq.${emailVariant}`)
-        .maybeSingle();
-
-      if (cloudRow) return true;
-    } catch {
-      // ignore
-    }
-  }
-
   const localMap = getLocalCredentialsMap();
-  return Boolean(localMap[clean] || localMap[cleanId]);
+  if (localMap[clean] || localMap[cleanId]) return true;
+
+  try {
+    const query = new URLSearchParams({
+      user_identifier: `account_auth_${cleanId}`,
+      user_email: clean.includes('@') ? clean : `${cleanId}@workspace.local`,
+    });
+    const res = await fetch(`/api/sync/workspace?${query.toString()}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.exists) return true;
+    }
+  } catch {
+    // ignore
+  }
+
+  return false;
 };
 
 export const Auth = {
@@ -438,143 +430,7 @@ export const Auth = {
       timestamp: new Date().toISOString(),
     });
 
-    const client = getSupabaseClient();
-
-    // 1. Supabase GoTrue Auth (Official supported Auth API across Web & APK)
-    let supabaseAuthError: any = null;
-    if (client && isSupabaseConfigured()) {
-      let targetEmail = raw;
-      if (!raw.includes('@')) {
-        // Resolve username to email if known in workspaces or local credentials
-        try {
-          const { data: userRow } = await client
-            .from('user_workspaces')
-            .select('user_email')
-            .eq('user_identifier', `account_auth_${cleanId}`)
-            .maybeSingle();
-          if (userRow?.user_email) {
-            targetEmail = userRow.user_email;
-          } else {
-            const localMap = getLocalCredentialsMap();
-            if (localMap[cleanId]?.user?.email) {
-              targetEmail = localMap[cleanId].user.email;
-            } else {
-              targetEmail = `${cleanId}@workspace.local`;
-            }
-          }
-        } catch {
-          targetEmail = `${cleanId}@workspace.local`;
-        }
-      }
-
-      try {
-        console.info('[AUTH_DIAGNOSTIC] Stage: calling_supabase_signInWithPassword', { email: targetEmail });
-        const { data: authData, error: authError } = await client.auth.signInWithPassword({
-          email: targetEmail,
-          password: cleanPass,
-        });
-
-        if (!authError && authData?.user) {
-          console.info('[AUTH_DIAGNOSTIC] Stage: supabase_signInWithPassword_success', {
-            userId: authData.user.id,
-            email: authData.user.email,
-          });
-
-          const sbUser = authData.user;
-          const userEmail = sbUser.email || targetEmail;
-          const userCleanId = userEmail.toLowerCase().replace(/[^a-z0-9]/g, '_');
-          const displayName =
-            sbUser.user_metadata?.full_name ||
-            sbUser.user_metadata?.name ||
-            sbUser.user_metadata?.display_name ||
-            userEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-
-          const rawSbAvatar = sbUser.user_metadata?.avatar_url || sbUser.user_metadata?.avatarUrl || '';
-          const userAvatar = isAvatarMatchingUserEmailDomain(rawSbAvatar, userEmail) ? rawSbAvatar : '';
-
-          const loggedInUser: AuthUser = {
-            id: sbUser.id,
-            email: userEmail,
-            name: displayName,
-            avatarUrl: userAvatar,
-            createdAt: sbUser.created_at ? new Date(sbUser.created_at).getTime() : Date.now(),
-            lastLoginAt: Date.now(),
-            provider: 'supabase',
-          };
-
-          // Ensure workspace partition exists in user_workspaces in background
-          void ensureUserWorkspaceInitialized(client, loggedInUser).catch((wsErr) => {
-            console.warn('[AUTH_DIAGNOSTIC] Workspace initialization notice:', wsErr);
-          });
-
-          // Cache credentials locally so subsequent offline/instant logins succeed
-          await saveLocalCredential(loggedInUser.email, cleanPass, loggedInUser);
-
-          Auth.setCurrentUser(loggedInUser);
-          setCustomWorkspaceIdentifier(getUserWorkspaceKey(loggedInUser));
-          setCustomWorkspaceEmail(loggedInUser.email);
-          recordLoginSuccess(raw);
-          return {
-            success: true,
-            user: loggedInUser,
-            message: `Signed in successfully as ${displayName}!`,
-          };
-        } else if (authError) {
-          supabaseAuthError = authError;
-          console.warn('[AUTH_DIAGNOSTIC] Stage: supabase_signInWithPassword_error', {
-            status: authError.status,
-            message: authError.message,
-            name: authError.name,
-          });
-        }
-      } catch (callErr: any) {
-        console.warn('[AUTH_DIAGNOSTIC] Stage: supabase_network_exception', { message: callErr?.message });
-      }
-    }
-
-    // 2. Cloud-database Account check fallback (backward compatibility for legacy accounts in user_workspaces)
-    if (client && isSupabaseConfigured()) {
-      try {
-        const emailVariant = raw.includes('@') ? raw : `${cleanId}@workspace.local`;
-        const { data: cloudRow, error: cloudErr } = await client
-          .from('user_workspaces')
-          .select('workspace_data, user_email, user_identifier')
-          .or(`user_identifier.eq.account_auth_${cleanId},user_email.eq.${raw},user_email.eq.${emailVariant}`)
-          .maybeSingle();
-
-        if (!cloudErr && cloudRow?.workspace_data?.account) {
-          const cloudAccount = cloudRow.workspace_data.account;
-          const passHash = cloudAccount.passHash;
-          if (passHash) {
-            const valid = await verifyPasswordHash(passHash, cleanPass);
-            if (valid) {
-              const cloudUser: AuthUser = {
-                id: cloudAccount.user?.id || `usr_${cleanId}`,
-                email: cloudRow.user_email || emailVariant,
-                name: cloudAccount.user?.name || raw.split('@')[0],
-                avatarUrl: cloudAccount.user?.avatarUrl,
-                createdAt: cloudAccount.user?.createdAt || Date.now(),
-                lastLoginAt: Date.now(),
-                provider: 'supabase',
-              };
-
-              // Cache credentials locally so subsequent offline/instant logins succeed
-              await saveLocalCredential(cloudUser.email, cleanPass, cloudUser);
-
-              Auth.setCurrentUser(cloudUser);
-              setCustomWorkspaceIdentifier(getUserWorkspaceKey(cloudUser));
-              setCustomWorkspaceEmail(cloudUser.email);
-              recordLoginSuccess(raw);
-              return { success: true, user: cloudUser, message: 'Signed in successfully via Cloud Account' };
-            }
-          }
-        }
-      } catch (cloudLookupErr) {
-        console.warn('[AUTH_DIAGNOSTIC] Cloud account lookup notice:', cloudLookupErr);
-      }
-    }
-
-    // 3. Local-device account fallback (covers accounts in offline environment, test runners, or local storage)
+    // 1. Local-device account check (fastest, offline-safe, persistent across restarts)
     const credentialsMap = getLocalCredentialsMap();
     const storedRecord = credentialsMap[raw] || credentialsMap[cleanId];
 
@@ -594,33 +450,54 @@ export const Auth = {
       }
     }
 
-    // 4. Failed authentication
-    recordLoginFailure(raw);
+    // 2. Neon Cloud Database Account check via server sync hub
+    try {
+      const emailVariant = raw.includes('@') ? raw : `${cleanId}@workspace.local`;
+      const query = new URLSearchParams({
+        user_identifier: `account_auth_${cleanId}`,
+        user_email: emailVariant,
+      });
+      const response = await fetch(`/api/sync/workspace?${query.toString()}`);
+      if (response.ok) {
+        const res = await response.json();
+        if (res.exists && res.workspace_data?.account) {
+          const cloudAccount = res.workspace_data.account;
+          const passHash = cloudAccount.passHash;
+          if (passHash) {
+            const valid = await verifyPasswordHash(passHash, cleanPass);
+            if (valid) {
+              const cloudUser: AuthUser = {
+                id: cloudAccount.user?.id || `usr_${cleanId}`,
+                email: res.user_email || emailVariant,
+                name: cloudAccount.user?.name || raw.split('@')[0],
+                avatarUrl: cloudAccount.user?.avatarUrl,
+                createdAt: cloudAccount.user?.createdAt || Date.now(),
+                lastLoginAt: Date.now(),
+                provider: 'neon',
+              };
 
-    // Provide clear, accurate error message rather than silently masking genuine issues
-    let errorMsg = 'Invalid email or password.';
-    if (supabaseAuthError) {
-      const lower = (supabaseAuthError.message || '').toLowerCase();
-      if (lower.includes('email not confirmed')) {
-        errorMsg = 'Please confirm your email address before signing in.';
-      } else if (lower.includes('too many') || supabaseAuthError.status === 429) {
-        errorMsg = 'Too many login attempts. Please wait a moment and try again.';
-      } else if (
-        lower.includes('invalid login credentials') ||
-        lower.includes('invalid credentials') ||
-        lower.includes('user not found') ||
-        lower.includes('exceed_egress_quota') ||
-        lower.includes('spend caps')
-      ) {
-        errorMsg = 'Invalid email or password.';
-      } else if (supabaseAuthError.message) {
-        errorMsg = supabaseAuthError.message;
+              // Cache credentials locally so subsequent offline/instant logins succeed
+              await saveLocalCredential(cloudUser.email, cleanPass, cloudUser);
+
+              Auth.setCurrentUser(cloudUser);
+              setCustomWorkspaceIdentifier(getUserWorkspaceKey(cloudUser));
+              setCustomWorkspaceEmail(cloudUser.email);
+              recordLoginSuccess(raw);
+              return { success: true, user: cloudUser, message: 'Signed in successfully via Neon Database' };
+            }
+          }
+        }
       }
+    } catch (cloudLookupErr) {
+      console.warn('[AUTH] Neon cloud account lookup notice:', cloudLookupErr);
     }
+
+    // 3. Failed authentication
+    recordLoginFailure(raw);
 
     return {
       success: false,
-      message: errorMsg,
+      message: 'Invalid email or password.',
     };
   },
 
@@ -726,7 +603,6 @@ export const Auth = {
         .replace(/[\._]/g, ' ')
         .replace(/\b\w/g, (c) => c.toUpperCase());
 
-    const client = getSupabaseClient();
     const nowMs = Date.now();
     const nowIso = new Date().toISOString();
     const passHash = await hashPassword(cleanPass);
@@ -737,98 +613,10 @@ export const Auth = {
       name: displayName,
       createdAt: nowMs,
       lastLoginAt: nowMs,
-      provider: 'supabase',
+      provider: 'neon',
     };
 
-    // 1. Persist isolated user account & workspace to Supabase Cloud
-    if (client && isSupabaseConfigured()) {
-      try {
-        // A. Create account_auth credentials record
-        await client.from('user_workspaces').upsert(
-          {
-            user_identifier: `account_auth_${cleanId}`,
-            user_email: cleanEmail,
-            workspace_data: {
-              account: {
-                user,
-                passHash,
-                createdAt: nowMs,
-                updatedAt: nowMs,
-              },
-            },
-            updated_at: nowIso,
-          },
-          { onConflict: 'user_identifier' }
-        );
-
-        // B. Create isolated private workspace partition
-        await client.from('user_workspaces').upsert(
-          {
-            user_identifier: getUserWorkspaceKey(user),
-            user_email: cleanEmail,
-            workspace_data: {
-              profile: {
-                name: displayName,
-                contactEmail: cleanEmail,
-              },
-              todos: [],
-              habits: [],
-              habitHistory: [],
-              habitActivities: [],
-              goals: [],
-              expenses: [],
-              journal: [],
-              _meta: {
-                clientTimestamp: nowMs,
-                syncVersion: nowMs,
-              },
-            },
-            updated_at: nowIso,
-          },
-          { onConflict: 'user_identifier' }
-        );
-
-        // C. Create initial devices partition
-        await client.from('user_workspaces').upsert(
-          {
-            user_identifier: `account_devices_${cleanId}`,
-            user_email: cleanEmail,
-            workspace_data: {
-              devices: [],
-              updatedAt: nowMs,
-            },
-            updated_at: nowIso,
-          },
-          { onConflict: 'user_identifier' }
-        );
-
-        // D. Create GoTrue auth user if valid email address in background
-        if (cleanEmail.includes('@') && !cleanEmail.endsWith('@workspace.local')) {
-          void client.auth.signUp({
-            email: cleanEmail,
-            password: cleanPass,
-            options: {
-              data: {
-                full_name: displayName,
-                name: displayName,
-              },
-            },
-          }).then(({ data: sbSignUp, error: sbSignUpErr }) => {
-            if (sbSignUpErr) {
-              console.warn('[AUTH_DIAGNOSTIC] Supabase GoTrue signUp notice:', sbSignUpErr.message);
-            } else if (sbSignUp?.user) {
-              console.info('[AUTH_DIAGNOSTIC] Supabase GoTrue user created:', sbSignUp.user.id);
-            }
-          }).catch((sbErr) => {
-            console.warn('[AUTH_DIAGNOSTIC] Supabase GoTrue signUp exception:', sbErr);
-          });
-        }
-      } catch (err: any) {
-        console.warn('Supabase sign up creation notice:', err?.message || err);
-      }
-    }
-
-    // 2. Cache credentials locally and set active session
+    // 1. Cache credentials locally and set active session immediately
     await saveLocalCredential(cleanEmail, cleanPass, user);
     if (!raw.includes('@')) {
       await saveLocalCredential(raw, cleanPass, user);
@@ -836,6 +624,58 @@ export const Auth = {
     Auth.setCurrentUser(user);
     setCustomWorkspaceIdentifier(getUserWorkspaceKey(user));
     setCustomWorkspaceEmail(cleanEmail);
+
+    // 2. Persist account & workspace partition to Neon DB Cloud via server relay in background
+    try {
+      void fetch('/api/sync/workspace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_identifier: `account_auth_${cleanId}`,
+          user_email: cleanEmail,
+          workspace_data: {
+            account: {
+              user,
+              passHash,
+              createdAt: nowMs,
+              updatedAt: nowMs,
+            },
+          },
+          updated_at: nowIso,
+          sync_version: nowMs,
+        }),
+      }).catch(() => {});
+
+      void fetch('/api/sync/workspace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_identifier: getUserWorkspaceKey(user),
+          user_email: cleanEmail,
+          workspace_data: {
+            profile: {
+              name: displayName,
+              contactEmail: cleanEmail,
+            },
+            todos: [],
+            habits: [],
+            habitHistory: [],
+            habitActivities: [],
+            goals: [],
+            expenses: [],
+            journal: [],
+            _meta: {
+              clientTimestamp: nowMs,
+              syncVersion: nowMs,
+            },
+          },
+          updated_at: nowIso,
+          sync_version: nowMs,
+        }),
+      }).catch(() => {});
+    } catch (e) {
+      console.warn('Neon DB sync error on signup:', e);
+    }
 
     return {
       success: true,

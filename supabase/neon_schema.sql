@@ -58,8 +58,8 @@ CREATE TABLE IF NOT EXISTS public.user_expenses (
     deleted_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    client_updated_at BIGINT NOT NULL DEFAULT 0,
-    version BIGINT NOT NULL DEFAULT 1
+    client_updated_at NUMERIC(30, 0) NOT NULL DEFAULT 0,
+    version NUMERIC(30, 0) NOT NULL DEFAULT 1
 );
 
 CREATE INDEX IF NOT EXISTS idx_neon_expenses_ws ON public.user_expenses(workspace_identifier);

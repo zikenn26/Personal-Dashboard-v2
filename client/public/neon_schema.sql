@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS public.workspaces (
     user_email TEXT NOT NULL,
     workspace_data JSONB NOT NULL DEFAULT '{}'::jsonb,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    sync_version BIGINT NOT NULL DEFAULT 0
+    sync_version NUMERIC(30, 0) NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_workspaces_user_email ON public.workspaces(user_email);
@@ -70,8 +70,8 @@ CREATE TABLE IF NOT EXISTS public.transactions (
     deleted_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    client_updated_at BIGINT NOT NULL DEFAULT 0,
-    version BIGINT NOT NULL DEFAULT 1
+    client_updated_at NUMERIC(30, 0) NOT NULL DEFAULT 0,
+    version NUMERIC(30, 0) NOT NULL DEFAULT 1
 );
 
 CREATE INDEX IF NOT EXISTS idx_transactions_workspace ON public.transactions(workspace_identifier);

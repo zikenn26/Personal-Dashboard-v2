@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import crypto from "crypto";
-import { pool } from "./db.js";
+import { pool, initDb } from "./db.js";
 
 interface StoredWorkspace {
   user_identifier: string;
@@ -23,6 +23,40 @@ interface DeviceSession {
   ip_address?: string;
   user_agent?: string;
   is_revoked?: boolean;
+}
+
+/**
+ * Safely parses and normalizes timestamp / sync version values.
+ * Handles nanosecond (19-20 digits) or microsecond timestamps from Android or other devices,
+ * converting them to standard milliseconds and ensuring they fit safely in PostgreSQL and JavaScript.
+ */
+export function safeTimestamp(val: any, fallback = Date.now()): number {
+  if (val === null || val === undefined) return fallback;
+  let num: number;
+  if (typeof val === 'number') {
+    num = val;
+  } else {
+    const cleaned = String(val).trim().replace(/[^0-9.-]/g, '');
+    num = parseFloat(cleaned);
+  }
+
+  if (isNaN(num) || !isFinite(num) || num <= 0) return fallback;
+
+  // Nanoseconds (e.g. 17936315551501115000 >= 1e16)
+  if (num > 1e16) {
+    num = Math.floor(num / 1000000);
+  } else if (num > 1e14) {
+    // Microseconds (>= 1e14)
+    num = Math.floor(num / 1000);
+  }
+
+  // Cap to safe integer (9,007,199,254,740,991)
+  const MAX_SAFE = 9007199254740991;
+  if (num > MAX_SAFE) {
+    num = MAX_SAFE;
+  }
+
+  return Math.floor(num);
 }
 
 /**
@@ -205,7 +239,7 @@ export async function handlePostWorkspace(req: any, res: any): Promise<void> {
     const { rows } = await pool.query("SELECT * FROM workspaces WHERE user_identifier = $1", [activeKey]);
     const existingRecord = rows[0];
     const now = new Date().toISOString();
-    const incomingVersion = Number(sync_version || Date.now());
+    const incomingVersion = safeTimestamp(sync_version || Date.now());
 
     let mergedWorkspace = { ...workspace_data };
     let reconciledExpenses: any[] = [];
@@ -258,9 +292,10 @@ export async function handlePostWorkspace(req: any, res: any): Promise<void> {
       reconciledExpenses = Array.isArray(workspace_data.expenses) ? workspace_data.expenses : [];
     }
 
+    const existingVer = existingRecord ? safeTimestamp(existingRecord.sync_version, 0) : 0;
     const finalVersion = Math.max(
       incomingVersion,
-      existingRecord ? existingRecord.sync_version + 1 : Date.now()
+      existingRecord ? existingVer + 1 : safeTimestamp(Date.now())
     );
 
     if (!mergedWorkspace._meta) mergedWorkspace._meta = {};
@@ -365,7 +400,7 @@ export async function handlePostWorkspace(req: any, res: any): Promise<void> {
             exp.importBatchId || null,
             exp.active !== false,
             Boolean(exp.isDeleted),
-            Number(exp.updatedAt || exp.createdAt || Date.now()),
+            safeTimestamp(exp.clientUpdatedAt || exp.updatedAt || exp.createdAt || Date.now()),
           ]);
         }
       } catch (txErr) {
@@ -662,7 +697,7 @@ export async function handlePostTransactions(req: any, res: any): Promise<void> 
         exp.source || (is_apk ? 'sms_auto' : 'manual'),
         exp.active !== false,
         Boolean(exp.isDeleted),
-        Number(exp.updatedAt || exp.createdAt || Date.now()),
+        safeTimestamp(exp.clientUpdatedAt || exp.updatedAt || exp.createdAt || Date.now()),
       ]);
     }
 
@@ -938,6 +973,8 @@ export function syncVitePlugin() {
   return {
     name: "sync-vite-plugin",
     configureServer(server: any) {
+      void initDb().catch((err) => console.warn('[SyncService] Neon DB init notice:', err?.message || err));
+
       server.middlewares.use(async (req: any, res: any, next: any) => {
         let pathname = "";
         try {

@@ -59,11 +59,11 @@ export const initDb = async (): Promise<void> => {
         user_email TEXT NOT NULL,
         workspace_data JSONB NOT NULL DEFAULT '{}'::jsonb,
         updated_at TEXT NOT NULL,
-        sync_version BIGINT NOT NULL DEFAULT 0
+        sync_version NUMERIC(30, 0) NOT NULL DEFAULT 0
       );
 
       CREATE TABLE IF NOT EXISTS transactions (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        id TEXT PRIMARY KEY,
         workspace_identifier TEXT NOT NULL,
         user_email TEXT,
         name TEXT NOT NULL,
@@ -92,9 +92,19 @@ export const initDb = async (): Promise<void> => {
         deleted_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        client_updated_at BIGINT NOT NULL DEFAULT 0,
-        version BIGINT NOT NULL DEFAULT 1
+        client_updated_at NUMERIC(30, 0) NOT NULL DEFAULT 0,
+        version NUMERIC(30, 0) NOT NULL DEFAULT 1
       );
+
+      -- Drop views first so PostgreSQL allows column type alterations
+      DROP VIEW IF EXISTS expenses CASCADE;
+      DROP VIEW IF EXISTS user_workspaces CASCADE;
+      DROP VIEW IF EXISTS user_expenses CASCADE;
+
+      -- Migration: Safely widen bigint columns to numeric(30,0) for high-precision nanosecond/microsecond timestamps
+      ALTER TABLE workspaces ALTER COLUMN sync_version TYPE NUMERIC(30, 0);
+      ALTER TABLE transactions ALTER COLUMN client_updated_at TYPE NUMERIC(30, 0);
+      ALTER TABLE transactions ALTER COLUMN version TYPE NUMERIC(30, 0);
 
       CREATE TABLE IF NOT EXISTS connected_devices (
         id TEXT PRIMARY KEY,
@@ -105,8 +115,8 @@ export const initDb = async (): Promise<void> => {
         platform TEXT,
         environment TEXT,
         app_version TEXT,
-        created_at BIGINT NOT NULL,
-        last_active BIGINT NOT NULL,
+        created_at NUMERIC(30, 0) NOT NULL,
+        last_active NUMERIC(30, 0) NOT NULL,
         ip_address TEXT,
         user_agent TEXT,
         is_revoked BOOLEAN NOT NULL DEFAULT false,
@@ -121,8 +131,8 @@ export const initDb = async (): Promise<void> => {
         platform TEXT,
         environment TEXT,
         app_version TEXT,
-        created_at BIGINT NOT NULL,
-        last_active BIGINT NOT NULL,
+        created_at NUMERIC(30, 0) NOT NULL,
+        last_active NUMERIC(30, 0) NOT NULL,
         ip_address TEXT,
         user_agent TEXT,
         is_revoked BOOLEAN NOT NULL DEFAULT false
@@ -139,22 +149,22 @@ export const initDb = async (): Promise<void> => {
         status TEXT NOT NULL DEFAULT 'pending',
         attempts INT NOT NULL DEFAULT 0,
         error_message TEXT,
-        logical_clock BIGINT NOT NULL DEFAULT 0,
-        wall_clock_ms BIGINT NOT NULL,
+        logical_clock NUMERIC(30, 0) NOT NULL DEFAULT 0,
+        wall_clock_ms NUMERIC(30, 0) NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
 
       CREATE TABLE IF NOT EXISTS expense_authority (
-        expense_id TEXT PRIMARY KEY REFERENCES transactions(id) ON DELETE CASCADE,
+        expense_id TEXT PRIMARY KEY,
         workspace_identifier TEXT NOT NULL,
         source_device_type TEXT NOT NULL DEFAULT 'apk',
         authoritative_device_id TEXT,
-        last_authoritative_modification_ms BIGINT,
+        last_authoritative_modification_ms NUMERIC(30, 0),
         requires_platform_reconciliation BOOLEAN DEFAULT false,
         is_synced_to_all_devices BOOLEAN DEFAULT false,
-        apk_version BIGINT DEFAULT 1,
-        web_version BIGINT DEFAULT 0,
+        apk_version NUMERIC(30, 0) DEFAULT 1,
+        web_version NUMERIC(30, 0) DEFAULT 0,
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
@@ -165,8 +175,8 @@ export const initDb = async (): Promise<void> => {
         device_id TEXT NOT NULL,
         module TEXT NOT NULL,
         entity_id TEXT NOT NULL,
-        logical_clock BIGINT NOT NULL,
-        wall_clock_ms BIGINT NOT NULL,
+        logical_clock NUMERIC(30, 0) NOT NULL,
+        wall_clock_ms NUMERIC(30, 0) NOT NULL,
         operation TEXT NOT NULL,
         payload_hash TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -189,11 +199,13 @@ export const initDb = async (): Promise<void> => {
 
     // 2. Dual-compatibility views (safely recreated)
     await client.query(`
+      DROP VIEW IF EXISTS expenses CASCADE;
       DROP VIEW IF EXISTS user_workspaces CASCADE;
-      CREATE VIEW user_workspaces AS SELECT * FROM workspaces;
-
       DROP VIEW IF EXISTS user_expenses CASCADE;
+
+      CREATE VIEW user_workspaces AS SELECT * FROM workspaces;
       CREATE VIEW user_expenses AS SELECT * FROM transactions;
+      CREATE VIEW expenses AS SELECT * FROM transactions;
     `);
 
     console.log('[DB] Neon Serverless Postgres tables and views verified successfully.');

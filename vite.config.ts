@@ -7,12 +7,6 @@ import { screenTimeVitePlugin } from "./server/screenTimeService";
 import { syncVitePlugin } from "./server/syncService";
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, path.resolve(import.meta.dirname), "");
-  const defaultSupabaseUrl = "https://amlegmbvqzbhqqqbrvjx.supabase.co";
-  const defaultSupabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFtbGVnbWJ2cXpiaHFxcWJydmp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyNjM1MTEsImV4cCI6MjEwMzgzOTUxMX0.aEq8TaBGPpsExAJ7Rtl3Qnenl10RPrAuwL9HNMrPvm4";
-  const supabaseUrl = env.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL || defaultSupabaseUrl;
-  const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || defaultSupabaseKey;
-
   return {
     plugins: [react(), tailwindcss(), geminiVitePlugin(), screenTimeVitePlugin(), syncVitePlugin()],
     resolve: {
@@ -36,10 +30,6 @@ export default defineConfig(({ mode }) => {
     },
     envDir: path.resolve(import.meta.dirname),
     root: path.resolve(import.meta.dirname, "client"),
-    define: {
-      "import.meta.env.VITE_SUPABASE_URL": JSON.stringify(supabaseUrl),
-      "import.meta.env.VITE_SUPABASE_ANON_KEY": JSON.stringify(supabaseAnonKey),
-    },
     build: {
       outDir: path.resolve(import.meta.dirname, "dist/public"),
       emptyOutDir: true,
@@ -67,12 +57,6 @@ export default defineConfig(({ mode }) => {
               }
             });
           },
-        },
-        "/api/supabase": {
-          target: supabaseUrl,
-          changeOrigin: true,
-          secure: false,
-          rewrite: (path) => path.replace(/^\/api\/supabase/, ""),
         },
         "/api/weather": {
           target: "https://api.open-meteo.com/v1/forecast",

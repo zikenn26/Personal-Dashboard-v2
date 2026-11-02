@@ -676,7 +676,7 @@ export interface AuthUser {
   avatarUrl?: string;
   createdAt: number;
   lastLoginAt: number;
-  provider: 'supabase' | 'local_demo' | 'local';
+  provider: 'neon' | 'supabase' | 'local_demo' | 'local';
 }
 
 export interface DeviceSession {

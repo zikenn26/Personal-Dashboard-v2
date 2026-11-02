@@ -86,18 +86,11 @@ export const resetSupabaseClient = (): void => {
 };
 
 /**
- * Checks if Supabase credentials are configured in the environment.
+ * Checks if Cloud Database is configured in the environment.
+ * Neon Serverless PostgreSQL is authoritative and active.
  */
 export const isSupabaseConfigured = (): boolean => {
-  const url = cleanSupabaseUrl(getEffectiveSupabaseUrl());
-  const key = getEffectiveSupabaseAnonKey().trim();
-  return Boolean(
-    url &&
-      key &&
-      url !== 'https://your-project-id.supabase.co' &&
-      !url.includes('your-project-id') &&
-      key !== 'your-supabase-anon-key'
-  );
+  return true;
 };
 
 /**

@@ -10,7 +10,6 @@ import {
   EyeOff,
   X,
   User,
-  KeyRound,
 } from 'lucide-react';
 
 interface AuthModalProps {
@@ -18,7 +17,7 @@ interface AuthModalProps {
   onClose?: () => void;
   onAuthenticated: (user: AuthUser) => void;
   currentUser?: AuthUser | null;
-  initialMode?: 'signin' | 'signup' | 'reset' | 'setpassword';
+  initialMode?: 'signin' | 'signup' | 'reset';
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
@@ -27,7 +26,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onAuthenticated,
   initialMode = 'signin',
 }) => {
-  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot' | 'reset' | 'setpassword'>(initialMode);
+  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot' | 'reset'>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -75,32 +74,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setLoading(true);
 
     try {
-      if (mode === 'setpassword') {
-        if (!email.trim()) {
-          setErrorMessage('Please enter your email or username.');
-          setLoading(false);
-          return;
-        }
-        if (password.length < 6) {
-          setErrorMessage('New password must be at least 6 characters.');
-          setLoading(false);
-          return;
-        }
-        if (password !== confirmPassword) {
-          setErrorMessage('Passwords do not match.');
-          setLoading(false);
-          return;
-        }
-        const res = await Auth.directSetOrResetPassword(email, password);
-        if (res.success && res.user) {
-          setSuccessMessage(res.message || 'Password saved successfully! Signing in...');
-          setTimeout(() => {
-            onAuthenticated(res.user!);
-          }, 350);
-        } else {
-          setErrorMessage(res.message || 'Failed to update password.');
-        }
-      } else if (mode === 'forgot') {
+      if (mode === 'forgot') {
         const res = await Auth.requestPasswordReset(email);
         if (res.success) {
           setSuccessMessage(res.message);
@@ -183,28 +157,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mb-3">
               {mode === 'signup' ? (
                 <User className="w-5 h-5" />
-              ) : mode === 'setpassword' ? (
-                <KeyRound className="w-5 h-5" />
               ) : (
                 <Lock className="w-5 h-5" />
               )}
             </div>
             <h2 className="text-xl font-bold text-neutral-900 dark:text-white tracking-tight">
-              {mode === 'signin'
-                ? 'Sign In'
-                : mode === 'signup'
-                ? 'Create Account'
-                : mode === 'setpassword'
-                ? 'Set or Reset Password'
-                : 'Reset Password'}
+              {mode === 'signin' ? 'Sign In' : mode === 'signup' ? 'Create Account' : 'Reset Password'}
             </h2>
             <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
               {mode === 'signin'
                 ? 'Sign in to access your personal dashboard and workspace.'
                 : mode === 'signup'
                 ? 'Create an account to save your private data.'
-                : mode === 'setpassword'
-                ? 'Set or reset your password directly to sign in immediately.'
                 : mode === 'forgot'
                 ? "Enter your email and we'll send you a link to reset your password."
                 : 'Choose a new password for your account.'}
@@ -226,7 +190,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         {/* Form Body */}
         <div className="p-6 pt-4 space-y-4">
           {/* Mode Switcher Tabs */}
-          {(mode === 'signin' || mode === 'signup' || mode === 'setpassword') && (
+          {(mode === 'signin' || mode === 'signup') && (
             <div className="flex p-1 bg-neutral-100 dark:bg-neutral-800/80 rounded-xl gap-1">
               <button
                 type="button"
@@ -257,21 +221,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 }`}
               >
                 Create Account
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('setpassword');
-                  setErrorMessage(null);
-                  setSuccessMessage(null);
-                }}
-                className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                  mode === 'setpassword'
-                    ? 'bg-white dark:bg-neutral-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                    : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
-                }`}
-              >
-                Set Password
               </button>
             </div>
           )}
@@ -387,19 +336,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                    {mode === 'setpassword' ? 'New Password (min 6 characters)' : 'Password'}
+                    Password
                   </label>
                   {mode === 'signin' && (
                     <button
                       type="button"
                       onClick={() => {
-                        setMode('setpassword');
+                        setMode('forgot');
                         setErrorMessage(null);
                         setSuccessMessage(null);
                       }}
                       className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
                     >
-                      Set / Reset Password?
+                      Forgot password?
                     </button>
                   )}
                 </div>
@@ -413,7 +362,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder={mode === 'setpassword' ? 'Choose a new password' : 'Enter password'}
+                    placeholder="Enter password"
                     className="w-full pl-10 pr-10 py-2.5 bg-neutral-50 dark:bg-neutral-800/80 border border-neutral-200 dark:border-neutral-700 rounded-xl text-sm text-neutral-900 dark:text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                   <button
@@ -427,7 +376,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
             )}
 
-            {(mode === 'reset' || mode === 'setpassword') && (
+            {mode === 'reset' && (
               <div>
                 <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
                   Confirm New Password
@@ -477,8 +426,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       ? 'Sign In'
                       : mode === 'signup'
                       ? 'Create Account'
-                      : mode === 'setpassword'
-                      ? 'Save Password & Sign In'
                       : mode === 'reset'
                       ? 'Update Password'
                       : 'Send Reset Link'}
