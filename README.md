@@ -1,862 +1,377 @@
-# Zikenn Dashboard
+<div align="center">
 
-> **Your life, career, and finances in one command center.**
+# 🪐 Zikenn Dashboard (LifeOS v4)
 
-Zikenn Dashboard is a personal productivity, life-management, and self-organization platform available as a modern web application and an installable native Android application via Capacitor. It combines everyday planning, habit building, goal setting, financial tracking, digital wellbeing analytics, and career portfolio management into a private, local-first workspace.
+**Your life, career, finances, and digital wellbeing in one private, unified command center.**
 
----
+[![React](https://img.shields.io/badge/React-19.0-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Vite](https://img.shields.io/badge/Vite-7.3-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
+[![Capacitor](https://img.shields.io/badge/Capacitor-8.5-119EFF?style=for-the-badge&logo=capacitor&logoColor=white)](https://capacitorjs.com/)
+[![Neon Postgres](https://img.shields.io/badge/Neon-Serverless%20Postgres-00E599?style=for-the-badge&logo=postgresql&logoColor=black)](https://neon.tech/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind-4.0-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![Vitest](https://img.shields.io/badge/Tests-777%20Passed-22C55E?style=for-the-badge&logo=vitest&logoColor=white)](https://vitest.dev/)
+[![License](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE)
 
-## 🎯 Table of Contents
+<br/>
 
-### Customer-Facing Sections
-- [✨ Why Zikenn Dashboard?](#-why-zikenn-dashboard)
-- [🎁 Core Features](#-core-features)
-- [🔐 Privacy & Trust](#-privacy--trust)
-- [💻 Platform Coverage](#-platform-coverage)
+[✨ Features](#-core-features) • [⚡ Delta Sync Architecture](#-timestamp-based-delta-sync-architecture) • [📱 Android Native APK](#-android-native-deep-integration) • [🚀 Quick Start](#-quick-start-guide) • [🛠️ Tech Stack](#%EF%B8%8F-technology-stack) • [🧪 Testing](#-testing--quality-assurance)
 
-### Developer & Technical Sections
-- [🏗️ System Architecture](#%EF%B8%8F-system-architecture)
-- [⚡ Advanced Sync Engine](#-advanced-sync-engine)
-- [🔄 Multi-Device Orchestration](#-multi-device-orchestration)
-- [🛡️ Data Consistency & Resilience](#%EF%B8%8F-data-consistency--resilience)
-- [🚀 Production Deployment](#-production-deployment)
-- [🛠️ Development Guide](#%EF%B8%8F-development-guide)
+<br/>
 
----
+</div>
 
 ---
 
-# 🎨 PRODUCT OVERVIEW & CUSTOMER PITCH
+## 💡 What is Zikenn Dashboard?
+
+**Zikenn Dashboard** is a local-first personal productivity, life operating system, and financial tracking hub. Built with **React 19**, **TypeScript**, **Capacitor 8**, and backed by a high-performance **Node.js / Express** server connected to **Neon Serverless PostgreSQL**.
+
+It solves productivity fragmentation by combining:
+- 💰 **Automated SMS Financial Ledger** with bank auto-logging on Android.
+- ⚡ **Timestamp-Based Delta Sync** with UUID v4 primary keys and conflict-free multi-device reconciliation.
+- ⏱️ **Real Hardware Screen Time Tracking** via Android's native `UsageStatsManager`.
+- 🔐 **Military-Grade Vault** protected by client-side AES-GCM-256 encryption.
+- 🎯 **Habits, Tasks & Milestone Roadmaps** with streak analytics.
+- 🧠 **AI Copilot** powered by Google Gemini (Live WebSocket & Tool Calling) and Groq.
+- 📅 **Dual Gregorian & Indian Panchang Calendars** with festival notifications.
+
+Available simultaneously as a high-speed **Progressive Web App** and an installable **Native Android APK**.
 
 ---
 
-## ✨ Why Zikenn Dashboard?
+## 🌟 Key Highlights & Why It's Different
 
-### The Problem
-Modern life demands managing dozens of fragmented systems:
-- 📝 To-do apps for tasks
-- 📊 Spreadsheets for budgeting
-- 📅 Calendar apps for scheduling
-- 📱 Habit trackers for consistency
-- 🔐 Password managers for security
-- 📔 Journal apps for reflection
-- ⏱️ Screen time monitoring for wellbeing
-
-**Result?** Context-switching fatigue, forgotten commitments, scattered data, and recurring decision-making overhead.
-
-### The Zikenn Solution
-**One unified command center** for your entire life. Seamlessly switch between:
-- ✅ Daily task execution
-- 🎯 Long-term goal tracking
-- 💰 Comprehensive financial management
-- 🔒 Encrypted credential vault
-- 📖 Private journaling & reflection
-- 📈 Real-time habit streaks
-- 📊 Career portfolio building
-- 🤖 AI-powered productivity assistance
-
-All synchronized **instantly across devices**, available **even offline**, and **completely under your control**.
+| Feature | Standard Productivity Apps | Zikenn Dashboard |
+| :--- | :--- | :--- |
+| **Data Ownership** | 🔒 Cloud lock-in, vendor databases | 🏠 **Local-first durability**, works 100% offline |
+| **Financial Logging** | ✍️ Manual entry or paid aggregators | ⚡ **Automatic bank SMS logging** on Android (Free & Private) |
+| **Sync Architecture** | 🐢 Full-snapshot overwrites, collisions | 🚀 **UUID v4 Timestamp Delta Sync** on Neon Postgres |
+| **Digital Wellbeing** | 📱 Inaccurate browser estimates | 📊 **Hardware-level Android `UsageStatsManager`** statistics |
+| **Security** | 🔑 Server-side plaintext or reversible hashes | 🛡️ **Zero-knowledge AES-GCM-256 client encryption** |
+| **AI Integration** | 🤖 Chatbots disconnected from app state | 🧠 **Structured AI tool-calling engine** mapped to actions |
 
 ---
 
 ## 🎁 Core Features
 
-### 📱 Daily Command Center
-- **Modular Dashboard Grid:** Personalize your home screen with widgets for weather, time, quotes, and quick-access actions
-- **Time-Blocked Schedule:** Hourly calendar for focused work sessions, meetings, and deep work blocks
-- **Quick-Capture Bar:** Keyboard shortcuts to capture tasks, expenses, and thoughts from anywhere in seconds
-- **Calendar & Traditions:** Integrated Gregorian + Indian Panchang calendar with seamless event management
+### 💰 Financial Command Center & SMS Auto-Logging
+* **Native Android SMS Auto-Parsing:** Background capture of transactional bank SMS messages (ICICI, HDFC, SBI, Axis, Kotak, UPI, credit/debit cards).
+* **Instant Device-Side UUID v4 Assignment:** Transactions are assigned an RFC 4122 v4 UUID the moment they arrive on device, preventing duplicate generation or cloud race conditions.
+* **Deterministic Deduplication:** Multi-stage fingerprinting combining transaction timestamp, reference IDs (UTR, UPI, SMS Reference), and merchant matching.
+* **Dual-Direction Bookkeeping:** Automatic classification of `DEBIT` and `CREDIT` cash flows, salary deposits, refunds, and investments.
+* **Excel / CSV Statement Importer:** Bulk upload bank statements with automated column mapping, preview reconciliation, and sheet batch management.
+* **Smart Analytics:** Spending breakdown by category, monthly trend forecasts, and home-screen spending widgets.
 
-### ✅ Productivity & Growth
-- **Kanban Board:** Visual drag-and-drop task management with priority, filtering, and checklist support
-- **Habit Tracking Matrix:** Weekly streak calculator with consistency analytics and goal preservation
-- **Goals & Milestones:** Multi-step life goals with visual progress tracking and milestone celebrations
-- **Unified Trash:** Soft-delete recovery system for peace of mind across all modules
+### ⚡ Timestamp-Based Delta Sync Architecture
+* **Neon Serverless PostgreSQL Engine:** Cloud persistence powered by Neon's serverless connection pooler.
+* **UUID v4 Primary Keys:** Zero auto-incrementing integer collisions across distributed clients.
+* **Incremental Delta PUSH & PULL:** Clients only transmit modified records (outbox mutations) and only receive changes that occurred after `last_sync_timestamp`.
+* **Conflict Resolution (Last-Write-Wins):** Intelligent server-side timestamp comparison (`updated_at` / `client_updated_at`) ensures stale offline writes cannot overwrite newer online modifications.
+* **Soft-Deletion & Tombstones:** Deleted transactions carry `is_deleted: true` tombstones with automated garbage collection and Trash recovery.
 
-### 💰 Financial Command Center
-- **Smart Expense Ledger:** Track income/expenses with categories, payment methods, and merchant details
-- **Subscription Manager:** Monitor recurring commitments with renewal dates and annual projections
-- **CSV/Excel Import:** Instantly import bank statements and card transactions
-- **Home-Screen Spending Widget:** Glance at daily/weekly spending without opening the app
+### 📱 Android Native Deep Integration (Capacitor 8)
+* **Real Hardware Screen Time:** Powered by a native Capacitor plugin invoking Android's `UsageStatsManager` for true app usage, unlocks, and digital wellbeing trends.
+* **Native Home-Screen Widgets:** Quick expense logger, real-time screen time widget, and sticky ScratchPad note.
+* **SMS Broadcast Receiver:** Background Android service that detects incoming SMS notifications and triggers local storage persistence.
+* **Native Haptic Feedback:** Tactile haptic confirmations for button taps, completed habits, and expense entries.
 
-### 📱 Android Deep Integration
-- **Native Screen Time Widget:** Real hardware statistics from `UsageStatsManager` (not estimates!)
-- **Home-Screen Spending Widget:** Quick access to spending summaries with direct expense logging
-- **ScratchPad Widget:** Edit quick notes directly from your home screen
-- **Offline Resilience:** Full functionality even without internet connection
+### 🧠 AI Productivity Copilot
+* **Google Gemini Integration:** Gemini Live WebSocket streaming and structured multi-turn conversation.
+* **Groq Ultra-Fast Execution:** Sub-second command parsing using LLaMA models on Groq LPUs.
+* **Intent Routing Engine:** Converts plain English commands into validated dashboard operations (e.g., *"Log 350 for dinner with Arpita via UPI"* or *"Add gym workout to daily schedule"*).
 
-### 🧠 AI Productivity Assistant
-- **Conversational Commands:** Ask in plain English; structured actions are automatically parsed
-- **Multi-Provider Support:** Choose between Groq (lightning-fast) or Google Gemini (advanced reasoning)
-- **Guaranteed Data Integrity:** Actions route through the app's validation layer—no hallucinated database writes
+### 🎯 Habits, Tasks & Life Goals
+* **Weekly Habit Matrix:** 7-day completion grid with automated Monday rollover, streak preservation, and activity history.
+* **Visual Kanban Task Board:** Drag-and-drop tasks with priorities, status columns (`Todo`, `In Progress`, `Review`, `Done`), and due-date filters.
+* **Milestone Roadmaps:** Break down multi-year goals into actionable milestones with visual progress indicators.
 
-### 🎓 Career & Knowledge Management
-- **Professional Portfolio:** Showcase skills, projects, and milestones with downloadable resume generation
-- **Exam Prep Center:** Syllabus tracking, revision logs, and countdown timers
-- **Encrypted Vault:** Military-grade AES-GCM encryption for passwords, secrets, and recovery codes
-- **Personal Diary:** Rich markdown entries with mood tracking, tags, and full-text search
-
----
-
-## 🔐 Privacy & Trust
-
-✅ **Your data stays yours.**
-- **Zero Cloud Dependency:** Runs entirely locally—cloud sync is optional
-- **Client-Side Encryption:** Sensitive records (vault, diary) encrypted with your master password before any cloud sync
-- **No Tracking, No Ads:** Zero analytics, zero ad networks, zero behavioral data collection
-- **Open Source Path:** Transparent codebase for security audits and community contribution
+### 🔐 Zero-Knowledge Encrypted Vault
+* **AES-GCM-256 Encryption:** Vault passwords, API credentials, and recovery codes are encrypted on the client before being written to disk or synced.
+* **PBKDF2 Key Derivation:** Master PIN/passwords derived with salt and thousands of hashing iterations.
 
 ---
 
-## 💻 Platform Coverage
+## ⚡ Timestamp-Based Delta Sync Architecture
 
-| Feature | Web Browser | Android APK |
-|---------|:---:|:---:|
-| Full Dashboard & All Modules | ✅ | ✅ |
-| Offline Access | ✅ Local Cache | ✅ Full Offline |
-| Real-Time Sync | ✅ WebSocket | ✅ WebSocket |
-| Home-Screen Widgets | ❌ Browser Limitation | ✅ Native Widgets |
-| Hardware Screen Time | ❌ Receive Only | ✅ Native `UsageStatsManager` |
-| Haptic Feedback | 📳 Vibration API | 📳 Native Haptics |
-| Installation | 🌐 Instant (PWA) | 📦 APK Download |
-
----
-
----
-
-# 🏗️ TECHNICAL ARCHITECTURE & DEVELOPER GUIDE
-
----
-
-## 🏗️ System Architecture
-
-### High-Level Architecture Diagram
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    🎨 PRESENTATION LAYER                         │
-├─────────────────────────────────────────────────────────────────┤
-│  React 19 + TypeScript + Tailwind CSS                            │
-│  ├─ Desktop Views (components/)                                  │
-│  ├─ Mobile Responsive (presentation/)                            │
-│  ├─ State Management & Event Bus                                 │
-│  └─ Web Crypto Engine (AES-GCM encryption)                       │
-└──────┬──────────────────────────────────────────────────────────┘
-       │
-       ├─────────────────────────────────────────────┐
-       │                                             │
-┌──────▼─────────────────────────┐   ┌──────────────▼──────────────┐
-│  📱 LOCAL DATA LAYER          │   │  🌐 CLOUD SYNC LAYER       │
-├───────────────────────────────┤   ├───────────────────────────┤
-│ localStorage / IndexedDB       │   │ Supabase PostgreSQL       │
-│ ├─ User Profile & Auth        │   │ ├─ user_devices table     │
-│ ├─ Tasks, Habits, Goals       │   │ ├─ data_versions table    │
-│ ├─ Expenses & Ledger          │   │ ├─ expense_authority      │
-│ ├─ Encrypted Vault            │   │ ├─ data_conflicts         │
-│ ├─ Journal & Notes            │   │ └─ RLS Policies (User)    │
-│ └─ Sync Queue & Metadata      │   │                           │
-└──────┬──────────────────────────┘   └──────────┬──────────────┘
-       │                                          │
-       └─────────────────┬───────────────────────┘
-                         │
-                    SYNC ENGINE
-                    Real-time via
-                    postgres_changes
-                    + polling fallback
-                         │
-       ┌─────────────────┴────────────────┐
-       │                                  │
-┌──────▼──────────────┐   ┌──────────────▼─────────────┐
-│  ⚡ APK SHELL       │   │  🖥️  SERVER PROXY         │
-├────────────────────┤   ├─────────────────────────────┤
-│ Capacitor 8        │   │ Express.js Node.js          │
-│ ├─ Device Bridge   │   │ ├─ API Routes               │
-│ ├─ Native Plugins  │   │ ├─ Device Heartbeat         │
-│ ├─ AppWidgets      │   │ ├─ Sync Status Logging      │
-│ ├─ Screen Time API │   │ └─ AI Integration (Gemini)  │
-│ └─ Offline Storage │   │                             │
-└────────────────────┘   └─────────────────────────────┘
-```
-
-### Component Breakdown
-
-| Layer | Responsibility | Key Files |
-|-------|---|---|
-| **Presentation (React)** | UI rendering, user interactions, real-time updates | `client/src/components/*`, `client/src/presentation/*` |
-| **State & Services** | Business logic, data transformations, event dispatch | `client/src/services/*`, `client/src/utils/*` |
-| **Local Storage** | Immediate writes to browser storage (offline-first) | `deviceService.ts`, `localStorage` adapter |
-| **Sync Engine** | Real-time and fallback cloud sync, conflict resolution | `expenseSyncService.ts`, `versioning.ts` |
-| **Cloud Backend** | PostgreSQL via Supabase, RLS policies, real-time subscriptions | `supabase/schema.sql`, `supabase/rpc.sql` |
-| **Native Bridge** | Capacitor plugins for Android features (screen time, widgets) | `android/app/src/main/java` |
-| **Server Proxy** | Node.js gateway for AI, webhooks, device coordination | `server/index.ts` |
-
----
-
-## ⚡ Advanced Sync Engine
-
-The sync engine is the **heartbeat of Zikenn Dashboard**, ensuring data consistency across devices, handling network failures gracefully, and resolving conflicts deterministically.
-
-### Real-Time Synchronization Flow
+The system utilizes an optimistic, local-first bidirectional delta sync engine:
 
 ```mermaid
 sequenceDiagram
-    participant User as 👤 User Action
-    participant LocalDB as 💾 LocalStorage
-    participant SyncQueue as 📤 Sync Queue
-    participant Cloud as ☁️ Supabase
-    participant OtherDevices as 📱 Other Devices
+    autonumber
+    participant APK as 📱 Android Device
+    participant Web as 💻 Web Browser
+    participant API as ⚡ Express Hub (/api/sync)
+    participant Neon as 🐘 Neon PostgreSQL
 
-    User->>LocalDB: Write expense/task/habit
-    Note over LocalDB: Immediate write (offline-first)
-    LocalDB->>SyncQueue: Queue sync job
-    SyncQueue->>Cloud: POST /api/sync (with version vector)
-    Cloud->>Cloud: Validate authority, detect conflicts
+    Note over APK: 1. Bank SMS arrives -> Assigned UUID v4<br/>2. Stored locally with updated_at = NOW()
+    APK->>API: POST /api/sync { last_sync_timestamp, records: [outbox] }
     
-    alt No Conflict
-        Cloud->>Cloud: Mark synced_to_all_devices
-        Cloud-->>SyncQueue: ✅ Success (202 Accepted)
-    else Conflict Detected
-        Cloud->>Cloud: Queue for reconciliation
-        Cloud-->>SyncQueue: 📋 Pending (requires APK review)
-    end
-    
-    SyncQueue->>Cloud: Subscribe postgres_changes
-    Cloud-->>OtherDevices: Real-time event notification (< 30ms)
-    OtherDevices->>OtherDevices: Merge & update local cache
-    OtherDevices-->>User: UI updates with new data
+    activate API
+    API->>Neon: INSERT ... ON CONFLICT (id) DO UPDATE<br/>WHERE EXCLUDED.client_updated_at > transactions.client_updated_at
+    API->>Neon: SELECT * FROM transactions WHERE updated_at > last_sync_timestamp
+    API->>Neon: SELECT CURRENT_TIMESTAMP AS server_timestamp
+    API-->>APK: 200 OK { server_timestamp, pulled_records: [] }
+    deactivate API
+
+    Note over APK: Dequeues outbox mutations<br/>Updates local last_sync_timestamp
+
+    Note over Web: Web user triggers sync
+    Web->>API: POST /api/sync { last_sync_timestamp: T_prev, records: [] }
+    activate API
+    API->>Neon: SELECT * FROM transactions WHERE updated_at > T_prev
+    API-->>Web: 200 OK { server_timestamp: T_new, pulled_records: [APK_SMS] }
+    deactivate API
+
+    Note over Web: Merges APK_SMS into local state<br/>Updates last_sync_timestamp = T_new
 ```
 
-### Sync Timing & Debouncing
-
-```typescript
-// Immediate: Local Storage Write (< 1ms)
-expense.amount = 150;
-localStorage.setItem('expenses', JSON.stringify([expense]));
-
-// Debounced: Cloud Sync (600-800ms)
-setTimeout(() => {
-  supabase.from('user_expenses')
-    .upsert(expense, { onConflict: 'id' })
-    .then(() => updateSyncStatus('synced'));
-}, 800);
-
-// Fallback: Polling Validation (25s, 30s)
-setInterval(() => validateCloudData(), 30_000);
-```
-
-### Three-Tier Sync Guarantee
-
-1. **Tier 1: Immediate Local (< 1ms)** → User sees instant feedback
-2. **Tier 2: Debounced Cloud (600-800ms)** → Most conflicts resolved automatically
-3. **Tier 3: Polling Validation (25-30s)** → Catch edge-case inconsistencies
-
----
-
-## 🔄 Multi-Device Orchestration
-
-### Device Registration & Identification
-
-Every device gets a **permanent, immutable device ID** that persists across app reinstalls:
-
-```typescript
-// For APK: Hardware-based (survives reinstalls)
-Device.getId() → "550e8400e29b41d4a716446655440000"
-
-// For Web: Browser fingerprint (localStorage backup)
-fingerprint = SHA256(
-  navigator.userAgent + 
-  screen.width + 
-  screen.height + 
-  Intl.DateTimeFormat().resolvedOptions().timeZone
-)
-```
-
-### Device Registry (Supabase `user_devices` Table)
+### Database Schema Highlights (`transactions` Table)
 
 ```sql
-CREATE TABLE user_devices (
-  id UUID PRIMARY KEY,
-  user_id UUID NOT NULL,
-  device_id TEXT NOT NULL,           -- Stable hardware ID
-  device_name TEXT,                   -- "iPhone", "Bedroom Tablet"
-  device_type TEXT,                   -- "native" | "web" | "desktop"
-  platform TEXT,                      -- "android" | "ios" | "windows"
-  is_active BOOLEAN,                  -- Determined by heartbeat
-  last_seen_at TIMESTAMP,             -- Latest heartbeat
-  first_login_at TIMESTAMP,           -- Device activation date
-  
-  UNIQUE(user_id, device_id)          -- One registration per user/device
-);
-```
-
-### Heartbeat Mechanism (60-second Keepalive)
-
-```typescript
-async function startDeviceHeartbeat() {
-  setInterval(async () => {
-    const deviceInfo = await getCurrentDeviceInfo(user);
-    
-    if (!deviceInfo) {
-      console.warn('Device no longer registered; stopping heartbeat');
-      return;
-    }
-    
-    if (!isOnline()) {
-      console.debug('Device offline; skipping heartbeat');
-      return;
-    }
-    
-    // Update last_seen_at in cloud
-    await supabase
-      .from('user_devices')
-      .update({ last_seen_at: new Date().toISOString() })
-      .eq('user_id', user.id)
-      .eq('device_id', deviceInfo.device_id);
-  }, 60_000); // Every 60 seconds
-}
-```
-
----
-
-## 🔐 Version Control & Conflict Resolution
-
-### Lamport Clock System
-
-Each data modification carries a **version vector** to deterministically order events across devices:
-
-```typescript
-interface VersionVector {
-  device_id: string;        // Identifies the originating device
-  logical_clock: number;    // Lamport clock (causality tracking)
-  wall_clock_ms: number;    // Unix timestamp (cross-device ordering)
-  sequence: number;         // Sub-millisecond tie-breaker
-}
-
-// Example: Device A edits expense at 2024-10-31T14:30:00.123Z
-version = {
-  device_id: "device-a",
-  logical_clock: 42,        // A's 42nd operation
-  wall_clock_ms: 1730381400123,
-  sequence: 3               // 3rd operation in this millisecond
-}
-```
-
-### Deterministic Ordering Algorithm
-
-```
-compareVersionVectors(v1, v2):
-  1. Higher logical_clock wins      (causality)
-  2. Higher wall_clock_ms wins      (global time)
-  3. Higher sequence wins            (local ordering)
-  4. device_id string comparison    (stable tie-breaker)
-```
-
-### Example: Conflicting Expense Edits
-
-```
-Device A (Web):  expense.amount = 100  @ logical_clock=42
-Device B (APK):  expense.amount = 150  @ logical_clock=42
-(Same logical clock; different wall times)
-
-Comparison:
-- A: wall_clock=1730381400100, sequence=1, device_id="web-1"
-- B: wall_clock=1730381400050, sequence=2, device_id="apk-1"
-
-Result: Device B's version wins (earlier wall clock)
-→ expense.amount = 150 (APK authority for expenses)
-→ Device A receives reconciliation notice
-```
-
----
-
-## 🛡️ Data Consistency & Resilience
-
-### APK-First Authority for Expenses
-
-Critical for multi-device setups: **Expenses originating on APK are the source of truth**.
-
-```typescript
-// Expense Authority Table
-CREATE TABLE expense_authority (
-  expense_id UUID PRIMARY KEY,
-  source_device_type TEXT,            -- 'native' | 'web'
-  authoritative_device_id TEXT,       -- Origin device
-  last_authoritative_modification_ms BIGINT,
-  requires_platform_reconciliation BOOLEAN,  -- Flag: APK review needed
-  is_synced_to_all_devices BOOLEAN,   -- Distributed to all devices
-  apk_version VersionVector,
-  web_version VersionVector
+CREATE TABLE IF NOT EXISTS public.transactions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_identifier TEXT NOT NULL,
+    user_email TEXT,
+    name TEXT NOT NULL,
+    amount NUMERIC(12, 2) NOT NULL,
+    category TEXT NOT NULL,
+    date TEXT NOT NULL,
+    time TEXT,
+    direction TEXT NOT NULL DEFAULT 'DEBIT',
+    payment_method TEXT,
+    billing_cycle TEXT,
+    notes TEXT,
+    bank_name TEXT,
+    masked_account TEXT,
+    account_last4 TEXT,
+    reference_id TEXT,
+    sms_reference_id TEXT,
+    upi_reference TEXT,
+    raw_sms_text TEXT,
+    merchant TEXT,
+    payee TEXT,
+    source TEXT,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    client_updated_at BIGINT NOT NULL DEFAULT 0,
+    version BIGINT NOT NULL DEFAULT 1
 );
 
-// Decision Logic
-if (expense.source_device_type == 'native') {
-  // APK version always wins in conflict
-  result = expense_authority.apk_version;
-} else {
-  // Web conflict: compare timestamps
-  result = (wall_clock_web > wall_clock_apk)
-    ? web_version
-    : apk_version;
-}
-```
-
-### Atomic Operations & Race Condition Prevention
-
-```typescript
-// ✅ SAFE: INSERT-first, UPDATE-on-conflict
-async function registerDevice(user: AuthUser, deviceId: string) {
-  const { data, error } = await supabase
-    .from('user_devices')
-    .insert({
-      user_id: user.id,
-      device_id: deviceId,
-      device_name: await getDeviceName(),
-      first_login_at: new Date().toISOString(),
-      is_active: true,
-    })
-    .select();
-  
-  if (error?.code === 'UNIQUE_VIOLATION') {
-    // Device already exists; update last_seen
-    return supabase
-      .from('user_devices')
-      .update({ is_active: true })
-      .eq('user_id', user.id)
-      .eq('device_id', deviceId);
-  }
-  
-  return data;
-}
-```
-
-### Transaction-Like Reconciliation
-
-```typescript
-// Phase 1: Gather all conflicting records
-async function gatherConflicts(workspace_id) {
-  return supabase
-    .from('data_conflicts')
-    .select('*')
-    .eq('workspace_id', workspace_id)
-    .eq('resolved', false);
-}
-
-// Phase 2: Apply reconciliation (APK authority)
-async function reconcileConflicts(conflicts) {
-  const reconciliationBatchId = `batch-${Date.now()}-${randomUUID()}`;
-  
-  for (const conflict of conflicts) {
-    // Idempotency: Skip if already reconciled
-    if (await isAlreadyReconciled(conflict.id, reconciliationBatchId)) {
-      continue;
-    }
-    
-    const resolved = resolveExpenseConflict(
-      conflict.version_a,
-      conflict.version_b,
-      conflict.authority_strategy  // 'apk-first' | 'latest-first'
-    );
-    
-    await markConflictResolved(conflict.id, resolved, reconciliationBatchId);
-  }
-}
-
-// Phase 3: Distribute to all devices
-async function distributeReconciliation(workspace_id, reconciliationBatchId) {
-  const devices = await getActiveDevices(workspace_id);
-  
-  for (const device of devices) {
-    await notifyDeviceOfReconciliation(device.id, reconciliationBatchId);
-  }
-}
+-- Optimized Indexes for Delta Sync
+CREATE INDEX idx_transactions_delta_sync ON public.transactions(workspace_identifier, updated_at);
+CREATE INDEX idx_transactions_active_sync ON public.transactions(workspace_identifier, is_deleted);
 ```
 
 ---
 
-## 🚨 Error Handling & Resilience
+## 🛠️ Technology Stack
 
-### Exponential Backoff Retry Strategy
-
-```typescript
-async function retryWithBackoff<T>(
-  operation: () => Promise<T>,
-  options = {
-    maxRetries: 3,
-    initialDelayMs: 1000,
-    maxDelayMs: 10000,
-    backoffMultiplier: 2
-  }
-): Promise<T> {
-  let lastError;
-  
-  for (let attempt = 0; attempt <= options.maxRetries; attempt++) {
-    try {
-      return await operation();
-    } catch (err) {
-      lastError = err;
-      
-      if (!isRetryableError(err)) {
-        throw err;  // Don't retry 4xx errors (except 429/503)
-      }
-      
-      const delayMs = Math.min(
-        options.initialDelayMs * Math.pow(options.backoffMultiplier, attempt) +
-        Math.random() * 1000,  // jitter
-        options.maxDelayMs
-      );
-      
-      await sleep(delayMs);
-    }
-  }
-  
-  throw lastError;
-}
-
-// Retryable Errors
-function isRetryableError(err: any): boolean {
-  const status = err.status;
-  return status >= 500 ||    // Server errors (5xx)
-         status === 429 ||   // Too many requests
-         status === 503 ||   // Service unavailable
-         !navigator.onLine;  // Network unreachable
-}
 ```
-
-### Offline-First Mode (APK)
-
-```typescript
-async function initializeOfflineDetection() {
-  const Network = await getNetworkPlugin();
-  
-  if (!Network) return;  // Web platform
-  
-  const { connected } = await Network.getStatus();
-  
-  updateOfflineState({
-    isOnline: connected,
-    canModify: connected  // APK: read-only if offline
-  });
-  
-  Network.addListener('networkStatusChange', ({ connected }) => {
-    if (connected) {
-      triggerSyncOnReconnect();  // Auto-sync queued changes
-    } else {
-      setOfflineMode(true);      // Lock modifications
-    }
-  });
-}
+┌─────────────────────────────────────────────────────────────────┐
+│                       🎨 FRONTEND LAYER                         │
+├─────────────────────────────────────────────────────────────────┤
+│  React 19 • TypeScript 5.8 • Vite 7.3 • Tailwind CSS 4.0        │
+│  Radix UI Primitives • Lucide Icons • SheetJS (xlsx) • Sonner   │
+└────────────────┬────────────────────────────────────────────────┘
+                 │
+┌────────────────▼────────────────────────────────────────────────┐
+│                   📱 NATIVE ANDROID RUNTIME                     │
+├─────────────────────────────────────────────────────────────────┤
+│  Capacitor 8.5 • Android SDK 34 • UsageStatsManager Screen Time  │
+│  Custom SMS BroadcastReceiver • AppWidgets • Native Haptics     │
+└────────────────┬────────────────────────────────────────────────┘
+                 │
+┌────────────────▼────────────────────────────────────────────────┐
+│                   ⚡ BACKEND & CLOUD HUB                         │
+├─────────────────────────────────────────────────────────────────┤
+│  Node.js 20+ • Express.js • WebSocket (ws) • Google GenAI SDK   │
+│  Bidirectional Delta Sync (/api/sync) • Gemini Live Proxy       │
+└────────────────┬────────────────────────────────────────────────┘
+                 │
+┌────────────────▼────────────────────────────────────────────────┐
+│                    🐘 DATABASE & PERSISTENCE                    │
+├─────────────────────────────────────────────────────────────────┤
+│  Neon Serverless PostgreSQL (pgcrypto, UUID v4, TIMESTAMPTZ)    │
+│  IndexedDB & LocalStorage Client Cache • Client AES-GCM Vault   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🚀 Production Deployment
-
-### Build Pipeline
-
-```bash
-# 1. Local development
-npm run dev          # Vite dev server on :3000
-
-# 2. Type checking
-npm run check        # TypeScript compilation
-
-# 3. Production build
-npm run build        # Vite + esbuild → dist/
-
-# 4. Testing
-npm run test         # Vitest suite
-
-# 5. APK build (Android)
-npm run cap:build    # Capacitor sync + Gradle compile
-# Output: android/app/build/outputs/apk/debug/app-debug.apk
-
-# 6. Server deployment (Netlify / Vercel)
-npm start            # Node.js Express server on :3000
-```
-
-### Vite Configuration for Multi-Platform
-
-```typescript
-// vite.config.ts
-export default defineConfig({
-  build: {
-    rollupOptions: {
-      external: [
-        '@capacitor/core',
-        '@capacitor/device',
-        '@capacitor/network'
-      ]
-    }
-  }
-});
-```
-
-### Environment Variables
-
-| Variable | Scope | Required | Purpose |
-|----------|-------|----------|---------|
-| `VITE_SUPABASE_URL` | Client | Optional | Supabase project URL |
-| `VITE_SUPABASE_ANON_KEY` | Client | Optional | Supabase public key |
-| `VITE_GROQ_API_KEY` | Client | Optional | Groq API for AI |
-| `GEMINI_API_KEY` | Server | Optional | Google Gemini API |
-
----
-
-## 🛠️ Development Guide
+## 🚀 Quick Start Guide
 
 ### Prerequisites
-- **Node.js:** v18.0.0+
-- **npm:** v9.0.0+
-- **Git**
-- **Android Studio** (for APK development)
+- [Node.js](https://nodejs.org/) (v18.0.0 or higher, Node 20+ recommended)
+- [npm](https://www.npmjs.com/) or [pnpm](https://pnpm.io/)
+- For Android builds: [Android Studio](https://developer.android.com/studio) with Android SDK 34+
 
-### Quick Start
-
+### 1. Clone the Repository
 ```bash
-# Clone & install
-git clone https://github.com/your-username/personal-dashboard.git
-cd personal-dashboard
+git clone https://github.com/zikenn26/Personal-Dashboard-v2.git
+cd Personal-Dashboard-v2
+```
+
+### 2. Install Dependencies
+```bash
 npm install
+```
 
-# Start development server
+### 3. Environment Configuration
+Create a `.env` file in the project root:
+```env
+# Server & Database Configuration
+PORT=3000
+NODE_ENV=development
+DATABASE_URL=postgresql://[USER]:[PASSWORD]@[HOST]/[DB_NAME]?sslmode=require&channel_binding=require
+
+# AI Copilot Keys
+GEMINI_API_KEY=your_gemini_api_key_here
+GROQ_API_KEY=your_groq_api_key_here
+
+# Optional: CORS allowed origins (comma-separated)
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
+```
+
+### 4. Apply Database Migrations (Neon PostgreSQL)
+To initialize or migrate the Neon database tables, execute the provided migration script:
+```bash
+node -e "const { pool } = require('./dist/server/db.js'); /* or execute neon_delta_sync_migration.sql in Neon Console */"
+```
+*Alternatively, paste the contents of [`neon_delta_sync_migration.sql`](neon_delta_sync_migration.sql) into your Neon SQL Editor console.*
+
+### 5. Run the Application in Development Mode
+```bash
+# Starts the Vite client and Express API proxy
 npm run dev
-# Open http://localhost:3000
+```
+Open your browser at `http://localhost:3000`.
 
-# Type checking
-npm run check
-
-# Full build
+### 6. Build for Production
+```bash
+# Compiles React via Vite and bundles Express backend via esbuild
 npm run build
 
-# Run tests
-npm run test
+# Start production server
+npm start
 ```
 
-### Android APK Development
+---
 
+## 📱 Building the Native Android APK
+
+The project includes a complete native Android application configured with Capacitor.
+
+### 1. Synchronize Web Assets to Android
 ```bash
-# Build web + sync Capacitor assets
 npm run cap:build
+```
+*This runs `vite build` and copies the compiled bundle to `android/app/src/main/assets/public`.*
 
-# Open Android Studio
+### 2. Open in Android Studio
+```bash
 npm run cap:open
-
-# Build debug APK
-cd android
-./gradlew assembleDebug
-
-# Deploy to device
-adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-### Key Service Files
+### 3. Build & Run
+- Connect your Android device via USB (or start an Android Virtual Device).
+- Click **Run (Shift + F10)** in Android Studio.
+- Grant **SMS Read Permission** and **Usage Access Permission** in Android Settings when prompted to enable automatic transaction tracking and hardware screen time stats.
 
-| File | Purpose |
-|------|---------|
-| `client/src/services/deviceService.ts` | Device registration, fingerprinting, heartbeat |
-| `client/src/services/expenseAuthorityService.ts` | APK-first conflict resolution |
-| `client/src/services/expenseSyncService.ts` | Multi-phase expense sync with reconciliation |
-| `client/src/utils/versioning.ts` | Lamport clock & version vector logic |
-| `client/src/utils/retry.ts` | Exponential backoff retry mechanism |
-| `client/src/utils/offlineDetection.ts` | Network monitoring & offline mode |
-| `client/src/utils/validator.ts` | Data validation & sanitization |
-| `client/src/utils/logger.ts` | PII-safe logging |
-| `server/index.ts` | Express backend, device APIs, AI integration |
+---
 
-### Database Migrations
+## 🧪 Testing & Quality Assurance
+
+The codebase includes an extensive automated test suite covering all client utilities, UI calculators, local storage persistence, SMS parsing regexes, and delta sync endpoints.
 
 ```bash
-# Connect to Supabase CLI
-npx supabase link
+# Run full Vitest suite (47 test files, 777 unit & integration tests)
+npm test
 
-# Apply schema changes
-npx supabase db push
+# Run TypeScript type check
+npm run check
 
-# Verify RPC functions
-psql postgresql://... -f supabase/rpc.sql
+# Run end-to-end Neon DB delta sync integration verification
+npx tsx server/testEndToEndDeltaSync.ts
+```
+
+### Test Coverage Highlights
+- ✅ **Delta Sync Architecture:** UUID v4 generation, outbox push, incremental pull, collision detection, and soft-delete propagation ([`deltaSyncArchitecture.test.ts`](client/src/tests/deltaSyncArchitecture.test.ts)).
+- ✅ **SMS Transaction Parser:** Over 60+ Indian bank SMS formats verified for debit/credit accuracy ([`bankFormatRegression.test.ts`](client/src/tests/bankFormatRegression.test.ts)).
+- ✅ **Local-First Durability:** Offline-first IndexedDB persistence, atomic outbox mutations, and recovery ([`localFirstExpenseSync.test.ts`](client/src/tests/localFirstExpenseSync.test.ts)).
+- ✅ **Hardware Screen Time:** App duration parsing, unlock count tracking, and device reconciliation ([`screenTimeCalculation.test.ts`](client/src/tests/screenTimeCalculation.test.ts)).
+- ✅ **Client Cryptography:** Zero-knowledge password verification and AES-GCM vault security ([`crypto.test.ts`](client/src/utils/crypto.test.ts)).
+
+---
+
+## 📂 Project Directory Structure
+
+```
+Personal-Dashboard-App-GitHub/
+├── android/                         # Capacitor Native Android Project
+│   ├── app/src/main/java/           # Native Plugins, AppWidgets, & Receivers
+│   └── app/src/main/assets/public/  # Synced Web Production Assets
+├── client/                          # Frontend Application
+│   ├── src/
+│   │   ├── components/              # Modular UI Widgets & Section Panels
+│   │   ├── presentation/mobile/     # Responsive Mobile Screens & Sheets
+│   │   ├── repositories/            # Local-First IndexedDB Expense Repository
+│   │   ├── services/                # Sync, Screen Time, Native & SMS Services
+│   │   ├── tests/                   # Automated Vitest Test Suites
+│   │   ├── utils/                   # Storage, Crypto, UUID, & Export Helpers
+│   │   ├── types.ts                 # Central TypeScript Definitions
+│   │   └── App.tsx                  # Root Application Component
+│   ├── public/                      # Static Assets, Icons & Schema Scripts
+│   └── index.html                   # HTML Entrypoint
+├── server/                          # Backend Cloud Hub
+│   ├── db.ts                        # Neon PostgreSQL Connection Pool
+│   ├── syncService.ts               # Bidirectional Delta Sync & Device Hub
+│   ├── screenTimeService.ts         # Screen Time Sync Relay
+│   ├── geminiService.ts             # Google Gemini Live WebSocket Server
+│   ├── security.ts                  # Security Headers & Rate Limiting
+│   └── index.ts                     # Main Express Entrypoint
+├── neon_schema.sql                  # Production Neon Postgres Schema
+├── neon_delta_sync_migration.sql    # UUID Delta Sync SQL Migration
+├── package.json                     # Scripts & Dependencies
+├── vite.config.ts                   # Vite & PWA Build Configuration
+└── README.md                        # Documentation
 ```
 
 ---
 
-## 📚 Module Reference
+## 🔒 Security & Privacy Practices
 
-### Dashboard & Views
-- `DashboardHomeView.tsx` – Main dashboard grid with customizable widgets
-- `CommandCenterGrid.tsx` – Widget composition and layout engine
-- `DynamicScheduleCard.tsx` – Time-blocked schedule visualization
-
-### Expense Management
-- `ExpenseTracker.tsx` – Ledger UI with categorization and filtering
-- `ExpenseDistributionSection.tsx` – Category breakdown charts
-- `ExpenseDistributionSection.tsx` – Subscription tracking
-
-### Habits & Goals
-- `HabitTracker.tsx` – Streak matrix and completion tracking
-- `HabitStreakChart.tsx` – Visual consistency analytics
-- `GoalsView.tsx` – Multi-step goal management
-
-### AI & Integrations
-- `AIAssistantView.tsx` – Conversational interface
-- `AISecretaryWidget.tsx` – Quick AI actions
-- `GeminiLiveVoiceModal.tsx` – Voice-to-action conversion
-
-### Vault & Security
-- `VaultView.tsx` – Encrypted credential manager
-- `DearDiaryView.tsx` – Private journaling with AES-GCM encryption
+1. **Zero Data Snooping:** No tracking scripts, no Google Analytics, no third-party telemetry.
+2. **Encrypted Vault Storage:** All credentials stored in the Vault are encrypted using standard **AES-GCM (256-bit)** before touching storage or wire.
+3. **Optimistic Concurrency Control:** Write mutations include timestamp checks to prevent accidental overwrites when multiple devices update simultaneously.
+4. **Authoritative Master Protection:** APK device entries originating from native SMS parsing are protected against destructive browser snapshot overwrites.
 
 ---
 
-## 🔍 Troubleshooting
+## 🤝 Contributing
 
-### Build Issues
+Contributions, feedback, and pull requests are warmly welcome!
 
-**Problem:** `@capacitor/device` import fails on Netlify
-```
-[vite]: Rollup failed to resolve import "@capacitor/device"
-```
-
-**Solution:** Ensure `vite.config.ts` includes:
-```typescript
-build: {
-  rollupOptions: {
-    external: ['@capacitor/device', '@capacitor/network']
-  }
-}
-```
-
-### Sync Issues
-
-**Problem:** Expenses not syncing to other devices
-1. Check device is registered: `SELECT * FROM user_devices WHERE user_id = ?`
-2. Verify RLS policies allow access
-3. Check conflict resolution: `SELECT * FROM data_conflicts`
-4. Review Supabase realtime logs
-
-**Solution:** Run reconciliation manually:
-```typescript
-const conflicts = await expenseAuthorityService.getExpensesRequiringAPKReconciliation(user);
-await expenseAuthorityService.markExpenseAsSyncedToAllDevices(conflict.expense_id);
-```
-
-### Offline Mode (APK)
-
-**Problem:** Can modify data while offline
-**Solution:** Ensure `offlineDetection.ts` is initialized:
-```typescript
-// App.tsx
-useEffect(() => {
-  initializeOfflineDetection();
-  return () => unsubscribeOfflineDetection();
-}, []);
-```
+1. Fork the Project.
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`).
+3. Commit your Changes (`git commit -m 'feat: Add some AmazingFeature'`).
+4. Ensure all tests pass (`npm test && npm run check`).
+5. Push to the Branch (`git push origin feature/AmazingFeature`).
+6. Open a Pull Request.
 
 ---
 
-## 🧪 Testing Strategy
+## 📄 License
 
-### Unit Tests
-- Version vector comparisons (`versioning.ts`)
-- Expense validation logic (`validator.ts`)
-- Retry backoff calculations (`retry.ts`)
-
-### Integration Tests
-- Device registration flow (new device → heartbeat → sync)
-- Multi-device expense conflict resolution
-- Offline mode transitions (online → offline → online)
-
-### E2E Tests
-- Full sync cycle: local write → cloud → other device
-- Conflict resolution: simultaneous edits → reconciliation
-- Data integrity: 100 concurrent operations → no duplicates
-
-```bash
-npm run test  # Vitest full suite
-```
+Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for more information.
 
 ---
 
-## 🌍 Deployment Checklist
+<div align="center">
 
-- [ ] Set `.env` with production Supabase URL & keys
-- [ ] `npm run check` passes (TypeScript)
-- [ ] `npm run build` completes with no errors
-- [ ] `npm run test` passes all tests
-- [ ] Supabase database schema applied (`schema.sql`)
-- [ ] RPC functions deployed (`rpc.sql`)
-- [ ] Enable RLS on all tables
-- [ ] Deploy APK build to Play Store / internal testing
-- [ ] Deploy web build to Netlify / Vercel
-- [ ] Monitor Supabase logs for sync errors
-- [ ] Verify real-time sync < 30ms latency
+Made with ❤️ for high-performance personal productivity.
 
----
-
-## 📖 Roadmap
-
-### Phase 1 (Current)
-- ✅ Core dashboard & expense tracking
-- ✅ Multi-device sync with conflict resolution
-- ✅ Offline-first APK support
-- ✅ AI assistant integration
-
-### Phase 2 (Planned)
-- 🔄 Advanced budget forecasting & spending insights
-- 🔄 Team/family shared workspaces
-- 🔄 Mobile app performance optimizations
-- 🔄 Calendar integration (Google, Outlook)
-
-### Phase 3 (Future)
-- 📋 Portfolio & resume builder
-- 📋 Advanced analytics dashboard
-- 📋 Biometric authentication
-- 📋 Blockchain-based backup verification
-
----
-
-## 📝 Contributing
-
-We welcome contributions! Please:
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/my-feature`)
-3. Commit changes (`git commit -m 'Add feature'`)
-4. Push to branch (`git push origin feature/my-feature`)
-5. Open a Pull Request
-
-### Development Guidelines
-- Follow TypeScript strict mode
-- Write tests for new features
-- Update documentation with changes
-- Ensure `npm run check` and `npm run format` pass
-
----
-
-## ⚖️ License & Legal
-
-**Zikenn Dashboard** is released under the **MIT License**.
-
-Your data is your own. See [PRIVACY.md](./PRIVACY.md) for our privacy commitment.
-
----
-
-## 📞 Support & Community
-
-- **Issues:** [GitHub Issues](https://github.com/your-username/personal-dashboard/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/your-username/personal-dashboard/discussions)
-- **Email:** support@zikenn.com
-
----
-
-## 🙏 Acknowledgments
-
-Built with:
-- ❤️ React 19
-- 🎨 Tailwind CSS
-- 🔐 Supabase
-- 📱 Capacitor
-- 🧠 Groq & Google Gemini
-
----
-
-**Last Updated:** October 31, 2024  
-**Version:** 1.0.0  
-**Maintainer:** Gulshan Kumar Nayak
+</div>
