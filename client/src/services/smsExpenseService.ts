@@ -9,6 +9,7 @@ import { nativeService } from './nativeService';
 import { Sound } from '../utils/audio';
 import { parseSmsTransaction } from './smsParser';
 import { normalizeExpenseDateKey } from '../utils/expenseUtils';
+import { generateUUID } from '../utils/uuid';
 import { scheduleAutoSyncToSupabase, flushAutoSyncImmediately, getCustomWorkspaceIdentifier } from '../utils/supabase';
 import { toast } from 'sonner';
 
@@ -992,8 +993,9 @@ class SmsExpenseService {
       notesParts.push('Auto-logged from SMS');
 
       const nowMs = Date.now();
+      const nowIso = new Date().toISOString();
       const newExpense: ExpenseItem = {
-        id: `exp-sms-${nowMs}-${Math.random().toString(36).substr(2, 5)}`,
+        id: generateUUID(),
         name: parsed.payee || parsed.merchant,
         amount: parsed.amount,
         category: parsed.category,
@@ -1015,6 +1017,8 @@ class SmsExpenseService {
         merchant: parsed.merchant,
         payee: parsed.payee || parsed.merchant,
         active: true,
+        is_deleted: false,
+        updated_at: nowIso,
         createdAt: nowMs,
         updatedAt: nowMs,
       };

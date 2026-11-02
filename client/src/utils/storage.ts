@@ -53,6 +53,7 @@ import { getLocalDateString, resolveCleanAppName } from './screenTimeCalculator'
 import { isDummyMockAvatar, isAvatarMatchingUserEmailDomain, getUserWorkspaceKey, OWNER_GKN_EXPENSES } from './userUtils';
 export { OWNER_GKN_EXPENSES };
 import { Capacitor } from '@capacitor/core';
+import { generateUUID, isValidUUID } from './uuid';
 import { expenseRepo } from '../repositories/expenseRepository';
 import { expenseSyncService } from '../services/expenseSyncService';
 
@@ -99,6 +100,7 @@ export const STORAGE_KEYS = {
   SMS_WRITE_RETRY_QUEUE: 'notion_os_v4_sms_write_retry_queue',
   TOMBSTONED_REFS: 'notion_os_v4_tombstoned_refs',
   DEVICES: 'notion_os_v4_devices',
+  LAST_SYNC_TIMESTAMP: 'notion_os_v4_last_sync_timestamp',
 };
 
 export const DEFAULT_COMMAND_MAPPINGS: CommandMapping[] = [
@@ -1964,6 +1966,11 @@ export const Storage = {
   addExpense: (expense: ExpenseItem): ExpenseItem[] => {
     const current = Storage.getExpenses();
     const nowMs = Date.now();
+    const nowIso = expense.updated_at || new Date().toISOString();
+    const cleanId = (expense.id && isValidUUID(expense.id))
+      ? String(expense.id).trim()
+      : (expense.id && String(expense.id).trim() ? String(expense.id).trim() : generateUUID());
+
     const isCredit =
       expense.direction === 'CREDIT' ||
       expense.transactionType === 'CREDIT' ||
@@ -1977,7 +1984,7 @@ export const Storage = {
 
     const expenseWithTimestamps: ExpenseItem = {
       ...expense,
-      id: String(expense.id || `exp-${nowMs}-${Math.random().toString(36).slice(2, 7)}`).trim(),
+      id: cleanId,
       amount: safeAmount,
       name: (expense.name || 'Expense').trim() || 'Expense',
       category: (expense.category || 'Other').trim() || 'Other',
@@ -1985,6 +1992,8 @@ export const Storage = {
       direction,
       transactionType: direction,
       active: expense.active !== false,
+      is_deleted: Boolean(expense.is_deleted),
+      updated_at: nowIso,
       createdAt: expense.createdAt || nowMs,
       updatedAt: expense.updatedAt || nowMs,
     };
@@ -2130,13 +2139,24 @@ export const Storage = {
     Storage.purgeExpensesFromAllCaches([cleanId], refs);
 
     // Commit delete to local database & outbox
+    const deleteIso = new Date().toISOString();
     void expenseRepo.delete(cleanId).then(() => {
       void expenseRepo.recordTombstone(cleanId);
       void expenseRepo.enqueueMutation({
         expenseId: cleanId,
         action: 'delete',
-        payload: { id: cleanId, expense: target },
-        data: target,
+        payload: {
+          id: cleanId,
+          is_deleted: true,
+          updated_at: deleteIso,
+          expense: target,
+        },
+        data: {
+          ...(target || {}),
+          id: cleanId,
+          is_deleted: true,
+          updated_at: deleteIso,
+        },
       }).then(() => {
         void expenseRepo.getPendingOutbox().then((outbox) => {
           expenseSyncService.notifyMutationEnqueued(outbox.length);
@@ -2147,6 +2167,22 @@ export const Storage = {
     });
 
     return updated;
+  },
+  getLastSyncTimestamp: (): string | null => {
+    try {
+      return (
+        localStorage.getItem(getScopedKey(STORAGE_KEYS.LAST_SYNC_TIMESTAMP)) ||
+        localStorage.getItem(STORAGE_KEYS.LAST_SYNC_TIMESTAMP)
+      );
+    } catch {
+      return null;
+    }
+  },
+  setLastSyncTimestamp: (timestamp: string): void => {
+    try {
+      localStorage.setItem(getScopedKey(STORAGE_KEYS.LAST_SYNC_TIMESTAMP), timestamp);
+      localStorage.setItem(STORAGE_KEYS.LAST_SYNC_TIMESTAMP, timestamp);
+    } catch {}
   },
   deleteExpenses: (ids: string[]): ExpenseItem[] => {
     const cleanIds = ids.map((id) => String(id).trim()).filter(Boolean);

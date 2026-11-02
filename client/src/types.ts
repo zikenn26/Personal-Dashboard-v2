@@ -125,6 +125,8 @@ export interface ExpenseItem {
   notes?: string;
   billingCycle?: ExpenseBillingCycle;
   active?: boolean;
+  is_deleted?: boolean;
+  updated_at?: string;
   sourceFile?: string;
   importBatchId?: string;
   time?: string;

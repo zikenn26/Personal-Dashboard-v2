@@ -1,6 +1,7 @@
 import { ExpenseItem, OutboxMutation, ExpenseSyncStatus, ExpenseSyncStatusState } from '../types';
 import { normalizeExpenseDateKey, getLocalDateKey } from '../utils/expenseUtils';
 import { getSupabaseClient, getCustomWorkspaceIdentifier, fetchExpensesFromDedicatedTable } from '../utils/supabase';
+import { generateUUID, isValidUUID } from '../utils/uuid';
 
 export class DurableStorageError extends Error {
   constructor(message: string, public readonly originalError?: unknown) {
@@ -276,7 +277,10 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
   public async save(expense: ExpenseItem): Promise<ExpenseItem> {
     await this.init();
     const nowMs = Date.now();
-    const cleanId = String(expense.id || `exp-${nowMs}-${Math.random().toString(36).slice(2, 7)}`).trim();
+    const nowIso = expense.updated_at || new Date().toISOString();
+    const cleanId = (expense.id && isValidUUID(expense.id))
+      ? String(expense.id).trim()
+      : (expense.id && String(expense.id).trim() ? String(expense.id).trim() : generateUUID());
 
     const isCredit =
       expense.direction === 'CREDIT' ||
@@ -299,6 +303,8 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
       direction,
       transactionType: direction,
       active: expense.active !== false,
+      is_deleted: Boolean(expense.is_deleted),
+      updated_at: nowIso,
       createdAt: expense.createdAt || nowMs,
       updatedAt: expense.updatedAt || nowMs,
     };

@@ -63,7 +63,7 @@ export const initDb = async (): Promise<void> => {
       );
 
       CREATE TABLE IF NOT EXISTS transactions (
-        id TEXT PRIMARY KEY,
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         workspace_identifier TEXT NOT NULL,
         user_email TEXT,
         name TEXT NOT NULL,

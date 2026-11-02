@@ -41,7 +41,7 @@ FROM public.workspaces;
 -- =========================================================================
 
 CREATE TABLE IF NOT EXISTS public.transactions (
-    id TEXT PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_identifier TEXT NOT NULL,
     user_email TEXT,
     name TEXT NOT NULL,

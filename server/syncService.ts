@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import crypto from "crypto";
 import { pool } from "./db.js";
 
 interface StoredWorkspace {
@@ -672,7 +673,255 @@ export async function handlePostTransactions(req: any, res: any): Promise<void> 
   }
 }
 
+/**
+ * Bidirectional Timestamp-Based Delta Sync endpoint (/api/sync).
+ * Accepts last_sync_timestamp and modified/new client outbox records.
+ * PUSH logic: Upserts records using UUID. If record exists, only overwrites if incoming updated_at > server's updated_at.
+ * PULL logic: Queries records where updated_at > last_sync_timestamp (including soft-deletes).
+ */
+export async function handleDeltaSync(req: any, res: any): Promise<void> {
+  try {
+    const isGet = (req.method || "").toUpperCase() === "GET";
+    const body = isGet ? req.query || {} : req.body || {};
+
+    const rawWorkspace = body.workspace_identifier || body.user_identifier || req.query?.workspace_identifier || req.query?.user_identifier || "";
+    const rawEmail = body.user_email || body.email || req.query?.user_email || req.query?.email || "";
+    const workspaceId = String(rawWorkspace).trim();
+    const userEmail = String(rawEmail).trim().toLowerCase();
+
+    if (!workspaceId && !userEmail) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing workspace_identifier or user_email",
+      });
+    }
+
+    // 1. Parse last_sync_timestamp
+    let lastSyncDate: Date;
+    const rawTimestamp = body.last_sync_timestamp || req.query?.last_sync_timestamp;
+    if (rawTimestamp) {
+      if (typeof rawTimestamp === "number" || !isNaN(Number(rawTimestamp))) {
+        lastSyncDate = new Date(Number(rawTimestamp));
+      } else {
+        lastSyncDate = new Date(String(rawTimestamp));
+      }
+      if (isNaN(lastSyncDate.getTime())) {
+        lastSyncDate = new Date(0);
+      }
+    } else {
+      lastSyncDate = new Date(0);
+    }
+
+    // 2. PUSH PHASE: Process incoming records / client outbox
+    const incomingRecords = Array.isArray(body.records)
+      ? body.records
+      : Array.isArray(body.outbox)
+      ? body.outbox
+      : [];
+
+    let pushedCount = 0;
+    const appliedIds: string[] = [];
+    const skippedIds: string[] = [];
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+    for (const item of incomingRecords) {
+      if (!item) continue;
+      const record = item.payload || item.data || item;
+      let recId = String(record.id || item.expenseId || item.id || "").trim();
+
+      if (!uuidRegex.test(recId)) {
+        recId = crypto.randomUUID();
+      }
+
+      const isDeleted = Boolean(
+        record.is_deleted === true ||
+        record.isDeleted === true ||
+        record.deleted === true ||
+        item.action === "delete"
+      );
+
+      let clientUpdatedAtMs: number;
+      const rawUpdatedAt = record.updated_at || record.updatedAt || item.timestamp || record.date;
+      if (rawUpdatedAt) {
+        const d = typeof rawUpdatedAt === "number" || !isNaN(Number(rawUpdatedAt))
+          ? new Date(Number(rawUpdatedAt))
+          : new Date(String(rawUpdatedAt));
+        clientUpdatedAtMs = !isNaN(d.getTime()) ? d.getTime() : Date.now();
+      } else {
+        clientUpdatedAtMs = Date.now();
+      }
+      const clientUpdatedAtIso = new Date(clientUpdatedAtMs).toISOString();
+
+      const amount = Number(record.amount) || 0;
+      const name = String(record.name || record.payee || record.merchant || "Expense").trim();
+      const category = String(record.category || "Other").trim();
+      const date = String(record.date || new Date().toISOString().split("T")[0]);
+      const isCredit =
+        record.direction === "CREDIT" ||
+        record.transactionType === "CREDIT" ||
+        record.transactionType === "income" ||
+        record.type === "income";
+      const direction = isCredit ? "CREDIT" : "DEBIT";
+
+      const upsertQuery = `
+        INSERT INTO transactions (
+          id, workspace_identifier, user_email, name, amount, category, date, time,
+          direction, payment_method, billing_cycle, notes, bank_name, masked_account,
+          account_last4, reference_id, sms_reference_id, upi_reference, raw_sms_text,
+          merchant, payee, source, active, is_deleted, deleted_at, client_updated_at, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8,
+          $9, $10, $11, $12, $13, $14,
+          $15, $16, $17, $18, $19,
+          $20, $21, $22, $23, $24, $25, $26, CURRENT_TIMESTAMP
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          name = EXCLUDED.name,
+          amount = EXCLUDED.amount,
+          category = EXCLUDED.category,
+          date = EXCLUDED.date,
+          time = EXCLUDED.time,
+          direction = EXCLUDED.direction,
+          payment_method = EXCLUDED.payment_method,
+          billing_cycle = EXCLUDED.billing_cycle,
+          notes = EXCLUDED.notes,
+          bank_name = EXCLUDED.bank_name,
+          masked_account = EXCLUDED.masked_account,
+          account_last4 = EXCLUDED.account_last4,
+          reference_id = EXCLUDED.reference_id,
+          sms_reference_id = EXCLUDED.sms_reference_id,
+          upi_reference = EXCLUDED.upi_reference,
+          raw_sms_text = EXCLUDED.raw_sms_text,
+          merchant = EXCLUDED.merchant,
+          payee = EXCLUDED.payee,
+          source = EXCLUDED.source,
+          active = EXCLUDED.active,
+          is_deleted = EXCLUDED.is_deleted,
+          deleted_at = CASE WHEN EXCLUDED.is_deleted THEN COALESCE(transactions.deleted_at, CURRENT_TIMESTAMP) ELSE NULL END,
+          client_updated_at = EXCLUDED.client_updated_at,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE EXCLUDED.client_updated_at > COALESCE(NULLIF(transactions.client_updated_at, 0), (EXTRACT(EPOCH FROM transactions.updated_at) * 1000)::bigint)
+        RETURNING id;
+      `;
+
+      try {
+        const result = await pool.query(upsertQuery, [
+          recId,
+          workspaceId || `usr_${userEmail.replace(/[^a-zA-Z0-9]/g, "_")}`,
+          userEmail || null,
+          name,
+          amount,
+          category,
+          date,
+          record.time || null,
+          direction,
+          record.paymentMethod || record.payment_method || null,
+          record.billingCycle || record.billing_cycle || null,
+          record.notes || null,
+          record.bankName || record.bank_name || null,
+          record.maskedAccount || record.masked_account || null,
+          record.accountLast4 || record.account_last4 || null,
+          record.referenceId || record.reference_id || null,
+          record.smsReferenceId || record.sms_reference_id || null,
+          record.upiReference || record.upi_reference || null,
+          record.rawSmsText || record.raw_sms_text || null,
+          record.merchant || null,
+          record.payee || null,
+          record.source || "sync",
+          record.active !== false,
+          isDeleted,
+          isDeleted ? clientUpdatedAtIso : null,
+          clientUpdatedAtMs,
+        ]);
+
+        if (result.rowCount && result.rowCount > 0) {
+          pushedCount++;
+          appliedIds.push(recId);
+        } else {
+          skippedIds.push(recId);
+        }
+      } catch (insertErr) {
+        console.error(`[DeltaSync] Error upserting transaction ${recId}:`, insertErr);
+      }
+    }
+
+    // 3. Capture current database server timestamp (synchronous with Neon Postgres clock)
+    const { rows: tsRows } = await pool.query("SELECT CURRENT_TIMESTAMP AS now");
+    const serverTimestamp = tsRows[0]?.now ? new Date(tsRows[0].now).toISOString() : new Date().toISOString();
+
+    // 4. PULL PHASE: Query records where updated_at > last_sync_timestamp
+    const pullQuery = `
+      SELECT
+        id, workspace_identifier, user_email, name, amount, category, date, time,
+        direction, payment_method, billing_cycle, notes, bank_name, masked_account,
+        account_last4, reference_id, sms_reference_id, upi_reference, raw_sms_text,
+        merchant, payee, source, active, is_deleted, deleted_at, created_at, updated_at
+      FROM transactions
+      WHERE (workspace_identifier = $1 OR ($2 != '' AND LOWER(user_email) = $2))
+        AND updated_at > $3
+      ORDER BY updated_at ASC;
+    `;
+
+    const { rows: pulledRows } = await pool.query(pullQuery, [
+      workspaceId,
+      userEmail,
+      lastSyncDate.toISOString(),
+    ]);
+
+    const formattedPulled = pulledRows.map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      amount: Number(r.amount),
+      category: r.category,
+      date: r.date,
+      time: r.time,
+      direction: r.direction,
+      transactionType: r.direction,
+      paymentMethod: r.payment_method,
+      billingCycle: r.billing_cycle,
+      notes: r.notes,
+      bankName: r.bank_name,
+      maskedAccount: r.masked_account,
+      accountLast4: r.account_last4,
+      referenceId: r.reference_id,
+      smsReferenceId: r.sms_reference_id,
+      upiReference: r.upi_reference,
+      rawSmsText: r.raw_sms_text,
+      merchant: r.merchant,
+      payee: r.payee,
+      source: r.source,
+      active: r.active,
+      is_deleted: Boolean(r.is_deleted),
+      isDeleted: Boolean(r.is_deleted),
+      updated_at: r.updated_at ? new Date(r.updated_at).toISOString() : serverTimestamp,
+      updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : Date.now(),
+      created_at: r.created_at ? new Date(r.created_at).toISOString() : undefined,
+      createdAt: r.created_at ? new Date(r.created_at).getTime() : undefined,
+    }));
+
+    return res.status(200).json({
+      success: true,
+      server_timestamp: serverTimestamp,
+      pulled_records: formattedPulled,
+      pushed_count: pushedCount,
+      pulled_count: formattedPulled.length,
+      applied_ids: appliedIds,
+      skipped_ids: skippedIds,
+    });
+  } catch (err: any) {
+    console.error("[SyncService] Error in handleDeltaSync:", err);
+    return res.status(500).json({ success: false, error: err?.message || "Internal server error" });
+  }
+}
+
 export function registerSyncRoutes(app: Express): void {
+  // Bidirectional timestamp delta sync
+  app.post("/api/sync", handleDeltaSync);
+  app.get("/api/sync", handleDeltaSync);
+  app.post("/api/sync/delta", handleDeltaSync);
+  app.get("/api/sync/delta", handleDeltaSync);
+
   app.get("/api/sync/workspace", handleGetWorkspace);
   app.post("/api/sync/workspace", handlePostWorkspace);
   app.get("/api/sync/transactions", handleGetTransactions);
@@ -750,6 +999,10 @@ export function syncVitePlugin() {
 
         if (pathname === "/api/sync/workspace" && method === "GET") {
           return handleGetWorkspace(req, enhancedRes);
+        }
+
+        if ((pathname === "/api/sync" || pathname === "/api/sync/delta") && (method === "POST" || method === "GET")) {
+          return handleDeltaSync(req, enhancedRes);
         }
 
         if (pathname === "/api/sync/workspace" && method === "POST") {

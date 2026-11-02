@@ -13,10 +13,13 @@ import {
   syncWorkspaceToSupabase,
   isWorkOfflineMode,
   getCustomWorkspaceIdentifier,
+  getCustomWorkspaceEmail,
   pushExpenseMutationsToDedicatedTable,
   fetchExpensesFromDedicatedTable,
   migrateJsonbExpensesToDedicatedTable,
 } from '../utils/supabase';
+import { getApiBaseUrl } from '../utils/apiConfig';
+import { generateUUID, isValidUUID } from '../utils/uuid';
 import { mergeExpenseLists } from '../utils/expenseUtils';
 import { Storage } from '../utils/storage';
 import { Capacitor } from '@capacitor/core';
@@ -298,7 +301,194 @@ class ExpenseSyncService {
   }
 
   /**
-   * Main sync routine: Local-first outbox push to dedicated table followed by safe bidirectional remote reconciliation
+   * Primary Bidirectional Timestamp-Based Delta Sync with Node/Express /api/sync endpoint (Neon PostgreSQL).
+   * - Reads last_sync_timestamp from local storage.
+   * - Pushes pending outbox mutations with UUIDs and updated_at timestamps.
+   * - Pulls delta records where updated_at > last_sync_timestamp.
+   * - Resolves collisions using timestamp comparison (client updated_at vs server updated_at).
+   * - Cleanly merges returned delta updates into local state and updates last_sync_timestamp.
+   */
+  public async syncDeltaWithServer(): Promise<SyncExpensesResult> {
+    if (isWorkOfflineMode() || !isOnline()) {
+      const outbox = await expenseRepo.getPendingOutbox();
+      this.updateStatus({ state: 'offline', pendingCount: outbox.length });
+      return {
+        success: false,
+        pushedCount: 0,
+        pulledCount: 0,
+        pendingCount: outbox.length,
+        message: 'Device is offline or Work Offline is enabled.',
+      };
+    }
+
+    const requestEpoch = ++this.currentEpoch;
+    this.isSyncing = true;
+    this.updateStatus({ state: 'syncing' });
+
+    try {
+      const lastSyncTimestamp = Storage.getLastSyncTimestamp();
+      const outbox = await expenseRepo.getPendingOutbox();
+      const inFlightMutationIds = outbox.map((m) => m.id);
+
+      const recordsToPush: any[] = [];
+      for (const m of outbox) {
+        const payload = (m.payload || m.data || {}) as any;
+        let id = String(payload.id || m.expenseId || '').trim();
+        if (!isValidUUID(id)) {
+          id = generateUUID();
+        }
+        const isDeleted = m.action === 'delete' || payload.is_deleted === true || payload.isDeleted === true;
+        const nowIso = payload.updated_at || new Date(m.timestamp || Date.now()).toISOString();
+
+        recordsToPush.push({
+          ...payload,
+          id,
+          is_deleted: isDeleted,
+          updated_at: nowIso,
+        });
+      }
+
+      const activeId = getCustomWorkspaceIdentifier();
+      const activeEmail = getCustomWorkspaceEmail();
+      const baseUrl = getApiBaseUrl();
+      const endpoint = `${baseUrl}/api/sync`;
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          workspace_identifier: activeId,
+          user_email: activeEmail,
+          last_sync_timestamp: lastSyncTimestamp,
+          records: recordsToPush,
+        }),
+      });
+
+      if (requestEpoch !== this.currentEpoch) {
+        return {
+          success: false,
+          pushedCount: 0,
+          pulledCount: 0,
+          pendingCount: (await expenseRepo.getPendingOutbox()).length,
+          message: 'Superseded by newer sync request',
+        };
+      }
+
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => ({}));
+        throw new Error(errJson?.error || `Server responded with ${response.status}`);
+      }
+
+      const syncData = await response.json();
+      if (!syncData.success) {
+        throw new Error(syncData.error || 'Server delta sync unsuccessful');
+      }
+
+      // Dequeue acknowledged outbox mutations
+      if (inFlightMutationIds.length > 0) {
+        await expenseRepo.dequeueMutations(inFlightMutationIds);
+      }
+
+      // Cleanly merge returned server delta updates into local state
+      const pulled: ExpenseItem[] = Array.isArray(syncData.pulled_records) ? syncData.pulled_records : [];
+      let pulledCount = 0;
+
+      const currentExpenses = Storage.getExpenses();
+      const expenseMap = new Map<string, ExpenseItem>();
+      currentExpenses.forEach((e) => {
+        if (e && e.id) expenseMap.set(String(e.id).trim(), e);
+      });
+
+      const deletedIds: string[] = [];
+
+      for (const remote of pulled) {
+        if (!remote || !remote.id) continue;
+        const remoteId = String(remote.id).trim();
+
+        if (remote.is_deleted || (remote as any).isDeleted) {
+          deletedIds.push(remoteId);
+          expenseMap.delete(remoteId);
+          await expenseRepo.delete(remoteId);
+          await expenseRepo.recordTombstone(remoteId);
+        } else {
+          pulledCount++;
+          const existing = expenseMap.get(remoteId);
+          if (!existing) {
+            expenseMap.set(remoteId, remote);
+          } else {
+            // Timestamp comparison: overwrite only if remote updated_at >= local updated_at
+            const localTime = new Date(existing.updated_at || existing.updatedAt || 0).getTime();
+            const remoteTime = new Date(remote.updated_at || remote.updatedAt || 0).getTime();
+            if (remoteTime >= localTime) {
+              expenseMap.set(remoteId, { ...existing, ...remote });
+            }
+          }
+        }
+      }
+
+      const mergedList = Array.from(expenseMap.values());
+      Storage.setExpenses(mergedList);
+      await expenseRepo.saveBatch(mergedList);
+
+      if (deletedIds.length > 0) {
+        Storage.purgeExpensesFromAllCaches(deletedIds);
+      }
+
+      // Update local last_sync_timestamp
+      if (syncData.server_timestamp) {
+        Storage.setLastSyncTimestamp(syncData.server_timestamp);
+      }
+
+      // Dispatch UI update event
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('dashboard-data-updated', {
+            detail: { module: 'expenses', updatedExpenses: mergedList },
+          })
+        );
+      }
+
+      const remainingOutbox = await expenseRepo.getPendingOutbox();
+      this.updateStatus({
+        state: remainingOutbox.length > 0 ? 'pending' : 'synced',
+        pendingCount: remainingOutbox.length,
+        lastSyncedAt: Date.now(),
+        lastError: null,
+      });
+
+      return {
+        success: true,
+        pushedCount: syncData.pushed_count || recordsToPush.length,
+        pulledCount,
+        pendingCount: remainingOutbox.length,
+        message: 'Delta sync with Neon DB completed successfully',
+      };
+    } catch (err: any) {
+      console.warn('[EXPENSE_SYNC] Server delta sync notice:', err);
+      const outbox = await expenseRepo.getPendingOutbox();
+      this.updateStatus({
+        state: 'error',
+        pendingCount: outbox.length,
+        lastError: err?.message || 'Delta sync error',
+      });
+      return {
+        success: false,
+        pushedCount: 0,
+        pulledCount: 0,
+        pendingCount: outbox.length,
+        message: err?.message || 'Delta sync error',
+        error: err?.message,
+      };
+    } finally {
+      this.isSyncing = false;
+    }
+  }
+
+  /**
+   * Main sync routine: Attempts primary delta sync with Neon PostgreSQL backend (/api/sync),
+   * falling back to dedicated table and workspace sync if needed.
    */
   public async syncExpenses(options: { manual?: boolean; background?: boolean } = {}): Promise<SyncExpensesResult> {
     const isManual = Boolean(options.manual);
@@ -316,6 +506,16 @@ class ExpenseSyncService {
         pendingCount: outbox.length,
         message: 'Work Offline is enabled. Network cloud sync is paused.',
       };
+    }
+
+    // 1. Primary Delta Sync with Node/Express /api/sync endpoint
+    try {
+      const deltaRes = await this.syncDeltaWithServer();
+      if (deltaRes.success) {
+        return deltaRes;
+      }
+    } catch (deltaErr) {
+      console.warn('[EXPENSE_SYNC] Primary delta sync skipped, checking fallbacks:', deltaErr);
     }
 
     if (!isSupabaseConfigured()) {

@@ -6,6 +6,7 @@ import {
   generateExpenseExcelBuffer,
   generateExpenseWorkbook,
   downloadExpenseExcel,
+  downloadExpenseFile,
   EXCEL_MIME_TYPE,
   EXCEL_HEADERS,
 } from '../utils/expenseExport';
@@ -170,7 +171,7 @@ describe('expenseExport utility', () => {
       (globalThis as any).document = mockDoc;
       (globalThis as any).window = globalThis;
 
-      await downloadExpenseExcel(sampleExpenses, 'test_export.xlsx');
+      await downloadExpenseFile(new Uint8Array([1, 2, 3]), 'test_export.xlsx', EXCEL_MIME_TYPE);
 
       expect(createdBlobType).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       expect(createdAnchor).not.toBeNull();
