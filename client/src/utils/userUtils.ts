@@ -3,7 +3,7 @@
  *
  * Implements standard name initials formatting and mock avatar detection.
  * Enforces initials consisting of less than 2 alphabets (max 2 characters).
- * e.g., "Gulshan Kumar Nayak" -> "GK", "Aditya" -> "A".
+ * e.g., "" -> "GK", "Aditya" -> "A".
  */
 
 export function getUserWorkspaceKey(user: { id?: string; email?: string } | null): string {
@@ -22,7 +22,7 @@ export function getUserWorkspaceKey(user: { id?: string; email?: string } | null
 /**
  * Extracts the user's initials up to 2 alphabets.
  * Examples:
- * - "Gulshan Kumar Nayak" -> "GK"
+ * - "" -> "GK"
  * - "Aditya" -> "A"
  * - "Alex Morgan" -> "AM"
  * - "John F. Kennedy" -> "JF"
@@ -79,7 +79,7 @@ export function isDummyMockAvatar(url?: string | null, userEmail?: string | null
   }
 
   // Cross-account leakage prevention:
-  // An avatar URL containing 'gknayak' or 'gulnayak' belongs strictly to Gulshan Kumar Nayak.
+  // An avatar URL containing '' or 'gulnayak' belongs strictly to .
   // It must NEVER be used for any other user, guest, or newly created account.
   let activeEmail = (userEmail || '').toLowerCase().trim();
   if (!activeEmail && typeof window !== 'undefined') {
@@ -102,8 +102,8 @@ export function isDummyMockAvatar(url?: string | null, userEmail?: string | null
   }
 
   const isGknUser =
-    activeEmail === 'gknayak@gmail.com' ||
-    activeEmail === 'gknayak';
+    activeEmail === '' ||
+    activeEmail === '';
 
   // Only reject Gulshan assets if this is an explicitly DIFFERENT authenticated account (e.g. arpitapri125@gmail.com)
   const isDifferentUser = Boolean(
@@ -113,7 +113,7 @@ export function isDummyMockAvatar(url?: string | null, userEmail?: string | null
     !isGknUser
   );
 
-  if (isDifferentUser && (trimmed.includes('gknayak') || trimmed.includes('gulnayak'))) {
+  if (isDifferentUser && (trimmed.includes('') || trimmed.includes('gulnayak'))) {
     return true;
   }
 
@@ -145,7 +145,7 @@ export function isDummyMockAvatar(url?: string | null, userEmail?: string | null
  * Validates whether an avatar URL strictly matches the authenticated user's email domain and identity.
  * Clears or rejects cached or local storage avatars if:
  * 1. It is a mock, stock, or placeholder image (Unsplash, DiceBear, Pravatar, etc.).
- * 2. It belongs to another account (e.g. gknayak or gulnayak for any user other than Gulshan).
+ * 2. It belongs to another account (e.g.  or gulnayak for any user other than Gulshan).
  * 3. It encodes another username or email domain (e.g. Supabase storage path avatar_<otheruser>_<domain>).
  * 4. Its email domain does not match the authenticated user's email domain.
  */
@@ -185,8 +185,8 @@ export function isAvatarMatchingUserEmailDomain(url?: string | null, userEmail?:
   }
 
   const isGknUser =
-    activeEmail === 'gknayak@gmail.com' ||
-    activeEmail === 'gknayak';
+    activeEmail === '' ||
+    activeEmail === '';
 
   const isDifferentUser = Boolean(
     activeEmail &&
@@ -198,12 +198,12 @@ export function isAvatarMatchingUserEmailDomain(url?: string | null, userEmail?:
   const lowerUrl = trimmed.toLowerCase();
 
   // 2. Strict isolation for Gulshan's asset:
-  if (isDifferentUser && lowerUrl.includes('gknayak')) {
+  if (isDifferentUser && lowerUrl.includes('')) {
     return false;
   }
 
   // If user is Gulshan or guest / default portfolio, Gulshan's authentic avatar is always accepted
-  if (!isDifferentUser && lowerUrl.includes('gknayak')) {
+  if (!isDifferentUser && lowerUrl.includes('')) {
     return true;
   }
 
@@ -240,7 +240,7 @@ export function isAvatarMatchingUserEmailDomain(url?: string | null, userEmail?:
 
     // Check if filename specifies a different local user handle
     if (!lowerUrl.includes(userLocalSanitized)) {
-      if (lowerUrl.includes('gknayak') || lowerUrl.includes('gulnayak') || lowerUrl.includes('arpitapri125')) {
+      if (lowerUrl.includes('') || lowerUrl.includes('gulnayak') || lowerUrl.includes('arpitapri125')) {
         return false;
       }
     }

@@ -592,28 +592,28 @@ export const BLANK_PROFILE: UserProfile = {
   currentDesignation: '',
 };
 
-// Verified Base User Profile for primary account (Gulshan Kumar Nayak)
+// Verified Base User Profile for primary account ()
 export const INITIAL_PROFILE: UserProfile = {
-  name: 'Gulshan Kumar Nayak',
+  name: '',
   caption: 'Data & AI Engineer | Researcher | Problem Solver',
-  handle: '@gknayak',
+  handle: '',
   title: 'Data & AI Engineer | Researcher | Problem Solver',
   bio: 'I build data-driven systems, AI applications and intelligent solutions to solve real-world problems.',
   location: 'San Francisco, CA',
   statusText: 'Open to opportunities',
   statusEmoji: '💼',
-  avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
+  avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar__gmail_com_1792214229699.webp',
   avatarEnabled: true,
   bannerType: 'gradient',
   bannerBg: 'linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 50%, #FDF4FF 100%)',
   staticCoverImage: STOCK_IMAGES.workspaceCover,
   coverImageEnabled: true,
-  contactEmail: 'gknayak@gmail.com',
+  contactEmail: '',
   phone: '+1 (555) 234-5678',
-  github: 'github.com/gknayak',
-  linkedin: 'linkedin.com/in/gknayak',
+  github: 'github.com/',
+  linkedin: 'linkedin.com/in/',
   twitter: '',
-  website: 'gknayak.dev',
+  website: '',
   resumeAvailable: true,
   services: ['Data & AI Systems', 'Machine Learning & LLMs', 'Full-Stack Engineering', 'Distributed Computing'],
   tools: ['Python', 'PyTorch', 'Java', 'Spring Boot', 'React', 'TypeScript', 'SQL', 'Git'],
@@ -1094,13 +1094,13 @@ export const DEFAULT_ATS_RESUME: ResumeDocument = {
   summary:
     'Passionate and goal-driven software engineer with a strong academic foundation and hands-on experience in backend development, full-stack applications, Data Science and Analytics, and AI-integrated systems. Skilled in a wide range of technologies including Java, Spring Boot, React, Python, Networking, Power BI, Generative AI, LLM, and APIs. Strong problem solving skills, leadership qualities, and commitment to continuous learning and development.',
   contact: {
-    name: 'GULSHAN KUMAR NAYAK',
+    name: '',
     phone: '+1 (555) 234-5678',
-    email: 'gknayak@gmail.com',
-    github: 'https://github.com/gknayak',
-    linkedin: 'https://linkedin.com/in/gknayak',
+    email: '',
+    github: 'https://github.com/',
+    linkedin: 'https://linkedin.com/in/',
     location: 'Raipur, India',
-    portfolio: 'https://gknayak.dev',
+    portfolio: 'https://',
   },
   skills: [
     'Java', 'Spring Boot', 'Python', 'C', 'C++', 'SQL', 'JavaScript', 'HTML', 'React',
@@ -1319,7 +1319,7 @@ export const Storage = {
   getHabits: (): HabitItem[] => {
     const activeEmail = (getCustomWorkspaceEmail() || '').toLowerCase().trim();
     const ws = getCustomWorkspaceIdentifier();
-    const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gknayak';
+    const isGknUser = activeEmail === '' || activeEmail === '';
     const scopedKey = getScopedKey(STORAGE_KEYS.HABITS);
     const hasScopedKey = localStorage.getItem(scopedKey) !== null;
     let loaded = loadFromStorage<HabitItem[]>(STORAGE_KEYS.HABITS, []);
@@ -1329,7 +1329,7 @@ export const Storage = {
       const habitCandidates = [
         `${activeEmail}_offline_habits_cache`,
         `${ws}_offline_habits_cache`,
-        'gknayak@gmail.com_offline_habits_cache',
+        '_offline_habits_cache',
         'user_guest_offline_habits_cache',
         'user_guest_notion_os_v4_habits',
         'notion_os_v4_habits',
@@ -1361,7 +1361,7 @@ export const Storage = {
         const cachedRaw =
           localStorage.getItem(`${activeEmail}_offline_habits_cache`) ||
           localStorage.getItem(`${ws}_offline_habits_cache`) ||
-          (isGknUser ? localStorage.getItem('gknayak@gmail.com_offline_habits_cache') : null);
+          (isGknUser ? localStorage.getItem('_offline_habits_cache') : null);
         if (cachedRaw) {
           const parsed = JSON.parse(cachedRaw);
           if (Array.isArray(parsed) && parsed.length > 0) {
@@ -1526,7 +1526,7 @@ export const Storage = {
     const activeEmail = (getCustomWorkspaceEmail() || '').toLowerCase().trim();
     const ws = getCustomWorkspaceIdentifier();
     const isGuest = !activeEmail || activeEmail === 'guest@workspace.local' || ws === 'user_guest';
-    const isGknUser = !isGuest && (activeEmail === 'gknayak@gmail.com' || activeEmail === 'gknayak');
+    const isGknUser = !isGuest && (activeEmail === '' || activeEmail === '');
 
     // Strictly user-scoped offline cache recovery:
     // Gather all persistent offline caches to ensure spending data is always readable offline and never blanked
@@ -1543,13 +1543,13 @@ export const Storage = {
           'user_guest_notion_os_v4_expenses',
           'notion_os_v4_expenses',
           'user_036fe7d3-6a13-4740-b028-afb55e81e00e_notion_os_v4_expenses',
-          'user_usr_gknayak_gmail_com_notion_os_v4_expenses',
-          'user_gknayak@gmail.com_notion_os_v4_expenses',
+          'user_usr__gmail_com_notion_os_v4_expenses',
+          'user__notion_os_v4_expenses',
           'user_guest_offline_expenses_cache',
           'user_guest_lifeos_expenses_backup',
-          'gknayak@gmail.com_offline_expenses_cache',
+          '_offline_expenses_cache',
           'lifeos_offline_expenses_cache',
-          'account_auth_gknayak_gmail_com_notion_os_v4_expenses',
+          'account_auth__gmail_com_notion_os_v4_expenses',
           'lifeos_expenses_backup',
           'lifeos_last_imported_sheet_expenses'
         );
@@ -1700,16 +1700,16 @@ export const Storage = {
     Storage.clearMemoryCaches();
     if (!user || !user.email) return;
     const cleanEmail = user.email.toLowerCase().trim();
-    const isGknUser = cleanEmail === 'gknayak@gmail.com';
+    const isGknUser = cleanEmail === '';
     const cleanName = isGknUser
-      ? (user.name && user.name !== 'Gknayak' ? user.name : 'Gulshan Kumar Nayak')
+      ? (user.name && user.name !== '' ? user.name : '')
       : (user.name || cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
 
     const wsKey = getUserWorkspaceKey(user);
     setCustomWorkspaceIdentifier(wsKey);
     setCustomWorkspaceEmail(cleanEmail);
 
-    const defaultGknAvatar = 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp';
+    const defaultGknAvatar = 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar__gmail_com_1792214229699.webp';
     const cleanProfile: UserProfile = {
       ...BLANK_PROFILE,
       name: cleanName,
@@ -1857,7 +1857,7 @@ export const Storage = {
       const activeEmail = (getCustomWorkspaceEmail() || '').toLowerCase().trim();
       const ws = getCustomWorkspaceIdentifier();
       const isGuest = !activeEmail || activeEmail === 'guest@workspace.local' || ws === 'user_guest';
-      const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gknayak';
+      const isGknUser = activeEmail === '' || activeEmail === '';
       const serialized = JSON.stringify(sanitized);
 
       if (isGknUser) {
@@ -2068,9 +2068,9 @@ export const Storage = {
       `${ws}_lifeos_expenses_backup`,
       'lifeos_expenses_backup',
       'lifeos_offline_expenses_cache',
-      'gknayak@gmail.com_offline_expenses_cache',
-      'user_usr_gknayak_gmail_com_notion_os_v4_expenses',
-      'account_auth_gknayak_gmail_com_notion_os_v4_expenses',
+      '_offline_expenses_cache',
+      'user_usr__gmail_com_notion_os_v4_expenses',
+      'account_auth__gmail_com_notion_os_v4_expenses',
       'user_guest_offline_expenses_cache',
       'user_guest_lifeos_expenses_backup',
       'lifeos_last_imported_sheet_expenses',
@@ -2562,11 +2562,11 @@ export const Storage = {
     const rawData = loadFromStorage(STORAGE_KEYS.PROFILE, fallbackProfile);
     const data: UserProfile = { ...rawData };
     const activeEmail = (getCustomWorkspaceEmail() || '').toLowerCase().trim();
-    const isGknUser = activeEmail === 'gknayak@gmail.com' || activeEmail === 'gknayak';
+    const isGknUser = activeEmail === '' || activeEmail === '';
 
-    if (!data.name || !data.name.trim() || (isGknUser && (data.name.toLowerCase() === 'gknayak' || data.name === 'Gknayak'))) {
+    if (!data.name || !data.name.trim() || (isGknUser && (data.name.toLowerCase() === '' || data.name === ''))) {
       if (isGknUser) {
-        data.name = 'Gulshan Kumar Nayak';
+        data.name = '';
         data.contactEmail = activeEmail;
         data.handle = '@gulshankumarnayak';
       } else if (activeEmail && activeEmail !== 'guest@workspace.local') {
@@ -2589,7 +2589,7 @@ export const Storage = {
       data.avatarUrl = '';
     }
 
-    const defaultGknAvatar = 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp';
+    const defaultGknAvatar = 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar__gmail_com_1792214229699.webp';
     if (isGknUser && !data.avatarUrl) {
       data.avatarUrl = defaultGknAvatar;
     }
@@ -3273,7 +3273,7 @@ export const Storage = {
         );
 
         const targetEmail = data.profile.contactEmail || currentEmail || '';
-        const isGknUser = targetEmail === 'gknayak@gmail.com' || currentEmail === 'gknayak@gmail.com' || targetEmail === 'gknayak';
+        const isGknUser = targetEmail === '' || currentEmail === '' || targetEmail === '';
 
         const mergedProfile = isSameUser
           ? { ...data.profile, ...currentProfile }
@@ -3282,20 +3282,20 @@ export const Storage = {
         const isGenericHandle = (str?: string | null) => {
           if (!str) return true;
           const s = str.trim().toLowerCase();
-          return s === 'gknayak' || s === 'user' || s === 'guest' || s === '' || s === 'admin';
+          return s === '' || s === 'user' || s === 'guest' || s === '' || s === 'admin';
         };
 
         // Retain customized user name if current profile has a real non-generic name
-        // and do not allow an older snapshot with "gknayak" or empty to revert it
+        // and do not allow an older snapshot with "" or empty to revert it
         if (currentProfile.name && !isGenericHandle(currentProfile.name)) {
           mergedProfile.name = currentProfile.name.trim();
         } else if (data.profile.name && !isGenericHandle(data.profile.name)) {
           mergedProfile.name = data.profile.name.trim();
         } else if (isGknUser) {
-          mergedProfile.name = 'Gulshan Kumar Nayak';
+          mergedProfile.name = '';
         }
 
-        const defaultGknAvatar = 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp';
+        const defaultGknAvatar = 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar__gmail_com_1792214229699.webp';
         if (currentAvatar && isAvatarMatchingUserEmailDomain(currentAvatar, targetEmail)) {
           mergedProfile.avatarUrl = currentAvatar;
         } else if (incomingAvatar && isAvatarMatchingUserEmailDomain(incomingAvatar, targetEmail)) {
@@ -3318,7 +3318,7 @@ export const Storage = {
       if (data.todos) Storage.setTodos(data.todos);
       if (Array.isArray(data.habits)) {
         const targetEmail = activeEmail || getCustomWorkspaceEmail() || '';
-        const isGknUser = targetEmail === 'gknayak@gmail.com' || targetEmail === 'gknayak';
+        const isGknUser = targetEmail === '' || targetEmail === '';
         const localHabits = Storage.getHabits();
         const trash = Storage.getTrash().filter((t) => t.module === 'habits');
         const trashedIds = new Set<string>();

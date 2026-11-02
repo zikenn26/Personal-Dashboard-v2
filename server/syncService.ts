@@ -498,7 +498,7 @@ export async function handlePostHeartbeat(req: any, res: any): Promise<void> {
 
     await pool.query(upsertQuery, [
       id,
-      cleanEmail || existing?.user_email || "gknayak@gmail.com",
+      cleanEmail || existing?.user_email || "",
       cleanIdentifier || existing?.user_identifier || "user_guest",
       device_name || existing?.device_name || "Active Session",
       platform || existing?.platform || "web_browser",
@@ -528,7 +528,7 @@ export async function handlePostHeartbeat(req: any, res: any): Promise<void> {
           is_revoked = false
       `, [
         id,
-        cleanEmail || existing?.user_email || "gknayak@gmail.com",
+        cleanEmail || existing?.user_email || "",
         cleanIdentifier || existing?.user_identifier || "user_guest",
         device_name || existing?.device_name || "Active Session",
         platform || existing?.platform || "web_browser",

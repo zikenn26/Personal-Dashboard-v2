@@ -1548,7 +1548,7 @@ export const fetchWorkspaceFromSupabase = async (): Promise<CloudSyncResult> => 
 
     // Migration fallback for existing accounts: check if existing workspace exists under user_email
     if (!error && (!data || !data.workspace_data) && activeUserEmail) {
-      const isGknUser = activeUserEmail === 'gknayak@gmail.com' || activeUserEmail === 'gknayak';
+      const isGknUser = activeUserEmail === '' || activeUserEmail === '';
       const emailFilter = `user_email.eq.${activeUserEmail}`;
 
       const { data: legacyRow, error: legacyErr } = await client
@@ -1583,7 +1583,7 @@ export const fetchWorkspaceFromSupabase = async (): Promise<CloudSyncResult> => 
     }
 
     // Ensure authentic habits and expenses for primary accounts are never returned as empty
-    const isGknAccount = activeUserEmail === 'gknayak@gmail.com' || activeUserEmail === 'gknayak';
+    const isGknAccount = activeUserEmail === '' || activeUserEmail === '';
     if (isGknAccount && data.workspace_data) {
       if (!Array.isArray(data.workspace_data.habits) || data.workspace_data.habits.length === 0) {
         data.workspace_data.habits = [...OWNER_GKN_HABITS];

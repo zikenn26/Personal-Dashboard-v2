@@ -408,12 +408,10 @@ export const isAccountAlreadyRegistered = async (identifier: string): Promise<bo
   if (!clean) return false;
   const cleanId = clean.replace(/[^a-z0-9]/g, '_');
 
-  // gknayak / gknayak@gmail.com is permanently reserved as the primary dashboard account
+  // Disable hardcoded fallback for local authentication checks
+  // (We now trust the backend/supabase rules entirely to dictate allowed users)
   if (
-    clean === 'gknayak@gmail.com' ||
-    clean === 'gknayak' ||
-    cleanId === 'gknayak_gmail_com' ||
-    cleanId === 'gknayak'
+    cleanId === 'some_reserved_name_or_test_value'
   ) {
     return true;
   }
@@ -824,16 +822,14 @@ export const Auth = {
 
     const cleanId = raw.replace(/[^a-z0-9]/g, '_');
 
-    // Strict duplicate protection: ensure no user can take gknayak or existing username
+    // Strict duplicate protection
     if (
-      raw === 'gknayak' ||
-      raw === 'gknayak@gmail.com' ||
-      cleanId === 'gknayak' ||
-      cleanId === 'gknayak_gmail_com'
+      raw === 'some_reserved_name' ||
+      cleanId === 'some_reserved_name'
     ) {
       return {
         success: false,
-        message: 'The username "gknayak" is already registered and in use. Please choose a different unique username.',
+        message: 'The username is already registered and in use. Please choose a different unique username.',
       };
     }
 
@@ -1206,10 +1202,7 @@ export const Auth = {
 
     // Explicitly invalidate session if belonging to purged accounts
     if (
-      cleanEmail === 'gknayak@gmail.com' ||
-      cleanEmail === 'arpitapri125@gmail.com' ||
       cleanEmail.includes('gulnayak') ||
-      cleanId === 'gknayak_gmail_com' ||
       cleanId === 'arpitapri125_gmail_com'
     ) {
       Auth.setCurrentUser(null);
