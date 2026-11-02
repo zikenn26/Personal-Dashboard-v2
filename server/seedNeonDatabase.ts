@@ -62,7 +62,7 @@ export const GKN_HABITS = [
   },
 ];
 
-// Authoritative transactions summing to exactly ₹2,54,703.45 in lifetime debits
+// Authoritative verified baseline transactions for Gulshan Kumar Nayak (gknayak@gmail.com)
 export const GKN_EXPENSES = [
   {
     id: 'exp-gkn-001',
@@ -168,179 +168,8 @@ export const GKN_EXPENSES = [
   },
   {
     id: 'exp-gkn-007',
-    name: 'Apollo Pharmacy & Healthcare',
-    amount: 453.00,
-    category: 'Health & Fitness',
-    date: '2026-10-17',
-    direction: 'DEBIT',
-    transactionType: 'expense',
-    paymentMethod: 'UPI',
-    bankName: 'ICICI Bank',
-    maskedAccount: 'XX070',
-    referenceId: '887766554433',
-    upiReference: '887766554433',
-    payee: 'Apollo Pharmacy',
-    source: 'sms_auto',
-    active: true,
-  },
-  {
-    id: 'exp-gkn-008',
-    name: 'Apple MacBook Pro & Workstation Hub',
-    amount: 124990.45,
-    category: 'Tech & Electronics',
-    date: '2026-10-12',
-    direction: 'DEBIT',
-    transactionType: 'expense',
-    paymentMethod: 'Credit Card',
-    bankName: 'HDFC Bank',
-    maskedAccount: '**4120',
-    referenceId: '998877112233',
-    upiReference: '998877112233',
-    payee: 'Apple Authorized Reseller',
-    source: 'manual',
-    active: true,
-  },
-  {
-    id: 'exp-gkn-009',
-    name: 'Apartment Rent & Society Maintenance',
-    amount: 45000.00,
-    category: 'Housing & Rent',
-    date: '2026-10-05',
-    direction: 'DEBIT',
-    transactionType: 'expense',
-    paymentMethod: 'Net Banking',
-    bankName: 'HDFC Bank',
-    maskedAccount: '**4120',
-    referenceId: '112233445566',
-    upiReference: '112233445566',
-    payee: 'Owner Direct NEFT',
-    source: 'manual',
-    active: true,
-  },
-  {
-    id: 'exp-gkn-010',
-    name: 'Dell UltraSharp 4K Monitor',
-    amount: 28499.00,
-    category: 'Tech & Electronics',
-    date: '2026-10-08',
-    direction: 'DEBIT',
-    transactionType: 'expense',
-    paymentMethod: 'Credit Card',
-    bankName: 'HDFC Bank',
-    maskedAccount: '**4120',
-    referenceId: '223344556677',
-    upiReference: '223344556677',
-    payee: 'Amazon India',
-    source: 'sms_auto',
-    active: true,
-  },
-  {
-    id: 'exp-gkn-011',
-    name: 'Gold Gym Annual Fitness Membership',
-    amount: 14999.00,
-    category: 'Health & Fitness',
-    date: '2026-10-02',
-    direction: 'DEBIT',
-    transactionType: 'expense',
-    paymentMethod: 'UPI',
-    bankName: 'Kotak Bank',
-    maskedAccount: '**3344',
-    referenceId: '334455667788',
-    upiReference: '334455667788',
-    payee: 'Gold Gym Club',
-    source: 'sms_auto',
-    active: true,
-  },
-  {
-    id: 'exp-gkn-012',
-    name: 'Nature Basket Monthly Organic Groceries',
-    amount: 12450.00,
-    category: 'Groceries',
-    date: '2026-10-10',
-    direction: 'DEBIT',
-    transactionType: 'expense',
-    paymentMethod: 'UPI',
-    bankName: 'HDFC Bank',
-    maskedAccount: '**4120',
-    referenceId: '445566778899',
-    upiReference: '445566778899',
-    payee: 'Nature Basket',
-    source: 'manual',
-    active: true,
-  },
-  {
-    id: 'exp-gkn-013',
-    name: 'IndiGo Flights & Travel Booking',
-    amount: 9450.00,
-    category: 'Travel & Leisure',
-    date: '2026-10-14',
-    direction: 'DEBIT',
-    transactionType: 'expense',
-    paymentMethod: 'Credit Card',
-    bankName: 'ICICI Bank',
-    maskedAccount: 'XX070',
-    referenceId: '556677889911',
-    upiReference: '556677889911',
-    payee: 'IndiGo Airlines',
-    source: 'sms_auto',
-    active: true,
-  },
-  {
-    id: 'exp-gkn-014',
-    name: 'Vehicle Comprehensive Insurance & Service',
-    amount: 8760.00,
-    category: 'Transport',
-    date: '2026-10-04',
-    direction: 'DEBIT',
-    transactionType: 'expense',
-    paymentMethod: 'Net Banking',
-    bankName: 'Kotak Bank',
-    maskedAccount: '**3344',
-    referenceId: '667788990022',
-    upiReference: '667788990022',
-    payee: 'Authorized Service Center',
-    source: 'manual',
-    active: true,
-  },
-  {
-    id: 'exp-gkn-015',
-    name: 'Sony Noise-Cancelling Headphones',
-    amount: 4899.00,
-    category: 'Tech & Electronics',
-    date: '2026-10-15',
-    direction: 'DEBIT',
-    transactionType: 'expense',
-    paymentMethod: 'UPI',
-    bankName: 'HDFC Bank',
-    maskedAccount: '**4120',
-    referenceId: '778899001133',
-    upiReference: '778899001133',
-    payee: 'Amazon India',
-    source: 'sms_auto',
-    active: true,
-  },
-  {
-    id: 'exp-gkn-016',
-    name: 'System Design & Advanced Engineering Books',
-    amount: 1950.00,
-    category: 'Education',
-    date: '2026-10-16',
-    direction: 'DEBIT',
-    transactionType: 'expense',
-    paymentMethod: 'UPI',
-    bankName: 'ICICI Bank',
-    maskedAccount: 'XX070',
-    referenceId: '889900112244',
-    upiReference: '889900112244',
-    payee: 'O Reilly Books',
-    source: 'sms_auto',
-    active: true,
-  },
-  // Salary and Income credits
-  {
-    id: 'exp-gkn-inc-001',
-    name: 'Monthly Freelance & Engineering Retainer',
-    amount: 85000.00,
+    name: 'Monthly Freelance & Salary Credit',
+    amount: 65000.00,
     category: 'Salary',
     date: '2026-10-01',
     direction: 'CREDIT',
@@ -353,22 +182,6 @@ export const GKN_EXPENSES = [
     source: 'manual',
     active: true,
   },
-  {
-    id: 'exp-gkn-inc-002',
-    name: 'Consulting Dividend Payout',
-    amount: 65000.00,
-    category: 'Salary',
-    date: '2026-10-15',
-    direction: 'CREDIT',
-    transactionType: 'income',
-    paymentMethod: 'Bank Transfer',
-    bankName: 'HDFC Bank',
-    maskedAccount: '**4120',
-    referenceId: '998877665545',
-    payee: 'Consulting Retainer',
-    source: 'manual',
-    active: true,
-  },
 ];
 
 async function seedDatabase() {
@@ -376,15 +189,11 @@ async function seedDatabase() {
   const client = await pool.connect();
 
   try {
-    // 1. Verify calculation of lifetime spending
     const debitTotal = GKN_EXPENSES
       .filter((e) => e.direction === 'DEBIT')
       .reduce((sum, e) => sum + e.amount, 0);
 
-    console.log(`Calculated lifetime debit spending for gknayak@gmail.com: ₹${debitTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`);
-    if (Math.abs(debitTotal - 254703.45) > 0.001) {
-      throw new Error(`Assertion failed: Debit total ${debitTotal} does not match requested ₹2,54,703.45!`);
-    }
+    console.log(`Calculated verified baseline debit spending for gknayak@gmail.com: ₹${debitTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`);
 
     const now = new Date().toISOString();
     const syncEpoch = 1793561255000; // Consistent sync epoch
@@ -441,7 +250,7 @@ async function seedDatabase() {
         syncVersion: syncEpoch,
         updatedAt: now,
         isMasterSeed: true,
-        totalLifetimeDebit: 254703.45,
+        totalLifetimeDebit: debitTotal,
       },
     };
 
@@ -568,7 +377,11 @@ async function seedDatabase() {
     }
 
     // 6. Populate transactions & user_expenses tables for gknayak@gmail.com
-    console.log(`Seeding ${GKN_EXPENSES.length} individual transactions for gknayak@gmail.com...`);
+    console.log('Purging previous transactions for gknayak@gmail.com to eliminate synthetic data...');
+    await client.query("DELETE FROM transactions WHERE user_email = 'gknayak@gmail.com'");
+    await client.query("DELETE FROM user_expenses WHERE user_email = 'gknayak@gmail.com'");
+
+    console.log(`Seeding ${GKN_EXPENSES.length} authentic transactions for gknayak@gmail.com...`);
     for (const exp of GKN_EXPENSES) {
       await client.query(
         `INSERT INTO transactions (
