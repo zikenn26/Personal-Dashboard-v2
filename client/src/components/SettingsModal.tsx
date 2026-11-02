@@ -23,8 +23,6 @@ import {
   Upload,
   Download,
   FileSpreadsheet,
-  Database,
-  Server,
   Globe,
 } from 'lucide-react';
 import { AppSettings, AuthUser } from '../types';
@@ -36,15 +34,6 @@ import { testGroqApiKey, SUPPORTED_GROQ_MODELS, DEFAULT_GROQ_MODEL } from '../se
 import { testGeminiApiKey } from '../services/geminiService';
 import { ConnectedDevices } from './ConnectedDevices';
 import { downloadExpenseBundle } from '../utils/expenseExport';
-import {
-  getEffectiveSupabaseUrl,
-  getEffectiveSupabaseAnonKey,
-  setCustomSupabaseCredentials,
-  hasCustomSupabaseCredentials,
-  resetSupabaseClient,
-  validateSupabaseConnection,
-  checkAndTriggerMasterApkSeed,
-} from '../utils/supabase';
 import { toast } from 'sonner';
 
 interface SettingsModalProps {
@@ -105,14 +94,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [groqTestStatus, setGroqTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [groqTestMsg, setGroqTestMsg] = useState('');
 
-  // Cloud Database state (Fresh Quota Instance)
-  const [supabaseUrlInput, setSupabaseUrlInput] = useState(() => getEffectiveSupabaseUrl());
-  const [supabaseKeyInput, setSupabaseKeyInput] = useState(() => getEffectiveSupabaseAnonKey());
-  const [showSupabaseKey, setShowSupabaseKey] = useState(false);
-  const [isCustomDb, setIsCustomDb] = useState(() => hasCustomSupabaseCredentials());
-  const [supabaseTestStatus, setSupabaseTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
-  const [supabaseTestMsg, setSupabaseTestMsg] = useState('');
-
   // Name update state
   const [displayName, setDisplayName] = useState(userName || currentUser?.name || '');
   const [nameSaved, setNameSaved] = useState(false);
@@ -127,14 +108,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     if (isOpen) {
       setShowGeminiKey(false);
       setShowGroqKey(false);
-      setShowSupabaseKey(false);
       setGeminiKey(settings.geminiApiKey || Storage.getGeminiApiKey() || '');
       setGroqKey(settings.groqApiKey || Storage.getGroqApiKey() || '');
-      setSupabaseUrlInput(getEffectiveSupabaseUrl());
-      setSupabaseKeyInput(getEffectiveSupabaseAnonKey());
-      setIsCustomDb(hasCustomSupabaseCredentials());
-      setSupabaseTestStatus('idle');
-      setSupabaseTestMsg('');
     }
   }, [userName, currentUser?.name, isOpen, settings.geminiApiKey, settings.groqApiKey]);
 
@@ -143,67 +118,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSaveCloudDb = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanUrl = supabaseUrlInput.trim();
-    const cleanKey = supabaseKeyInput.trim();
 
-    if (!cleanUrl || !cleanKey) {
-      setCustomSupabaseCredentials('', '');
-      resetSupabaseClient();
-      setIsCustomDb(false);
-      setSupabaseUrlInput(getEffectiveSupabaseUrl());
-      setSupabaseKeyInput(getEffectiveSupabaseAnonKey());
-      setSupabaseTestStatus('idle');
-      setSupabaseTestMsg('');
-      toast.info('Restored default cloud database configuration');
-      return;
-    }
-
-    setSupabaseTestStatus('testing');
-    setSupabaseTestMsg('Pinging cloud database instance...');
-    Sound.click(settings.soundEnabled);
-
-    try {
-      setCustomSupabaseCredentials(cleanUrl, cleanKey);
-      resetSupabaseClient();
-      const isValid = await validateSupabaseConnection();
-      if (isValid) {
-        Sound.success(settings.soundEnabled);
-        setIsCustomDb(true);
-        setSupabaseTestStatus('success');
-        setSupabaseTestMsg('Successfully connected to fresh cloud database!');
-        toast.success('Connected to fresh cloud database instance with unrestricted quota!');
-        // Master Repopulation on connection
-        checkAndTriggerMasterApkSeed().then((didSeed) => {
-          if (didSeed) {
-            toast.success('Authoritative master dataset successfully published to the cloud.');
-          }
-        });
-      } else {
-        Sound.error(settings.soundEnabled);
-        setSupabaseTestStatus('error');
-        setSupabaseTestMsg('Authentication failed. Check your Supabase URL & anon key.');
-        toast.error('Could not authenticate with provided Supabase credentials.');
-      }
-    } catch (err: any) {
-      Sound.error(settings.soundEnabled);
-      setSupabaseTestStatus('error');
-      setSupabaseTestMsg(err?.message || 'Failed to connect to cloud database.');
-    }
-  };
-
-  const handleResetCloudDb = () => {
-    Sound.click(settings.soundEnabled);
-    setCustomSupabaseCredentials('', '');
-    resetSupabaseClient();
-    setIsCustomDb(false);
-    setSupabaseUrlInput(getEffectiveSupabaseUrl());
-    setSupabaseKeyInput(getEffectiveSupabaseAnonKey());
-    setSupabaseTestStatus('idle');
-    setSupabaseTestMsg('');
-    toast.success('Reset cloud database to default configuration');
-  };
 
   const handleSaveName = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -354,100 +269,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
 
 
-  const handleCopySql = () => {
-    const sqlUrl = window.location.origin + '/neon_schema.sql';
-    // Fallback if not hosted: We provide a condensed version of the essential SQL for 1-click copy
-    const fallbackSql = `-- Supabase Initialization
-CREATE TABLE IF NOT EXISTS public.user_workspaces (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  user_identifier TEXT NOT NULL UNIQUE,
-  user_email TEXT NOT NULL,
-  workspace_data JSONB NOT NULL DEFAULT '{}'::jsonb,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
-);
-CREATE TABLE IF NOT EXISTS public.user_devices (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  device_id TEXT NOT NULL,
-  device_name TEXT NOT NULL,
-  device_type TEXT DEFAULT 'web',
-  platform TEXT DEFAULT 'web',
-  browser_info TEXT,
-  is_active BOOLEAN DEFAULT true,
-  first_login_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
-  last_seen_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
-  created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
-  updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
-  UNIQUE (user_id, device_id)
-);
-ALTER TABLE public.user_workspaces ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.user_devices ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Strict auth select workspaces" ON public.user_workspaces FOR SELECT TO authenticated USING (auth.uid() = user_id);
-CREATE POLICY "Strict auth insert workspaces" ON public.user_workspaces FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Strict auth update workspaces" ON public.user_workspaces FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Strict auth select devices" ON public.user_devices FOR SELECT TO authenticated USING (auth.uid() = user_id);
-CREATE POLICY "Strict auth insert devices" ON public.user_devices FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Strict auth update devices" ON public.user_devices FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-ALTER PUBLICATION supabase_realtime ADD TABLE user_workspaces, user_devices;
-CREATE OR REPLACE FUNCTION update_updated_at_column() RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = timezone('utc'::text, now()); RETURN NEW; END; $$ language 'plpgsql';
-CREATE TRIGGER trg_user_workspaces_updated_at BEFORE UPDATE ON public.user_workspaces FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_user_devices_updated_at BEFORE UPDATE ON public.user_devices FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-`;
-    navigator.clipboard.writeText(fallbackSql).then(() => {
-      toast.success('SQL Script copied to clipboard!');
-      Sound.success(settings.soundEnabled);
-    }).catch(() => toast.error('Failed to copy.'));
-  };
 
-  const handleDownloadSql = () => {
-    const sql = `-- Follow the documentation to run this script in your Supabase SQL Editor.
-CREATE TABLE IF NOT EXISTS public.user_workspaces (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  user_identifier TEXT NOT NULL UNIQUE,
-  user_email TEXT NOT NULL,
-  workspace_data JSONB NOT NULL DEFAULT '{}'::jsonb,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
-);
-CREATE TABLE IF NOT EXISTS public.user_devices (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  device_id TEXT NOT NULL,
-  device_name TEXT NOT NULL,
-  device_type TEXT DEFAULT 'web',
-  platform TEXT DEFAULT 'web',
-  browser_info TEXT,
-  is_active BOOLEAN DEFAULT true,
-  first_login_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
-  last_seen_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
-  created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
-  updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()),
-  UNIQUE (user_id, device_id)
-);
-ALTER TABLE public.user_workspaces ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.user_devices ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Strict auth select workspaces" ON public.user_workspaces FOR SELECT TO authenticated USING (auth.uid() = user_id);
-CREATE POLICY "Strict auth insert workspaces" ON public.user_workspaces FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Strict auth update workspaces" ON public.user_workspaces FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Strict auth select devices" ON public.user_devices FOR SELECT TO authenticated USING (auth.uid() = user_id);
-CREATE POLICY "Strict auth insert devices" ON public.user_devices FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Strict auth update devices" ON public.user_devices FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-ALTER PUBLICATION supabase_realtime ADD TABLE user_workspaces, user_devices;
-CREATE OR REPLACE FUNCTION update_updated_at_column() RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = timezone('utc'::text, now()); RETURN NEW; END; $$ language 'plpgsql';
-CREATE TRIGGER trg_user_workspaces_updated_at BEFORE UPDATE ON public.user_workspaces FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_user_devices_updated_at BEFORE UPDATE ON public.user_devices FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-`;
-    const blob = new Blob([sql], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'supabase_schema_init.sql';
-    link.click();
-    URL.revokeObjectURL(url);
-  };
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
@@ -584,146 +406,7 @@ CREATE TRIGGER trg_user_devices_updated_at BEFORE UPDATE ON public.user_devices 
             }}
           />
 
-          {/* SECTION: CLOUD DATABASE & FRESH QUOTA INSTANCE */}
-          <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                <Database className="w-3.5 h-3.5 text-indigo-500" />
-                <span>Cloud Database &amp; Sync Architecture</span>
-              </span>
-              <div className="flex items-center gap-1.5">
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60">
-                  <Server className="w-2.5 h-2.5 text-emerald-500" />
-                  <span>Cloud Hub Active</span>
-                </span>
-                {isCustomDb && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60">
-                    <span>Custom Instance</span>
-                  </span>
-                )}
-              </div>
-            </div>
 
-            <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-              Data is synced across all your devices using the persistent Server Cloud Hub with APK-authoritative master reconciliation. To connect your own fresh Supabase project with zero egress restrictions, configure credentials below:
-            </p>
-
-            <div className="flex items-center gap-2 mt-2 mb-4">
-              <button
-                type="button"
-                onClick={handleCopySql}
-                className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-md transition-colors cursor-pointer shadow-sm"
-              >
-                Copy SQL Script
-              </button>
-              <button
-                type="button"
-                onClick={handleDownloadSql}
-                className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-md transition-colors cursor-pointer shadow-sm"
-              >
-                Download .sql
-              </button>
-              <a
-                href="https://supabase.com/dashboard/project/_/sql"
-                target="_blank"
-                rel="noreferrer"
-                className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 rounded-md transition-colors cursor-pointer shadow-sm flex items-center gap-1 ml-auto"
-              >
-                Open SQL Editor <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
-
-            <form onSubmit={handleSaveCloudDb} className="space-y-2.5">
-              <div>
-                <label className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 block mb-1">
-                  Supabase Project URL
-                </label>
-                <input
-                  type="text"
-                  value={supabaseUrlInput}
-                  onChange={(e) => setSupabaseUrlInput(e.target.value)}
-                  placeholder="https://xyzcompany.supabase.co"
-                  className="w-full px-3 py-1.5 rounded-lg text-xs font-mono bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 block mb-1">
-                  Supabase Anon Key
-                </label>
-                <div className="relative">
-                  <input
-                    type={showSupabaseKey ? 'text' : 'password'}
-                    value={supabaseKeyInput}
-                    onChange={(e) => setSupabaseKeyInput(e.target.value)}
-                    placeholder="eyJhbGciOiJIUzI1NiIsIn..."
-                    className="w-full pl-3 pr-8 py-1.5 rounded-lg text-xs font-mono bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowSupabaseKey(!showSupabaseKey)}
-                    className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-                    title={showSupabaseKey ? 'Hide key' : 'Show key'}
-                  >
-                    {showSupabaseKey ? <EyeOff className="w-3.5 h-3.5 text-indigo-500" /> : <Eye className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
-              </div>
-
-              {supabaseTestStatus !== 'idle' && (
-                <div
-                  className={`text-[11px] p-2 rounded-lg flex items-center gap-1.5 leading-snug border ${
-                    supabaseTestStatus === 'success'
-                      ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
-                      : supabaseTestStatus === 'error'
-                      ? 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border-rose-200 dark:border-rose-800'
-                      : 'bg-indigo-50 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
-                  }`}
-                >
-                  {supabaseTestStatus === 'success' ? (
-                    <Check className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
-                  ) : supabaseTestStatus === 'error' ? (
-                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
-                  ) : (
-                    <RefreshCw className="w-3.5 h-3.5 shrink-0 animate-spin text-indigo-600" />
-                  )}
-                  <span className="break-all">{supabaseTestMsg}</span>
-                </div>
-              )}
-
-              <div className="flex items-center justify-between pt-1">
-                {isCustomDb ? (
-                  <button
-                    type="button"
-                    onClick={handleResetCloudDb}
-                    className="text-xs text-slate-500 hover:text-rose-500 font-semibold cursor-pointer transition-colors"
-                  >
-                    Reset to Default
-                  </button>
-                ) : (
-                  <span className="text-[11px] text-slate-400">Default cloud cluster</span>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={supabaseTestStatus === 'testing'}
-                  className="px-3.5 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                >
-                  {supabaseTestStatus === 'testing' ? (
-                    <>
-                      <RefreshCw className="w-3 h-3 animate-spin" />
-                      <span>Validating...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-3 h-3" />
-                      <span>Connect Fresh Database</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
 
           {/* SECTION: VAULT PIN */}
           <div className="space-y-3 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">
