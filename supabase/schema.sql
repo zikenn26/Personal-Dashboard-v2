@@ -479,6 +479,15 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.user_devices;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.data_versions;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.expense_authority;
 
-CREATE OR REPLACE FUNCTION update_updated_at_column() RETURNS TRIGGER AS \$\$ BEGIN NEW.updated_at = timezone('utc'::text, now()); RETURN NEW; END; \$\$ language 'plpgsql';
+CREATE OR REPLACE FUNCTION update_updated_at_column() RETURNS TRIGGER AS $$ 
+BEGIN 
+    NEW.updated_at = timezone('utc'::text, now()); 
+    RETURN NEW; 
+END; 
+$$ language 'plpgsql';
+
+DROP TRIGGER IF EXISTS trg_user_workspaces_updated_at ON public.user_workspaces;
 CREATE TRIGGER trg_user_workspaces_updated_at BEFORE UPDATE ON public.user_workspaces FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_user_devices_updated_at ON public.user_devices;
 CREATE TRIGGER trg_user_devices_updated_at BEFORE UPDATE ON public.user_devices FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

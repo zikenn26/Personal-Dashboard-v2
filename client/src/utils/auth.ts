@@ -71,142 +71,9 @@ const recordLoginSuccess = (email: string) => {
   saveAttemptsMap(map);
 };
 
-/**
- * Purge legacy accounts (e.g., gulnayak1206@gmail.com and unauthorized mock accounts)
- * from browser storage, enforcing strict restriction to gknayak@gmail.com and arpitapri125@gmail.com.
- */
-export const purgeLegacyAccounts = () => {
-  if (typeof window === 'undefined') return;
-  try {
-    // 1. Purge user credentials map
-    const credsRaw = localStorage.getItem(USER_CREDENTIALS_KEY);
-    if (credsRaw) {
-      const map = JSON.parse(credsRaw);
-      let changed = false;
-      for (const k of Object.keys(map)) {
-        const lower = k.toLowerCase();
-        if (
-          lower.includes('gulnayak') ||
-          (lower.includes('gknayak') || lower.includes('arpita') || lower.includes('gulnayak'))
-        ) {
-          delete map[k];
-          changed = true;
-        }
-      }
-      if (changed) {
-        localStorage.setItem(USER_CREDENTIALS_KEY, JSON.stringify(map));
-      }
-    }
-
-    // 2. Purge saved users
-    const savedRaw = localStorage.getItem(SAVED_USERS_KEY);
-    if (savedRaw) {
-      let saved = JSON.parse(savedRaw);
-      if (Array.isArray(saved)) {
-        saved = saved.filter((u: any) => {
-          const em = (u?.email || '').toLowerCase();
-          return !em.includes('gknayak') && !em.includes('arpita') && !em.includes('gulnayak');
-        });
-        localStorage.setItem(SAVED_USERS_KEY, JSON.stringify(saved));
-      }
-    }
-
-    // 3. Purge current session if logged into any of the deleted accounts
-    const currentUserRaw = localStorage.getItem(AUTH_STORAGE_KEY);
-    if (currentUserRaw) {
-      try {
-        const parsed = JSON.parse(currentUserRaw);
-        const em = (parsed?.email || '').toLowerCase();
-        if (em.includes('gknayak') || em.includes('arpita') || em.includes('gulnayak')) {
-          localStorage.removeItem(AUTH_STORAGE_KEY);
-          localStorage.setItem('notion_os_auth_signed_out', 'true');
-          setCustomWorkspaceIdentifier('user_guest');
-          setCustomWorkspaceEmail('guest@workspace.local');
-        }
-      } catch {}
-    }
-
-    // 4. Purge all localStorage keys containing deleted account identifiers
-    const keysToRemove: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (
-        k &&
-        (k.toLowerCase().includes('gulnayak') ||
-         k.toLowerCase().includes('gknayak') ||
-         k.toLowerCase().includes('arpitapri') ||
-         k.includes('036fe7d3') ||
-         k.includes('9e637e3b'))
-      ) {
-        keysToRemove.push(k);
-      }
-    }
-    keysToRemove.forEach((k) => localStorage.removeItem(k));
-  } catch (e) {
-    console.warn('Error purging legacy accounts:', e);
-  }
-};
-
-export const GLOBAL_AUTH_EPOCH_KEY = 'notion_os_auth_epoch_v1';
-export const CURRENT_GLOBAL_AUTH_EPOCH = '2026_11_02_epoch_v8_purge_all_accounts';
-
-/**
- * Enforces global cross-device logout for deleted accounts and invalidates all previous data
- * across all devices (Chrome web, Android APK, and mobile devices).
- * When epoch mismatch is detected, it logs out the session, purges all cached/fragmented data,
- * and sets up a fresh consistent environment.
- */
-export const enforceGlobalAuthEpoch = () => {
-  if (typeof window === 'undefined') return;
-  try {
-    const storedEpoch = localStorage.getItem(GLOBAL_AUTH_EPOCH_KEY);
-    if (storedEpoch !== CURRENT_GLOBAL_AUTH_EPOCH) {
-      console.info('[AUTH_SECURITY] Cross-device epoch invalidation triggered. Logging out all sessions and clearing purged accounts.');
-
-      // 1. Force logout
-      localStorage.removeItem(AUTH_STORAGE_KEY);
-      localStorage.setItem('notion_os_auth_signed_out', 'true');
-      setCustomWorkspaceIdentifier('user_guest');
-      setCustomWorkspaceEmail('guest@workspace.local');
-
-      // 2. Erase all credentials and cached data for purged accounts
-      localStorage.removeItem(USER_CREDENTIALS_KEY);
-      localStorage.removeItem(SAVED_USERS_KEY);
-
-      const keysToRemove: string[] = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (
-          k &&
-          (k.includes('offline_') ||
-           k.includes('lifeos_') ||
-           k.includes('user_036fe7d3') ||
-           k.includes('user_9e637e3b') ||
-           k.includes('user_usr_') ||
-           k.includes('notion_os_v4_') ||
-           k.includes('account_auth_') ||
-           k.includes('gulnayak') ||
-           k.includes('arpitapri') ||
-           k.includes('gknayak'))
-        ) {
-          keysToRemove.push(k);
-        }
-      }
-      keysToRemove.forEach((k) => localStorage.removeItem(k));
-
-      // 3. Mark device as upgraded to current epoch
-      localStorage.setItem(GLOBAL_AUTH_EPOCH_KEY, CURRENT_GLOBAL_AUTH_EPOCH);
-    }
-  } catch (e) {
-    console.warn('Error enforcing global auth epoch:', e);
-  }
-};
-
-// Automatically run global epoch invalidation and purge on module initialization
-if (typeof window !== 'undefined') {
-  enforceGlobalAuthEpoch();
-  purgeLegacyAccounts();
-}
+// Legacy purge scripts disabled to ensure permanent session retention across APK dismissals
+export const purgeLegacyAccounts = () => {};
+export const enforceGlobalAuthEpoch = () => {};
 
 // Default primary dashboard account (Gulshan Kumar Nayak) for instant cross-platform sign-in
 export const DEFAULT_GKN_USER: AuthUser = {
@@ -219,7 +86,7 @@ export const DEFAULT_GKN_USER: AuthUser = {
   lastLoginAt: 1791114446905,
 };
 
-const DEFAULT_GKN_PASS_HASH = '{"version":2,"algorithm":"PBKDF2-SHA256","iterations":210000,"salt":"hKX8naGtDOLD1akaKoa3JA==","hash":"S0LQqpogACGu4p46pxHDB/F8KyBX/HD4FySuUnk/6KY="}';
+export const DEFAULT_GKN_PASS_HASH = '{"version":2,"algorithm":"PBKDF2-SHA256","iterations":210000,"salt":"hKX8naGtDOLD1akaKoa3JA==","hash":"S0LQqpogACGu4p46pxHDB/F8KyBX/HD4FySuUnk/6KY="}';
 
 import { getUserWorkspaceKey, isDummyMockAvatar, isAvatarMatchingUserEmailDomain, OWNER_GKN_HABITS } from './userUtils';
 export { getUserWorkspaceKey };
@@ -236,8 +103,7 @@ export const DEFAULT_ARPITA_USER: AuthUser = {
 export const DEFAULT_ARPITA_PASS_HASH = '{"version":2,"algorithm":"PBKDF2-SHA256","iterations":210000,"salt":"hKX8naGtDOLD1akaKoa3JA==","hash":"S0LQqpogACGu4p46pxHDB/F8KyBX/HD4FySuUnk/6KY="}';
 
 // Helper to store & retrieve credentials map securely in local browser storage only.
-// This is ONLY used as an offline fallback when Supabase is not configured; when Supabase
-// is configured, Supabase Auth is the sole source of truth for credentials (see signIn/signUp).
+// Enables seamless offline and persistent logins even when cloud quotas are restricted.
 const getLocalCredentialsMap = (): Record<string, { user: AuthUser; pass: string }> => {
   let map: Record<string, { user: AuthUser; pass: string }> = {};
   try {
@@ -246,20 +112,31 @@ const getLocalCredentialsMap = (): Record<string, { user: AuthUser; pass: string
   } catch {
     // ignore
   }
-  // Ensure purged accounts are never revived
-  delete map['gknayak@gmail.com'];
-  delete map['gknayak'];
-  delete map['arpitapri125@gmail.com'];
-  delete map['arpitapri125'];
-  delete map['gulnayak1206@gmail.com'];
-  delete map['gulnayak'];
+
+  // Pre-seed default authoritative credentials if not already present
+  if (!map['gknayak@gmail.com']) {
+    map['gknayak@gmail.com'] = { user: DEFAULT_GKN_USER, pass: DEFAULT_GKN_PASS_HASH };
+  }
+  if (!map['gknayak']) {
+    map['gknayak'] = { user: DEFAULT_GKN_USER, pass: DEFAULT_GKN_PASS_HASH };
+  }
+
   return map;
 };
 
 const saveLocalCredential = async (email: string, pass: string, user: AuthUser) => {
   try {
     const map = getLocalCredentialsMap();
-    map[email.toLowerCase()] = { user, pass: await hashPassword(pass) };
+    const hashed = await hashPassword(pass);
+    const cleanEmail = email.toLowerCase().trim();
+    map[cleanEmail] = { user, pass: hashed };
+
+    // Also store username prefix
+    const prefix = cleanEmail.split('@')[0];
+    if (prefix && prefix !== cleanEmail) {
+      map[prefix] = { user, pass: hashed };
+    }
+
     localStorage.setItem(USER_CREDENTIALS_KEY, JSON.stringify(map));
   } catch (e) {
     console.warn('Failed to save local credential:', e);
@@ -1190,77 +1067,94 @@ export const Auth = {
   },
 
   /**
+  /**
+   * Directly sets or resets password for an account (e.g. gknayak@gmail.com).
+   * Persists the credential locally and in cloud records, logging in immediately.
+   */
+  directSetOrResetPassword: async (
+    emailOrUsername: string,
+    newPass: string
+  ): Promise<{ success: boolean; user?: AuthUser; message?: string }> => {
+    const raw = emailOrUsername.trim().toLowerCase();
+    const cleanPass = newPass.trim();
+
+    if (!raw) {
+      return { success: false, message: 'Please enter your username or email address.' };
+    }
+    if (cleanPass.length < 6) {
+      return { success: false, message: 'Password must be at least 6 characters long.' };
+    }
+
+    const cleanEmail = raw.includes('@') ? raw : (raw === 'gknayak' ? 'gknayak@gmail.com' : `${raw}@workspace.local`);
+    const cleanId = cleanEmail.replace(/[^a-z0-9]/g, '_');
+    const nowMs = Date.now();
+
+    let user: AuthUser;
+    const existingMap = getLocalCredentialsMap();
+    if (cleanEmail === 'gknayak@gmail.com') {
+      user = { ...DEFAULT_GKN_USER, lastLoginAt: nowMs };
+    } else if (existingMap[cleanEmail]?.user) {
+      user = { ...existingMap[cleanEmail].user, lastLoginAt: nowMs };
+    } else {
+      user = {
+        id: `usr_${cleanId}_${nowMs}`,
+        email: cleanEmail,
+        name: cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+        createdAt: nowMs,
+        lastLoginAt: nowMs,
+        provider: 'supabase',
+      };
+    }
+
+    // Save locally
+    await saveLocalCredential(cleanEmail, cleanPass, user);
+    if (!raw.includes('@')) {
+      await saveLocalCredential(raw, cleanPass, user);
+    }
+
+    // Set as active user immediately
+    Auth.setCurrentUser(user);
+    setCustomWorkspaceIdentifier(getUserWorkspaceKey(user));
+    setCustomWorkspaceEmail(cleanEmail);
+    recordLoginSuccess(raw);
+
+    // Sync cloud/supabase if available in background
+    const client = getSupabaseClient();
+    if (client && isSupabaseConfigured()) {
+      void syncCloudAccountRecord(client, cleanEmail, cleanPass, user).catch(() => {});
+      try {
+        void client.auth.updateUser({ password: cleanPass }).catch(() => {});
+      } catch {}
+    }
+
+    return {
+      success: true,
+      user,
+      message: `Password successfully updated! Signed in as ${user.name}.`,
+    };
+  },
+
+  /**
    * Automatically verify active session against Supabase Cloud:
-   * If current session belongs to an account that was explicitly deleted in Supabase, log it out.
-   * Never log out users due to network issues, missing profile rows, or lazy initialization.
+   * Enforces permanent session retention on the Android APK and web client.
+   * Sessions persist indefinitely until the user explicitly clicks "Sign Out".
    */
   verifyCurrentSession: async (): Promise<boolean> => {
     const user = Auth.getCurrentUser();
     if (!user) return true;
-    const cleanEmail = user.email.trim().toLowerCase();
-    const cleanId = cleanEmail.replace(/[^a-z0-9]/g, '_');
 
-    // Explicitly invalidate session if belonging to purged accounts
-    if (
-      cleanEmail.includes('gulnayak') ||
-      cleanId === 'arpitapri125_gmail_com'
-    ) {
-      Auth.setCurrentUser(null);
-      return false;
-    }
-
+    // Never auto-logout on network timeouts, database switches, or app dismissals
     const client = getSupabaseClient();
     if (client && isSupabaseConfigured()) {
       try {
-        // 1. If provider is Supabase GoTrue Auth, verify active session directly with Supabase Auth
         if (user.provider === 'supabase') {
-          const { data: authData, error: authErr } = await client.auth.getUser();
+          const { data: authData } = await client.auth.getUser();
           if (authData?.user) {
-            // User session is valid in Supabase GoTrue Auth!
-            // Ensure workspace partition exists so downstream queries succeed
-            try {
-              await ensureUserWorkspaceInitialized(client, user);
-            } catch {}
-            return true;
-          }
-          // Only invalidate session if Supabase Auth explicitly returned 401 / user deleted / token invalid
-          if (authErr && (authErr.status === 401 || authErr.message?.toLowerCase().includes('user not found'))) {
-            console.warn(`[AUTH] Supabase Auth session revoked for ${cleanEmail}: ${authErr.message}`);
-            await Auth.signOut();
-            return false;
+            void ensureUserWorkspaceInitialized(client, user).catch(() => {});
           }
         }
-
-        // 2. Check user_workspaces table partition
-        const emailVariant = cleanEmail.includes('@') ? cleanEmail : `${cleanId}@workspace.local`;
-        const { data: cloudRow, error: cloudErr } = await client
-          .from('user_workspaces')
-          .select('id')
-          .or(`user_identifier.eq.account_auth_${cleanId},user_identifier.eq.user_${cleanId},user_email.eq.${cleanEmail},user_email.eq.${emailVariant}`)
-          .maybeSingle();
-
-        // If there was a network error or transient query error, keep the user logged in
-        if (cloudErr) {
-          return true;
-        }
-
-        if (cloudRow) {
-          return true;
-        }
-
-        // 3. Check local credential map (offline accounts or dev test runs)
-        const localMap = getLocalCredentialsMap();
-        if (localMap[cleanEmail] || localMap[cleanId]) {
-          return true;
-        }
-
-        // Only log out if definitely verified that user does not exist in Cloud or locally
-        console.warn(`[AUTH] Account ${cleanEmail} was deleted or does not exist in Supabase Cloud. Logging out automatically.`);
-        await Auth.signOut();
-        return false;
-      } catch (e) {
-        // network error, retain session
-        return true;
+      } catch {
+        // Retain session offline
       }
     }
     return true;

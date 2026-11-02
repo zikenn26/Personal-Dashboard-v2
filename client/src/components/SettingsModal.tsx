@@ -24,6 +24,12 @@ import {
   Download,
   FileSpreadsheet,
   Globe,
+  Database,
+  Copy,
+  FileCode,
+  CheckCheck,
+  Server,
+  HardDrive,
 } from 'lucide-react';
 import { AppSettings, AuthUser } from '../types';
 import { Sound } from '../utils/audio';
@@ -34,6 +40,12 @@ import { testGroqApiKey, SUPPORTED_GROQ_MODELS, DEFAULT_GROQ_MODEL } from '../se
 import { testGeminiApiKey } from '../services/geminiService';
 import { ConnectedDevices } from './ConnectedDevices';
 import { downloadExpenseBundle } from '../utils/expenseExport';
+import { NEON_SCHEMA_SQL, SUPABASE_SCHEMA_SQL } from '../utils/databaseSchemas';
+import {
+  getEffectiveSupabaseUrl,
+  getEffectiveSupabaseAnonKey,
+  setCustomSupabaseCredentials,
+} from '../utils/supabaseConfig';
 import { toast } from 'sonner';
 
 interface SettingsModalProps {
@@ -112,6 +124,70 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setGroqKey(settings.groqApiKey || Storage.getGroqApiKey() || '');
     }
   }, [userName, currentUser?.name, isOpen, settings.geminiApiKey, settings.groqApiKey]);
+
+  // Active Tab state
+  const [activeTab, setActiveTab] = useState<'general' | 'devices' | 'database' | 'ai'>('general');
+
+  // Database & Migration tab state
+  const [selectedSchemaType, setSelectedSchemaType] = useState<'neon' | 'supabase'>('neon');
+  const [copiedSchema, setCopiedSchema] = useState(false);
+  const [customSbUrl, setCustomSbUrl] = useState(() => getEffectiveSupabaseUrl());
+  const [customSbKey, setCustomSbKey] = useState(() => getEffectiveSupabaseAnonKey());
+  const [customNeonUrl, setCustomNeonUrl] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return (
+        localStorage.getItem('lifeos_custom_neon_url') ||
+        'postgresql://neondb_owner:npg_G9a4qZEpMUty@ep-curly-glitter-b4fsklnq-pooler.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require'
+      );
+    }
+    return '';
+  });
+  const [dbConfigSaved, setDbConfigSaved] = useState(false);
+
+  const handleCopySql = async (type: 'neon' | 'supabase') => {
+    const sql = type === 'neon' ? NEON_SCHEMA_SQL : SUPABASE_SCHEMA_SQL;
+    try {
+      await navigator.clipboard.writeText(sql);
+      setCopiedSchema(true);
+      Sound.success(settings.soundEnabled);
+      toast.success(`Copied ${type === 'neon' ? 'Neon Postgres' : 'Supabase'} SQL Schema to clipboard!`);
+      setTimeout(() => setCopiedSchema(false), 2000);
+    } catch {
+      toast.error('Could not copy to clipboard.');
+    }
+  };
+
+  const handleDownloadSql = (type: 'neon' | 'supabase') => {
+    const content = type === 'neon' ? NEON_SCHEMA_SQL : SUPABASE_SCHEMA_SQL;
+    const filename = type === 'neon' ? 'neon_schema.sql' : 'supabase_schema.sql';
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    Sound.success(settings.soundEnabled);
+    toast.success(`Downloaded ${filename}`);
+  };
+
+  const handleSaveDbConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    setCustomSupabaseCredentials(customSbUrl, customSbKey);
+    if (typeof window !== 'undefined') {
+      if (customNeonUrl.trim()) {
+        localStorage.setItem('lifeos_custom_neon_url', customNeonUrl.trim());
+      } else {
+        localStorage.removeItem('lifeos_custom_neon_url');
+      }
+    }
+    Sound.success(settings.soundEnabled);
+    setDbConfigSaved(true);
+    toast.success('Database configuration updated and saved!');
+    setTimeout(() => setDbConfigSaved(false), 2500);
+  };
 
   // Active account email for connected devices and workspace syncing
   const activeEmail = currentUser?.email || 'user@workspace.local';
@@ -294,413 +370,656 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
 
+        {/* Modal Tabs Bar */}
+        <div className="flex items-center px-6 pt-2 pb-0 border-b border-[#F3F4F6] dark:border-[#1F2937] bg-gray-50/50 dark:bg-[#111827]/50 gap-1 overflow-x-auto shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              Sound.click(settings.soundEnabled);
+              setActiveTab('general');
+            }}
+            className={`px-3 py-2 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              activeTab === 'general'
+                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 font-bold'
+                : 'border-transparent text-gray-500 hover:text-gray-900 dark:hover:text-white'
+            }`}
+          >
+            <User className="w-3.5 h-3.5" />
+            <span>General</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              Sound.click(settings.soundEnabled);
+              setActiveTab('devices');
+            }}
+            className={`px-3 py-2 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              activeTab === 'devices'
+                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 font-bold'
+                : 'border-transparent text-gray-500 hover:text-gray-900 dark:hover:text-white'
+            }`}
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            <span>Devices</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              Sound.click(settings.soundEnabled);
+              setActiveTab('database');
+            }}
+            className={`px-3 py-2 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              activeTab === 'database'
+                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 font-bold'
+                : 'border-transparent text-gray-500 hover:text-gray-900 dark:hover:text-white'
+            }`}
+          >
+            <Database className="w-3.5 h-3.5" />
+            <span>Migration &amp; Database</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              Sound.click(settings.soundEnabled);
+              setActiveTab('ai');
+            }}
+            className={`px-3 py-2 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              activeTab === 'ai'
+                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 font-bold'
+                : 'border-transparent text-gray-500 hover:text-gray-900 dark:hover:text-white'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>AI Models</span>
+          </button>
+        </div>
+
         {/* Modal Scrollable Body */}
         <div className="p-6 overflow-y-auto space-y-6">
-          {/* SECTION 1: PROFILE USERNAME EDIT */}
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold block">
-                Profile &amp; Display Name
-              </span>
-            </div>
+          {activeTab === 'general' && (
+            <>
+              {/* SECTION 1: PROFILE USERNAME EDIT */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold block">
+                    Profile &amp; Display Name
+                  </span>
+                </div>
 
-            <div className="p-3.5 rounded-xl border border-[#E5E7EB] dark:border-[#1F2937] bg-[#F9FAFB] dark:bg-[#1F2937]/40 space-y-3">
-              {/* Profile Photo Preview & Change Action */}
-              <div className="flex items-center gap-3.5 pb-3 border-b border-[#E5E7EB] dark:border-[#1F2937]">
-                <div className="relative group">
-                  <div className="w-12 h-12 rounded-2xl overflow-hidden border border-[#E5E7EB] dark:border-[#374151] bg-white dark:bg-[#111827] p-0.5 shadow-2xs flex items-center justify-center">
-                    <UserAvatar
-                      avatarUrl={avatarUrl}
-                      name={userName}
-                      userEmail={activeEmail}
-                      size="lg"
-                      className="w-full h-full rounded-xl"
+                <div className="p-3.5 rounded-xl border border-[#E5E7EB] dark:border-[#1F2937] bg-[#F9FAFB] dark:bg-[#1F2937]/40 space-y-3">
+                  {/* Profile Photo Preview & Change Action */}
+                  <div className="flex items-center gap-3.5 pb-3 border-b border-[#E5E7EB] dark:border-[#1F2937]">
+                    <div className="relative group">
+                      <div className="w-12 h-12 rounded-2xl overflow-hidden border border-[#E5E7EB] dark:border-[#374151] bg-white dark:bg-[#111827] p-0.5 shadow-2xs flex items-center justify-center">
+                        <UserAvatar
+                          avatarUrl={avatarUrl}
+                          name={userName}
+                          userEmail={activeEmail}
+                          size="lg"
+                          className="w-full h-full rounded-xl"
+                        />
+                      </div>
+                      {onOpenAvatarPicker && (
+                        <button
+                          type="button"
+                          onClick={onOpenAvatarPicker}
+                          className="absolute -bottom-1 -right-1 p-1 rounded-full bg-[#6366F1] text-white shadow-xs hover:bg-[#4F46E5] transition-colors cursor-pointer"
+                          title="Change Photo"
+                        >
+                          <Camera className="w-2.5 h-2.5" />
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-[#111827] dark:text-white">
+                          Profile Picture
+                        </span>
+                        {onOpenAvatarPicker && (
+                          <button
+                            type="button"
+                            onClick={onOpenAvatarPicker}
+                            className="px-2.5 py-1 rounded-lg text-xs font-semibold text-[#6366F1] dark:text-[#818CF8] bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-colors flex items-center gap-1 cursor-pointer"
+                          >
+                            <Camera className="w-3 h-3" />
+                            <span>Change Photo</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <form onSubmit={handleSaveName} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                    <div className="relative flex-1">
+                      <User className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+                      <input
+                        type="text"
+                        value={displayName}
+                        onChange={(e) => setDisplayName(e.target.value)}
+                        placeholder="Enter your full name or handle"
+                        required
+                        className="w-full pl-9 pr-3 py-2 rounded-xl text-xs font-semibold bg-white dark:bg-[#111827] border border-[#E5E7EB] dark:border-[#374151] text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 text-xs font-bold bg-[#6366F1] hover:bg-[#4F46E5] text-white rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm shrink-0"
+                    >
+                      {nameSaved ? <Check className="w-3.5 h-3.5" /> : null}
+                      <span>{nameSaved ? 'Saved!' : 'Save Name'}</span>
+                    </button>
+                  </form>
+
+                  {nameSaved && (
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1.5 animate-in fade-in">
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Name updated successfully</span>
+                    </p>
+                  )}
+
+                  {currentUser && (
+                    <div className="text-[11px] text-gray-500 dark:text-gray-400 flex items-center justify-between pt-1 border-t border-gray-200 dark:border-gray-800">
+                      <span>Signed in account: <strong className="text-gray-700 dark:text-gray-300">{currentUser.email}</strong></span>
+                      {onOpenChangePassword && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onClose();
+                            onOpenChangePassword();
+                          }}
+                          className="text-[#6366F1] dark:text-[#818CF8] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                        >
+                          <KeyRound className="w-3 h-3" />
+                          <span>Change password</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* SECTION: VAULT PIN */}
+              <div className="space-y-3 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">
+                <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold block">
+                  Security &amp; Vault PIN
+                </span>
+
+                <form onSubmit={handleSavePin} className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="password"
+                      maxLength={8}
+                      value={newPin}
+                      onChange={(e) => setNewPin(e.target.value)}
+                      placeholder="Set a vault PIN (4–8 digits)"
+                      className="w-full px-3 py-1.5 rounded-lg text-xs font-mono bg-[#F9FAFB] dark:bg-[#1F2937] border border-[#E5E7EB] dark:border-[#374151] text-[#111827] dark:text-white focus:outline-none focus:ring-1 focus:ring-[#6366F1]"
                     />
                   </div>
-                  {onOpenAvatarPicker && (
-                    <button
-                      type="button"
-                      onClick={onOpenAvatarPicker}
-                      className="absolute -bottom-1 -right-1 p-1 rounded-full bg-[#6366F1] text-white shadow-xs hover:bg-[#4F46E5] transition-colors cursor-pointer"
-                      title="Change Photo"
-                    >
-                      <Camera className="w-2.5 h-2.5" />
-                    </button>
+                  <button
+                    type="submit"
+                    className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center gap-1 cursor-pointer shadow-2xs"
+                  >
+                    {pinSaved ? <Check className="w-3.5 h-3.5" /> : <KeyRound className="w-3.5 h-3.5" />}
+                    <span>{pinSaved ? 'Saved' : 'Update PIN'}</span>
+                  </button>
+                </form>
+              </div>
+
+              {/* SECTION: DATA BRIDGE & CROSS-DEVICE TRANSFER (APK ↔ WEB) */}
+              <div className="p-3.5 rounded-xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-900/60 space-y-3">
+                <div>
+                  <span className="text-xs font-bold text-purple-900 dark:text-purple-200 flex items-center gap-1.5">
+                    <Download className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                    <span>Data Bridge &amp; Backup (APK &harr; Web)</span>
+                  </span>
+                  <p className="text-[11px] text-purple-700/80 dark:text-purple-300/80 mt-0.5">
+                    Transfer transactions &amp; workspace records directly between your APK, Web browser, and AI Studio without cloud quota restrictions.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      Sound.click(settings.soundEnabled);
+                      onExportData();
+                    }}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white dark:bg-[#1E293B] hover:bg-purple-100/70 dark:hover:bg-purple-900/40 border border-purple-200 dark:border-purple-800 text-purple-800 dark:text-purple-200 shadow-2xs transition-colors cursor-pointer"
+                    title="Download full JSON workspace backup including all transactions"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Export JSON</span>
+                  </button>
+
+                  <label className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white dark:bg-[#1E293B] hover:bg-purple-100/70 dark:hover:bg-purple-900/40 border border-purple-200 dark:border-purple-800 text-purple-800 dark:text-purple-200 shadow-2xs transition-colors cursor-pointer">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Import JSON</span>
+                    <input
+                      type="file"
+                      accept=".json"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                          try {
+                            const content = event.target?.result as string;
+                            const success = onImportData(content);
+                            if (success) {
+                              toast.success('Successfully imported workspace data and transactions!');
+                            } else {
+                              toast.error('Invalid workspace file format.');
+                            }
+                          } catch {
+                            toast.error('Failed to parse JSON file.');
+                          }
+                        };
+                        reader.readAsText(file);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      Sound.click(settings.soundEnabled);
+                      const exps = Storage.getExpenses();
+                      if (exps.length === 0) {
+                        toast.info('No expenses recorded to export.');
+                        return;
+                      }
+                      toast.success(`Exporting universal bundle (.xlsx + .csv) for ${exps.length} transactions...`);
+                      await downloadExpenseBundle(exps);
+                    }}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white dark:bg-[#1E293B] hover:bg-purple-100/70 dark:hover:bg-purple-900/40 border border-purple-200 dark:border-purple-800 text-purple-800 dark:text-purple-200 shadow-2xs transition-colors cursor-pointer"
+                    title="Export all transactions in Excel (.xlsx) and CSV formats"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Export Excel</span>
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {activeTab === 'devices' && (
+            <ConnectedDevices
+              email={activeEmail}
+              soundEnabled={settings.soundEnabled}
+              onSignOut={() => {
+                onClose();
+                if (onSignOut) onSignOut();
+              }}
+            />
+          )}
+
+          {activeTab === 'database' && (
+            <div className="space-y-5 animate-in fade-in duration-150">
+              {/* Authoritative APK Master Source Card */}
+              <div className="p-4 rounded-2xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/60 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Smartphone className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    <span className="text-xs font-bold text-indigo-950 dark:text-indigo-200">
+                      Authoritative Master Source: Android APK
+                    </span>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-600 text-white shadow-2xs">
+                    Authoritative Sync Active
+                  </span>
+                </div>
+                <p className="text-xs text-indigo-900/80 dark:text-indigo-300 leading-relaxed">
+                  Your Android APK holds your authoritative transactions dataset. When connecting to a fresh Neon or Supabase database, the APK automatically detects an empty or migrating backend and cleanly pushes your transactions without data loss or duplicates.
+                </p>
+                <div className="text-[11px] text-indigo-700 dark:text-indigo-300/80 font-mono flex items-center gap-2 pt-1">
+                  <span>Authoritative Account:</span>
+                  <strong>{currentUser?.email || 'gknayak@gmail.com'}</strong>
+                </div>
+              </div>
+
+              {/* Database Connection Config Form */}
+              <div className="p-4 rounded-2xl bg-gray-50/80 dark:bg-zinc-800/40 border border-gray-200/80 dark:border-zinc-700/60 space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                    <Server className="w-4 h-4 text-emerald-500" />
+                    <span>Cloud Database Configuration</span>
+                  </span>
+                  {dbConfigSaved && (
+                    <span className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Saved!</span>
+                    </span>
                   )}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-[#111827] dark:text-white">
-                      Profile Picture
+
+                <form onSubmit={handleSaveDbConfig} className="space-y-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                      Neon Serverless Postgres Connection URL
+                    </label>
+                    <input
+                      type="text"
+                      value={customNeonUrl}
+                      onChange={(e) => setCustomNeonUrl(e.target.value)}
+                      placeholder="postgresql://user:pass@ep-xyz.neon.tech/neondb?sslmode=require"
+                      className="w-full px-3 py-2 rounded-xl text-xs font-mono bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                        Supabase Project URL
+                      </label>
+                      <input
+                        type="text"
+                        value={customSbUrl}
+                        onChange={(e) => setCustomSbUrl(e.target.value)}
+                        placeholder="https://xyz.supabase.co"
+                        className="w-full px-3 py-2 rounded-xl text-xs font-mono bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                        Supabase Anon Key
+                      </label>
+                      <input
+                        type="password"
+                        value={customSbKey}
+                        onChange={(e) => setCustomSbKey(e.target.value)}
+                        placeholder="eyJhbGciOiJIUzI1NiIsIn..."
+                        className="w-full px-3 py-2 rounded-xl text-xs font-mono bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="submit"
+                      className="px-4 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Save Cloud Credentials</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Complete SQL Schema Generator Section */}
+              <div className="p-4 rounded-2xl bg-gray-50/80 dark:bg-zinc-800/40 border border-gray-200/80 dark:border-zinc-700/60 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <span className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                      <FileCode className="w-4 h-4 text-indigo-500" />
+                      <span>SQL Schema Initialization Scripts</span>
                     </span>
-                    {onOpenAvatarPicker && (
-                      <button
-                        type="button"
-                        onClick={onOpenAvatarPicker}
-                        className="px-2.5 py-1 rounded-lg text-xs font-semibold text-[#6366F1] dark:text-[#818CF8] bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-colors flex items-center gap-1 cursor-pointer"
-                      >
-                        <Camera className="w-3 h-3" />
-                        <span>Change Photo</span>
-                      </button>
-                    )}
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                      Tables, indexes, triggers, and security rules ready to execute in your SQL Editor.
+                    </p>
+                  </div>
+
+                  {/* Schema Target Toggle */}
+                  <div className="flex items-center p-1 bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-700 gap-1 shrink-0 self-start sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSchemaType('neon')}
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        selectedSchemaType === 'neon'
+                          ? 'bg-emerald-600 text-white shadow-2xs'
+                          : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
+                      }`}
+                    >
+                      Neon Postgres
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSchemaType('supabase')}
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        selectedSchemaType === 'supabase'
+                          ? 'bg-emerald-600 text-white shadow-2xs'
+                          : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
+                      }`}
+                    >
+                      Supabase RLS
+                    </button>
                   </div>
                 </div>
-              </div>
 
-              <form onSubmit={handleSaveName} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-                <div className="relative flex-1">
-                  <User className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
-                  <input
-                    type="text"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="Enter your full name or handle"
-                    required
-                    className="w-full pl-9 pr-3 py-2 rounded-xl text-xs font-semibold bg-white dark:bg-[#111827] border border-[#E5E7EB] dark:border-[#374151] text-[#111827] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
-                  />
+                {/* Quick Actions Bar */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleCopySql(selectedSchemaType)}
+                    className="flex-1 py-2 px-3 rounded-xl text-xs font-bold bg-white dark:bg-zinc-900 hover:bg-gray-100 dark:hover:bg-zinc-800 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    {copiedSchema ? <CheckCheck className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5 text-indigo-500" />}
+                    <span>{copiedSchema ? 'Copied to Clipboard!' : `Copy ${selectedSchemaType === 'neon' ? 'Neon' : 'Supabase'} SQL`}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadSql(selectedSchemaType)}
+                    className="py-2 px-3 rounded-xl text-xs font-bold bg-white dark:bg-zinc-900 hover:bg-gray-100 dark:hover:bg-zinc-800 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs shrink-0"
+                    title="Download .sql schema file"
+                  >
+                    <Download className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>Download .sql</span>
+                  </button>
                 </div>
-                <button
-                  type="submit"
-                  className="px-4 py-2 text-xs font-bold bg-[#6366F1] hover:bg-[#4F46E5] text-white rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm shrink-0"
-                >
-                  {nameSaved ? <Check className="w-3.5 h-3.5" /> : null}
-                  <span>{nameSaved ? 'Saved!' : 'Save Name'}</span>
-                </button>
-              </form>
 
-              {nameSaved && (
-                <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1.5 animate-in fade-in">
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Name updated successfully</span>
-                </p>
-              )}
-
-              {currentUser && (
-                <div className="text-[11px] text-gray-500 dark:text-gray-400 flex items-center justify-between pt-1 border-t border-gray-200 dark:border-gray-800">
-                  <span>Signed in account: <strong className="text-gray-700 dark:text-gray-300">{currentUser.email}</strong></span>
-                  {onOpenChangePassword && (
+                {/* Code Preview Box */}
+                <div className="relative rounded-xl overflow-hidden border border-gray-300 dark:border-zinc-700 bg-[#0D1117] text-gray-200">
+                  <div className="flex items-center justify-between px-3 py-1.5 bg-[#161B22] border-b border-gray-800 text-[11px] font-mono text-gray-400">
+                    <span>{selectedSchemaType === 'neon' ? 'supabase/neon_schema.sql' : 'supabase/schema.sql'}</span>
                     <button
                       type="button"
-                      onClick={() => {
-                        onClose();
-                        onOpenChangePassword();
-                      }}
-                      className="text-[#6366F1] dark:text-[#818CF8] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                      onClick={() => handleCopySql(selectedSchemaType)}
+                      className="text-xs text-indigo-400 hover:text-indigo-300 cursor-pointer flex items-center gap-1"
                     >
-                      <KeyRound className="w-3 h-3" />
-                      <span>Change password</span>
+                      <Copy className="w-3 h-3" />
+                      <span>Copy</span>
                     </button>
-                  )}
+                  </div>
+                  <pre className="p-3 text-[11px] font-mono overflow-x-auto max-h-48 leading-relaxed select-all">
+                    {selectedSchemaType === 'neon' ? NEON_SCHEMA_SQL : SUPABASE_SCHEMA_SQL}
+                  </pre>
                 </div>
-              )}
-            </div>
-          </div>
-
-          {/* SECTION 2: MULTI-DEVICE SESSIONS & REMOTE LOGOUT */}
-          <ConnectedDevices
-            email={activeEmail}
-            soundEnabled={settings.soundEnabled}
-            onSignOut={() => {
-              onClose();
-              if (onSignOut) onSignOut();
-            }}
-          />
-
-
-
-          {/* SECTION: VAULT PIN */}
-          <div className="space-y-3 pt-2 border-t border-[#F3F4F6] dark:border-[#1F2937]">
-            <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-bold block">
-              Security &amp; Vault PIN
-            </span>
-
-            <form onSubmit={handleSavePin} className="flex items-center gap-2">
-              <div className="relative flex-1">
-                <input
-                  type="password"
-                  maxLength={8}
-                  value={newPin}
-                  onChange={(e) => setNewPin(e.target.value)}
-                  placeholder="Set a vault PIN (4–8 digits)"
-                  className="w-full px-3 py-1.5 rounded-lg text-xs font-mono bg-[#F9FAFB] dark:bg-[#1F2937] border border-[#E5E7EB] dark:border-[#374151] text-[#111827] dark:text-white focus:outline-none focus:ring-1 focus:ring-[#6366F1]"
-                />
               </div>
-              <button
-                type="submit"
-                className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center gap-1 cursor-pointer shadow-2xs"
-              >
-                {pinSaved ? <Check className="w-3.5 h-3.5" /> : <KeyRound className="w-3.5 h-3.5" />}
-                <span>{pinSaved ? 'Saved' : 'Update PIN'}</span>
-              </button>
-            </form>
-          </div>
-
-          {/* SECTION: GOOGLE GEMINI API KEY */}
-          <div className="p-3 rounded-xl bg-gray-50/80 dark:bg-zinc-800/40 border border-gray-200/80 dark:border-zinc-700/60 space-y-2">
-            <div className="flex items-center justify-between gap-1">
-              <span className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-blue-500" />
-                <span>Google Gemini API</span>
-              </span>
-              <a
-                href="https://aistudio.google.com/app/apikey"
-                target="_blank"
-                rel="noreferrer"
-                className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 font-medium"
-              >
-                <span>Get Key</span>
-                <ExternalLink className="w-2.5 h-2.5" />
-              </a>
             </div>
+          )}
 
-            <form onSubmit={handleSaveGeminiKey} className="space-y-2">
-              <div className="relative flex items-center w-full">
-                <input
-                  type={showGeminiKey ? 'text' : 'password'}
-                  value={geminiKey}
-                  onChange={(e) => {
-                    setGeminiKey(e.target.value);
-                    setGeminiTestStatus('idle');
-                  }}
-                  placeholder="Enter Gemini Key (AIzaSy...)"
-                  className="w-full pl-3 pr-10 py-1.5 rounded-lg text-xs font-mono bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowGeminiKey(!showGeminiKey)}
-                  className="absolute right-2.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
-                  title={showGeminiKey ? 'Hide key' : 'Show key'}
-                >
-                  {showGeminiKey ? <EyeOff className="w-3.5 h-3.5 text-blue-500" /> : <Eye className="w-3.5 h-3.5" />}
-                </button>
-              </div>
-
-              {geminiTestStatus !== 'idle' && (
-                <div
-                  className={`text-[11px] p-2 rounded-lg flex items-center gap-1.5 leading-snug border ${
-                    geminiTestStatus === 'success'
-                      ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
-                      : geminiTestStatus === 'error'
-                      ? 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border-rose-200 dark:border-rose-800'
-                      : 'bg-blue-50 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800'
-                  }`}
-                >
-                  {geminiTestStatus === 'success' ? (
-                    <Check className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
-                  ) : geminiTestStatus === 'error' ? (
-                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
-                  ) : (
-                    <RefreshCw className="w-3.5 h-3.5 shrink-0 animate-spin text-blue-600" />
-                  )}
-                  <span className="break-all">{geminiTestMsg}</span>
+          {activeTab === 'ai' && (
+            <>
+              {/* SECTION: GOOGLE GEMINI API KEY */}
+              <div className="p-3 rounded-xl bg-gray-50/80 dark:bg-zinc-800/40 border border-gray-200/80 dark:border-zinc-700/60 space-y-2">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+                    <span>Google Gemini API</span>
+                  </span>
+                  <a
+                    href="https://aistudio.google.com/app/apikey"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 font-medium"
+                  >
+                    <span>Get Key</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
                 </div>
-              )}
 
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  disabled={geminiTestStatus === 'testing'}
-                  className="px-3 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                >
-                  {geminiTestStatus === 'testing' ? (
-                    <>
-                      <RefreshCw className="w-3 h-3 animate-spin" />
-                      <span>Validating...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-3 h-3" />
-                      <span>{geminiKey.trim() ? 'Validate & Save' : 'Clear Key'}</span>
-                    </>
+                <form onSubmit={handleSaveGeminiKey} className="space-y-2">
+                  <div className="relative flex items-center w-full">
+                    <input
+                      type={showGeminiKey ? 'text' : 'password'}
+                      value={geminiKey}
+                      onChange={(e) => {
+                        setGeminiKey(e.target.value);
+                        setGeminiTestStatus('idle');
+                      }}
+                      placeholder="Enter Gemini API Key (AIza...)"
+                      className="w-full pl-3 pr-10 py-1.5 rounded-lg text-xs font-mono bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowGeminiKey(!showGeminiKey)}
+                      className="absolute right-2.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+                      title={showGeminiKey ? 'Hide key' : 'Show key'}
+                    >
+                      {showGeminiKey ? <EyeOff className="w-3.5 h-3.5 text-blue-500" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+
+                  {geminiTestStatus !== 'idle' && (
+                    <div
+                      className={`text-[11px] p-2 rounded-lg flex items-center gap-1.5 leading-snug border ${
+                        geminiTestStatus === 'success'
+                          ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                          : geminiTestStatus === 'error'
+                          ? 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                          : 'bg-blue-50 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                      }`}
+                    >
+                      {geminiTestStatus === 'success' ? (
+                        <Check className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
+                      ) : geminiTestStatus === 'error' ? (
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
+                      ) : (
+                        <RefreshCw className="w-3.5 h-3.5 shrink-0 animate-spin text-blue-600" />
+                      )}
+                      <span className="break-all">{geminiTestMsg}</span>
+                    </div>
                   )}
-                </button>
-              </div>
-            </form>
-          </div>
 
-          {/* SECTION: GROQ AI API KEY */}
-          <div className="p-3 rounded-xl bg-gray-50/80 dark:bg-zinc-800/40 border border-gray-200/80 dark:border-zinc-700/60 space-y-2">
-            <div className="flex items-center justify-between gap-1">
-              <span className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
-                <Sparkle className="w-3.5 h-3.5 text-indigo-500" />
-                <span>Groq AI API</span>
-              </span>
-              <a
-                href="https://console.groq.com/keys"
-                target="_blank"
-                rel="noreferrer"
-                className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium"
-              >
-                <span>Get Key</span>
-                <ExternalLink className="w-2.5 h-2.5" />
-              </a>
-            </div>
-
-            <form onSubmit={handleSaveGroqKey} className="space-y-2">
-              <div className="relative flex items-center w-full">
-                <input
-                  type={showGroqKey ? 'text' : 'password'}
-                  value={groqKey}
-                  onChange={(e) => {
-                    setGroqKey(e.target.value);
-                    setGroqTestStatus('idle');
-                  }}
-                  placeholder="Enter Groq Key (gsk_...)"
-                  className="w-full pl-3 pr-10 py-1.5 rounded-lg text-xs font-mono bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowGroqKey(!showGroqKey)}
-                  className="absolute right-2.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
-                  title={showGroqKey ? 'Hide key' : 'Show key'}
-                >
-                  {showGroqKey ? <EyeOff className="w-3.5 h-3.5 text-indigo-500" /> : <Eye className="w-3.5 h-3.5" />}
-                </button>
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={geminiTestStatus === 'testing'}
+                      className="px-3 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                    >
+                      {geminiTestStatus === 'testing' ? (
+                        <>
+                          <RefreshCw className="w-3 h-3 animate-spin" />
+                          <span>Validating...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-3 h-3" />
+                          <span>{geminiKey.trim() ? 'Validate & Save' : 'Clear Key'}</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
               </div>
 
-              {/* Active Groq Model Selector */}
-              <div className="flex items-center gap-2">
-                <label className="text-[11px] font-medium text-gray-500 shrink-0">Model:</label>
-                <select
-                  value={selectedModel}
-                  onChange={(e) => {
-                    const newModel = e.target.value;
-                    setSelectedModel(newModel);
-                    Storage.setGroqModel(newModel);
-                    onUpdateSettings({ ...settings, groqModel: newModel });
-                  }}
-                  className="w-full px-2 py-1 rounded-lg text-xs bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white focus:outline-none cursor-pointer"
-                >
-                  {SUPPORTED_GROQ_MODELS.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {groqTestStatus !== 'idle' && (
-                <div
-                  className={`text-[11px] p-2 rounded-lg flex items-center gap-1.5 leading-snug border ${
-                    groqTestStatus === 'success'
-                      ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
-                      : groqTestStatus === 'error'
-                      ? 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border-rose-200 dark:border-rose-800'
-                      : 'bg-indigo-50 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
-                  }`}
-                >
-                  {groqTestStatus === 'success' ? (
-                    <Check className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
-                  ) : groqTestStatus === 'error' ? (
-                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
-                  ) : (
-                    <RefreshCw className="w-3.5 h-3.5 shrink-0 animate-spin text-indigo-600" />
-                  )}
-                  <span className="break-all">{groqTestMsg}</span>
+              {/* SECTION: GROQ AI API KEY */}
+              <div className="p-3 rounded-xl bg-gray-50/80 dark:bg-zinc-800/40 border border-gray-200/80 dark:border-zinc-700/60 space-y-2">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                    <Sparkle className="w-3.5 h-3.5 text-indigo-500" />
+                    <span>Groq AI API</span>
+                  </span>
+                  <a
+                    href="https://console.groq.com/keys"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium"
+                  >
+                    <span>Get Key</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
                 </div>
-              )}
 
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  disabled={groqTestStatus === 'testing'}
-                  className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                >
-                  {groqTestStatus === 'testing' ? (
-                    <>
-                      <RefreshCw className="w-3 h-3 animate-spin" />
-                      <span>Validating...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-3 h-3" />
-                      <span>{groqKey.trim() ? 'Validate & Save' : 'Clear Key'}</span>
-                    </>
+                <form onSubmit={handleSaveGroqKey} className="space-y-2">
+                  <div className="relative flex items-center w-full">
+                    <input
+                      type={showGroqKey ? 'text' : 'password'}
+                      value={groqKey}
+                      onChange={(e) => {
+                        setGroqKey(e.target.value);
+                        setGroqTestStatus('idle');
+                      }}
+                      placeholder="Enter Groq Key (gsk_...)"
+                      className="w-full pl-3 pr-10 py-1.5 rounded-lg text-xs font-mono bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowGroqKey(!showGroqKey)}
+                      className="absolute right-2.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+                      title={showGroqKey ? 'Hide key' : 'Show key'}
+                    >
+                      {showGroqKey ? <EyeOff className="w-3.5 h-3.5 text-indigo-500" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+
+                  {/* Active Groq Model Selector */}
+                  <div className="flex items-center gap-2">
+                    <label className="text-[11px] font-medium text-gray-500 shrink-0">Model:</label>
+                    <select
+                      value={selectedModel}
+                      onChange={(e) => {
+                        const newModel = e.target.value;
+                        setSelectedModel(newModel);
+                        Storage.setGroqModel(newModel);
+                        onUpdateSettings({ ...settings, groqModel: newModel });
+                      }}
+                      className="w-full px-2 py-1 rounded-lg text-xs bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white focus:outline-none cursor-pointer"
+                    >
+                      {SUPPORTED_GROQ_MODELS.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {groqTestStatus !== 'idle' && (
+                    <div
+                      className={`text-[11px] p-2 rounded-lg flex items-center gap-1.5 leading-snug border ${
+                        groqTestStatus === 'success'
+                          ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                          : groqTestStatus === 'error'
+                          ? 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                          : 'bg-indigo-50 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
+                      }`}
+                    >
+                      {groqTestStatus === 'success' ? (
+                        <Check className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
+                      ) : groqTestStatus === 'error' ? (
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
+                      ) : (
+                        <RefreshCw className="w-3.5 h-3.5 shrink-0 animate-spin text-indigo-600" />
+                      )}
+                      <span className="break-all">{groqTestMsg}</span>
+                    </div>
                   )}
-                </button>
+
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={groqTestStatus === 'testing'}
+                      className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                    >
+                      {groqTestStatus === 'testing' ? (
+                        <>
+                          <RefreshCw className="w-3 h-3 animate-spin" />
+                          <span>Validating...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-3 h-3" />
+                          <span>{groqKey.trim() ? 'Validate & Save' : 'Clear Key'}</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
               </div>
-            </form>
-          </div>
-
-          {/* SECTION: DATA BRIDGE & CROSS-DEVICE TRANSFER (APK ↔ WEB) */}
-          <div className="p-3.5 rounded-xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-900/60 space-y-3">
-            <div>
-              <span className="text-xs font-bold text-purple-900 dark:text-purple-200 flex items-center gap-1.5">
-                <Download className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-                <span>Data Bridge &amp; Backup (APK &harr; Web)</span>
-              </span>
-              <p className="text-[11px] text-purple-700/80 dark:text-purple-300/80 mt-0.5">
-                Transfer transactions &amp; workspace records directly between your APK, Web browser, and AI Studio without cloud quota restrictions.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {/* 1. Export JSON */}
-              <button
-                type="button"
-                onClick={() => {
-                  Sound.click(settings.soundEnabled);
-                  onExportData();
-                }}
-                className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white dark:bg-[#1E293B] hover:bg-purple-100/70 dark:hover:bg-purple-900/40 border border-purple-200 dark:border-purple-800 text-purple-800 dark:text-purple-200 shadow-2xs transition-colors cursor-pointer"
-                title="Download full JSON workspace backup including all transactions"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Export JSON</span>
-              </button>
-
-              {/* 2. Import JSON */}
-              <label className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white dark:bg-[#1E293B] hover:bg-purple-100/70 dark:hover:bg-purple-900/40 border border-purple-200 dark:border-purple-800 text-purple-800 dark:text-purple-200 shadow-2xs transition-colors cursor-pointer">
-                <Upload className="w-3.5 h-3.5" />
-                <span>Import JSON</span>
-                <input
-                  type="file"
-                  accept=".json"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    const reader = new FileReader();
-                    reader.onload = (event) => {
-                      try {
-                        const content = event.target?.result as string;
-                        const success = onImportData(content);
-                        if (success) {
-                          toast.success('Successfully imported workspace data and transactions!');
-                        } else {
-                          toast.error('Invalid workspace file format.');
-                        }
-                      } catch {
-                        toast.error('Failed to parse JSON file.');
-                      }
-                    };
-                    reader.readAsText(file);
-                    e.target.value = '';
-                  }}
-                />
-              </label>
-
-              {/* 3. Export Excel & CSV Bundle */}
-              <button
-                type="button"
-                onClick={async () => {
-                  Sound.click(settings.soundEnabled);
-                  const exps = Storage.getExpenses();
-                  if (exps.length === 0) {
-                    toast.info('No expenses recorded to export.');
-                    return;
-                  }
-                  toast.success(`Exporting universal bundle (.xlsx + .csv) for ${exps.length} transactions...`);
-                  await downloadExpenseBundle(exps);
-                }}
-                className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white dark:bg-[#1E293B] hover:bg-purple-100/70 dark:hover:bg-purple-900/40 border border-purple-200 dark:border-purple-800 text-purple-800 dark:text-purple-200 shadow-2xs transition-colors cursor-pointer"
-                title="Export all transactions in Excel (.xlsx) and CSV formats"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Export Excel</span>
-              </button>
-            </div>
-          </div>
+            </>
+          )}
         </div>
 
         {/* Modal Footer */}

@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan for migrating to a fresh Supabase project: generating complete SQL schema initialization script with strict JWT-based Row Level Security (RLS), building a dedicated Migration & SQL tab in Settings, and implementing automatic master transaction seeding from the Android APK without data loss or duplicates.",
-  "updatedAt":  "2026-11-01T18:17:42.341525204Z",
-  "requestFeedback":  true,
-  "userFacing":  true
+  "summary": "Implementation plan to resolve APK auto-logout and incorrect credentials: eliminate destructive auto-purge logic in auth.ts, enforce permanent session persistence until manual logout, integrate Neon PostgreSQL database backend support, and add a direct 'Set or Reset Password' flow on the login screen.",
+  "updatedAt": "2026-11-02T15:03:00.661552656Z",
+  "requestFeedback": true,
+  "userFacing": true
 }
