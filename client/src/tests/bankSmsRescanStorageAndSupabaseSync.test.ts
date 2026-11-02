@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
 import { smsExpenseService, SmsTransactionCandidate, isDeepEqualExpense } from '../services/smsExpenseService';
 import { Storage } from '../utils/storage';
-import * as supabaseUtils from '../utils/supabase';
+import * as supabaseUtils from '../utils/neonSync';
 
 function setupMockStorage() {
   if (typeof globalThis.localStorage === 'undefined') {

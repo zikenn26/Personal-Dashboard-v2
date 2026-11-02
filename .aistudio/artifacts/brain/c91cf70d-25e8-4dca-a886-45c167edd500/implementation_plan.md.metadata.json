@@ -1,6 +1,6 @@
 {
-  "summary": "Implementation plan to remove the Set Password button/mode from AuthModal, completely remove Supabase across the client and backend, and establish Neon Serverless PostgreSQL as the sole cloud database and sync layer using the provided connection string.",
-  "updatedAt": "2026-11-02T15:33:26.944197812Z",
+  "summary": "Implementation plan to establish persistent bearer session token authentication, eliminate startup auth race conditions, rename all supabase files to neonSync/neonConfig, and wire direct Neon DB pool credential validation.",
+  "updatedAt": "2026-11-02T16:06:13.524969719Z",
   "requestFeedback": true,
   "userFacing": true
 }

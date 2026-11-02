@@ -1,7 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { Device } from '@capacitor/device';
 import { AuthUser } from '../types';
-import { getSupabaseClient } from '../utils/supabase';
+import { getSupabaseClient } from '../utils/neonSync';
 type CapacitorDevice = typeof Device;
 
 /**

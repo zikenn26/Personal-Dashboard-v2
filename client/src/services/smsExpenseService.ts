@@ -10,7 +10,7 @@ import { Sound } from '../utils/audio';
 import { parseSmsTransaction } from './smsParser';
 import { normalizeExpenseDateKey } from '../utils/expenseUtils';
 import { generateUUID } from '../utils/uuid';
-import { scheduleAutoSyncToSupabase, flushAutoSyncImmediately, getCustomWorkspaceIdentifier } from '../utils/supabase';
+import { scheduleAutoSyncToSupabase, flushAutoSyncImmediately, getCustomWorkspaceIdentifier } from '../utils/neonSync';
 import { toast } from 'sonner';
 
 export interface SmsTransactionCandidate {

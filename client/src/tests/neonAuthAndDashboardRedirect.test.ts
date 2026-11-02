@@ -7,7 +7,7 @@ import {
   broadcastWorkspaceUpdate,
   subscribeToRealtimeWorkspace,
   getCustomWorkspaceIdentifier,
-} from '../utils/supabase';
+} from '../utils/neonSync';
 import { AuthUser } from '../types';
 
 beforeAll(() => {

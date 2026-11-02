@@ -8,7 +8,7 @@ import {
   scheduleAutoSyncToSupabase,
   flushAutoSyncImmediately,
   fetchWorkspaceFromSupabase,
-} from '../utils/supabase';
+} from '../utils/neonSync';
 
 export interface ScreenTimePluginInterface {
   hasPermission(): Promise<{ granted: boolean }>;

@@ -1,4 +1,4 @@
-import { uploadFileToSupabaseStorage, isSupabaseConfigured, getSupabaseClient } from './supabase';
+import { uploadFileToSupabaseStorage, isSupabaseConfigured, getSupabaseClient } from './neonSync';
 
 /**
  * Optimizes an avatar image file (or Blob) to a lightweight, crisp square avatar.

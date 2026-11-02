@@ -3,7 +3,7 @@ import { Storage, STORAGE_KEYS } from '../utils/storage';
 import { smsExpenseService, isTraiServiceSender, isLikelyFinancialSms } from '../services/smsExpenseService';
 import { parseSmsTransaction } from '../services/smsParser';
 import { isCreditTransaction, getTransactionDirection } from '../utils/expenseUtils';
-import * as supabaseUtils from '../utils/supabase';
+import * as supabaseUtils from '../utils/neonSync';
 
 function setupMockStorage() {
   if (typeof globalThis.localStorage === 'undefined') {

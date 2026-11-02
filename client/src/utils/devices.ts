@@ -8,7 +8,7 @@ import {
   scheduleAutoSyncToSupabase,
   subscribeToPresenceState,
   getOnlineDeviceIds,
-} from './supabase';
+} from './neonSync';
 import { Storage } from './storage';
 
 export { DEVICE_SESSION_ID, getOnlineDeviceIds, subscribeToPresenceState };

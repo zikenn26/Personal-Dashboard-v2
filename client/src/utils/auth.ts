@@ -2,15 +2,17 @@ import { AuthUser } from '../types';
 import {
   getSupabaseClient,
   isSupabaseConfigured,
+  isNeonConfigured,
   setCustomWorkspaceIdentifier,
   setCustomWorkspaceEmail,
   getCustomWorkspaceIdentifier,
-} from './supabase';
+} from './neonSync';
 import { hashPassword, verifyPasswordHash } from './crypto';
 import { Storage, BLANK_PROFILE } from './storage';
 import { smsExpenseService } from '../services/smsExpenseService';
 
-const AUTH_STORAGE_KEY = 'notion_os_auth_user_v1';
+export const AUTH_STORAGE_KEY = 'notion_os_auth_user_v1';
+export const TOKEN_STORAGE_KEY = 'notion_os_auth_token_v1';
 const SAVED_USERS_KEY = 'notion_os_saved_accounts_v1';
 const USER_CREDENTIALS_KEY = 'notion_os_user_credentials_v1';
 const LOGIN_ATTEMPTS_KEY = 'notion_os_login_attempts_v1';
@@ -307,7 +309,45 @@ export const isAccountAlreadyRegistered = async (identifier: string): Promise<bo
 
 export const Auth = {
   /**
-   * Get currently logged-in user from LocalStorage
+   * Get persistent bearer session token
+   */
+  getAuthToken: (): string | null => {
+    try {
+      if (typeof window === 'undefined') return null;
+      return localStorage.getItem(TOKEN_STORAGE_KEY);
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * Save persistent bearer session token
+   */
+  setAuthToken: (token: string) => {
+    try {
+      if (typeof window !== 'undefined' && token) {
+        localStorage.setItem(TOKEN_STORAGE_KEY, token);
+      }
+    } catch {
+      // ignore
+    }
+  },
+
+  /**
+   * Clear persistent bearer session token
+   */
+  clearAuthToken: () => {
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(TOKEN_STORAGE_KEY);
+      }
+    } catch {
+      // ignore
+    }
+  },
+
+  /**
+   * Get currently logged-in user immediately from LocalStorage on startup
    */
   getCurrentUser: (): AuthUser | null => {
     try {
@@ -315,7 +355,7 @@ export const Auth = {
       if (isSignedOut) {
         return null;
       }
-      const stored = localStorage.getItem(AUTH_STORAGE_KEY);
+      const stored = typeof window !== 'undefined' ? localStorage.getItem(AUTH_STORAGE_KEY) : null;
       if (stored) {
         const user = JSON.parse(stored);
         if (user && user.email) {
@@ -328,6 +368,18 @@ export const Auth = {
               // ignore
             }
           }
+
+          // Ensure session token exists in local storage
+          const existingToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+          if (!existingToken) {
+            const fallbackToken = `neon_tok_session_${Date.now()}_${Math.random().toString(36).substring(2, 12)}`;
+            try {
+              localStorage.setItem(TOKEN_STORAGE_KEY, fallbackToken);
+            } catch {
+              // ignore
+            }
+          }
+
           setCustomWorkspaceIdentifier(getUserWorkspaceKey(user));
           setCustomWorkspaceEmail(user.email);
           return user;
@@ -341,13 +393,20 @@ export const Auth = {
   },
 
   /**
-   * Save user session locally
+   * Save user session and token locally
    */
-  setCurrentUser: (user: AuthUser | null) => {
+  setCurrentUser: (user: AuthUser | null, token?: string) => {
     try {
       if (user) {
         localStorage.removeItem('notion_os_auth_signed_out');
         localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+        if (token) {
+          localStorage.setItem(TOKEN_STORAGE_KEY, token);
+        } else if (!localStorage.getItem(TOKEN_STORAGE_KEY)) {
+          const generatedToken = `neon_tok_session_${Date.now()}_${Math.random().toString(36).substring(2, 12)}`;
+          localStorage.setItem(TOKEN_STORAGE_KEY, generatedToken);
+        }
+
         setCustomWorkspaceIdentifier(getUserWorkspaceKey(user));
         setCustomWorkspaceEmail(user.email);
         // Save into known accounts list
@@ -366,6 +425,7 @@ export const Auth = {
         } catch {}
       } else {
         localStorage.removeItem(AUTH_STORAGE_KEY);
+        localStorage.removeItem(TOKEN_STORAGE_KEY);
         localStorage.setItem('notion_os_auth_signed_out', 'true');
         setCustomWorkspaceIdentifier('user_guest');
         setCustomWorkspaceEmail('guest@workspace.local');
@@ -399,12 +459,12 @@ export const Auth = {
 
   /**
    * Sign In with Username or Email & Password
-   * Strict password verification across devices via Supabase Cloud and local cache
+   * Strict password verification checking against local cache and the Neon DB pool connection
    */
   signIn: async (
     emailOrUsername: string,
     pass: string
-  ): Promise<{ success: boolean; user?: AuthUser; message?: string }> => {
+  ): Promise<{ success: boolean; user?: AuthUser; token?: string; message?: string }> => {
     const raw = emailOrUsername.trim().toLowerCase();
     const cleanId = raw.replace(/[^a-z0-9]/g, '_');
     const cleanPass = pass;
@@ -430,7 +490,7 @@ export const Auth = {
       timestamp: new Date().toISOString(),
     });
 
-    // 1. Local-device account check (fastest, offline-safe, persistent across restarts)
+    // 1. Local-device account check (fastest, offline-safe, persistent across app resume)
     const credentialsMap = getLocalCredentialsMap();
     const storedRecord = credentialsMap[raw] || credentialsMap[cleanId];
 
@@ -442,15 +502,66 @@ export const Auth = {
           user.id = `usr_${cleanId}`;
         }
         await saveLocalCredential(user.email, cleanPass, user);
-        Auth.setCurrentUser(user);
+        
+        let token = Auth.getAuthToken();
+        if (!token) {
+          token = `neon_tok_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+        }
+        Auth.setCurrentUser(user, token);
         setCustomWorkspaceIdentifier(getUserWorkspaceKey(user));
         setCustomWorkspaceEmail(user.email);
         recordLoginSuccess(raw);
-        return { success: true, user, message: 'Signed in successfully' };
+
+        // Notify server sync pool in background to keep active session synchronized
+        void fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: raw, password: cleanPass }),
+        }).then(async (r) => {
+          if (r.ok) {
+            const data = await r.json();
+            if (data.token) {
+              Auth.setAuthToken(data.token);
+            }
+          }
+        }).catch(() => {});
+
+        return { success: true, user, token, message: 'Signed in successfully' };
       }
     }
 
-    // 2. Neon Cloud Database Account check via server sync hub
+    // 2. Neon DB pool connection check via server auth route (/api/auth/login)
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: raw, password: cleanPass }),
+      });
+      if (response.ok) {
+        const authData = await response.json();
+        if (authData.success && authData.user) {
+          const cloudUser: AuthUser = authData.user;
+          const serverToken: string = authData.token || `neon_tok_${Date.now()}`;
+
+          // Cache credentials and session locally for instant restore on subsequent app resume
+          await saveLocalCredential(cloudUser.email, cleanPass, cloudUser);
+          Auth.setCurrentUser(cloudUser, serverToken);
+          setCustomWorkspaceIdentifier(getUserWorkspaceKey(cloudUser));
+          setCustomWorkspaceEmail(cloudUser.email);
+          recordLoginSuccess(raw);
+          return {
+            success: true,
+            user: cloudUser,
+            token: serverToken,
+            message: 'Signed in successfully via Neon Database pool',
+          };
+        }
+      }
+    } catch (neonPoolErr) {
+      console.warn('[AUTH] Direct Neon pool login notice:', neonPoolErr);
+    }
+
+    // 3. Neon DB workspace account record fallback via /api/sync/workspace
     try {
       const emailVariant = raw.includes('@') ? raw : `${cleanId}@workspace.local`;
       const query = new URLSearchParams({
@@ -476,14 +587,13 @@ export const Auth = {
                 provider: 'neon',
               };
 
-              // Cache credentials locally so subsequent offline/instant logins succeed
+              const fallbackToken = `neon_tok_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
               await saveLocalCredential(cloudUser.email, cleanPass, cloudUser);
-
-              Auth.setCurrentUser(cloudUser);
+              Auth.setCurrentUser(cloudUser, fallbackToken);
               setCustomWorkspaceIdentifier(getUserWorkspaceKey(cloudUser));
               setCustomWorkspaceEmail(cloudUser.email);
               recordLoginSuccess(raw);
-              return { success: true, user: cloudUser, message: 'Signed in successfully via Neon Database' };
+              return { success: true, user: cloudUser, token: fallbackToken, message: 'Signed in successfully via Neon Database' };
             }
           }
         }
@@ -492,7 +602,7 @@ export const Auth = {
       console.warn('[AUTH] Neon cloud account lookup notice:', cloudLookupErr);
     }
 
-    // 3. Failed authentication
+    // 4. Failed authentication
     recordLoginFailure(raw);
 
     return {
@@ -942,29 +1052,27 @@ export const Auth = {
         name: cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
         createdAt: nowMs,
         lastLoginAt: nowMs,
-        provider: 'supabase',
+        provider: 'neon',
       };
     }
 
     // Save locally
+    const sessionToken = `neon_tok_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
     await saveLocalCredential(cleanEmail, cleanPass, user);
     if (!raw.includes('@')) {
       await saveLocalCredential(raw, cleanPass, user);
     }
 
-    // Set as active user immediately
-    Auth.setCurrentUser(user);
+    // Set as active user immediately with session token
+    Auth.setCurrentUser(user, sessionToken);
     setCustomWorkspaceIdentifier(getUserWorkspaceKey(user));
     setCustomWorkspaceEmail(cleanEmail);
     recordLoginSuccess(raw);
 
-    // Sync cloud/supabase if available in background
+    // Sync cloud/Neon if available in background
     const client = getSupabaseClient();
     if (client && isSupabaseConfigured()) {
       void syncCloudAccountRecord(client, cleanEmail, cleanPass, user).catch(() => {});
-      try {
-        void client.auth.updateUser({ password: cleanPass }).catch(() => {});
-      } catch {}
     }
 
     return {
@@ -975,7 +1083,7 @@ export const Auth = {
   },
 
   /**
-   * Automatically verify active session against Supabase Cloud:
+   * Automatically verify active session against Neon DB pool:
    * Enforces permanent session retention on the Android APK and web client.
    * Sessions persist indefinitely until the user explicitly clicks "Sign Out".
    */
@@ -983,18 +1091,20 @@ export const Auth = {
     const user = Auth.getCurrentUser();
     if (!user) return true;
 
-    // Never auto-logout on network timeouts, database switches, or app dismissals
-    const client = getSupabaseClient();
-    if (client && isSupabaseConfigured()) {
+    const token = Auth.getAuthToken();
+    if (token) {
       try {
-        if (user.provider === 'supabase') {
-          const { data: authData } = await client.auth.getUser();
-          if (authData?.user) {
-            void ensureUserWorkspaceInitialized(client, user).catch(() => {});
+        const res = await fetch('/api/auth/verify', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.valid && data.user) {
+            return true;
           }
         }
       } catch {
-        // Retain session offline
+        // Retain session offline resiliently across app dismissals and restarts
       }
     }
     return true;

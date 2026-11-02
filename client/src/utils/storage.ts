@@ -1249,7 +1249,7 @@ import {
   getCustomWorkspaceEmail,
   setCustomWorkspaceIdentifier,
   setCustomWorkspaceEmail,
-} from './supabase';
+} from './neonSync';
 
 // Helper to determine if current workspace is the mock demo account
 export const isDemoWorkspace = (): boolean => {

@@ -12,7 +12,7 @@ import {
   isCreditTransaction,
   compareExpensesByDateTimeDesc,
 } from '../utils/expenseUtils';
-import { getCustomWorkspaceIdentifier, setCustomWorkspaceIdentifier, setCustomWorkspaceEmail } from '../utils/supabase';
+import { getCustomWorkspaceIdentifier, setCustomWorkspaceIdentifier, setCustomWorkspaceEmail } from '../utils/neonSync';
 
 function setupMockLocalStorage() {
   if (typeof globalThis.window === 'undefined') {

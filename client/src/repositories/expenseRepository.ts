@@ -1,6 +1,6 @@
 import { ExpenseItem, OutboxMutation, ExpenseSyncStatus, ExpenseSyncStatusState } from '../types';
 import { normalizeExpenseDateKey, getLocalDateKey } from '../utils/expenseUtils';
-import { getSupabaseClient, getCustomWorkspaceIdentifier, fetchExpensesFromDedicatedTable } from '../utils/supabase';
+import { getSupabaseClient, getCustomWorkspaceIdentifier, fetchExpensesFromDedicatedTable } from '../utils/neonSync';
 import { generateUUID, isValidUUID } from '../utils/uuid';
 
 export class DurableStorageError extends Error {

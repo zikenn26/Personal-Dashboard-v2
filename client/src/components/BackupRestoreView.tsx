@@ -20,7 +20,7 @@ import {
   Radio,
 } from 'lucide-react';
 import { Storage } from '../utils/storage';
-import { isSupabaseConfigured } from '../utils/supabase';
+import { isSupabaseConfigured } from '../utils/neonSync';
 
 interface BackupRestoreViewProps {
   onExportData: () => void;

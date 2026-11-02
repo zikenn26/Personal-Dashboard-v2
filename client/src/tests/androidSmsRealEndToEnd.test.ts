@@ -3,7 +3,7 @@ import { parseSmsTransaction } from '../services/smsParser';
 import { smsExpenseService, SmsTransaction, smsPluginWebImpl, sanitizeSmsForLog, isTraiServiceSender } from '../services/smsExpenseService';
 import { Storage } from '../utils/storage';
 import { ExpenseItem } from '../types';
-import * as supabaseUtils from '../utils/supabase';
+import * as supabaseUtils from '../utils/neonSync';
 
 function setupMockStorage() {
   if (typeof globalThis.localStorage === 'undefined') {

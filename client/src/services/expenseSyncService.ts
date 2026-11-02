@@ -17,7 +17,7 @@ import {
   pushExpenseMutationsToDedicatedTable,
   fetchExpensesFromDedicatedTable,
   migrateJsonbExpensesToDedicatedTable,
-} from '../utils/supabase';
+} from '../utils/neonSync';
 import { getApiBaseUrl } from '../utils/apiConfig';
 import { generateUUID, isValidUUID } from '../utils/uuid';
 import { mergeExpenseLists } from '../utils/expenseUtils';

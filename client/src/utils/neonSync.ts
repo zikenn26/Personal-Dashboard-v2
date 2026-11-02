@@ -8,7 +8,7 @@ import {
   getEffectiveSupabaseAnonKey,
   setCustomSupabaseCredentials,
   hasCustomSupabaseCredentials,
-} from './supabaseConfig';
+} from './neonConfig';
 import { mergeExpenseLists, normalizeExpenseDateKey, getLocalDateKey } from './expenseUtils';
 import { OWNER_GKN_HABITS, OWNER_GKN_EXPENSES } from './userUtils';
 import { ExpenseItem, OutboxMutation } from '../types';
@@ -90,6 +90,9 @@ export const resetSupabaseClient = (): void => {
  * Neon Serverless PostgreSQL is authoritative and active.
  */
 export const isSupabaseConfigured = (): boolean => {
+  return true;
+};
+export const isNeonConfigured = (): boolean => {
   return true;
 };
 

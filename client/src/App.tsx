@@ -118,7 +118,7 @@ import {
   checkHasNewerCloudWorkspace,
   setWorkOfflineMode,
   getPayloadSyncTimestamp,
-} from './utils/supabase';
+} from './utils/neonSync';
 import { nativeService } from './services/nativeService';
 import { normalizeExpenseDateKey, getLocalDateKey } from './utils/expenseUtils';
 import { toast } from 'sonner';
@@ -306,7 +306,14 @@ export default function App() {
   const [isGlobalAvatarPickerOpen, setIsGlobalAvatarPickerOpen] = useState(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [showQuickCapture, setShowQuickCapture] = useState(false);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(() => !Auth.getCurrentUser() || authRequest === 'signup' || authRequest === 'signin');
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(() => {
+    const u = Auth.getCurrentUser();
+    const token = Auth.getAuthToken();
+    if (u && token) {
+      return authRequest === 'signup' || authRequest === 'signin';
+    }
+    return !u || authRequest === 'signup' || authRequest === 'signin';
+  });
   const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup' | 'reset'>(() => authRequest === 'signup' ? 'signup' : 'signin');
   const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(() => {
     try {
@@ -743,85 +750,16 @@ export default function App() {
     return unsub;
   }, []);
 
-  // Listen to Supabase Auth state changes (sign-in, token refresh, password recovery)
+  // Startup & resume authentication state: ensure session token and user are verified immediately
+  // from persistent local storage before any remote network calls, preventing false re-logins on app resume.
   useEffect(() => {
-    if (!isSupabaseConfigured()) return;
-    const client = getSupabaseClient();
-    if (!client) return;
-    let isSubscribed = true;
-
-    const { data: subscription } = client.auth.onAuthStateChange(async (event, session) => {
-      console.info('[AUTH_DIAGNOSTIC] onAuthStateChange event:', event, { hasUser: Boolean(session?.user) });
-      if (!isSubscribed) return;
-
-      if (event === 'PASSWORD_RECOVERY') {
-        setAuthInitialMode('reset');
-        setIsAuthModalOpen(true);
-      } else if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
-        if (session?.user) {
-          const authUser = session.user;
-          const cleanEmail = (authUser.email || '').trim().toLowerCase();
-          const isSignedOut = localStorage.getItem('notion_os_auth_signed_out') === 'true';
-
-          if (!isSignedOut && (!currentUser || currentUser.email.toLowerCase() !== cleanEmail || currentUser.id !== authUser.id)) {
-            const displayName =
-              authUser.user_metadata?.full_name ||
-              authUser.user_metadata?.name ||
-              cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-
-            const rawMetaAvatar = authUser.user_metadata?.avatar_url || authUser.user_metadata?.avatarUrl || '';
-            const user: AuthUser = {
-              id: authUser.id,
-              email: cleanEmail,
-              name: displayName,
-              avatarUrl: isAvatarMatchingUserEmailDomain(rawMetaAvatar, cleanEmail) ? rawMetaAvatar : '',
-              createdAt: authUser.created_at ? new Date(authUser.created_at).getTime() : Date.now(),
-              lastLoginAt: Date.now(),
-              provider: 'supabase',
-            };
-
-            Auth.setCurrentUser(user);
-            void handleAuthenticated(user);
-          }
-        }
-      }
-    });
-
-    // Also check initial session on mount if currentUser is not yet set
-    void client.auth.getSession().then(({ data }) => {
-      if (!isSubscribed) return;
-      if (data?.session?.user) {
-        const isSignedOut = localStorage.getItem('notion_os_auth_signed_out') === 'true';
-        if (!isSignedOut && (!currentUser || currentUser.id !== data.session.user.id)) {
-          const authUser = data.session.user;
-          const cleanEmail = (authUser.email || '').trim().toLowerCase();
-          const displayName =
-            authUser.user_metadata?.full_name ||
-            authUser.user_metadata?.name ||
-            cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-
-          const rawMetaAvatar = authUser.user_metadata?.avatar_url || authUser.user_metadata?.avatarUrl || '';
-          const user: AuthUser = {
-            id: authUser.id,
-            email: cleanEmail,
-            name: displayName,
-            avatarUrl: isAvatarMatchingUserEmailDomain(rawMetaAvatar, cleanEmail) ? rawMetaAvatar : '',
-            createdAt: authUser.created_at ? new Date(authUser.created_at).getTime() : Date.now(),
-            lastLoginAt: Date.now(),
-            provider: 'supabase',
-          };
-
-          Auth.setCurrentUser(user);
-          void handleAuthenticated(user);
-        }
-      }
-    });
-
-    return () => {
-      isSubscribed = false;
-      subscription?.subscription?.unsubscribe();
-    };
-  }, [currentUser]);
+    const user = Auth.getCurrentUser();
+    const token = Auth.getAuthToken();
+    if (user && token) {
+      // Validate session token with Neon DB pool in background without disrupting offline/active UI
+      void Auth.verifyCurrentSession();
+    }
+  }, []);
 
   // Vault hydration is asynchronous because secrets are decrypted with Web Crypto only after the PIN is available.
   useEffect(() => {

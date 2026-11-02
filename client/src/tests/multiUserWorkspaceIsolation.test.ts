@@ -13,7 +13,7 @@ import {
   broadcastWorkspaceUpdate,
   subscribeToRealtimeWorkspace,
   fetchWorkspaceFromSupabase,
-} from '../utils/supabase';
+} from '../utils/neonSync';
 import { AuthUser, ExpenseItem, HabitItem, TodoItem } from '../types';
 
 beforeAll(() => {

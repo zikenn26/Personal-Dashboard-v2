@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getSupabaseClient, isSupabaseConfigured } from '../utils/supabase';
+import { getSupabaseClient, isSupabaseConfigured } from '../utils/neonSync';
 import { Auth } from '../utils/auth';
 
 export type ConnectionState =

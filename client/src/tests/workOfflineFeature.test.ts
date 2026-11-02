@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import * as supabaseModule from '../utils/supabase';
+import * as supabaseModule from '../utils/neonSync';
 import { INITIAL_SETTINGS } from '../utils/storage';
 
 describe('Work Offline Feature & Auto-Sync Suppression', () => {

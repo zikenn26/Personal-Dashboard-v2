@@ -21,7 +21,7 @@ import {
   broadcastAlarmAction,
   isSupabaseConfigured,
   scheduleAutoSyncToSupabase,
-} from '../utils/supabase';
+} from '../utils/neonSync';
 
 type ClockStyle = 'chronometer' | 'analog' | 'cards';
 

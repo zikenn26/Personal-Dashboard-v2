@@ -1,5 +1,5 @@
 import { Storage } from '../utils/storage';
-import { flushAutoSyncImmediately, isSupabaseConfigured } from '../utils/supabase';
+import { flushAutoSyncImmediately, isSupabaseConfigured } from '../utils/neonSync';
 import {
   TodoItem,
   HabitItem,

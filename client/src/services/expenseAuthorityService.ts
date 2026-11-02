@@ -11,7 +11,7 @@
  */
 
 import { ExpenseItem } from '../types';
-import { getSupabaseClient, getCustomWorkspaceIdentifier } from '../utils/supabase';
+import { getSupabaseClient, getCustomWorkspaceIdentifier } from '../utils/neonSync';
 import { getOrCreateDeviceId, isCloudQuotaOrNetworkError } from './deviceService';
 import { VersionVector, createVersionVector } from '../utils/versioning';
 

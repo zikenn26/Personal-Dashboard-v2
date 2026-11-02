@@ -7,7 +7,7 @@ import {
   isDummyMockAvatar,
   getUserInitials,
 } from '../utils/userUtils';
-import { setCustomWorkspaceIdentifier, setCustomWorkspaceEmail } from '../utils/supabase';
+import { setCustomWorkspaceIdentifier, setCustomWorkspaceEmail } from '../utils/neonSync';
 import { AuthUser } from '../types';
 
 beforeAll(() => {

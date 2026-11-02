@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isSupabaseConfigured, validateSupabaseConnection } from './utils/supabase';
+import { isSupabaseConfigured, validateSupabaseConnection } from './utils/neonSync';
 
 describe('Supabase client configuration', () => {
   it('handles client credentials correctly based on environment status', async () => {

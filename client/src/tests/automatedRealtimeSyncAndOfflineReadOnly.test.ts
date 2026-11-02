@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ConnectionPolicyManager } from '../services/connectionPolicy';
 import { smsExpenseService } from '../services/smsExpenseService';
 import { Storage } from '../utils/storage';
-import * as supabaseModule from '../utils/supabase';
+import * as supabaseModule from '../utils/neonSync';
 
 function setupMockStorage() {
   if (typeof globalThis.localStorage === 'undefined') {

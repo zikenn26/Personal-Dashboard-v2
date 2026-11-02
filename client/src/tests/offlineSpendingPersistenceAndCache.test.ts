@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { Storage, STORAGE_KEYS } from '../utils/storage';
 import { ExpenseItem } from '../types';
 import { normalizeExpenseDateKey, getLocalDateKey } from '../utils/expenseUtils';
-import { setCustomWorkspaceEmail, setCustomWorkspaceIdentifier } from '../utils/supabase';
+import { setCustomWorkspaceEmail, setCustomWorkspaceIdentifier } from '../utils/neonSync';
 
 if (typeof globalThis.localStorage === 'undefined') {
   const store: Record<string, string> = {};
