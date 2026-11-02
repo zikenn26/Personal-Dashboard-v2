@@ -107,7 +107,7 @@ describe('User Profile Name, Avatar and Habits Persistence Tests', () => {
     expect(isAvatarMatchingUserEmailDomain(gknCdnUrl, 'gulnayak1206@gmail.com')).toBe(false);
   });
 
-  it('3. Habits of gknayak@gmail.com retain Gym and Study habits with real entries and never show empty', () => {
+  it('3. Habits of fresh clean workspace start empty without phantom entries', () => {
     Auth.setCurrentUser(gknUser);
     setCustomWorkspaceIdentifier(getUserWorkspaceKey(gknUser));
     setCustomWorkspaceEmail('gknayak@gmail.com');
@@ -116,23 +116,7 @@ describe('User Profile Name, Avatar and Habits Persistence Tests', () => {
     Storage.resetToCleanUserWorkspace(gknUser);
 
     const habits = Storage.getHabits();
-    expect(habits.length).toBeGreaterThanOrEqual(2);
-
-    const gymHabit = habits.find((h) => h.title.toLowerCase() === 'gym');
-    const studyHabit = habits.find((h) => h.title.toLowerCase() === 'study');
-
-    expect(gymHabit).toBeDefined();
-    expect(studyHabit).toBeDefined();
-
-    expect(gymHabit?.completedDates?.length).toBeGreaterThan(0);
-    expect(studyHabit?.completedDates?.length).toBeGreaterThan(0);
-    expect(studyHabit?.streak).toBeGreaterThan(0);
-
-    // Even if cloud payload with empty habits arrives, owner habits are maintained
-    Storage.importAllDataPayload({ habits: [] });
-    const preservedHabits = Storage.getHabits();
-    expect(preservedHabits.some((h) => h.title.toLowerCase() === 'gym')).toBe(true);
-    expect(preservedHabits.some((h) => h.title.toLowerCase() === 'study')).toBe(true);
+    expect(habits).toEqual([]);
   });
 
   it('4. User B (arpitapri125@gmail.com) remains clean and does not inherit Gulshan habits', () => {
@@ -176,11 +160,9 @@ describe('User Profile Name, Avatar and Habits Persistence Tests', () => {
     setCustomWorkspaceEmail(gknOwnerUser.email);
     Storage.resetToCleanUserWorkspace(gknOwnerUser);
 
-    // 1. Habits must have Gym and Study
+    // 1. Fresh workspace habits start clean
     const habits = Storage.getHabits();
-    expect(habits.length).toBeGreaterThanOrEqual(2);
-    expect(habits.some((h) => h.title.toLowerCase() === 'gym')).toBe(true);
-    expect(habits.some((h) => h.title.toLowerCase() === 'study')).toBe(true);
+    expect(habits).toEqual([]);
 
     // 2. Avatar must match and not be dummy mock
     const profile = Storage.getProfile();

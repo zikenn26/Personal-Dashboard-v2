@@ -93,20 +93,22 @@ describe('Authentication Engine & Persistence', { timeout: 30000 }, () => {
     expect(user2?.email).toBe('multidevice@example.com');
   });
 
-  it('authenticates cloud-persisted account (gknayak@gmail.com) on a fresh client with empty localStorage', async () => {
+  it('rejects sign-in attempts for purged accounts (gknayak@gmail.com, arpitapri125@gmail.com) on a fresh client', async () => {
     // Clear localStorage to simulate brand new APK installation on Android
     localStorage.clear();
     expect(Auth.getCurrentUser()).toBeNull();
 
-    // Sign in with the user's credentials
-    const loginRes = await Auth.signIn('gknayak@gmail.com', 'Gulshan@12345!');
-    expect(loginRes.success).toBe(true);
-    expect(loginRes.user?.email).toBe('gknayak@gmail.com');
+    // Sign in attempts must be rejected since accounts were completely deleted
+    const loginGkn = await Auth.signIn('gknayak@gmail.com', 'Gulshan@12345!');
+    expect(loginGkn.success).toBe(false);
+    expect(loginGkn.user).toBeUndefined();
 
-    // Verify session was established and cached in localStorage
-    const user = Auth.getCurrentUser();
-    expect(user?.email).toBe('gknayak@gmail.com');
-    expect(user?.name).toBeTruthy();
+    const loginArp = await Auth.signIn('arpitapri125@gmail.com', 'Arpita@12345!');
+    expect(loginArp.success).toBe(false);
+    expect(loginArp.user).toBeUndefined();
+
+    // Verify session remains logged out
+    expect(Auth.getCurrentUser()).toBeNull();
   });
 
   it('strictly blocks duplicate signups for gknayak or existing usernames to avoid conflicts', async () => {

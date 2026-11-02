@@ -309,59 +309,6 @@ export function getInitialsColorClass(name?: string | null): {
 
 import type { HabitItem, ExpenseItem } from '../types';
 
-// Authoritative Study & Gym habits for primary user Gulshan Kumar Nayak (gknayak@gmail.com)
-export const OWNER_GKN_HABITS: HabitItem[] = [
-  {
-    id: 'hb-1790839137566',
-    icon: '🏋️',
-    color: '#6366F1',
-    title: 'Gym',
-    streak: 1,
-    category: 'Health & Fitness',
-    updatedAt: 1791912673006,
-    completedDays: [false, false, false, false, false, false, false],
-    completedDates: [
-      '2026-10-01',
-      '2026-10-06',
-      '2026-10-07',
-      '2026-10-08',
-      '2026-10-09',
-      '2026-10-10',
-      '2026-10-12',
-      '2026-10-13',
-    ],
-  },
-  {
-    id: 'hb-1790936989123-g51jr',
-    icon: '📚',
-    color: '#10B981',
-    title: 'Study',
-    streak: 3,
-    category: 'Learning',
-    updatedAt: 1792578312789,
-    completedDays: [false, false, true, false, false, false, false],
-    completedDates: [
-      '2026-10-01',
-      '2026-10-02',
-      '2026-10-04',
-      '2026-10-05',
-      '2026-10-06',
-      '2026-10-07',
-      '2026-10-08',
-      '2026-10-09',
-      '2026-10-10',
-      '2026-10-11',
-      '2026-10-12',
-      '2026-10-13',
-      '2026-10-14',
-      '2026-10-21',
-    ],
-  },
-];
-
-import rawOwnerGknExpenses from '../data/ownerGknExpenses.json';
-
-// Authoritative verified baseline expenses for primary user Gulshan Kumar Nayak (gknayak@gmail.com)
-// Sourced directly from authentic Supabase / Money Manager dataset (517 real transactions)
-export const OWNER_GKN_EXPENSES: ExpenseItem[] = rawOwnerGknExpenses as ExpenseItem[];
+export const OWNER_GKN_HABITS: HabitItem[] = [];
+export const OWNER_GKN_EXPENSES: ExpenseItem[] = [];
 

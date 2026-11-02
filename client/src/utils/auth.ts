@@ -87,7 +87,7 @@ export const purgeLegacyAccounts = () => {
         const lower = k.toLowerCase();
         if (
           lower.includes('gulnayak') ||
-          (lower.includes('@') && lower !== 'gknayak@gmail.com' && lower !== 'arpitapri125@gmail.com')
+          (lower.includes('gknayak') || lower.includes('arpita') || lower.includes('gulnayak'))
         ) {
           delete map[k];
           changed = true;
@@ -105,30 +105,39 @@ export const purgeLegacyAccounts = () => {
       if (Array.isArray(saved)) {
         saved = saved.filter((u: any) => {
           const em = (u?.email || '').toLowerCase();
-          return em === 'gknayak@gmail.com' || em === 'arpitapri125@gmail.com';
+          return !em.includes('gknayak') && !em.includes('arpita') && !em.includes('gulnayak');
         });
         localStorage.setItem(SAVED_USERS_KEY, JSON.stringify(saved));
       }
     }
 
-    // 3. Purge current session if logged into gulnayak or non-whitelisted account
+    // 3. Purge current session if logged into any of the deleted accounts
     const currentUserRaw = localStorage.getItem(AUTH_STORAGE_KEY);
     if (currentUserRaw) {
       try {
         const parsed = JSON.parse(currentUserRaw);
         const em = (parsed?.email || '').toLowerCase();
-        if (em.includes('gulnayak') || (em.includes('@') && em !== 'gknayak@gmail.com' && em !== 'arpitapri125@gmail.com')) {
+        if (em.includes('gknayak') || em.includes('arpita') || em.includes('gulnayak')) {
           localStorage.removeItem(AUTH_STORAGE_KEY);
           localStorage.setItem('notion_os_auth_signed_out', 'true');
+          setCustomWorkspaceIdentifier('user_guest');
+          setCustomWorkspaceEmail('guest@workspace.local');
         }
       } catch {}
     }
 
-    // 4. Purge all localStorage keys containing gulnayak
+    // 4. Purge all localStorage keys containing deleted account identifiers
     const keysToRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      if (k && k.toLowerCase().includes('gulnayak')) {
+      if (
+        k &&
+        (k.toLowerCase().includes('gulnayak') ||
+         k.toLowerCase().includes('gknayak') ||
+         k.toLowerCase().includes('arpitapri') ||
+         k.includes('036fe7d3') ||
+         k.includes('9e637e3b'))
+      ) {
         keysToRemove.push(k);
       }
     }
@@ -139,10 +148,10 @@ export const purgeLegacyAccounts = () => {
 };
 
 export const GLOBAL_AUTH_EPOCH_KEY = 'notion_os_auth_epoch_v1';
-export const CURRENT_GLOBAL_AUTH_EPOCH = '2026_10_30_epoch_v6_clean_blank';
+export const CURRENT_GLOBAL_AUTH_EPOCH = '2026_11_02_epoch_v8_purge_all_accounts';
 
 /**
- * Enforces global cross-device logout for gknayak@gmail.com and invalidates all previous code's data
+ * Enforces global cross-device logout for deleted accounts and invalidates all previous data
  * across all devices (Chrome web, Android APK, and mobile devices).
  * When epoch mismatch is detected, it logs out the session, purges all cached/fragmented data,
  * and sets up a fresh consistent environment.
@@ -152,7 +161,7 @@ export const enforceGlobalAuthEpoch = () => {
   try {
     const storedEpoch = localStorage.getItem(GLOBAL_AUTH_EPOCH_KEY);
     if (storedEpoch !== CURRENT_GLOBAL_AUTH_EPOCH) {
-      console.info('[AUTH_SECURITY] Cross-device epoch invalidation triggered. Logging out gknayak@gmail.com and clearing previous data.');
+      console.info('[AUTH_SECURITY] Cross-device epoch invalidation triggered. Logging out all sessions and clearing purged accounts.');
 
       // 1. Force logout
       localStorage.removeItem(AUTH_STORAGE_KEY);
@@ -160,7 +169,10 @@ export const enforceGlobalAuthEpoch = () => {
       setCustomWorkspaceIdentifier('user_guest');
       setCustomWorkspaceEmail('guest@workspace.local');
 
-      // 2. Erase all previous code's data and device caches
+      // 2. Erase all credentials and cached data for purged accounts
+      localStorage.removeItem(USER_CREDENTIALS_KEY);
+      localStorage.removeItem(SAVED_USERS_KEY);
+
       const keysToRemove: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
@@ -169,13 +181,13 @@ export const enforceGlobalAuthEpoch = () => {
           (k.includes('offline_') ||
            k.includes('lifeos_') ||
            k.includes('user_036fe7d3') ||
+           k.includes('user_9e637e3b') ||
            k.includes('user_usr_') ||
            k.includes('notion_os_v4_') ||
            k.includes('account_auth_') ||
            k.includes('gulnayak') ||
-           k.includes('gknayak')) &&
-          k !== USER_CREDENTIALS_KEY &&
-          k !== SAVED_USERS_KEY
+           k.includes('arpitapri') ||
+           k.includes('gknayak'))
         ) {
           keysToRemove.push(k);
         }
@@ -234,24 +246,13 @@ const getLocalCredentialsMap = (): Record<string, { user: AuthUser; pass: string
   } catch {
     // ignore
   }
-  // Ensure default primary account is always present for immediate offline/APK sign in
-  if (!map['gknayak@gmail.com']) {
-    map['gknayak@gmail.com'] = {
-      user: DEFAULT_GKN_USER,
-      pass: DEFAULT_GKN_PASS_HASH,
-    };
-  }
-  // Ensure Arpita account is always available as the whitelisted secondary account
-  if (!map['arpitapri125@gmail.com']) {
-    map['arpitapri125@gmail.com'] = {
-      user: DEFAULT_ARPITA_USER,
-      pass: DEFAULT_ARPITA_PASS_HASH,
-    };
-  }
-  // Guarantee gulnayak1206 and other non-whitelisted accounts are purged
-  if (map['gulnayak1206@gmail.com']) {
-    delete map['gulnayak1206@gmail.com'];
-  }
+  // Ensure purged accounts are never revived
+  delete map['gknayak@gmail.com'];
+  delete map['gknayak'];
+  delete map['arpitapri125@gmail.com'];
+  delete map['arpitapri125'];
+  delete map['gulnayak1206@gmail.com'];
+  delete map['gulnayak'];
   return map;
 };
 
@@ -563,79 +564,6 @@ export const Auth = {
     });
 
     const client = getSupabaseClient();
-
-    // 0. Primary Account Fast Path & Offline Guarantee:
-    // Ensures Gulshan Kumar Nayak (gknayak@gmail.com / gknayak) can always sign in smoothly
-    // on a fresh Android APK install or offline environment without getting blocked.
-    if (
-      raw === 'gknayak@gmail.com' ||
-      raw === 'gknayak' ||
-      cleanId === 'gknayak_gmail_com' ||
-      cleanId === 'gknayak'
-    ) {
-      let isGknValid = false;
-      if (cleanPass === 'Gulshan@12345!') {
-        isGknValid = true;
-      } else {
-        isGknValid = await verifyPasswordHash(DEFAULT_GKN_PASS_HASH, cleanPass);
-      }
-
-      if (isGknValid) {
-        // Record last_sign_in_at in Supabase Auth in background without blocking immediate sign-in
-        if (client && isSupabaseConfigured()) {
-          void client.auth.signInWithPassword({
-            email: 'gknayak@gmail.com',
-            password: cleanPass,
-          }).catch(() => {});
-        }
-
-        const gknUser: AuthUser = {
-          ...DEFAULT_GKN_USER,
-          lastLoginAt: Date.now(),
-        };
-        await saveLocalCredential('gknayak@gmail.com', cleanPass, gknUser);
-        Auth.setCurrentUser(gknUser);
-        setCustomWorkspaceIdentifier(getUserWorkspaceKey(gknUser));
-        setCustomWorkspaceEmail('gknayak@gmail.com');
-        recordLoginSuccess('gknayak@gmail.com');
-        return { success: true, user: gknUser, message: 'Signed in successfully as Gulshan Kumar Nayak!' };
-      }
-    }
-
-    // 0b. Secondary Whitelisted Account Fast Path: Arpita Priyadar (arpitapri125@gmail.com)
-    if (
-      raw === 'arpitapri125@gmail.com' ||
-      raw === 'arpitapri125' ||
-      cleanId === 'arpitapri125_gmail_com' ||
-      cleanId === 'arpitapri125'
-    ) {
-      let isArpitaValid = false;
-      if (cleanPass === 'Arpita@12345!' || cleanPass === 'Gulshan@12345!') {
-        isArpitaValid = true;
-      } else {
-        isArpitaValid = await verifyPasswordHash(DEFAULT_ARPITA_PASS_HASH, cleanPass);
-      }
-
-      if (isArpitaValid) {
-        if (client && isSupabaseConfigured()) {
-          void client.auth.signInWithPassword({
-            email: 'arpitapri125@gmail.com',
-            password: cleanPass,
-          }).catch(() => {});
-        }
-
-        const arpitaUser: AuthUser = {
-          ...DEFAULT_ARPITA_USER,
-          lastLoginAt: Date.now(),
-        };
-        await saveLocalCredential('arpitapri125@gmail.com', cleanPass, arpitaUser);
-        Auth.setCurrentUser(arpitaUser);
-        setCustomWorkspaceIdentifier(getUserWorkspaceKey(arpitaUser));
-        setCustomWorkspaceEmail('arpitapri125@gmail.com');
-        recordLoginSuccess('arpitapri125@gmail.com');
-        return { success: true, user: arpitaUser, message: 'Signed in successfully as Arpita Priyadar!' };
-      }
-    }
 
     // 1. Supabase GoTrue Auth (Official supported Auth API across Web & APK)
     let supabaseAuthError: any = null;
@@ -1276,15 +1204,16 @@ export const Auth = {
     const cleanEmail = user.email.trim().toLowerCase();
     const cleanId = cleanEmail.replace(/[^a-z0-9]/g, '_');
 
-    // gknayak@gmail.com is the authoritative permanent primary dashboard owner
+    // Explicitly invalidate session if belonging to purged accounts
     if (
       cleanEmail === 'gknayak@gmail.com' ||
+      cleanEmail === 'arpitapri125@gmail.com' ||
+      cleanEmail.includes('gulnayak') ||
       cleanId === 'gknayak_gmail_com' ||
-      user.id === DEFAULT_GKN_USER.id
+      cleanId === 'arpitapri125_gmail_com'
     ) {
-      setCustomWorkspaceIdentifier(getUserWorkspaceKey(user));
-      setCustomWorkspaceEmail('gknayak@gmail.com');
-      return true;
+      Auth.setCurrentUser(null);
+      return false;
     }
 
     const client = getSupabaseClient();
