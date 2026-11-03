@@ -1798,6 +1798,37 @@ export const Storage = {
       localStorage.removeItem(`${cleanEmail}_offline_expenses_cache`);
       localStorage.removeItem(`${wsKey}_offline_expenses_cache`);
       localStorage.removeItem(`${wsKey}_lifeos_expenses_backup`);
+      // A confirmed clean workspace must not be repopulated from legacy/global
+      // offline backups on the next getExpenses() call.
+      const legacyExpenseKeys = [
+        'lifeos_offline_expenses_cache',
+        'lifeos_expenses_backup',
+        'lifeos_last_imported_sheet_expenses',
+        'user_guest_offline_expenses_cache',
+        'user_guest_lifeos_expenses_backup',
+        'user_guest_notion_os_v4_expenses',
+        'notion_os_v4_expenses',
+        'user_036fe7d3-6a13-4740-b028-afb55e81e00e_notion_os_v4_expenses',
+        'user_usr__gmail_com_notion_os_v4_expenses',
+        'user__notion_os_v4_expenses',
+        '_offline_expenses_cache',
+        'account_auth__gmail_com_notion_os_v4_expenses',
+      ];
+      legacyExpenseKeys.forEach((key) => localStorage.removeItem(key));
+      for (let index = localStorage.length - 1; index >= 0; index--) {
+        const key = localStorage.key(index);
+        if (
+          key &&
+          (key.toLowerCase().includes(cleanEmail) || key.includes(wsKey)) &&
+          key.toLowerCase().includes('expense')
+        ) {
+          localStorage.removeItem(key);
+        }
+      }
+      memoryExpensesCache = [];
+      void expenseRepo.clear().catch((err) => {
+        console.warn('[STORAGE] Failed to clear local expense repository:', err);
+      });
       if (cleanEmail === 'guest@workspace.local' || wsKey === 'user_guest') {
         localStorage.removeItem('user_guest_offline_expenses_cache');
         localStorage.removeItem('user_guest_lifeos_expenses_backup');

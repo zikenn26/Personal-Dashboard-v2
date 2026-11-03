@@ -1078,7 +1078,15 @@ export default function App() {
     const autoSyncFromCloud = async () => {
       try {
         const result = await fetchWorkspaceFromSupabase();
-        if (result.success && result.data && isMounted) {
+        if (result.success && result.exists === false && isMounted && currentUser) {
+          isRemoteUpdating.current = true;
+          lastLocalMutationTimestamp.current = 0;
+          Storage.resetToCleanUserWorkspace(currentUser);
+          handleHydrateAllFromStorage(false);
+          setTimeout(() => {
+            isRemoteUpdating.current = false;
+          }, 300);
+        } else if (result.success && result.data && isMounted) {
           const reconciliation = localStorage.getItem('notion_os_auth_token_v1')
             ? await reconcileIncomingWorkspaceSnapshotV2(Storage.getAllDataPayload(), result.data, result.revision, result.cursor)
             : { payload: result.data, needsSync: false };
