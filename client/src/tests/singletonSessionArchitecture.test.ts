@@ -1,7 +1,8 @@
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { webcrypto } from 'node:crypto';
 import { handleAuthLogin, handleAuthVerify, handlePostHeartbeat } from '../../../server/syncService';
 import { revokePreviousUserSessions } from '../../../server/syncWebSocket';
+import { pool } from '../../../server/db';
 import { Auth } from '../utils/auth';
 import { realtimeHub } from '../utils/realtimeHub';
 
@@ -28,6 +29,16 @@ beforeAll(() => {
 });
 
 describe('Singleton Session & SyncHub Removal Verification Tests', { timeout: 30000 }, () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(pool, 'query').mockImplementation(async () => ({ rows: [] } as any));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
   it('1. User logs in on Device A and establishes active session', async () => {
     let statusCode = 200;
     let jsonResult: any = null;
@@ -161,7 +172,37 @@ describe('Singleton Session & SyncHub Removal Verification Tests', { timeout: 30
     expect(verifyData.message).toContain('Android APK App (Samsung S24)');
   });
 
-  it('3. WebSocket revokePreviousUserSessions sends termination payload to older devices', () => {
+  it('3. Expired in-memory sessions are rejected when the database is unavailable', async () => {
+    vi.useFakeTimers();
+    let token = '';
+    const loginResponse = {
+      status: () => loginResponse,
+      json: (body: any) => { token = body.token; return loginResponse; },
+    };
+    await handleAuthLogin({
+      body: {
+        email: 'gknayak@gmail.com',
+        password: 'Gulshan@12345!',
+        device_id: 'device_expiry_test',
+        device_name: 'Expiry Test Device',
+      },
+      headers: {},
+    }, loginResponse);
+
+    await vi.advanceTimersByTimeAsync(60 * 24 * 60 * 60 * 1000 + 1);
+    let statusCode = 200;
+    let verifyData: any;
+    const verifyResponse = {
+      status: (code: number) => { statusCode = code; return verifyResponse; },
+      json: (body: any) => { verifyData = body; return verifyResponse; },
+    };
+    await handleAuthVerify({ headers: { authorization: `Bearer ${token}` } }, verifyResponse);
+
+    expect(statusCode).toBe(401);
+    expect(verifyData.valid).toBe(false);
+  });
+
+  it('4. WebSocket revokePreviousUserSessions sends termination payload to older devices', () => {
     // Test the exported revokePreviousUserSessions helper directly
     const revoked = revokePreviousUserSessions(
       ['gknayak@gmail.com', 'usr_gknayak'],
@@ -171,7 +212,7 @@ describe('Singleton Session & SyncHub Removal Verification Tests', { timeout: 30
     expect(typeof revoked).toBe('number');
   });
 
-  it('4. RealtimeHub handles SESSION_TERMINATED payload and triggers DOM event', () => {
+  it('5. RealtimeHub handles SESSION_TERMINATED payload and triggers DOM event', () => {
     let capturedEvent: any = null;
     const listener = (e: any) => {
       capturedEvent = e.detail;
@@ -222,7 +263,7 @@ describe('Singleton Session & SyncHub Removal Verification Tests', { timeout: 30
     target.removeEventListener('session_terminated', listener);
   });
 
-  it('5. LiveSyncSimulator and SyncHub are completely removed from the project', async () => {
+  it('6. LiveSyncSimulator and SyncHub are completely removed from the project', async () => {
     // Attempting to import LiveSyncSimulator should fail because it was deleted
     let importFailed = false;
     try {

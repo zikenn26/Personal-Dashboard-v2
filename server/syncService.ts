@@ -784,6 +784,8 @@ export async function handleDeltaSync(req: any, res: any): Promise<void> {
     let pushedCount = 0;
     const appliedIds: string[] = [];
     const skippedIds: string[] = [];
+    const acceptedMutationIds: string[] = [];
+    const rejectedMutationIds: string[] = [];
 
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -900,8 +902,11 @@ export async function handleDeltaSync(req: any, res: any): Promise<void> {
         if (result.rowCount && result.rowCount > 0) {
           pushedCount++;
           appliedIds.push(recId);
+          if (item.mutation_id) acceptedMutationIds.push(String(item.mutation_id));
+          await appendLegacyExpenseMutation(workspaceId, userEmail, String(body.device_id || "legacy-device"), recId);
         } else {
           skippedIds.push(recId);
+          if (item.mutation_id) rejectedMutationIds.push(String(item.mutation_id));
         }
       } catch (insertErr) {
         console.error(`[DeltaSync] Error upserting transaction ${recId}:`, insertErr);
@@ -970,10 +975,294 @@ export async function handleDeltaSync(req: any, res: any): Promise<void> {
       pulled_count: formattedPulled.length,
       applied_ids: appliedIds,
       skipped_ids: skippedIds,
+      accepted_mutation_ids: acceptedMutationIds,
+      rejected_mutation_ids: rejectedMutationIds,
     });
   } catch (err: any) {
     console.error("[SyncService] Error in handleDeltaSync:", err);
     return res.status(500).json({ success: false, error: err?.message || "Internal server error" });
+  }
+}
+
+/** Bridge accepted legacy expense writes into the revisioned change stream. */
+async function appendLegacyExpenseMutation(workspaceId: string, userEmail: string, deviceId: string, expenseId: string): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))", [workspaceId, `expenses:${expenseId}`]);
+    const transaction = await client.query(
+      "SELECT * FROM transactions WHERE workspace_identifier = $1 AND id = $2",
+      [workspaceId, expenseId]
+    );
+    if (!transaction.rows.length) {
+      await client.query("ROLLBACK");
+      return;
+    }
+    const row = transaction.rows[0];
+    const payload = {
+      id: row.id, name: row.name, amount: Number(row.amount), category: row.category,
+      date: row.date, time: row.time, direction: row.direction, paymentMethod: row.payment_method,
+      billingCycle: row.billing_cycle, notes: row.notes, bankName: row.bank_name,
+      maskedAccount: row.masked_account, accountLast4: row.account_last4,
+      referenceId: row.reference_id, smsReferenceId: row.sms_reference_id,
+      upiReference: row.upi_reference, rawSmsText: row.raw_sms_text,
+      merchant: row.merchant, payee: row.payee, source: row.source,
+      active: row.active, is_deleted: Boolean(row.is_deleted),
+    };
+    const current = await client.query(
+      "SELECT revision FROM sync_entities WHERE workspace_identifier = $1 AND module = 'expenses' AND entity_id = $2 FOR UPDATE",
+      [workspaceId, expenseId]
+    );
+    const baseRevision = Number(current.rows[0]?.revision || 0);
+    const revision = baseRevision + 1;
+    const mutationId = `legacy-${crypto.randomUUID()}`;
+    const payloadHash = crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+    await client.query(`
+      INSERT INTO sync_entities (workspace_identifier, user_email, module, entity_id, revision, payload, is_deleted, updated_at)
+      VALUES ($1, $2, 'expenses', $3, $4, $5::jsonb, $6, CURRENT_TIMESTAMP)
+      ON CONFLICT (workspace_identifier, module, entity_id) DO UPDATE SET
+        user_email = EXCLUDED.user_email, revision = EXCLUDED.revision, payload = EXCLUDED.payload,
+        is_deleted = EXCLUDED.is_deleted, updated_at = CURRENT_TIMESTAMP
+    `, [workspaceId, userEmail, expenseId, revision, JSON.stringify(payload), Boolean(row.is_deleted)]);
+    await client.query(`
+      INSERT INTO sync_mutations
+        (mutation_id, workspace_identifier, user_email, device_id, module, entity_id, operation, base_revision, revision, payload, payload_hash)
+      VALUES ($1, $2, $3, $4, 'expenses', $5, $6, $7, $8, $9::jsonb, $10)
+    `, [mutationId, workspaceId, userEmail, deviceId, expenseId, row.is_deleted ? "delete" : "upsert",
+      baseRevision, revision, JSON.stringify(payload), payloadHash]);
+    await client.query("COMMIT");
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    console.warn("[SyncService] Legacy expense change bridge notice:", err);
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Versioned operation sync API. Mutations use optimistic entity revisions and
+ * stable IDs; pulls use a server sequence cursor rather than client timestamps.
+ * The legacy snapshot and timestamp endpoints remain available during migration.
+ */
+export async function handleSyncV2(req: any, res: any): Promise<void> {
+  let client: any;
+  try {
+    client = await pool.connect();
+    const body = req.body || {};
+    const workspaceId = String(body.workspace_identifier || body.user_identifier || "").trim();
+    const userEmail = String(body.user_email || "").trim().toLowerCase();
+    const deviceId = String(body.device_id || "").trim();
+    const cursorText = String(body.cursor ?? req.query?.cursor ?? "0");
+    const cursor = /^\d+$/.test(cursorText) ? cursorText : "0";
+    const mutations = Array.isArray(body.mutations) ? body.mutations : [];
+
+    if (!workspaceId || !deviceId) {
+      return res.status(400).json({ success: false, error: "workspace_identifier and device_id are required" });
+    }
+    const authorization = String(req.headers?.authorization || "");
+    const bearerToken = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+    if (!bearerToken || !userEmail) {
+      return res.status(401).json({ success: false, error: "An authenticated session and user_email are required" });
+    }
+    const sessionResult = await pool.query(
+      "SELECT device_id FROM user_active_sessions WHERE token = $1 AND LOWER(user_email) = $2",
+      [bearerToken, userEmail]
+    );
+    if (!sessionResult.rows.length || sessionResult.rows[0].device_id !== deviceId) {
+      return res.status(401).json({ success: false, error: "Session is not active on this device" });
+    }
+    if (mutations.length > 250) {
+      return res.status(413).json({ success: false, error: "A sync batch may contain at most 250 mutations" });
+    }
+    if (body.snapshot === true) {
+      const entity = await pool.query(
+        "SELECT payload, revision FROM sync_entities WHERE workspace_identifier = $1 AND user_email = $2 AND module = 'workspace' AND entity_id = 'root' AND is_deleted = false",
+        [workspaceId, userEmail]
+      );
+      let snapshot = entity.rows.length
+        ? { payload: entity.rows[0].payload, revision: Number(entity.rows[0].revision) }
+        : null;
+      if (!snapshot) {
+        const legacy = await pool.query(
+          "SELECT workspace_data FROM workspaces WHERE user_identifier = $1 AND LOWER(user_email) = $2",
+          [workspaceId, userEmail]
+        );
+        if (legacy.rows.length) snapshot = { payload: legacy.rows[0].workspace_data, revision: 0 };
+      }
+      const latest = await pool.query("SELECT COALESCE(MAX(server_cursor), 0)::text AS cursor FROM sync_mutations WHERE workspace_identifier = $1 AND user_email = $2", [workspaceId, userEmail]);
+      return res.status(200).json({ success: true, snapshot, next_cursor: String(latest.rows[0]?.cursor || "0"), changes: [], has_more: false, accepted_mutation_ids: [], conflicts: [] });
+    }
+
+    const accepted: string[] = [];
+    const conflicts: any[] = [];
+    await client.query("BEGIN");
+    const orderedMutations = [...mutations].sort((a: any, b: any) =>
+      `${a?.module || ""}:${a?.entity_id || ""}:${a?.mutation_id || ""}`.localeCompare(
+        `${b?.module || ""}:${b?.entity_id || ""}:${b?.mutation_id || ""}`
+      )
+    );
+    for (const mutation of orderedMutations) {
+      const mutationId = String(mutation?.mutation_id || "").trim();
+      const moduleName = String(mutation?.module || "").trim();
+      const entityId = String(mutation?.entity_id || "").trim();
+      const operation = String(mutation?.operation || "").trim().toLowerCase();
+      const baseRevision = Number(mutation?.base_revision ?? 0);
+      if (!mutationId || mutationId.length > 128 || !/^[a-z0-9_.-]{1,64}$/i.test(moduleName) ||
+          !entityId || entityId.length > 256 || !["upsert", "delete"].includes(operation) ||
+          !Number.isSafeInteger(baseRevision) || baseRevision < 0) {
+        throw Object.assign(new Error("Invalid mutation envelope"), { statusCode: 400 });
+      }
+
+      const payload = mutation?.payload && typeof mutation.payload === "object" ? mutation.payload : {};
+      const canonical = (value: any): any => Array.isArray(value)
+        ? value.map(canonical)
+        : value && typeof value === "object"
+          ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]))
+          : value;
+      const payloadHash = crypto.createHash("sha256").update(JSON.stringify(canonical({ moduleName, entityId, operation, baseRevision, payload }))).digest("hex");
+      // Serialize same-ID retries and same-entity writes, including first creates
+      // where SELECT FOR UPDATE alone cannot lock a row that does not exist yet.
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))", [workspaceId, `mutation:${mutationId}`]);
+      const duplicate = await client.query(
+        "SELECT workspace_identifier, payload_hash FROM sync_mutations WHERE mutation_id = $1",
+        [mutationId]
+      );
+      if (duplicate.rows.length) {
+        if (duplicate.rows[0].workspace_identifier !== workspaceId || duplicate.rows[0].payload_hash !== payloadHash) {
+          throw Object.assign(new Error("Mutation ID was reused with different content"), { statusCode: 409 });
+        }
+        accepted.push(mutationId);
+        continue;
+      }
+
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))", [workspaceId, `${moduleName}:${entityId}`]);
+      const currentResult = await client.query(
+        "SELECT user_email, revision, payload, is_deleted FROM sync_entities WHERE workspace_identifier = $1 AND module = $2 AND entity_id = $3 FOR UPDATE",
+        [workspaceId, moduleName, entityId]
+      );
+      const current = currentResult.rows[0];
+      if (current && String(current.user_email).toLowerCase() !== userEmail) {
+        throw Object.assign(new Error("Workspace is not owned by this signed-in account"), { statusCode: 403 });
+      }
+      const currentRevision = current ? Number(current.revision) : 0;
+      if (currentRevision !== baseRevision) {
+        conflicts.push({ mutation_id: mutationId, module: moduleName, entity_id: entityId,
+          expected_revision: baseRevision, current_revision: currentRevision,
+          current: current ? { payload: current.payload, is_deleted: current.is_deleted } : null });
+        continue;
+      }
+
+      const nextRevision = currentRevision + 1;
+      const isDeleted = operation === "delete";
+      await client.query(`
+        INSERT INTO sync_entities (workspace_identifier, user_email, module, entity_id, revision, payload, is_deleted, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, CURRENT_TIMESTAMP)
+        ON CONFLICT (workspace_identifier, module, entity_id) DO UPDATE SET
+          revision = EXCLUDED.revision, payload = EXCLUDED.payload,
+          is_deleted = EXCLUDED.is_deleted, updated_at = CURRENT_TIMESTAMP
+      `, [workspaceId, userEmail, moduleName, entityId, nextRevision, JSON.stringify(payload), isDeleted]);
+      // Keep the established transaction table current while old app versions
+      // still read it. This makes v2 expense writes visible to legacy clients.
+      if (moduleName === "expenses") {
+        const amount = Math.round(Math.abs(Number((payload as any).amount) || 0) * 100) / 100;
+        const name = String((payload as any).name || (payload as any).payee || (payload as any).merchant || "Expense").trim();
+        const category = String((payload as any).category || "Other").trim();
+        const date = String((payload as any).date || new Date().toISOString().slice(0, 10));
+        const direction = String((payload as any).direction || "DEBIT").toUpperCase() === "CREDIT" ? "CREDIT" : "DEBIT";
+        await client.query(`
+          INSERT INTO transactions (
+            id, workspace_identifier, user_email, name, amount, category, date, time, direction,
+            payment_method, billing_cycle, notes, bank_name, masked_account, account_last4,
+            reference_id, sms_reference_id, upi_reference, raw_sms_text, merchant, payee,
+            source, active, is_deleted, deleted_at, client_updated_at, updated_at
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9,
+            $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21,
+            $22, $23, $24, CASE WHEN $24 THEN CURRENT_TIMESTAMP ELSE NULL END,
+            $25, CURRENT_TIMESTAMP
+          ) ON CONFLICT (id) DO UPDATE SET
+            workspace_identifier = EXCLUDED.workspace_identifier, user_email = EXCLUDED.user_email,
+            name = EXCLUDED.name, amount = EXCLUDED.amount, category = EXCLUDED.category,
+            date = EXCLUDED.date, time = EXCLUDED.time, direction = EXCLUDED.direction,
+            payment_method = EXCLUDED.payment_method, billing_cycle = EXCLUDED.billing_cycle,
+            notes = EXCLUDED.notes, bank_name = EXCLUDED.bank_name, masked_account = EXCLUDED.masked_account,
+            account_last4 = EXCLUDED.account_last4, reference_id = EXCLUDED.reference_id,
+            sms_reference_id = EXCLUDED.sms_reference_id, upi_reference = EXCLUDED.upi_reference,
+            raw_sms_text = EXCLUDED.raw_sms_text, merchant = EXCLUDED.merchant, payee = EXCLUDED.payee,
+            source = EXCLUDED.source, active = EXCLUDED.active, is_deleted = EXCLUDED.is_deleted,
+            deleted_at = EXCLUDED.deleted_at, client_updated_at = EXCLUDED.client_updated_at,
+            updated_at = CURRENT_TIMESTAMP
+        `, [entityId, workspaceId, userEmail, name, amount, category, date, (payload as any).time || null,
+          direction, (payload as any).paymentMethod || (payload as any).payment_method || null,
+          (payload as any).billingCycle || (payload as any).billing_cycle || null, (payload as any).notes || null,
+          (payload as any).bankName || (payload as any).bank_name || null, (payload as any).maskedAccount || (payload as any).masked_account || null,
+          (payload as any).accountLast4 || (payload as any).account_last4 || null, (payload as any).referenceId || (payload as any).reference_id || null,
+          (payload as any).smsReferenceId || (payload as any).sms_reference_id || null, (payload as any).upiReference || (payload as any).upi_reference || null,
+          (payload as any).rawSmsText || (payload as any).raw_sms_text || null, (payload as any).merchant || null, (payload as any).payee || null,
+          (payload as any).source || "sync", (payload as any).active !== false, isDeleted, Date.now()]);
+      } else if (moduleName === "workspace" && entityId === "root") {
+        await client.query(`
+          INSERT INTO workspaces (user_identifier, user_email, workspace_data, updated_at, sync_version)
+          VALUES ($1, $2, $3::jsonb, CURRENT_TIMESTAMP::text, $4)
+          ON CONFLICT (user_identifier) DO UPDATE SET
+            user_email = EXCLUDED.user_email, workspace_data = EXCLUDED.workspace_data,
+            updated_at = EXCLUDED.updated_at, sync_version = EXCLUDED.sync_version
+        `, [workspaceId, userEmail, JSON.stringify(payload), nextRevision]);
+      }
+      await client.query(`
+        INSERT INTO sync_mutations
+          (mutation_id, workspace_identifier, user_email, device_id, module, entity_id, operation, base_revision, revision, payload, payload_hash)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11)
+      `, [mutationId, workspaceId, userEmail, deviceId, moduleName, entityId, operation, baseRevision, nextRevision, JSON.stringify(payload), payloadHash]);
+      accepted.push(mutationId);
+    }
+    await client.query("COMMIT");
+
+    for (const mutation of orderedMutations) {
+      const mutationId = String(mutation?.mutation_id || "");
+      if (!accepted.includes(mutationId)) continue;
+      if (String(mutation?.module) === "workspace" && String(mutation?.entity_id) === "root") {
+        broadcastWorkspaceUpdate(workspaceId, {
+          type: "WORKSPACE_UPDATED", userIdentifier: workspaceId, module: "all", action: "UPSERT",
+          fullWorkspace: mutation.payload, sourceDeviceId: deviceId, timestamp: new Date().toISOString(),
+        });
+      } else if (String(mutation?.module) === "expenses") {
+        const payload = mutation.payload && typeof mutation.payload === "object" ? mutation.payload : {};
+        broadcastWorkspaceUpdate(workspaceId, {
+          type: "WORKSPACE_UPDATED", userIdentifier: workspaceId, module: "expenses",
+          action: String(mutation.operation) === "delete" ? "DELETE" : "UPSERT",
+          fullWorkspace: String(mutation.operation) === "delete"
+            ? { deletedExpenseIds: [String(mutation.entity_id)] }
+            : { expenses: [payload] },
+          sourceDeviceId: deviceId, timestamp: new Date().toISOString(),
+        });
+      }
+    }
+
+    const pulled = await pool.query(`
+      SELECT server_cursor, mutation_id, device_id, module, entity_id, operation, base_revision, revision, payload
+      FROM sync_mutations WHERE workspace_identifier = $1 AND user_email = $2 AND server_cursor > $3
+      ORDER BY server_cursor ASC LIMIT 1000
+    `, [workspaceId, userEmail, cursor]);
+    const latest = await pool.query("SELECT COALESCE(MAX(server_cursor), 0)::text AS cursor FROM sync_mutations WHERE workspace_identifier = $1 AND user_email = $2", [workspaceId, userEmail]);
+    return res.status(200).json({
+      success: true,
+      accepted_mutation_ids: accepted,
+      conflicts,
+      changes: pulled.rows.map((row: any) => ({
+        cursor: String(row.server_cursor), mutation_id: row.mutation_id, device_id: row.device_id,
+        module: row.module, entity_id: row.entity_id, operation: row.operation,
+        base_revision: Number(row.base_revision || 0), revision: Number(row.revision), payload: row.payload,
+      })),
+      next_cursor: pulled.rows.length ? String(pulled.rows[pulled.rows.length - 1].server_cursor) : String(latest.rows[0]?.cursor || cursor),
+      has_more: pulled.rows.length === 1000,
+    });
+  } catch (err: any) {
+    try { await client.query("ROLLBACK"); } catch {}
+    const status = Number(err?.statusCode) || 500;
+    return res.status(status).json({ success: false, error: err?.message || "Sync protocol error" });
+  } finally {
+    client?.release();
   }
 }
 
@@ -992,6 +1281,13 @@ interface SessionData {
 const activeSessions = new Map<string, SessionData>();
 // Maps user_email to their single active token
 const userActiveTokens = new Map<string, string>();
+const SESSION_TTL_MS = 60 * 24 * 60 * 60 * 1000;
+
+function pruneExpiredSessions(now = Date.now()): void {
+  for (const [token, session] of activeSessions) {
+    if (session.expiresAt <= now) activeSessions.delete(token);
+  }
+}
 
 function parseReadableDeviceName(req: any, explicitName?: string): string {
   if (explicitName && explicitName.trim()) {
@@ -1026,6 +1322,7 @@ function verifyPasswordRecord(record: any, attemptedPass: string): boolean {
 
 export async function handleAuthLogin(req: any, res: any): Promise<void> {
   try {
+    pruneExpiredSessions();
     const body = req.body || {};
     const identifier = String(body.email || body.username || body.identifier || "").trim().toLowerCase();
     const password = String(body.password || "").trim();
@@ -1108,7 +1405,6 @@ export async function handleAuthLogin(req: any, res: any): Promise<void> {
         sess.revoked = true;
         sess.revokedReason = "new_login";
         sess.revokedByDevice = deviceName;
-        activeSessions.delete(existingTok);
       }
     }
 
@@ -1140,7 +1436,7 @@ export async function handleAuthLogin(req: any, res: any): Promise<void> {
     // Generate secure session bearer token
     const token = `neon_tok_${crypto.randomBytes(32).toString("hex")}`;
     const now = Date.now();
-    const expiresAt = now + 60 * 24 * 60 * 60 * 1000; // 60 days
+    const expiresAt = now + SESSION_TTL_MS;
     activeSessions.set(token, {
       user: matchedUser,
       token,
@@ -1186,6 +1482,7 @@ export async function handleAuthLogin(req: any, res: any): Promise<void> {
 
 export async function handleAuthVerify(req: any, res: any): Promise<void> {
   try {
+    pruneExpiredSessions();
     let token = "";
     const authHeader = req.headers?.authorization || req.headers?.Authorization || "";
     if (authHeader.startsWith("Bearer ")) {
@@ -1211,9 +1508,7 @@ export async function handleAuthVerify(req: any, res: any): Promise<void> {
           message: `Logged out because your account was signed in on ${session.revokedByDevice || "another device"}`,
         });
       }
-      if (session.expiresAt > Date.now()) {
-        return res.status(200).json({ success: true, valid: true, user: session.user });
-      }
+      return res.status(200).json({ success: true, valid: true, user: session.user });
     }
 
     // Check against Neon DB user_active_sessions
@@ -1221,11 +1516,15 @@ export async function handleAuthVerify(req: any, res: any): Promise<void> {
       const userEmail = String(req.query?.user_email || req.body?.user_email || "").trim().toLowerCase();
       if (userEmail) {
         const { rows } = await pool.query(
-          "SELECT token, device_id, device_name FROM user_active_sessions WHERE LOWER(user_email) = $1",
+          "SELECT token, device_id, device_name, created_at FROM user_active_sessions WHERE LOWER(user_email) = $1",
           [userEmail]
         );
         if (rows.length > 0) {
           const activeRow = rows[0];
+          const createdAt = Number(activeRow.created_at);
+          if (Number.isFinite(createdAt) && createdAt > 0 && createdAt + SESSION_TTL_MS <= Date.now()) {
+            return res.status(401).json({ success: false, valid: false, message: "Expired token" });
+          }
           if (activeRow.token && activeRow.token !== token) {
             return res.status(401).json({
               success: false,
@@ -1241,10 +1540,14 @@ export async function handleAuthVerify(req: any, res: any): Promise<void> {
         }
       } else {
         const { rows } = await pool.query(
-          "SELECT user_email, token, device_name FROM user_active_sessions WHERE token = $1",
+          "SELECT user_email, token, device_name, created_at FROM user_active_sessions WHERE token = $1",
           [token]
         );
         if (rows.length > 0) {
+          const createdAt = Number(rows[0].created_at);
+          if (Number.isFinite(createdAt) && createdAt > 0 && createdAt + SESSION_TTL_MS <= Date.now()) {
+            return res.status(401).json({ success: false, valid: false, message: "Expired token" });
+          }
           return res.status(200).json({ success: true, valid: true, message: "Session active" });
         }
       }
@@ -1252,15 +1555,8 @@ export async function handleAuthVerify(req: any, res: any): Promise<void> {
       console.warn("[SyncService] DB verify error:", dbErr?.message);
     }
 
-    // Resilient fallback for recognized neon_tok_ format if activeSessions was cleared but token was not revoked
-    if (token.startsWith("neon_tok_") && token.length >= 32) {
-      return res.status(200).json({
-        success: true,
-        valid: true,
-        message: "Token recognized",
-      });
-    }
-
+    // Unknown tokens fail closed when the database is unavailable. Token shape alone
+    // cannot establish that a session is active or has not been revoked.
     return res.status(401).json({ success: false, valid: false, message: "Invalid or expired token" });
   } catch (err: any) {
     return res.status(500).json({ success: false, valid: false, error: err?.message });
@@ -1278,6 +1574,8 @@ export function registerSyncRoutes(app: Express): void {
   app.get("/api/sync", handleDeltaSync);
   app.post("/api/sync/delta", handleDeltaSync);
   app.get("/api/sync/delta", handleDeltaSync);
+  app.post("/api/sync/v2", handleSyncV2);
+  app.get("/api/sync/v2", handleSyncV2);
 
   app.get("/api/sync/workspace", handleGetWorkspace);
   app.post("/api/sync/workspace", handlePostWorkspace);
@@ -1298,7 +1596,9 @@ export function syncVitePlugin() {
   return {
     name: "sync-vite-plugin",
     configureServer(server: any) {
-      void initDb().catch((err) => console.warn('[SyncService] Neon DB init notice:', err?.message || err));
+      if (!process.env.VITEST && process.env.NODE_ENV !== "test") {
+        void initDb().catch((err) => console.warn('[SyncService] Neon DB init notice:', err?.message || err));
+      }
       if (server.httpServer) {
         setupSyncWebSocket(server.httpServer);
       }
@@ -1372,6 +1672,10 @@ export function syncVitePlugin() {
         }
 
         // Sync endpoints
+        if (pathname === "/api/sync/v2" && (method === "POST" || method === "GET")) {
+          return handleSyncV2(req, enhancedRes);
+        }
+
         if (pathname === "/api/sync/workspace" && method === "GET") {
           return handleGetWorkspace(req, enhancedRes);
         }

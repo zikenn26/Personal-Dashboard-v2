@@ -2020,20 +2020,13 @@ export const Storage = {
     }
     Storage.setExpenses(updated);
 
-    // Commit to local-first database and enqueue outbox mutation
-    void expenseRepo.save(expenseWithTimestamps).catch((err) => {
-      console.warn('[STORAGE] Local DB save notice for addExpense:', err);
-    });
-    void expenseRepo.enqueueMutation({
-      expenseId: expenseWithTimestamps.id,
-      action: existingIndex >= 0 ? 'update' : 'create',
-      payload: expenseWithTimestamps,
-    }).then(() => {
-      void expenseRepo.getPendingOutbox().then((outbox) => {
-        expenseSyncService.notifyMutationEnqueued(outbox.length);
-      });
+    // Commit the local record and its outbox mutation in one IndexedDB transaction.
+    void expenseRepo.save(expenseWithTimestamps, existingIndex >= 0 ? 'update' : 'create').then(() => {
+      return expenseRepo.getPendingOutbox();
+    }).then((outbox) => {
+      expenseSyncService.notifyMutationEnqueued(outbox.length);
     }).catch((err) => {
-      console.warn('[STORAGE] Local DB outbox enqueue notice for addExpense:', err);
+      console.warn('[STORAGE] Local DB save notice for addExpense:', err);
     });
 
     // Immediate persistence verification
@@ -2140,28 +2133,11 @@ export const Storage = {
 
     // Commit delete to local database & outbox
     const deleteIso = new Date().toISOString();
-    void expenseRepo.delete(cleanId).then(() => {
-      void expenseRepo.recordTombstone(cleanId);
-      void expenseRepo.enqueueMutation({
-        expenseId: cleanId,
-        action: 'delete',
-        payload: {
-          id: cleanId,
-          is_deleted: true,
-          updated_at: deleteIso,
-          expense: target,
-        },
-        data: {
-          ...(target || {}),
-          id: cleanId,
-          is_deleted: true,
-          updated_at: deleteIso,
-        },
-      }).then(() => {
-        void expenseRepo.getPendingOutbox().then((outbox) => {
-          expenseSyncService.notifyMutationEnqueued(outbox.length);
-        });
-      });
+    void expenseRepo.deleteAndEnqueue(cleanId, {
+      ...(target || {}),
+      updated_at: deleteIso,
+    }).then(() => expenseRepo.getPendingOutbox()).then((outbox) => {
+      expenseSyncService.notifyMutationEnqueued(outbox.length);
     }).catch((err) => {
       console.warn('[STORAGE] Local DB delete notice:', err);
     });

@@ -13,6 +13,7 @@ import { mergeExpenseLists, normalizeExpenseDateKey, getLocalDateKey } from './e
 import { OWNER_GKN_HABITS, OWNER_GKN_EXPENSES } from './userUtils';
 import { ExpenseItem, OutboxMutation } from '../types';
 import { realtimeHub } from './realtimeHub';
+import { acknowledgeWorkspaceSnapshot, exchangeSyncBatch, fetchWorkspaceSnapshotV2, getPendingWorkspaceSnapshot, queueWorkspaceSnapshot, saveWorkspaceConflicts, WorkspaceSyncConflict } from '../services/syncProtocol';
 export {
   mergeExpenseLists,
   getEffectiveSupabaseUrl,
@@ -227,6 +228,193 @@ export interface CloudSyncResult {
   message: string;
   timestamp?: string;
   data?: any;
+  revision?: number;
+  cursor?: string;
+}
+
+function mergeWorkspaceConflict(base: any, local: any, remote: any, path: Array<string | { id: string }> = [], conflicts: Array<Omit<WorkspaceSyncConflict, 'id' | 'workspaceId' | 'detectedAt' | 'remoteRevision'>> = []): any {
+  if (JSON.stringify(local) === JSON.stringify(remote)) return local;
+  if (JSON.stringify(local) === JSON.stringify(base)) return remote;
+  if (JSON.stringify(remote) === JSON.stringify(base)) return local;
+  if (Array.isArray(local) && Array.isArray(remote)) {
+    const byId = (values: any[]) => new Map(values.filter((v) => v && typeof v === 'object' && v.id != null).map((v) => [String(v.id), v]));
+    const localMap = byId(local);
+    const remoteMap = byId(remote);
+    const baseMap = byId(Array.isArray(base) ? base : []);
+    if (localMap.size !== local.length || remoteMap.size !== remote.length) {
+      conflicts.push({ path, baseValue: base, localValue: local, remoteValue: remote });
+      return local;
+    }
+    const merged = new Map<string, any>();
+    for (const id of new Set([...baseMap.keys(), ...localMap.keys(), ...remoteMap.keys()])) {
+      const before = baseMap.get(id);
+      const l = localMap.get(id);
+      const r = remoteMap.get(id);
+      if (l === undefined && r === undefined) continue;
+      if (l === undefined) {
+        if (before !== undefined && JSON.stringify(r) === JSON.stringify(before)) continue;
+        if (r !== undefined) {
+          if (before !== undefined) conflicts.push({ path: [...path, { id }], baseValue: before, localValue: undefined, remoteValue: r });
+          merged.set(id, r);
+        }
+      } else if (r === undefined) {
+        if (before !== undefined && JSON.stringify(l) === JSON.stringify(before)) continue;
+        if (before !== undefined) conflicts.push({ path: [...path, { id }], baseValue: before, localValue: l, remoteValue: undefined });
+        merged.set(id, l);
+      } else {
+        merged.set(id, mergeWorkspaceConflict(before || {}, l, r, [...path, { id }], conflicts));
+      }
+    }
+    return Array.from(merged.values());
+  }
+  if (local && remote && typeof local === 'object' && typeof remote === 'object') {
+    const result: Record<string, any> = {};
+    for (const key of new Set([...Object.keys(base || {}), ...Object.keys(local), ...Object.keys(remote)])) {
+      result[key] = mergeWorkspaceConflict(base?.[key], local[key], remote[key], [...path, key], conflicts);
+    }
+    return result;
+  }
+  conflicts.push({ path, baseValue: base, localValue: local, remoteValue: remote });
+  return local;
+}
+
+export function applyWorkspaceConflictChoice(payload: any, conflict: WorkspaceSyncConflict, choice: 'local' | 'remote'): any {
+  const result = structuredClone(payload);
+  const value = choice === 'local' ? conflict.localValue : conflict.remoteValue;
+  let parent: any = result;
+  for (let index = 0; index < conflict.path.length; index++) {
+    const part = conflict.path[index];
+    const isLast = index === conflict.path.length - 1;
+    if (typeof part === 'string') {
+      if (isLast) {
+        if (value === undefined) delete parent[part];
+        else parent[part] = value;
+      } else {
+        parent[part] ??= typeof conflict.path[index + 1] === 'object' ? [] : {};
+        parent = parent[part];
+      }
+    } else {
+      if (!Array.isArray(parent)) return result;
+      const itemIndex = parent.findIndex((item: any) => item && String(item.id) === part.id);
+      if (isLast) {
+        if (value === undefined && itemIndex >= 0) parent.splice(itemIndex, 1);
+        else if (value !== undefined && itemIndex >= 0) parent[itemIndex] = value;
+        else if (value !== undefined) parent.push(value);
+      } else {
+        if (itemIndex < 0) return result;
+        parent = parent[itemIndex];
+      }
+    }
+  }
+  return result;
+}
+
+export async function reconcileIncomingWorkspaceSnapshotV2(
+  localPayload: any,
+  remotePayload: any,
+  remoteRevision?: number,
+  remoteCursor?: string
+): Promise<{ payload: any; needsSync: boolean }> {
+  const workspaceId = getCustomWorkspaceIdentifier();
+  const baseKey = `notion_os_workspace_v2_base_${workspaceId}`;
+  const revisionKey = `notion_os_workspace_v2_revision_${workspaceId}`;
+  const cursorKey = `notion_os_workspace_v2_cursor_${workspaceId}`;
+  let base: any = null;
+  try {
+    const rawBase = localStorage.getItem(baseKey);
+    if (rawBase) base = JSON.parse(rawBase);
+  } catch {}
+
+  const localWorkspace = workspacePayloadWithoutExpenseLedger(localPayload || {});
+  const remoteWorkspace = workspacePayloadWithoutExpenseLedger(remotePayload || {});
+  let merged = remoteWorkspace;
+  const pending = await getPendingWorkspaceSnapshot(workspaceId);
+  if (base || pending) {
+    const conflicts: Array<Omit<WorkspaceSyncConflict, 'id' | 'workspaceId' | 'detectedAt' | 'remoteRevision'>> = [];
+    merged = mergeWorkspaceConflict(base || {}, localWorkspace, remoteWorkspace, [], conflicts);
+    if (conflicts.length) {
+      await saveWorkspaceConflicts(conflicts.map((conflict) => ({
+        ...conflict,
+        id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `conflict-${Date.now()}-${Math.random()}`,
+        workspaceId,
+        detectedAt: Date.now(),
+        remoteRevision: remoteRevision || 0,
+      })));
+    }
+  }
+
+  localStorage.setItem(baseKey, JSON.stringify(remoteWorkspace));
+  if (remoteRevision != null) localStorage.setItem(revisionKey, String(remoteRevision));
+  if (remoteCursor) localStorage.setItem(cursorKey, remoteCursor);
+  return { payload: merged, needsSync: JSON.stringify(merged) !== JSON.stringify(remoteWorkspace) };
+}
+
+const workspacePayloadWithoutExpenseLedger = (payload: any): any => {
+  if (!payload || typeof payload !== 'object') return payload;
+  const { expenses: _expenses, deletedExpenseIds: _deletedExpenseIds, ...rest } = payload;
+  return rest;
+};
+
+async function syncWorkspaceSnapshotV2(payload: any, auto: boolean): Promise<CloudSyncResult> {
+  const workspaceId = getCustomWorkspaceIdentifier();
+  const email = getCustomWorkspaceEmail();
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('notion_os_auth_token_v1') || '' : '';
+  if (!token || !workspaceId || workspaceId === 'user_guest' || !email || email === 'guest@workspace.local') {
+    return { success: false, message: 'An active account session is required for revisioned workspace sync.' };
+  }
+  const revisionKey = `notion_os_workspace_v2_revision_${workspaceId}`;
+  const baseKey = `notion_os_workspace_v2_base_${workspaceId}`;
+  const cursorKey = `notion_os_workspace_v2_cursor_${workspaceId}`;
+  let revision = Number(localStorage.getItem(revisionKey) || 0);
+  let cursor = localStorage.getItem(cursorKey) || '0';
+  let base: any = {};
+  try { base = JSON.parse(localStorage.getItem(baseKey) || '{}'); } catch {}
+  const queued = await queueWorkspaceSnapshot(workspaceId, payload);
+  const pending = await getPendingWorkspaceSnapshot(workspaceId);
+  const snapshotSequence = pending?.sequence || queued.sequence;
+  let candidate = workspacePayloadWithoutExpenseLedger(pending?.payload || payload);
+  const deviceId = DEVICE_SESSION_ID;
+  const recordedConflicts: Array<Omit<WorkspaceSyncConflict, 'id' | 'workspaceId' | 'detectedAt' | 'remoteRevision'>> = [];
+
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const mutationId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `workspace-${Date.now()}-${Math.random()}`;
+    const result = await exchangeSyncBatch({
+      workspaceIdentifier: workspaceId, userEmail: email, deviceId, bearerToken: token, cursor,
+      mutations: [{ mutation_id: mutationId, module: 'workspace', entity_id: 'root', operation: 'upsert',
+        base_revision: revision, payload: candidate }],
+    });
+    if (result.accepted_mutation_ids.includes(mutationId)) {
+      const ownChange = [...result.changes].reverse().find((change) => change.mutation_id === mutationId);
+      revision = ownChange?.revision || revision + 1;
+      candidate = ownChange?.payload || candidate;
+      cursor = result.next_cursor || cursor;
+      localStorage.setItem(revisionKey, String(revision));
+      localStorage.setItem(baseKey, JSON.stringify(candidate));
+      localStorage.setItem(cursorKey, cursor);
+      await acknowledgeWorkspaceSnapshot(workspaceId, snapshotSequence);
+      notifyStatus('synced');
+      return { success: true, message: auto ? 'Workspace changes synced.' : 'Workspace synced.', timestamp: new Date().toISOString(), data: candidate };
+    }
+    const conflict = result.conflicts.find((item) => item.mutation_id === mutationId);
+    if (!conflict?.current) throw new Error('Workspace sync conflict did not include the current server snapshot.');
+    const remotePayload = workspacePayloadWithoutExpenseLedger(conflict.current.payload);
+    const found: typeof recordedConflicts = [];
+    candidate = mergeWorkspaceConflict(base, candidate, remotePayload, [], found);
+    recordedConflicts.push(...found);
+    base = remotePayload;
+    revision = conflict.current_revision;
+    if (found.length) {
+      await saveWorkspaceConflicts(found.map((item) => ({
+        ...item,
+        id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `conflict-${Date.now()}-${Math.random()}`,
+        workspaceId,
+        detectedAt: Date.now(),
+        remoteRevision: conflict.current_revision,
+      })));
+    }
+  }
+  notifyStatus('error');
+  return { success: false, message: 'Workspace changed on another device repeatedly. Local data was kept; sync will retry.' };
 }
 
 const getInitialActiveUser = (): { id: string; email: string } => {
@@ -704,6 +892,32 @@ export const syncWorkspaceToSupabase = async (
   workspacePayload: any,
   isAutoSync = false
 ): Promise<CloudSyncResult> => {
+  if (manualWorkOfflineEnabled) {
+    notifyStatus('idle');
+    return { success: false, message: 'Work Offline is enabled. Cloud sync is paused.' };
+  }
+  const hasVersionedSession = typeof localStorage !== 'undefined' && Boolean(localStorage.getItem('notion_os_auth_token_v1')) &&
+    getCustomWorkspaceIdentifier() !== 'user_guest' && getCustomWorkspaceEmail() !== 'guest@workspace.local';
+  if (hasVersionedSession) {
+    notifyStatus('syncing');
+    const syncTimestampMs = getSyncTimestamp();
+    const enrichedPayload = {
+      ...workspacePayloadWithoutExpenseLedger(workspacePayload),
+      _meta: { ...(workspacePayload?._meta || {}), lastDeviceId: DEVICE_SESSION_ID,
+        clientTimestamp: syncTimestampMs, syncVersion: syncTimestampMs,
+        ...(Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android'
+          ? { apkInstalled: true, lastApkSyncTimestamp: Date.now(), apkDeviceName: 'Android Native APK' }
+          : {}) },
+    };
+    broadcastWorkspaceUpdate(enrichedPayload);
+    try {
+      return await syncWorkspaceSnapshotV2(enrichedPayload, isAutoSync);
+    } catch (err: any) {
+      notifyStatus('error');
+      return { success: false, message: err?.message || 'Revisioned workspace sync failed.' };
+    }
+  }
+
   const client = getSupabaseClient();
   if (!client) {
     // If Supabase is unconfigured, sync to server relay directly
@@ -1211,6 +1425,12 @@ export const isWorkOfflineMode = (): boolean => {
 
 export const setWorkOfflineMode = (val: boolean): void => {
   manualWorkOfflineEnabled = !!val;
+  if (manualWorkOfflineEnabled) {
+    if (broadcastSyncTimeout) clearTimeout(broadcastSyncTimeout);
+    if (autoSyncTimeout) clearTimeout(autoSyncTimeout);
+    broadcastSyncTimeout = null;
+    autoSyncTimeout = null;
+  }
 };
 
 /**
@@ -1221,9 +1441,22 @@ export const scheduleAutoSyncToSupabase = (
   payloadGetter: () => any,
   delayMs = 600
 ) => {
-  if (isWorkOfflineMode()) return;
-  if (!isSupabaseConfigured()) return;
+  if (manualWorkOfflineEnabled) return;
+  if (isWorkOfflineMode()) {
+    try {
+      const activeId = getCustomWorkspaceIdentifier();
+      if (!activeId || activeId === 'user_guest' || activeId.startsWith('user_guest') ||
+          !activeUserEmail || activeUserEmail === 'guest@workspace.local') return;
+      const payload = payloadGetter();
+      if (payload) {
+        void queueWorkspaceSnapshot(getCustomWorkspaceIdentifier(), payload);
+      }
+    } catch {}
+    return;
+  }
   const activeId = getCustomWorkspaceIdentifier();
+  const hasV2Session = typeof localStorage !== 'undefined' && Boolean(localStorage.getItem('notion_os_auth_token_v1')) && activeId !== 'user_guest';
+  if (!isSupabaseConfigured() && !hasV2Session) return;
   if (activeId === 'user_guest' || activeId.startsWith('user_guest') || !activeUserEmail || activeUserEmail === 'guest@workspace.local') {
     return;
   }
@@ -1283,8 +1516,16 @@ export const flushAutoSyncImmediately = async (
   payload: any,
   syncFn: (payload: any, isAutoSync?: boolean) => Promise<CloudSyncResult> = syncWorkspaceToSupabase
 ): Promise<CloudSyncResult | void> => {
-  if (isWorkOfflineMode()) return;
-  if (!isSupabaseConfigured() || !payload) return;
+  if (manualWorkOfflineEnabled) return;
+  if (isWorkOfflineMode()) {
+    if (payload && getCustomWorkspaceIdentifier() !== 'user_guest') {
+      await queueWorkspaceSnapshot(getCustomWorkspaceIdentifier(), payload);
+    }
+    return;
+  }
+  const activeId = getCustomWorkspaceIdentifier();
+  const hasV2Session = typeof localStorage !== 'undefined' && Boolean(localStorage.getItem('notion_os_auth_token_v1')) && activeId !== 'user_guest';
+  if ((!isSupabaseConfigured() && !hasV2Session) || !payload) return;
   if (broadcastSyncTimeout) {
     clearTimeout(broadcastSyncTimeout);
     broadcastSyncTimeout = null;
@@ -1365,6 +1606,7 @@ export const subscribeToRealtimeWorkspace = (
     if (isDestroyed) return;
     try {
       if (msg && msg.type === 'WORKSPACE_UPDATED') {
+        if (msg.sourceDeviceId === DEVICE_SESSION_ID) return;
         const incoming = msg.fullWorkspace || msg.payload;
         if (incoming) {
           const remoteVersion = msg.vectorTimestamp || msg.syncVersion || Date.now();
@@ -1520,6 +1762,30 @@ export const fetchWorkspaceFromSupabase = async (): Promise<CloudSyncResult> => 
       success: false,
       message: 'Guest workspace is local-only.',
     };
+  }
+
+  const sessionToken = typeof localStorage !== 'undefined' ? localStorage.getItem('notion_os_auth_token_v1') || '' : '';
+  if (sessionToken) {
+    try {
+      const revisionKey = `notion_os_workspace_v2_revision_${activeId}`;
+      const cursorKey = `notion_os_workspace_v2_cursor_${activeId}`;
+      const result = await fetchWorkspaceSnapshotV2({
+        workspaceIdentifier: activeId,
+        userEmail: getCustomWorkspaceEmail(),
+        deviceId: DEVICE_SESSION_ID,
+        bearerToken: sessionToken,
+        cursor: localStorage.getItem(cursorKey) || '0',
+      });
+      if (result.snapshot?.payload) {
+        localStorage.setItem(revisionKey, String(result.snapshot.revision));
+        const workspacePayload = workspacePayloadWithoutExpenseLedger(result.snapshot.payload);
+        localStorage.setItem(cursorKey, result.next_cursor || '0');
+        return { success: true, message: 'Retrieved revisioned workspace snapshot.', data: workspacePayload,
+          timestamp: new Date().toISOString(), revision: result.snapshot.revision, cursor: result.next_cursor || '0' };
+      }
+    } catch (err) {
+      console.warn('[SYNC_V2] Snapshot read fallback:', err);
+    }
   }
 
   const client = getSupabaseClient();

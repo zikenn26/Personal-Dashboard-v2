@@ -702,10 +702,10 @@ describe('Local-First Expense Storage & Reliable Sync Test Suite', () => {
     const deleteMut = pending.find((m) => m.expenseId === 'exp-audit-999');
     expect(deleteMut).toBeDefined();
     expect(deleteMut?.action).toBe('delete');
-    expect(deleteMut?.data?.amount).toBe(45000);
-    expect(deleteMut?.data?.name).toBe('Hotel Booking Paris');
-    expect(deleteMut?.data?.bankName).toBe('Axis Bank');
-    expect(deleteMut?.data?.accountLast4).toBe('9876');
+    expect(deleteMut?.payload?.amount).toBe(45000);
+    expect(deleteMut?.payload?.name).toBe('Hotel Booking Paris');
+    expect(deleteMut?.payload?.bankName).toBe('Axis Bank');
+    expect(deleteMut?.payload?.accountLast4).toBe('9876');
   });
 
   it('16. Network failure during push preserves pending outbox mutations without data loss', async () => {

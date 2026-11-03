@@ -115,6 +115,9 @@ describe('Timestamp-Based Delta Sync Architecture with UUIDs', () => {
       category: 'Food',
       date: '2026-11-02',
     });
+    await new Promise((r) => setTimeout(r, 0));
+    const [localMutation] = await expenseRepo.getPendingOutbox();
+    expect(localMutation).toBeDefined();
 
     const serverTimestamp = '2026-11-02T12:05:00.000Z';
     const remoteRecord: ExpenseItem = {
@@ -128,7 +131,7 @@ describe('Timestamp-Based Delta Sync Architecture with UUIDs', () => {
       updated_at: serverTimestamp,
     };
 
-    // Mock backend POST /api/sync
+    // Mock backend POST /api/sync using the mutation acknowledgement contract.
     const originalFetch = global.fetch;
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -138,8 +141,8 @@ describe('Timestamp-Based Delta Sync Architecture with UUIDs', () => {
         pulled_records: [remoteRecord],
         pushed_count: 1,
         pulled_count: 1,
-        applied_ids: [localId],
-        skipped_ids: [],
+        accepted_mutation_ids: [localMutation.id],
+        rejected_mutation_ids: [],
       }),
     });
 
@@ -159,6 +162,35 @@ describe('Timestamp-Based Delta Sync Architecture with UUIDs', () => {
       // Verify outbox was dequeued
       const remainingOutbox = await expenseRepo.getPendingOutbox();
       expect(remainingOutbox.length).toBe(0);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('6. Rejected outbox mutations remain queued for retry or conflict review', async () => {
+    const localId = generateUUID();
+    Storage.addExpense({ id: localId, name: 'Pending Local Edit', amount: 500, category: 'Food', date: '2026-11-02' });
+    await new Promise((r) => setTimeout(r, 0));
+    const [mutation] = await expenseRepo.getPendingOutbox();
+    expect(mutation).toBeDefined();
+
+    const originalFetch = global.fetch;
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        server_timestamp: '2026-11-02T12:05:00.000Z',
+        pulled_records: [],
+        accepted_mutation_ids: [],
+        rejected_mutation_ids: [mutation.id],
+      }),
+    });
+
+    try {
+      const result = await expenseSyncService.syncDeltaWithServer();
+      expect(result.success).toBe(true);
+      expect(result.pendingCount).toBe(1);
+      expect((await expenseRepo.getPendingOutbox()).map((item) => item.id)).toContain(mutation.id);
     } finally {
       global.fetch = originalFetch;
     }

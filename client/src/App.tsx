@@ -55,6 +55,7 @@ import { scratchpadWidgetService } from './services/scratchpadWidgetService';
 import { spendingWidgetService } from './services/spendingWidgetService';
 import { expenseSyncService } from './services/expenseSyncService';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
+import { WorkspaceConflictReviewModal } from './components/WorkspaceConflictReviewModal';
 import { QuickCaptureBar } from './components/QuickCaptureBar';
 import { BackupRestoreView } from './components/BackupRestoreView';
 import { AIAssistantView } from './components/AIAssistantView';
@@ -119,7 +120,14 @@ import {
   setWorkOfflineMode,
   getPayloadSyncTimestamp,
   broadcastWorkspaceUpdate,
+  applyWorkspaceConflictChoice,
+  reconcileIncomingWorkspaceSnapshotV2,
 } from './utils/neonSync';
+import {
+  deleteWorkspaceConflict,
+  getWorkspaceConflicts,
+  WorkspaceSyncConflict,
+} from './services/syncProtocol';
 import { nativeService } from './services/nativeService';
 import { normalizeExpenseDateKey, getLocalDateKey } from './utils/expenseUtils';
 import { toast } from 'sonner';
@@ -223,6 +231,7 @@ export default function App() {
     }
     return u;
   });
+  const [workspaceConflicts, setWorkspaceConflicts] = useState<WorkspaceSyncConflict[]>([]);
 
   // 1. Core State loaded from user-scoped localStorage
   const [profile, setProfile] = useState<UserProfile>(Storage.getProfile);
@@ -515,6 +524,39 @@ export default function App() {
       Sound.success(settings.soundEnabled);
       triggerConfetti();
     }
+  };
+
+  const refreshWorkspaceConflicts = useCallback(async () => {
+    const workspaceId = currentUser ? getUserWorkspaceKey(currentUser) : '';
+    setWorkspaceConflicts(workspaceId ? await getWorkspaceConflicts(workspaceId) : []);
+  }, [currentUser]);
+
+  useEffect(() => {
+    void refreshWorkspaceConflicts();
+    const handleConflictUpdate = () => void refreshWorkspaceConflicts();
+    window.addEventListener('workspace-sync-conflicts-updated', handleConflictUpdate);
+    return () => window.removeEventListener('workspace-sync-conflicts-updated', handleConflictUpdate);
+  }, [refreshWorkspaceConflicts]);
+
+  const handleResolveWorkspaceConflict = async (conflict: WorkspaceSyncConflict, choice: 'local' | 'remote') => {
+    const workspaceId = currentUser ? getUserWorkspaceKey(currentUser) : '';
+    if (!workspaceId || conflict.workspaceId !== workspaceId) return;
+    const currentPayload = Storage.getAllDataPayload();
+    const { expenses: _expenses, deletedExpenseIds: _deletedExpenseIds, ...workspacePayload } = currentPayload;
+    const resolvedWorkspace = applyWorkspaceConflictChoice(workspacePayload, conflict, choice);
+    if (!Storage.importAllDataPayload(resolvedWorkspace)) {
+      toast.error('Could not apply the selected conflict value.');
+      return;
+    }
+    handleHydrateAllFromStorage(false);
+    const syncPayload = Storage.getAllDataPayload();
+    const result = await flushAutoSyncImmediately(syncPayload);
+    if (!result || !result.success) {
+      toast.error((result && result.message) || 'The selected value is saved on this device and will sync when available.');
+      return;
+    }
+    await deleteWorkspaceConflict(conflict.id, workspaceId);
+    toast.success('Conflict resolved and synced.');
   };
 
   // Handle successful login or account switch
@@ -989,7 +1031,8 @@ export default function App() {
 
   // 1. Initial Cloud Hydration & Supabase Realtime WebSocket Listener (Instant Multi-Device Sync)
   useEffect(() => {
-    if (!isSupabaseConfigured()) return;
+    const hasVersionedSession = Boolean(localStorage.getItem('notion_os_auth_token_v1'));
+    if (!isSupabaseConfigured() && !hasVersionedSession) return;
 
     let isMounted = true;
 
@@ -1030,6 +1073,10 @@ export default function App() {
       try {
         const result = await fetchWorkspaceFromSupabase();
         if (result.success && result.data && isMounted) {
+          const reconciliation = localStorage.getItem('notion_os_auth_token_v1')
+            ? await reconcileIncomingWorkspaceSnapshotV2(Storage.getAllDataPayload(), result.data, result.revision, result.cursor)
+            : { payload: result.data, needsSync: false };
+          result.data = reconciliation.payload;
           const incomingVersion = getPayloadSyncTimestamp(result.data, result.timestamp);
           const localMutationTime = lastLocalMutationTimestamp.current;
 
@@ -1063,6 +1110,9 @@ export default function App() {
           setTimeout(() => {
             isRemoteUpdating.current = false;
           }, 300);
+          if (reconciliation.needsSync) {
+            setTimeout(() => void flushAutoSyncImmediately(Storage.getAllDataPayload()), 350);
+          }
         }
       } catch (err) {
         console.warn('Initial cloud sync check:', err);
@@ -1160,7 +1210,7 @@ export default function App() {
 
     // 2. Realtime WebSocket channel for instant cross-device updates (<30ms delivery, no lag, no refresh)
     const unsubRealtime = subscribeToRealtimeWorkspace(
-      (remoteData, remoteTimestamp) => {
+      async (remoteData, remoteTimestamp) => {
         if (remoteData && isMounted) {
           const incomingVersion = getPayloadSyncTimestamp(remoteData, remoteTimestamp);
           const localMutationTime = lastLocalMutationTimestamp.current;
@@ -1175,13 +1225,24 @@ export default function App() {
           }
 
           console.info('[PROFILE_TRACE] Realtime workspace event applying snapshot.');
+          let dataToApply = remoteData;
+          let needsSync = false;
+          const isWorkspaceSnapshot = ['profile', 'todos', 'habits', 'goals', 'settings', 'sections'].some((key) => key in remoteData);
+          if (isWorkspaceSnapshot && localStorage.getItem('notion_os_auth_token_v1')) {
+            const reconciliation = await reconcileIncomingWorkspaceSnapshotV2(Storage.getAllDataPayload(), remoteData);
+            dataToApply = reconciliation.payload;
+            needsSync = reconciliation.needsSync;
+          }
           isRemoteUpdating.current = true;
           lastLocalMutationTimestamp.current = 0;
-          Storage.importAllDataPayload(remoteData);
+          Storage.importAllDataPayload(dataToApply);
           handleHydrateAllFromStorage(false);
           setTimeout(() => {
             isRemoteUpdating.current = false;
           }, 300);
+          if (needsSync) {
+            setTimeout(() => void flushAutoSyncImmediately(Storage.getAllDataPayload()), 350);
+          }
         }
       },
       // Callback triggered when this device session is revoked from another device
@@ -5130,6 +5191,13 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {workspaceConflicts.length > 0 && (
+        <WorkspaceConflictReviewModal
+          conflicts={workspaceConflicts}
+          onResolve={handleResolveWorkspaceConflict}
+        />
       )}
     </div>
   );

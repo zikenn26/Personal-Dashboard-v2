@@ -154,6 +154,38 @@ CREATE TABLE IF NOT EXISTS public.data_versions (
 
 CREATE INDEX IF NOT EXISTS idx_data_versions_lookup ON public.data_versions(workspace_identifier, module, entity_id);
 
+-- Versioned sync protocol: optimistic revisions + idempotent mutation log.
+CREATE TABLE IF NOT EXISTS public.sync_entities (
+    workspace_identifier TEXT NOT NULL,
+    user_email TEXT NOT NULL,
+    module TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    revision BIGINT NOT NULL DEFAULT 1,
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    is_deleted BOOLEAN NOT NULL DEFAULT false,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (workspace_identifier, module, entity_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.sync_mutations (
+    server_cursor BIGSERIAL PRIMARY KEY,
+    mutation_id TEXT NOT NULL UNIQUE,
+    workspace_identifier TEXT NOT NULL,
+    user_email TEXT NOT NULL DEFAULT '',
+    device_id TEXT NOT NULL DEFAULT '',
+    module TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    base_revision BIGINT,
+    revision BIGINT NOT NULL,
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    payload_hash TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_mutations_workspace_cursor
+    ON public.sync_mutations(workspace_identifier, server_cursor);
+
 -- =========================================================================
 -- 5. EXPENSE AUTHORITY TABLE (Android APK Master Reconciliation)
 -- =========================================================================

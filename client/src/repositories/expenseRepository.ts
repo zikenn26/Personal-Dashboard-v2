@@ -1,6 +1,6 @@
-import { ExpenseItem, OutboxMutation, ExpenseSyncStatus, ExpenseSyncStatusState } from '../types';
+import { ExpenseItem, OutboxMutation, OutboxMutationAction, ExpenseSyncStatus, ExpenseSyncStatusState } from '../types';
 import { normalizeExpenseDateKey, getLocalDateKey } from '../utils/expenseUtils';
-import { getSupabaseClient, getCustomWorkspaceIdentifier, fetchExpensesFromDedicatedTable } from '../utils/neonSync';
+import { fetchExpensesFromDedicatedTable } from '../utils/neonSync';
 import { generateUUID, isValidUUID } from '../utils/uuid';
 
 export class DurableStorageError extends Error {
@@ -15,9 +15,10 @@ export interface ExpenseRepository {
   setWorkspace(workspaceKey: string): Promise<void>;
   getAll(): Promise<ExpenseItem[]>;
   getById(id: string): Promise<ExpenseItem | null>;
-  save(expense: ExpenseItem): Promise<ExpenseItem>;
+  save(expense: ExpenseItem, enqueueAction?: OutboxMutationAction): Promise<ExpenseItem>;
   saveBatch(expenses: ExpenseItem[]): Promise<ExpenseItem[]>;
   delete(id: string): Promise<void>;
+  deleteAndEnqueue(id: string, payload: any): Promise<void>;
   deleteBatch(ids: string[]): Promise<void>;
   clear(): Promise<void>;
 
@@ -274,7 +275,7 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
     return null;
   }
 
-  public async save(expense: ExpenseItem): Promise<ExpenseItem> {
+  public async save(expense: ExpenseItem, enqueueAction?: OutboxMutationAction): Promise<ExpenseItem> {
     await this.init();
     const nowMs = Date.now();
     const nowIso = expense.updated_at || new Date().toISOString();
@@ -312,17 +313,31 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
     // Remove from tombstones if it was previously tombstoned
     this.memoryTombstones.delete(cleanId);
 
+    const mutation: OutboxMutation | null = enqueueAction ? {
+      id: generateUUID(),
+      expenseId: cleanId,
+      action: enqueueAction,
+      payload: sanitized,
+      timestamp: nowMs,
+      retryCount: 0,
+    } : null;
+
     // Update local cache first (Local-First Durability)
     this.memoryExpenses.set(cleanId, sanitized);
+    if (mutation) this.memoryOutbox.set(mutation.id, mutation);
 
     if (this.db) {
       try {
         await new Promise<void>((resolve, reject) => {
-          const tx = this.db!.transaction([STORE_EXPENSES, STORE_TOMBSTONES], 'readwrite');
+          const stores = mutation
+            ? [STORE_EXPENSES, STORE_TOMBSTONES, STORE_OUTBOX]
+            : [STORE_EXPENSES, STORE_TOMBSTONES];
+          const tx = this.db!.transaction(stores, 'readwrite');
           const expStore = tx.objectStore(STORE_EXPENSES);
           const tombStore = tx.objectStore(STORE_TOMBSTONES);
           tombStore.delete(cleanId);
           expStore.put(sanitized);
+          if (mutation) tx.objectStore(STORE_OUTBOX).put(mutation);
           tx.oncomplete = () => resolve();
           tx.onerror = () => reject(tx.error);
         });
@@ -338,46 +353,6 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
       }
     } else {
       this.persistDegradedBackup();
-    }
-
-    // Call Supabase RPC in background/non-blocking manner if online
-    const client = getSupabaseClient();
-    if (client) {
-      void (async () => {
-        try {
-          const wsId = getCustomWorkspaceIdentifier();
-          await client.rpc('upsert_expense', {
-            p_id: sanitized.id,
-            p_workspace_identifier: wsId,
-            p_name: sanitized.name,
-            p_amount: sanitized.amount,
-            p_category: sanitized.category,
-            p_date: sanitized.date,
-            p_time: sanitized.time,
-            p_direction: sanitized.direction,
-            p_payment_method: sanitized.paymentMethod || null,
-            p_billing_cycle: sanitized.billingCycle || null,
-            p_notes: sanitized.notes || null,
-            p_bank_name: sanitized.bankName || null,
-            p_masked_account: sanitized.maskedAccount || null,
-            p_account_last4: sanitized.accountLast4 || null,
-            p_reference_id: sanitized.referenceId || null,
-            p_sms_reference_id: sanitized.smsReferenceId || null,
-            p_upi_reference: sanitized.upiReference || null,
-            p_raw_sms_text: sanitized.rawSmsText || null,
-            p_merchant: sanitized.merchant || null,
-            p_payee: sanitized.payee || null,
-            p_source: sanitized.source || null,
-            p_source_file: sanitized.sourceFile || null,
-            p_import_batch_id: sanitized.importBatchId || null,
-            p_active: sanitized.active,
-            p_client_updated_at: Date.now(),
-            p_expected_version: null,
-          });
-        } catch {
-          // Remote RPC failure does not prevent local persistence
-        }
-      })();
     }
 
     return sanitized;
@@ -435,20 +410,39 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
       this.persistDegradedBackup();
     }
 
-    const client = getSupabaseClient();
-    if (client) {
-      void (async () => {
-        try {
-          const wsId = getCustomWorkspaceIdentifier();
-          await client.rpc('delete_expense', {
-            p_id: id,
-            p_workspace_identifier: wsId,
-            p_expected_version: null,
-          });
-        } catch {
-          // Remote RPC failure does not prevent local deletion
-        }
-      })();
+  }
+
+  public async deleteAndEnqueue(id: string, payload: any): Promise<void> {
+    await this.init();
+    const cleanId = String(id).trim();
+    if (!cleanId) return;
+    const mutation: OutboxMutation = {
+      id: generateUUID(), expenseId: cleanId, action: 'delete',
+      payload: { ...payload, id: cleanId, is_deleted: true },
+      timestamp: Date.now(), retryCount: 0,
+    };
+    this.memoryExpenses.delete(cleanId);
+    this.memoryTombstones.add(cleanId);
+    this.memoryOutbox.set(mutation.id, mutation);
+    if (this.db) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const tx = this.db!.transaction([STORE_EXPENSES, STORE_TOMBSTONES, STORE_OUTBOX], 'readwrite');
+          tx.objectStore(STORE_EXPENSES).delete(cleanId);
+          tx.objectStore(STORE_TOMBSTONES).put({ id: cleanId });
+          tx.objectStore(STORE_OUTBOX).put(mutation);
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error || new Error('Delete/outbox transaction aborted'));
+        });
+        this.lastDurabilityState = 'durable';
+      } catch (err) {
+        console.warn('[EXPENSE_REPO] delete/outbox transaction notice:', err);
+        this.persistDegradedBackup();
+        this.lastDurabilityState = 'degraded';
+      }
+    } else {
+      this.persistDegradedBackup();
     }
   }
 
@@ -574,10 +568,16 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
     this.memoryExpenses.delete(id);
     if (this.db) {
       try {
-        const tx = this.db.transaction([STORE_EXPENSES, STORE_TOMBSTONES], 'readwrite');
-        tx.objectStore(STORE_EXPENSES).delete(id);
-        tx.objectStore(STORE_TOMBSTONES).put({ id });
-      } catch {
+        await new Promise<void>((resolve, reject) => {
+          const tx = this.db!.transaction([STORE_EXPENSES, STORE_TOMBSTONES], 'readwrite');
+          tx.objectStore(STORE_EXPENSES).delete(id);
+          tx.objectStore(STORE_TOMBSTONES).put({ id });
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error || new Error('Tombstone transaction aborted'));
+        });
+      } catch (err) {
+        console.warn('[EXPENSE_REPO] tombstone transaction notice:', err);
         this.persistDegradedBackup();
       }
     } else {
@@ -593,14 +593,20 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
     });
     if (this.db) {
       try {
-        const tx = this.db.transaction([STORE_EXPENSES, STORE_TOMBSTONES], 'readwrite');
-        const expStore = tx.objectStore(STORE_EXPENSES);
-        const tombStore = tx.objectStore(STORE_TOMBSTONES);
-        ids.forEach((id) => {
-          expStore.delete(id);
-          tombStore.put({ id });
+        await new Promise<void>((resolve, reject) => {
+          const tx = this.db!.transaction([STORE_EXPENSES, STORE_TOMBSTONES], 'readwrite');
+          const expStore = tx.objectStore(STORE_EXPENSES);
+          const tombStore = tx.objectStore(STORE_TOMBSTONES);
+          ids.forEach((id) => {
+            expStore.delete(id);
+            tombStore.put({ id });
+          });
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error || new Error('Tombstone transaction aborted'));
         });
-      } catch {
+      } catch (err) {
+        console.warn('[EXPENSE_REPO] tombstone batch transaction notice:', err);
         this.persistDegradedBackup();
       }
     } else {
