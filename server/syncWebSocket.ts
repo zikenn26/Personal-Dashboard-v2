@@ -7,6 +7,7 @@ interface ClientSocketMeta {
   userIdentifier: string;
   userEmail: string;
   deviceId: string;
+  deviceName?: string;
   platform: string;
   isAlive: boolean;
   connectedAt: number;
@@ -90,6 +91,70 @@ export function broadcastWorkspaceUpdate(
 }
 
 /**
+ * Forcefully terminates any active WebSocket connections for a user on other devices.
+ * Sends SESSION_TERMINATED to those sockets and closes them to ensure singleton session enforcement.
+ */
+export function revokePreviousUserSessions(
+  identifiers: string[],
+  currentDeviceId: string,
+  newDeviceName: string
+): number {
+  let revokedCount = 0;
+  const cleanDevice = String(currentDeviceId || "").trim();
+  const readableDevice = String(newDeviceName || "Another Device").trim();
+
+  const terminationPayload = JSON.stringify({
+    type: "SESSION_TERMINATED",
+    reason: "new_login",
+    newDeviceId: cleanDevice,
+    newDeviceName: readableDevice,
+    message: `Logged out because your account was signed in on ${readableDevice}`,
+    serverTimestamp: new Date().toISOString(),
+  });
+
+  const socketsToClose: WebSocket[] = [];
+  const roomKeys = new Set(identifiers.filter(Boolean).map((id) => normalizeRoomKey(id)));
+
+  for (const [roomKey, sockets] of userRooms.entries()) {
+    if (!roomKeys.has(roomKey)) continue;
+
+    for (const client of sockets) {
+      const meta = socketMetaMap.get(client);
+      // Skip if it's the exact same device connecting
+      if (meta && cleanDevice && meta.deviceId === cleanDevice) {
+        continue;
+      }
+
+      if (client.readyState === WebSocket.OPEN) {
+        try {
+          client.send(terminationPayload);
+        } catch (err) {
+          console.warn("[SyncWS] Failed to send termination payload to socket:", err);
+        }
+      }
+      socketsToClose.push(client);
+      revokedCount++;
+    }
+  }
+
+  for (const sock of socketsToClose) {
+    try {
+      const meta = socketMetaMap.get(sock);
+      if (meta) {
+        leaveRoom(meta.userIdentifier, sock);
+      }
+      sock.close(4001, `Session Terminated: Logged in on ${readableDevice}`);
+    } catch {}
+  }
+
+  if (revokedCount > 0) {
+    console.info(`[SyncWS] Singleton enforcement revoked ${revokedCount} older socket session(s) for user.`);
+  }
+
+  return revokedCount;
+}
+
+/**
  * Setup WebSocket Server attached to HTTP server for real-time synchronization.
  */
 export function setupSyncWebSocket(server: HttpServer): WebSocketServer {
@@ -123,6 +188,7 @@ export function setupSyncWebSocket(server: HttpServer): WebSocketServer {
     let initialUser = "user_guest";
     let initialEmail = "guest@workspace.local";
     let initialDeviceId = `device_${Math.random().toString(36).slice(2, 8)}`;
+    let initialDeviceName = "Web Browser";
     let initialPlatform = "web";
 
     try {
@@ -131,11 +197,13 @@ export function setupSyncWebSocket(server: HttpServer): WebSocketServer {
         const qIdent = urlObj.searchParams.get("userIdentifier") || urlObj.searchParams.get("user_identifier");
         const qEmail = urlObj.searchParams.get("userEmail") || urlObj.searchParams.get("user_email");
         const qDev = urlObj.searchParams.get("deviceId") || urlObj.searchParams.get("device_id");
+        const qDevName = urlObj.searchParams.get("deviceName") || urlObj.searchParams.get("device_name");
         const qPlat = urlObj.searchParams.get("platform");
 
         if (qIdent) initialUser = qIdent;
         if (qEmail) initialEmail = qEmail;
         if (qDev) initialDeviceId = qDev;
+        if (qDevName) initialDeviceName = qDevName;
         if (qPlat) initialPlatform = qPlat;
       }
     } catch {}
@@ -145,12 +213,18 @@ export function setupSyncWebSocket(server: HttpServer): WebSocketServer {
       userIdentifier: initialUser,
       userEmail: initialEmail,
       deviceId: initialDeviceId,
+      deviceName: initialDeviceName,
       platform: initialPlatform,
       isAlive: true,
       connectedAt: Date.now(),
     };
 
     socketMetaMap.set(clientWs, meta);
+
+    // Enforce singleton session if connected with an authenticated user
+    if (initialEmail && initialEmail !== "guest@workspace.local" && !initialUser.startsWith("user_guest")) {
+      revokePreviousUserSessions([initialUser, initialEmail], initialDeviceId, initialDeviceName);
+    }
 
     // Join room
     joinRoom(initialUser, clientWs);
@@ -272,6 +346,7 @@ async function handleClientMessage(ws: WebSocket, msg: any): Promise<void> {
       const newIdent = String(msg.userIdentifier || meta.userIdentifier).trim();
       const newEmail = String(msg.userEmail || meta.userEmail).trim();
       const newDevice = String(msg.deviceId || meta.deviceId).trim();
+      const newDeviceName = String(msg.deviceName || meta.deviceName || "").trim();
       const newPlatform = String(msg.platform || meta.platform).trim();
 
       if (newIdent !== meta.userIdentifier) {
@@ -282,7 +357,13 @@ async function handleClientMessage(ws: WebSocket, msg: any): Promise<void> {
       meta.userIdentifier = newIdent;
       meta.userEmail = newEmail;
       meta.deviceId = newDevice;
+      if (newDeviceName) meta.deviceName = newDeviceName;
       meta.platform = newPlatform;
+
+      // Singleton session enforcement on subscribe
+      if (newEmail && newEmail !== "guest@workspace.local" && !newIdent.startsWith("user_guest")) {
+        revokePreviousUserSessions([newIdent, newEmail], newDevice, newDeviceName || meta.deviceName || "Another Device");
+      }
 
       const roomKey = normalizeRoomKey(newIdent);
       ws.send(

@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import crypto from "crypto";
 import { pool, initDb } from "./db.js";
-import { broadcastWorkspaceUpdate, setupSyncWebSocket, getSyncWsStats } from "./syncWebSocket.js";
+import { broadcastWorkspaceUpdate, setupSyncWebSocket, getSyncWsStats, revokePreviousUserSessions } from "./syncWebSocket.js";
 
 interface StoredWorkspace {
   user_identifier: string;
@@ -532,6 +532,15 @@ export async function handlePostHeartbeat(req: any, res: any): Promise<void> {
     const { rows } = await pool.query("SELECT * FROM devices WHERE id = $1", [id]);
     const existing = rows[0];
 
+    // Reject heartbeat if device was revoked by a newer login
+    if (existing && existing.is_revoked) {
+      return res.status(200).json({
+        success: false,
+        revoked: true,
+        message: "Device session has been revoked because your account was signed in on another device",
+      });
+    }
+
     const upsertQuery = `
       INSERT INTO devices (id, user_email, user_identifier, device_name, platform, environment, app_version, created_at, last_active, ip_address, user_agent, is_revoked)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, false)
@@ -968,14 +977,35 @@ export async function handleDeltaSync(req: any, res: any): Promise<void> {
   }
 }
 
-// Session cache for issued Neon DB bearer tokens
+// Session cache for issued Neon DB bearer tokens with singleton device enforcement
 interface SessionData {
   user: any;
   token: string;
+  deviceId: string;
+  deviceName: string;
   createdAt: number;
   expiresAt: number;
+  revoked?: boolean;
+  revokedReason?: string;
+  revokedByDevice?: string;
 }
 const activeSessions = new Map<string, SessionData>();
+// Maps user_email to their single active token
+const userActiveTokens = new Map<string, string>();
+
+function parseReadableDeviceName(req: any, explicitName?: string): string {
+  if (explicitName && explicitName.trim()) {
+    return explicitName.trim();
+  }
+  const ua = String(req.headers?.["user-agent"] || "");
+  if (/Android/i.test(ua)) return "Android APK App";
+  if (/iPhone/i.test(ua)) return "iPhone";
+  if (/iPad/i.test(ua)) return "iPad";
+  if (/Macintosh|Mac OS/i.test(ua)) return "Safari on macOS";
+  if (/Windows/i.test(ua)) return "Google Chrome on Windows";
+  if (/Linux/i.test(ua)) return "Browser on Linux";
+  return "Web Browser";
+}
 
 function verifyPasswordRecord(record: any, attemptedPass: string): boolean {
   try {
@@ -1063,20 +1093,89 @@ export async function handleAuthLogin(req: any, res: any): Promise<void> {
       return res.status(401).json({ success: false, message: "Invalid email/username or password" });
     }
 
+    // Singleton session enforcement: extract device identifier & human-readable name
+    const deviceId = String(body.device_id || body.deviceId || "").trim() || `device_${crypto.randomBytes(6).toString("hex")}`;
+    const deviceName = parseReadableDeviceName(req, String(body.device_name || body.deviceName || "").trim());
+
+    const userEmail = (matchedUser.email || emailVariant).toLowerCase().trim();
+    const userId = String(matchedUser.id || `usr_${cleanId}`).trim();
+
+    // 1. Invalidate older sessions for this user in-memory
+    for (const [existingTok, sess] of activeSessions.entries()) {
+      const sessEmail = (sess.user?.email || "").toLowerCase().trim();
+      const sessId = String(sess.user?.id || "").trim();
+      if ((sessEmail === userEmail || sessId === userId) && sess.deviceId !== deviceId) {
+        sess.revoked = true;
+        sess.revokedReason = "new_login";
+        sess.revokedByDevice = deviceName;
+        activeSessions.delete(existingTok);
+      }
+    }
+
+    // 2. Revoke older devices for this user in Neon PostgreSQL
+    try {
+      await pool.query(
+        "UPDATE devices SET is_revoked = true WHERE (LOWER(user_email) = $1 OR user_identifier = $2) AND id != $3",
+        [userEmail, userId, deviceId]
+      );
+      await pool.query(
+        "UPDATE connected_devices SET is_revoked = true WHERE (LOWER(user_email) = $1 OR user_identifier = $2) AND id != $3",
+        [userEmail, userId, deviceId]
+      ).catch(() => {});
+    } catch (dbErr: any) {
+      console.warn("[SyncService] Notice revoking older devices in DB:", dbErr?.message);
+    }
+
+    // 3. Forcefully revoke any active WebSockets for this user on other devices immediately
+    try {
+      revokePreviousUserSessions(
+        [userEmail, userId, `account_auth_${cleanId}`, `account_auth_${identifier}`],
+        deviceId,
+        deviceName
+      );
+    } catch (wsErr: any) {
+      console.warn("[SyncService] Notice revoking WebSocket connections:", wsErr?.message);
+    }
+
     // Generate secure session bearer token
     const token = `neon_tok_${crypto.randomBytes(32).toString("hex")}`;
-    const expiresAt = Date.now() + 60 * 24 * 60 * 60 * 1000; // 60 days
+    const now = Date.now();
+    const expiresAt = now + 60 * 24 * 60 * 60 * 1000; // 60 days
     activeSessions.set(token, {
       user: matchedUser,
       token,
-      createdAt: Date.now(),
+      deviceId,
+      deviceName,
+      createdAt: now,
       expiresAt,
     });
+    userActiveTokens.set(userEmail, token);
+    if (userId) userActiveTokens.set(userId, token);
+
+    // 4. Record new active singleton session in Neon DB
+    try {
+      await pool.query(`
+        INSERT INTO user_active_sessions (user_email, token, device_id, device_name, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+        ON CONFLICT (user_email) DO UPDATE SET
+          token = EXCLUDED.token,
+          device_id = EXCLUDED.device_id,
+          device_name = EXCLUDED.device_name,
+          created_at = EXCLUDED.created_at,
+          updated_at = CURRENT_TIMESTAMP
+      `, [userEmail, token, deviceId, deviceName, now]);
+    } catch (sessDbErr: any) {
+      console.warn("[SyncService] Notice recording user_active_sessions:", sessDbErr?.message);
+    }
+
+    console.info(`[SyncService] Singleton session established for ${userEmail} on ${deviceName} (${deviceId})`);
 
     return res.status(200).json({
       success: true,
       token,
       user: matchedUser,
+      device_id: deviceId,
+      device_name: deviceName,
       message: "Signed in successfully via Neon DB pool",
     });
   } catch (err: any) {
@@ -1102,11 +1201,58 @@ export async function handleAuthVerify(req: any, res: any): Promise<void> {
     }
 
     const session = activeSessions.get(token);
-    if (session && session.expiresAt > Date.now()) {
-      return res.status(200).json({ success: true, valid: true, user: session.user });
+    if (session) {
+      if (session.revoked) {
+        return res.status(401).json({
+          success: false,
+          valid: false,
+          revoked: true,
+          newDeviceName: session.revokedByDevice || "another device",
+          message: `Logged out because your account was signed in on ${session.revokedByDevice || "another device"}`,
+        });
+      }
+      if (session.expiresAt > Date.now()) {
+        return res.status(200).json({ success: true, valid: true, user: session.user });
+      }
     }
 
-    // Resilient fallback for recognized neon_tok_ format
+    // Check against Neon DB user_active_sessions
+    try {
+      const userEmail = String(req.query?.user_email || req.body?.user_email || "").trim().toLowerCase();
+      if (userEmail) {
+        const { rows } = await pool.query(
+          "SELECT token, device_id, device_name FROM user_active_sessions WHERE LOWER(user_email) = $1",
+          [userEmail]
+        );
+        if (rows.length > 0) {
+          const activeRow = rows[0];
+          if (activeRow.token && activeRow.token !== token) {
+            return res.status(401).json({
+              success: false,
+              valid: false,
+              revoked: true,
+              newDeviceName: activeRow.device_name || "another device",
+              message: `Logged out because your account was signed in on ${activeRow.device_name || "another device"}`,
+            });
+          }
+          if (activeRow.token === token) {
+            return res.status(200).json({ success: true, valid: true, message: "Session active" });
+          }
+        }
+      } else {
+        const { rows } = await pool.query(
+          "SELECT user_email, token, device_name FROM user_active_sessions WHERE token = $1",
+          [token]
+        );
+        if (rows.length > 0) {
+          return res.status(200).json({ success: true, valid: true, message: "Session active" });
+        }
+      }
+    } catch (dbErr: any) {
+      console.warn("[SyncService] DB verify error:", dbErr?.message);
+    }
+
+    // Resilient fallback for recognized neon_tok_ format if activeSessions was cleared but token was not revoked
     if (token.startsWith("neon_tok_") && token.length >= 32) {
       return res.status(200).json({
         success: true,

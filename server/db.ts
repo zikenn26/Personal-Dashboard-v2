@@ -145,6 +145,15 @@ export const initDb = async (): Promise<void> => {
         is_revoked BOOLEAN NOT NULL DEFAULT false
       );
 
+      CREATE TABLE IF NOT EXISTS user_active_sessions (
+        user_email TEXT PRIMARY KEY,
+        token TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        device_name TEXT NOT NULL,
+        created_at NUMERIC(30, 0) NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+
       CREATE TABLE IF NOT EXISTS sync_queues (
         id TEXT PRIMARY KEY,
         workspace_identifier TEXT NOT NULL,

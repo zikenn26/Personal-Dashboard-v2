@@ -10,6 +10,7 @@ import {
   broadcastWorkspaceUpdate as broadcastIntraBrowser,
   DEVICE_SESSION_ID,
 } from './neonSync';
+import { getDeviceInfo } from './devices';
 
 export interface RealtimeSyncStatus {
   connected: boolean;
@@ -94,7 +95,10 @@ class RealtimeHub {
   }
 
   public connect(): void {
-    if (typeof window === 'undefined' || this.isDestroyed) return;
+    if (typeof window === 'undefined') return;
+
+    // Reset destroyed flag on explicit connect request
+    this.isDestroyed = false;
 
     if (this.ws && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)) {
       return;
@@ -114,13 +118,17 @@ class RealtimeHub {
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const host = window.location.host;
+      const deviceInfo = getDeviceInfo();
       const deviceId = DEVICE_SESSION_ID || `dev_${Math.random().toString(36).slice(2, 8)}`;
+      const deviceName = deviceInfo.deviceName || 'Web Browser';
       const platform = (window as any).Capacitor ? 'android_apk' : 'web_browser';
 
       const wsUrl = `${protocol}//${host}/api/sync/ws?userIdentifier=${encodeURIComponent(
         userIdent
       )}&userEmail=${encodeURIComponent(userEmail)}&deviceId=${encodeURIComponent(
         deviceId
+      )}&deviceName=${encodeURIComponent(
+        deviceName
       )}&platform=${encodeURIComponent(platform)}`;
 
       this.ws = new WebSocket(wsUrl);
@@ -234,6 +242,32 @@ class RealtimeHub {
     if (!msg || typeof msg !== 'object') return;
 
     switch (msg.type) {
+      case 'SESSION_TERMINATED': {
+        const readableDevice = msg.newDeviceName || 'another device';
+        const terminationMessage =
+          msg.message || `Logged out because your account was signed in on ${readableDevice}`;
+        console.warn(`[RealtimeHub] Singleton session terminated: ${terminationMessage}`);
+
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('notion_os_auth_termination_notice', terminationMessage);
+          localStorage.setItem('notion_os_auth_signed_out', 'true');
+          window.dispatchEvent(
+            new CustomEvent('session_terminated', {
+              detail: {
+                message: terminationMessage,
+                newDevice: readableDevice,
+                newDeviceId: msg.newDeviceId,
+                timestamp: msg.serverTimestamp || new Date().toISOString(),
+              },
+            })
+          );
+        }
+
+        // Clean up socket and prevent reconnecting until re-authenticated
+        this.destroy();
+        break;
+      }
+
       case 'CONNECTED':
       case 'SUBSCRIBED': {
         this.status.socketId = msg.socketId || this.status.socketId;

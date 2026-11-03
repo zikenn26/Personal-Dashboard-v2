@@ -6,7 +6,9 @@ import {
   setCustomWorkspaceIdentifier,
   setCustomWorkspaceEmail,
   getCustomWorkspaceIdentifier,
+  DEVICE_SESSION_ID,
 } from './neonSync';
+import { getDeviceInfo } from './devices';
 import { hashPassword, verifyPasswordHash } from './crypto';
 import { Storage, BLANK_PROFILE } from './storage';
 import { smsExpenseService } from '../services/smsExpenseService';
@@ -504,11 +506,17 @@ export const Auth = {
         setCustomWorkspaceEmail(user.email);
         recordLoginSuccess(raw);
 
-        // Notify server sync pool in background to keep active session synchronized
+        const currentDevice = getDeviceInfo();
+        // Notify server sync pool in background to enforce singleton session
         void fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: raw, password: cleanPass }),
+          body: JSON.stringify({
+            email: raw,
+            password: cleanPass,
+            device_id: DEVICE_SESSION_ID,
+            device_name: currentDevice.deviceName,
+          }),
         }).then(async (r) => {
           if (r.ok) {
             const data = await r.json();
@@ -524,10 +532,16 @@ export const Auth = {
 
     // 2. Neon DB pool connection check via server auth route (/api/auth/login)
     try {
+      const currentDevice = getDeviceInfo();
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: raw, password: cleanPass }),
+        body: JSON.stringify({
+          email: raw,
+          password: cleanPass,
+          device_id: DEVICE_SESSION_ID,
+          device_name: currentDevice.deviceName,
+        }),
       });
       if (response.ok) {
         const authData = await response.json();
@@ -1088,12 +1102,36 @@ export const Auth = {
     const token = Auth.getAuthToken();
     if (token) {
       try {
-        const res = await fetch('/api/auth/verify', {
+        const query = user.email ? `?user_email=${encodeURIComponent(user.email)}` : '';
+        const res = await fetch(`/api/auth/verify${query}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
+
+        if (res.status === 401 || res.status === 403) {
+          const data = await res.json().catch(() => ({}));
+          const terminationMsg =
+            data.message || 'Logged out because your account was signed in on another device';
+          console.warn('[AUTH] Singleton session revoked:', terminationMsg);
+
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('notion_os_auth_termination_notice', terminationMsg);
+            localStorage.setItem('notion_os_auth_signed_out', 'true');
+            window.dispatchEvent(
+              new CustomEvent('session_terminated', {
+                detail: {
+                  message: terminationMsg,
+                  newDevice: data.newDeviceName,
+                  timestamp: new Date().toISOString(),
+                },
+              })
+            );
+          }
+          return false;
+        }
+
         if (res.ok) {
           const data = await res.json();
-          if (data.valid && data.user) {
+          if (data.valid) {
             return true;
           }
         }

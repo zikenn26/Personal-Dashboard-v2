@@ -76,7 +76,6 @@ import { UserAvatar } from './components/UserAvatar';
 import { isDummyMockAvatar, isAvatarMatchingUserEmailDomain } from './utils/userUtils';
 import { STOCK_IMAGES } from './assets/stockImages';
 import LandingPage from './components/LandingPage';
-import { LiveSyncSimulator } from './components/LiveSyncSimulator';
 import { usePlatformMode } from './presentation/mobile/shell/usePlatformMode';
 import { AndroidShell } from './presentation/mobile/shell/AndroidShell';
 import {
@@ -283,7 +282,6 @@ export default function App() {
 
   // Modals & Floating Bars
   const [isZikennPopupOpen, setIsZikennPopupOpen] = useState(false);
-  const [isLiveSyncSimulatorOpen, setIsLiveSyncSimulatorOpen] = useState(false);
   const [isGlobalVoiceModalOpen, setIsGlobalVoiceModalOpen] = useState(false);
   const [isGlobalVoiceActive, setIsGlobalVoiceActive] = useState(false);
   const [isVoiceCommandProcessed, setIsVoiceCommandProcessed] = useState(false);
@@ -398,6 +396,18 @@ export default function App() {
     typeof navigator !== 'undefined' ? navigator.onLine : true
   );
 
+  // Singleton Session Revocation State
+  const [sessionTerminationAlert, setSessionTerminationAlert] = useState<string | null>(() => {
+    if (typeof localStorage !== 'undefined') {
+      const pending = localStorage.getItem('notion_os_auth_termination_notice');
+      if (pending) {
+        localStorage.removeItem('notion_os_auth_termination_notice');
+        return pending;
+      }
+    }
+    return null;
+  });
+
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -406,6 +416,22 @@ export default function App() {
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Listen for singleton session termination events from WebSocket or Auth verification
+  useEffect(() => {
+    const handleTerminationEvent = (e: any) => {
+      const msg = e.detail?.message || 'Logged out because your account was signed in on another device';
+      console.warn('[SINGLETON_SESSION]', msg);
+      setSessionTerminationAlert(msg);
+      toast.error(msg, { duration: 8000, id: 'singleton-session-terminated' });
+      handleSignOut();
+    };
+
+    window.addEventListener('session_terminated', handleTerminationEvent);
+    return () => {
+      window.removeEventListener('session_terminated', handleTerminationEvent);
     };
   }, []);
 
@@ -3707,21 +3733,6 @@ export default function App() {
               </button>
             )}
 
-            {/* Multi-Device Live Sync Simulator Button */}
-            <button
-              type="button"
-              onClick={() => {
-                Sound.click(settings.soundEnabled);
-                setIsLiveSyncSimulatorOpen(true);
-              }}
-              className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/60 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors cursor-pointer"
-              title="Multi-Device Live Sync Simulator (Real-Time WebSocket Hub)"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <Activity className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Sync Hub</span>
-            </button>
-
             {/* Theme Toggle (Light / Dark Mode) */}
             <button
               type="button"
@@ -3874,6 +3885,42 @@ export default function App() {
             </div>
           </div>
         </header>
+
+        {/* Singleton Session Terminated Banner */}
+        {sessionTerminationAlert && (
+          <div
+            id="session-termination-alert"
+            className="w-full bg-red-600/90 dark:bg-red-950/90 border-b border-red-500/50 text-white px-4 py-3 flex items-center justify-between gap-4 z-40 shadow-lg backdrop-blur-md transition-all animate-in slide-in-from-top-2"
+          >
+            <div className="flex items-center gap-3 max-w-4xl">
+              <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center shrink-0">
+                <LogOut className="w-4 h-4 text-white" />
+              </div>
+              <div className="text-xs sm:text-sm">
+                <span className="font-bold uppercase tracking-wider text-red-200 mr-2 text-[10px]">Session Terminated</span>
+                <span className="font-medium text-white">{sessionTerminationAlert}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => {
+                  setSessionTerminationAlert(null);
+                  setIsAuthModalOpen(true);
+                }}
+                className="px-3 py-1 text-xs font-semibold bg-white text-red-700 hover:bg-red-50 rounded-lg shadow transition-colors"
+              >
+                Sign In
+              </button>
+              <button
+                onClick={() => setSessionTerminationAlert(null)}
+                className="text-red-200 hover:text-white p-1 rounded-md transition-colors"
+                aria-label="Dismiss alert"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Offline Mode Read-Only Banner */}
         {!isOnline && (
@@ -4838,7 +4885,6 @@ export default function App() {
         onOpenChangePassword={() => setIsChangePasswordOpen(true)}
         onOpenCommandMappings={() => setIsCommandMappingModalOpen(true)}
         onOpenSmsSettings={() => setIsSmsModalOpen(true)}
-        onOpenLiveSyncSimulator={() => setIsLiveSyncSimulatorOpen(true)}
       />
 
       {/* Android SMS Expense Auto-Logger Modal */}
@@ -5085,12 +5131,6 @@ export default function App() {
           </div>
         </div>
       )}
-
-      {/* Multi-Device Live Sync Simulator Modal */}
-      <LiveSyncSimulator
-        isOpen={isLiveSyncSimulatorOpen}
-        onClose={() => setIsLiveSyncSimulatorOpen(false)}
-      />
     </div>
   );
 }
