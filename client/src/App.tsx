@@ -765,7 +765,13 @@ export default function App() {
     // 10. Re-fetch user workspace data from Supabase if configured
     try {
       const res = await fetchWorkspaceFromSupabase();
-      if (res.success && res.data) {
+      if (res.success && res.exists === false) {
+        // A successful server response with no workspace is authoritative. Clear
+        // stale device-local data so it cannot be shown or uploaded as a fresh account.
+        isRemoteUpdating.current = true;
+        Storage.resetToCleanUserWorkspace(user);
+        handleHydrateAllFromStorage(false);
+      } else if (res.success && res.data) {
         isRemoteUpdating.current = true;
         Storage.importAllDataPayload(res.data);
 

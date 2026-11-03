@@ -226,6 +226,8 @@ export const validateSupabaseConnection = async (): Promise<boolean> => {
 export interface CloudSyncResult {
   success: boolean;
   message: string;
+  /** True when the server answered successfully and confirmed no workspace exists. */
+  exists?: boolean;
   timestamp?: string;
   data?: any;
   revision?: number;
@@ -856,7 +858,7 @@ export const fetchWorkspaceFromServer = async (): Promise<CloudSyncResult> => {
         data: res.workspace_data,
       };
     }
-    return { success: false, message: 'No server snapshot found' };
+    return { success: true, exists: false, message: 'No server snapshot found', data: null };
   } catch (err: any) {
     return { success: false, message: err?.message || 'Server fetch error' };
   }
@@ -1791,13 +1793,7 @@ export const fetchWorkspaceFromSupabase = async (): Promise<CloudSyncResult> => 
   const client = getSupabaseClient();
   if (!client) {
     const serverResult = await fetchWorkspaceFromServer();
-    if (serverResult.success && serverResult.data) {
-      return serverResult;
-    }
-    return {
-      success: false,
-      message: 'Server hub query returned no existing snapshot. Local data remains active.',
-    };
+    return serverResult;
   }
 
   try {
@@ -1828,7 +1824,7 @@ export const fetchWorkspaceFromSupabase = async (): Promise<CloudSyncResult> => 
     if (error || !data || !data.workspace_data) {
       // Check server hub fallback
       const serverResult = await fetchWorkspaceFromServer();
-      if (serverResult.success && serverResult.data) {
+      if (serverResult.success && (serverResult.data || serverResult.exists === false)) {
         return serverResult;
       }
       if (error) {
