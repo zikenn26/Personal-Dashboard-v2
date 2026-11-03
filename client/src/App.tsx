@@ -76,6 +76,7 @@ import { UserAvatar } from './components/UserAvatar';
 import { isDummyMockAvatar, isAvatarMatchingUserEmailDomain } from './utils/userUtils';
 import { STOCK_IMAGES } from './assets/stockImages';
 import LandingPage from './components/LandingPage';
+import { LiveSyncSimulator } from './components/LiveSyncSimulator';
 import { usePlatformMode } from './presentation/mobile/shell/usePlatformMode';
 import { AndroidShell } from './presentation/mobile/shell/AndroidShell';
 import {
@@ -125,6 +126,7 @@ import { normalizeExpenseDateKey, getLocalDateKey } from './utils/expenseUtils';
 import { toast } from 'sonner';
 
 import {
+  Activity,
   Moon,
   Sun,
   Volume2,
@@ -281,6 +283,7 @@ export default function App() {
 
   // Modals & Floating Bars
   const [isZikennPopupOpen, setIsZikennPopupOpen] = useState(false);
+  const [isLiveSyncSimulatorOpen, setIsLiveSyncSimulatorOpen] = useState(false);
   const [isGlobalVoiceModalOpen, setIsGlobalVoiceModalOpen] = useState(false);
   const [isGlobalVoiceActive, setIsGlobalVoiceActive] = useState(false);
   const [isVoiceCommandProcessed, setIsVoiceCommandProcessed] = useState(false);
@@ -3704,6 +3707,21 @@ export default function App() {
               </button>
             )}
 
+            {/* Multi-Device Live Sync Simulator Button */}
+            <button
+              type="button"
+              onClick={() => {
+                Sound.click(settings.soundEnabled);
+                setIsLiveSyncSimulatorOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/60 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors cursor-pointer"
+              title="Multi-Device Live Sync Simulator (Real-Time WebSocket Hub)"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <Activity className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Sync Hub</span>
+            </button>
+
             {/* Theme Toggle (Light / Dark Mode) */}
             <button
               type="button"
@@ -5066,6 +5084,12 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Multi-Device Live Sync Simulator Modal */}
+      <LiveSyncSimulator
+        isOpen={isLiveSyncSimulatorOpen}
+        onClose={() => setIsLiveSyncSimulatorOpen(false)}
+      />
     </div>
   );
 }

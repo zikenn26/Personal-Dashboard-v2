@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import crypto from "crypto";
 import { pool, initDb } from "./db.js";
+import { broadcastWorkspaceUpdate, setupSyncWebSocket, getSyncWsStats } from "./syncWebSocket.js";
 
 interface StoredWorkspace {
   user_identifier: string;
@@ -437,6 +438,23 @@ export async function handlePostWorkspace(req: any, res: any): Promise<void> {
       } catch (authErr) {
         console.warn('[SyncService] Notice updating expense_authority:', authErr);
       }
+    }
+
+    // Broadcast real-time update to all connected WebSocket clients in the user's room
+    try {
+      broadcastWorkspaceUpdate(activeKey, {
+        type: "WORKSPACE_UPDATED",
+        userIdentifier: activeKey,
+        module: "all",
+        action: "UPSERT",
+        fullWorkspace: mergedWorkspace,
+        vectorTimestamp: finalVersion,
+        syncVersion: finalVersion,
+        sourceDeviceId: req.body?.device_id || (isFromApk ? "apk_device" : "web_device"),
+        timestamp: now,
+      });
+    } catch (wsErr) {
+      console.warn("[SyncService] Notice broadcasting to WebSocket clients:", wsErr);
     }
 
     return res.status(200).json({
@@ -1122,6 +1140,9 @@ export function registerSyncRoutes(app: Express): void {
   app.get("/api/sync/devices", handleGetDevices);
   app.post("/api/sync/devices/heartbeat", handlePostHeartbeat);
   app.delete("/api/sync/devices/:deviceId", handleDeleteDevice);
+  app.get("/api/sync/ws-status", (_req, res) => {
+    res.json(getSyncWsStats());
+  });
 }
 
 /**
@@ -1132,6 +1153,9 @@ export function syncVitePlugin() {
     name: "sync-vite-plugin",
     configureServer(server: any) {
       void initDb().catch((err) => console.warn('[SyncService] Neon DB init notice:', err?.message || err));
+      if (server.httpServer) {
+        setupSyncWebSocket(server.httpServer);
+      }
 
       server.middlewares.use(async (req: any, res: any, next: any) => {
         let pathname = "";
@@ -1233,6 +1257,10 @@ export function syncVitePlugin() {
         if (pathname.startsWith("/api/sync/devices/") && method === "DELETE") {
           req.params = { deviceId: pathname.replace("/api/sync/devices/", "") };
           return handleDeleteDevice(req, enhancedRes);
+        }
+
+        if (pathname === "/api/sync/ws-status" && method === "GET") {
+          return enhancedRes.json(getSyncWsStats());
         }
 
         return next();

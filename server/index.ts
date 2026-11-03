@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import { registerGeminiRoutes, setupGeminiLiveWebSocket } from "./geminiService.js";
 import { registerScreenTimeRoutes } from "./screenTimeService.js";
 import { registerSyncRoutes } from "./syncService.js";
+import { setupSyncWebSocket } from "./syncWebSocket.js";
 import { initDb } from "./db.js";
 import { rateLimit, requireAuthForServerKeyUsage } from "./security.js";
 
@@ -56,6 +57,9 @@ async function startServer() {
 
   // Setup Gemini Live WebSocket server on /live
   setupGeminiLiveWebSocket(server);
+
+  // Setup full-duplex live workspace sync WebSocket server on /api/sync/ws
+  setupSyncWebSocket(server);
 
   // Register Gemini Chat, Commands, TTS and Health routes on /api/gemini/*
   registerGeminiRoutes(app);

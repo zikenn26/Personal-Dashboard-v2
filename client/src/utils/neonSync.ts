@@ -12,6 +12,7 @@ import {
 import { mergeExpenseLists, normalizeExpenseDateKey, getLocalDateKey } from './expenseUtils';
 import { OWNER_GKN_HABITS, OWNER_GKN_EXPENSES } from './userUtils';
 import { ExpenseItem, OutboxMutation } from '../types';
+import { realtimeHub } from './realtimeHub';
 export {
   mergeExpenseLists,
   getEffectiveSupabaseUrl,
@@ -468,7 +469,14 @@ export const broadcastWorkspaceUpdate = (enrichedPayload: any) => {
     localStorage.setItem('lifeos_workspace_sync_clock', String(Date.now()));
   } catch {}
 
-  // 3. Fall back to WebSocket channel if active
+  // 3. Modern Full-Duplex WebSocket live sync hub push to other tabs, devices, and platforms (<30ms)
+  try {
+    realtimeHub.sendMutation('workspace', 'UPSERT', enrichedPayload);
+  } catch (wsErr) {
+    console.warn('[RealtimeHub] Live sync broadcast notice:', wsErr);
+  }
+
+  // 4. Fall back to WebSocket channel if active
   if (!activeRealtimeChannel) return;
   if (activeRealtimeChannel.state && activeRealtimeChannel.state !== 'joined') return;
   try {
@@ -1352,6 +1360,28 @@ export const subscribeToRealtimeWorkspace = (
     tabChannel.addEventListener('message', handleTabBroadcast);
   }
 
+  // 1.5. Full-duplex WebSocket live sync hub listener (<20ms across devices)
+  const unsubRealtimeWs = realtimeHub.subscribeUpdates((msg: any) => {
+    if (isDestroyed) return;
+    try {
+      if (msg && msg.type === 'WORKSPACE_UPDATED') {
+        const incoming = msg.fullWorkspace || msg.payload;
+        if (incoming) {
+          const remoteVersion = msg.vectorTimestamp || msg.syncVersion || Date.now();
+          lastAppliedRemoteVersion = Math.max(lastAppliedRemoteVersion, remoteVersion);
+          lastAppliedRemoteUpdatedAt = msg.timestamp || new Date(remoteVersion).toISOString();
+          latestKnownRemoteTimestamp = Math.max(latestKnownRemoteTimestamp, remoteVersion);
+          latestLocalMutationTimestamp = Math.max(latestLocalMutationTimestamp, remoteVersion);
+
+          onRemoteChange(incoming, lastAppliedRemoteUpdatedAt);
+          notifyStatus('synced');
+        }
+      }
+    } catch (e) {
+      console.warn('[RealtimeHub] Error handling workspace update in subscriber:', e);
+    }
+  });
+
   // 2. Cross-tab storage event listener: when another tab updates localStorage
   const handleStorageEvent = (e: StorageEvent) => {
     if (isDestroyed) return;
@@ -1471,6 +1501,7 @@ export const subscribeToRealtimeWorkspace = (
       document.removeEventListener('visibilitychange', handleFocusOrVisibility);
     }
     clearInterval(pollInterval);
+    unsubRealtimeWs();
     if (cleanUpChannel) {
       cleanUpChannel();
     }
