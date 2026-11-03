@@ -188,7 +188,7 @@ describe('Multi-Device Coexistence & Environment Identification Suite', () => {
   });
 
   it('7. subscribeToPresenceState immediately reports active device ID', async () => {
-    const { subscribeToPresenceState, DEVICE_SESSION_ID } = await import('../utils/supabase');
+    const { subscribeToPresenceState, DEVICE_SESSION_ID } = await import('../utils/neonSync');
 
     let reportedIds: Set<string> | null = null;
     const unsub = subscribeToPresenceState((ids) => {

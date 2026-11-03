@@ -105,6 +105,7 @@ export const initDb = async (): Promise<void> => {
       ALTER TABLE workspaces ALTER COLUMN sync_version TYPE NUMERIC(30, 0);
       ALTER TABLE transactions ALTER COLUMN client_updated_at TYPE NUMERIC(30, 0);
       ALTER TABLE transactions ALTER COLUMN version TYPE NUMERIC(30, 0);
+      ALTER TABLE transactions ALTER COLUMN id TYPE TEXT USING id::text;
 
       CREATE TABLE IF NOT EXISTS connected_devices (
         id TEXT PRIMARY KEY,

@@ -1526,7 +1526,7 @@ export const Storage = {
     const activeEmail = (getCustomWorkspaceEmail() || '').toLowerCase().trim();
     const ws = getCustomWorkspaceIdentifier();
     const isGuest = !activeEmail || activeEmail === 'guest@workspace.local' || ws === 'user_guest';
-    const isGknUser = !isGuest && (activeEmail === '' || activeEmail === '');
+    const isGknUser = !isGuest && (activeEmail.includes('gknayak') || activeEmail.includes('gulshan'));
 
     // Strictly user-scoped offline cache recovery:
     // Gather all persistent offline caches to ensure spending data is always readable offline and never blanked
@@ -1575,9 +1575,7 @@ export const Storage = {
     } else {
       offlineCacheKeys.push(
         'user_guest_offline_expenses_cache',
-        'user_guest_lifeos_expenses_backup',
-        'lifeos_offline_expenses_cache',
-        'lifeos_expenses_backup'
+        'user_guest_lifeos_expenses_backup'
       );
     }
 
@@ -1865,18 +1863,16 @@ export const Storage = {
       }
 
       if (sanitized.length > 0) {
-        localStorage.setItem('lifeos_offline_expenses_cache', serialized);
         if (!isGuest) {
           localStorage.setItem(`${activeEmail}_offline_expenses_cache`, serialized);
           localStorage.setItem(`${ws}_offline_expenses_cache`, serialized);
           if (isGknUser) {
+            localStorage.setItem('lifeos_offline_expenses_cache', serialized);
             localStorage.setItem('lifeos_expenses_backup', serialized);
           }
         } else {
           localStorage.setItem('user_guest_offline_expenses_cache', serialized);
           localStorage.setItem('user_guest_lifeos_expenses_backup', serialized);
-          localStorage.setItem('lifeos_offline_expenses_cache', serialized);
-          localStorage.setItem('lifeos_expenses_backup', serialized);
         }
       } else {
         if (!isGuest) {

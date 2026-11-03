@@ -197,16 +197,14 @@ class ExpenseSyncService {
     expenses: ExpenseItem[],
     workspaceIdentifier: string
   ): Promise<void> {
-    if (!isSupabaseConfigured()) return;
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured()) {
+      // In Neon Serverless PostgreSQL architecture, authority records are tracked
+      // directly on the server via /api/sync/workspace. Supabase client is intentionally disabled.
+      return;
+    }
 
     try {
-      // CRITICAL FIX: Validate user context before proceeding
-      const supabase = getSupabaseClient();
-      if (!supabase) {
-        logger.error('EXPENSE_SYNC', 'Supabase not initialized');
-        return;
-      }
-
       const { data: { user } } = await supabase.auth.getUser();
       if (!user || !user.id) {
         logger.error('EXPENSE_SYNC', 'No authenticated user during recordExpenseAuthorities()');
