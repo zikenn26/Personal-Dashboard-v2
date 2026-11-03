@@ -422,16 +422,55 @@ const notifyPresenceListeners = (presenceState: Record<string, any[]>) => {
 
 export const getAutoSyncStatus = () => currentSyncStatus;
 
+// Modern Cross-Tab Synchronization Channel
+let tabBroadcastChannel: BroadcastChannel | null = null;
+export const getTabBroadcastChannel = (): BroadcastChannel | null => {
+  if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') return null;
+  if (!tabBroadcastChannel) {
+    try {
+      tabBroadcastChannel = new BroadcastChannel('lifeos_workspace_cross_tab_channel');
+    } catch {
+      tabBroadcastChannel = null;
+    }
+  }
+  return tabBroadcastChannel;
+};
+
 /**
- * Broadcast workspace changes via WebSocket directly to all connected devices.
- * Delivers updates in <30ms without waiting for database writes.
+ * Broadcast workspace changes via BroadcastChannel to other browser tabs and WebSocket to other devices.
+ * Delivers updates in <10ms across tabs without waiting for database writes.
  */
 export const broadcastWorkspaceUpdate = (enrichedPayload: any) => {
-  if (!activeRealtimeChannel) return;
-  // Guard against sending before channel is joined to prevent REST fallback and HTTP 422
-  if (activeRealtimeChannel.state && activeRealtimeChannel.state !== 'joined') return;
   const activeId = getCustomWorkspaceIdentifier();
-  if (activeId === 'user_guest' || activeId.startsWith('user_guest') || !activeUserEmail || activeUserEmail === 'guest@workspace.local') return;
+  if (activeId === 'user_guest' || activeId.startsWith('user_guest') || !activeUserEmail || activeUserEmail === 'guest@workspace.local') {
+    return;
+  }
+
+  // 1. Cross-tab instant broadcast via modern browser BroadcastChannel
+  try {
+    const ch = getTabBroadcastChannel();
+    if (ch) {
+      ch.postMessage({
+        type: 'workspace_sync',
+        deviceId: DEVICE_SESSION_ID,
+        workspaceId: activeId,
+        userEmail: activeUserEmail,
+        timestamp: new Date().toISOString(),
+        data: enrichedPayload,
+      });
+    }
+  } catch (err) {
+    console.warn('Cross-tab broadcast notice:', err);
+  }
+
+  // 2. Also signal sync clock timestamp to trigger storage events across windows
+  try {
+    localStorage.setItem('lifeos_workspace_sync_clock', String(Date.now()));
+  } catch {}
+
+  // 3. Fall back to WebSocket channel if active
+  if (!activeRealtimeChannel) return;
+  if (activeRealtimeChannel.state && activeRealtimeChannel.state !== 'joined') return;
   try {
     const serialized = JSON.stringify(enrichedPayload);
     // Supabase tenant broadcast payload limit is 250KB. Keep payload under 200KB for safety
@@ -448,7 +487,6 @@ export const broadcastWorkspaceUpdate = (enrichedPayload: any) => {
         console.warn('Realtime broadcast send notice:', err);
       });
     } else {
-      // Send lightweight sync ping telling peer devices to pull latest workspace directly
       activeRealtimeChannel.send({
         type: 'broadcast',
         event: 'workspace_sync_ping',
@@ -661,7 +699,30 @@ export const syncWorkspaceToSupabase = async (
   const client = getSupabaseClient();
   if (!client) {
     // If Supabase is unconfigured, sync to server relay directly
-    const serverRes = await syncWorkspaceToServer(workspacePayload);
+    notifyStatus('syncing');
+    const syncTimestampMs = getSyncTimestamp();
+    const isNativeApk = isNativeOrMobile();
+    const enrichedPayload = {
+      ...workspacePayload,
+      _meta: {
+        ...(workspacePayload?._meta || {}),
+        lastDeviceId: DEVICE_SESSION_ID,
+        clientTimestamp: syncTimestampMs,
+        syncVersion: syncTimestampMs,
+        ...(isNativeApk
+          ? {
+              apkInstalled: true,
+              lastApkSyncTimestamp: Date.now(),
+              apkDeviceName: 'Android Native APK',
+            }
+          : {}),
+      },
+    };
+
+    // Broadcast immediately to peer browser tabs (<5ms)
+    broadcastWorkspaceUpdate(enrichedPayload);
+
+    const serverRes = await syncWorkspaceToServer(enrichedPayload);
     notifyStatus(serverRes.success ? 'synced' : 'idle');
     return serverRes;
   }
@@ -1242,271 +1303,178 @@ export const subscribeToRealtimeWorkspace = (
   onRemoteChange: (data: any, timestamp: string) => void,
   onDeviceRevoked?: () => void
 ): (() => void) => {
-  const client = getSupabaseClient();
-  if (!client) {
+  const activeId = getCustomWorkspaceIdentifier();
+  if (activeId === 'user_guest' || activeId.startsWith('user_guest') || !activeUserEmail || activeUserEmail === 'guest@workspace.local') {
     return () => {};
   }
 
-  try {
-    const activeId = getCustomWorkspaceIdentifier();
-    if (activeId === 'user_guest' || activeId.startsWith('user_guest') || !activeUserEmail || activeUserEmail === 'guest@workspace.local') {
-      return () => {};
-    }
-    const channelName = `realtime_workspace_${activeId}`;
+  let isDestroyed = false;
 
-    // Clean up any stale channel before subscribing to the new user workspace channel
-    if (activeRealtimeChannel) {
-      try {
-        client.removeChannel(activeRealtimeChannel);
-      } catch {
-        // ignore
+  // 1. Instant Cross-Tab Synchronization via modern Browser BroadcastChannel (<5ms)
+  const tabChannel = getTabBroadcastChannel();
+  const handleTabBroadcast = (event: MessageEvent) => {
+    if (isDestroyed) return;
+    try {
+      const msg = event?.data;
+      if (!msg) return;
+
+      // Handle remote device revocation command
+      if (msg.type === 'device_logout_command' && onDeviceRevoked) {
+        if (msg.targetDeviceId === DEVICE_SESSION_ID || msg.targetDeviceId === '*' || msg.forceAllDevices) {
+          onDeviceRevoked();
+        }
+        return;
       }
-      activeRealtimeChannel = null;
-    }
 
-    const channel = client
-      .channel(channelName, {
-        config: {
-          broadcast: { self: false, ack: false },
-          presence: { key: DEVICE_SESSION_ID },
-        },
-      })
-      .on('presence', { event: 'sync' }, () => {
+      // Ignore echoes from this exact tab session
+      if (msg.deviceId === DEVICE_SESSION_ID) return;
+
+      // Ensure message belongs to the current active workspace
+      const currentWorkspaceId = getCustomWorkspaceIdentifier();
+      if (msg.workspaceId && currentWorkspaceId && msg.workspaceId !== currentWorkspaceId) return;
+
+      if (msg.type === 'workspace_sync' && msg.data) {
+        const remoteVersion = getPayloadSyncTimestamp(msg.data, msg.timestamp);
+        lastAppliedRemoteVersion = Math.max(lastAppliedRemoteVersion, remoteVersion);
+        lastAppliedRemoteUpdatedAt = msg.timestamp || new Date(remoteVersion).toISOString();
+        latestKnownRemoteTimestamp = Math.max(latestKnownRemoteTimestamp, remoteVersion);
+        latestLocalMutationTimestamp = Math.max(latestLocalMutationTimestamp, remoteVersion);
+
+        onRemoteChange(msg.data, lastAppliedRemoteUpdatedAt);
+        notifyStatus('synced');
+      }
+    } catch (e) {
+      console.warn('Cross-tab broadcast listener error:', e);
+    }
+  };
+
+  if (tabChannel) {
+    tabChannel.addEventListener('message', handleTabBroadcast);
+  }
+
+  // 2. Cross-tab storage event listener: when another tab updates localStorage
+  const handleStorageEvent = (e: StorageEvent) => {
+    if (isDestroyed) return;
+    if (e.key === 'lifeos_workspace_sync_clock' || (e.key && e.key.includes('_notion_os_v4_'))) {
+      void pollServerWorkspace();
+    }
+  };
+  // 3. Fast Server Check against Neon DB Server (/api/sync/workspace)
+  const pollServerWorkspace = async () => {
+    if (isDestroyed) return;
+    try {
+      const res = await fetchWorkspaceFromServer();
+      if (res.success && res.data && !isDestroyed) {
+        const remoteVersion = getPayloadSyncTimestamp(res.data, res.timestamp);
+        if (remoteVersion > lastAppliedRemoteVersion || (res.timestamp && res.timestamp !== lastAppliedRemoteUpdatedAt)) {
+          lastAppliedRemoteVersion = Math.max(lastAppliedRemoteVersion, remoteVersion);
+          lastAppliedRemoteUpdatedAt = res.timestamp || new Date(remoteVersion).toISOString();
+          latestKnownRemoteTimestamp = Math.max(latestKnownRemoteTimestamp, remoteVersion);
+          latestLocalMutationTimestamp = Math.max(latestLocalMutationTimestamp, remoteVersion);
+
+          onRemoteChange(res.data, lastAppliedRemoteUpdatedAt);
+          notifyStatus('synced');
+        }
+      }
+    } catch {
+      // Ignore background poll errors
+    }
+  };
+
+  // Poll server every 4 seconds when tab is active/visible
+  const pollInterval = setInterval(() => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      void pollServerWorkspace();
+    }
+  }, 4000);
+
+  // Poll immediately on window focus and visibility change
+  const handleFocusOrVisibility = () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      void pollServerWorkspace();
+    }
+  };
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', handleStorageEvent);
+    window.addEventListener('focus', handleFocusOrVisibility);
+  }
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', handleFocusOrVisibility);
+  }
+
+  // 4. Fallback to Supabase WebSocket channel if configured
+  const client = getSupabaseClient();
+  let cleanUpChannel: (() => void) | null = null;
+
+  if (client) {
+    try {
+      const channelName = `realtime_workspace_${activeId}`;
+      if (activeRealtimeChannel) {
         try {
-          const state = channel.presenceState();
-          notifyPresenceListeners(state);
+          client.removeChannel(activeRealtimeChannel);
         } catch {}
-      })
-      .on('presence', { event: 'join' }, () => {
-        try {
-          const state = channel.presenceState();
-          notifyPresenceListeners(state);
-        } catch {}
-      })
-      .on('presence', { event: 'leave' }, () => {
-        try {
-          const state = channel.presenceState();
-          notifyPresenceListeners(state);
-        } catch {}
-      })
-      // 1. Instant WebSocket broadcast channel from peer devices (sub-30ms)
-      .on(
-        'broadcast',
-        { event: 'workspace_sync' },
-        (res: any) => {
+        activeRealtimeChannel = null;
+      }
+
+      const channel = client
+        .channel(channelName, {
+          config: {
+            broadcast: { self: false, ack: false },
+            presence: { key: DEVICE_SESSION_ID },
+          },
+        })
+        .on('presence', { event: 'sync' }, () => {
+          try {
+            notifyPresenceListeners(channel.presenceState());
+          } catch {}
+        })
+        .on('broadcast', { event: 'workspace_sync' }, (res: any) => {
           try {
             const payload = res?.payload;
-            if (!payload || !payload.data) return;
-
-            // Ignore if this change originated from this same browser session
-            if (payload.deviceId === DEVICE_SESSION_ID) {
-              return;
-            }
-
-            const remoteVersion = getPayloadSyncTimestamp(
-              payload.data,
-              payload.timestamp
-            );
-            const remoteTs = payload.timestamp || '';
-            // Do not discard remote peer broadcasts due to local clock skew
-            if (remoteVersion === lastAppliedRemoteVersion && remoteTs && remoteTs === lastAppliedRemoteUpdatedAt) {
-              return;
-            }
-
+            if (!payload || !payload.data || payload.deviceId === DEVICE_SESSION_ID) return;
+            const remoteVersion = getPayloadSyncTimestamp(payload.data, payload.timestamp);
             lastAppliedRemoteVersion = Math.max(lastAppliedRemoteVersion, remoteVersion);
-            lastAppliedRemoteUpdatedAt = remoteTs;
-            latestKnownRemoteTimestamp = Math.max(
-              latestKnownRemoteTimestamp,
-              remoteVersion
-            );
-            latestLocalMutationTimestamp = Math.max(
-              latestLocalMutationTimestamp,
-              remoteVersion
-            );
-
-            onRemoteChange(
-              payload.data,
-              payload.timestamp || new Date(remoteVersion).toISOString()
-            );
+            lastAppliedRemoteUpdatedAt = payload.timestamp || '';
+            onRemoteChange(payload.data, payload.timestamp || new Date(remoteVersion).toISOString());
             notifyStatus('synced');
           } catch (e) {
             console.warn('Realtime broadcast payload error:', e);
           }
-        }
-      )
-      // 1b. Lightweight ping from peer device when payload was large (>200KB)
-      .on(
-        'broadcast',
-        { event: 'workspace_sync_ping' },
-        async (res: any) => {
-          try {
-            const payload = res?.payload;
-            if (!payload || payload.deviceId === DEVICE_SESSION_ID) return;
-            const remoteResult = await fetchWorkspaceFromSupabase();
-            if (remoteResult.success && remoteResult.data) {
-              onRemoteChange(remoteResult.data, remoteResult.timestamp || new Date().toISOString());
-              notifyStatus('synced');
-            }
-          } catch (e) {
-            console.warn('Realtime workspace_sync_ping handler notice:', e);
+        })
+        .subscribe();
+
+      activeRealtimeChannel = channel;
+      cleanUpChannel = () => {
+        try {
+          if (activeRealtimeChannel === channel) {
+            client.removeChannel(channel);
+            activeRealtimeChannel = null;
           }
-        }
-      )
-      // 2. Remote device revocation/logout broadcast listener
-      .on(
-        'broadcast',
-        { event: 'device_logout_command' },
-        (res: any) => {
-          try {
-            const payload = res?.payload;
-            if (
-              payload &&
-              (payload.targetDeviceId === DEVICE_SESSION_ID ||
-                payload.targetDeviceId === '*' ||
-                payload.forceAllDevices === true)
-            ) {
-              if (onDeviceRevoked) {
-                onDeviceRevoked();
-              }
-            }
-          } catch (e) {
-            console.warn('Realtime device logout error:', e);
-          }
-        }
-      )
-      // 3. PostgreSQL database events for authoritative persistence updates
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'user_expenses', filter: `workspace_identifier=eq.${activeId}` },
-        (payload: any) => {
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('expense-postgres-change', { detail: payload }));
-          }
-        }
-      )
-      // 4. Instant peer-to-peer alarm action broadcast (sub-30ms cross-device snooze/dismiss/delete/set)
-      .on(
-        'broadcast',
-        { event: 'alarm_action' },
-        (res: any) => {
-          try {
-            const payload = res?.payload;
-            if (!payload) return;
-            if (payload.deviceId === DEVICE_SESSION_ID) return;
-
-            if (typeof window !== 'undefined') {
-              window.dispatchEvent(
-                new CustomEvent('remote-alarm-sync', { detail: payload })
-              );
-            }
-          } catch (e) {
-            console.warn('Realtime alarm_action listener error:', e);
-          }
-        }
-      )
-      // 4. Postgres replication database changes (authoritative state persistence)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'user_workspaces',
-          filter: `user_identifier=eq.${activeId}`,
-        },
-        (payload: any) => {
-          try {
-            const newRecord = payload.new;
-            if (!newRecord || !newRecord.workspace_data) return;
-            if (newRecord.user_identifier && newRecord.user_identifier !== activeId) return;
-
-            const meta = newRecord.workspace_data?._meta;
-            // Ignore if this change originated from this same browser session
-            if (meta?.lastDeviceId === DEVICE_SESSION_ID) {
-              return;
-            }
-
-            const remoteVersion = getPayloadSyncTimestamp(
-              newRecord.workspace_data,
-              newRecord.updated_at
-            );
-            const remoteUpdatedAt = newRecord.updated_at || '';
-            // Reject identical already-applied update
-            if (remoteUpdatedAt && remoteUpdatedAt === lastAppliedRemoteUpdatedAt && remoteVersion === lastAppliedRemoteVersion) {
-              return;
-            }
-
-            lastAppliedRemoteUpdatedAt = remoteUpdatedAt;
-            lastAppliedRemoteVersion = Math.max(
-              lastAppliedRemoteVersion,
-              remoteVersion
-            );
-            latestKnownRemoteTimestamp = Math.max(
-              latestKnownRemoteTimestamp,
-              remoteVersion
-            );
-            latestLocalMutationTimestamp = Math.max(
-              latestLocalMutationTimestamp,
-              remoteVersion
-            );
-
-            // Trigger silent real-time hydration on this device for this newer workspace snapshot
-            onRemoteChange(
-              newRecord.workspace_data,
-              newRecord.updated_at || new Date(remoteVersion).toISOString()
-            );
-            notifyStatus('synced');
-          } catch (e) {
-            console.warn('Realtime postgres_changes payload error:', e);
-          }
-        }
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          notifyStatus('synced');
-          realtimeReconnectAttempts = 0;
-          try {
-            channel.track({
-              id: DEVICE_SESSION_ID,
-              email: activeUserEmail,
-              onlineAt: Date.now(),
-            });
-          } catch {}
-        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          console.warn('Realtime channel disconnected or timed out:', status);
-          notifyStatus('idle');
-          if (reconnectRealtimeTimeout) clearTimeout(reconnectRealtimeTimeout);
-          if (realtimeReconnectAttempts < 5) {
-            const delay = Math.min(30000, 3000 * Math.pow(1.5, realtimeReconnectAttempts));
-            realtimeReconnectAttempts++;
-            reconnectRealtimeTimeout = setTimeout(() => {
-              if (activeRealtimeChannel) {
-                try {
-                  client.removeChannel(activeRealtimeChannel);
-                } catch {}
-                activeRealtimeChannel = null;
-              }
-              subscribeToRealtimeWorkspace(onRemoteChange, onDeviceRevoked);
-            }, delay);
-          }
-        }
-      });
-
-    activeRealtimeChannel = channel;
-
-    return () => {
-      try {
-        if (activeRealtimeChannel === channel) {
-          client.removeChannel(channel);
-          activeRealtimeChannel = null;
-        }
-      } catch (err) {
-        console.warn('Error removing realtime channel:', err);
-      }
-    };
-  } catch (err) {
-    console.warn('Could not subscribe to Supabase Realtime:', err);
-    return () => {};
+        } catch {}
+      };
+    } catch {
+      // Ignore websocket fallback error
+    }
   }
+
+  return () => {
+    isDestroyed = true;
+    if (tabChannel) {
+      tabChannel.removeEventListener('message', handleTabBroadcast);
+    }
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('storage', handleStorageEvent);
+      window.removeEventListener('focus', handleFocusOrVisibility);
+    }
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', handleFocusOrVisibility);
+    }
+    clearInterval(pollInterval);
+    if (cleanUpChannel) {
+      cleanUpChannel();
+    }
+  };
 };
 
 export const getActiveRealtimeChannel = () => activeRealtimeChannel;

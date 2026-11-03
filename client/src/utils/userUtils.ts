@@ -102,8 +102,8 @@ export function isDummyMockAvatar(url?: string | null, userEmail?: string | null
   }
 
   const isGknUser =
-    activeEmail === '' ||
-    activeEmail === '';
+    activeEmail.includes('gknayak') ||
+    activeEmail.includes('gulshan');
 
   // Only reject Gulshan assets if this is an explicitly DIFFERENT authenticated account (e.g. arpitapri125@gmail.com)
   const isDifferentUser = Boolean(
@@ -113,7 +113,7 @@ export function isDummyMockAvatar(url?: string | null, userEmail?: string | null
     !isGknUser
   );
 
-  if (isDifferentUser && (trimmed.includes('') || trimmed.includes('gulnayak'))) {
+  if (isDifferentUser && (trimmed.includes('gknayak') || trimmed.includes('gulnayak'))) {
     return true;
   }
 
@@ -145,7 +145,7 @@ export function isDummyMockAvatar(url?: string | null, userEmail?: string | null
  * Validates whether an avatar URL strictly matches the authenticated user's email domain and identity.
  * Clears or rejects cached or local storage avatars if:
  * 1. It is a mock, stock, or placeholder image (Unsplash, DiceBear, Pravatar, etc.).
- * 2. It belongs to another account (e.g.  or gulnayak for any user other than Gulshan).
+ * 2. It belongs to another account (e.g. gknayak or gulnayak for any user other than Gulshan).
  * 3. It encodes another username or email domain (e.g. Supabase storage path avatar_<otheruser>_<domain>).
  * 4. Its email domain does not match the authenticated user's email domain.
  */
@@ -185,8 +185,8 @@ export function isAvatarMatchingUserEmailDomain(url?: string | null, userEmail?:
   }
 
   const isGknUser =
-    activeEmail === '' ||
-    activeEmail === '';
+    activeEmail.includes('gknayak') ||
+    activeEmail.includes('gulshan');
 
   const isDifferentUser = Boolean(
     activeEmail &&
@@ -198,12 +198,12 @@ export function isAvatarMatchingUserEmailDomain(url?: string | null, userEmail?:
   const lowerUrl = trimmed.toLowerCase();
 
   // 2. Strict isolation for Gulshan's asset:
-  if (isDifferentUser && lowerUrl.includes('')) {
+  if (isDifferentUser && (lowerUrl.includes('gknayak') || lowerUrl.includes('gulnayak'))) {
     return false;
   }
 
   // If user is Gulshan or guest / default portfolio, Gulshan's authentic avatar is always accepted
-  if (!isDifferentUser && lowerUrl.includes('')) {
+  if (!isDifferentUser && (lowerUrl.includes('gknayak') || lowerUrl.includes('gulnayak'))) {
     return true;
   }
 

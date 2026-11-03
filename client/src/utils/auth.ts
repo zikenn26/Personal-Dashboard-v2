@@ -115,14 +115,6 @@ const getLocalCredentialsMap = (): Record<string, { user: AuthUser; pass: string
     // ignore
   }
 
-  // Pre-seed default authoritative credentials if not already present
-  if (!map['gknayak@gmail.com']) {
-    map['gknayak@gmail.com'] = { user: DEFAULT_GKN_USER, pass: DEFAULT_GKN_PASS_HASH };
-  }
-  if (!map['gknayak']) {
-    map['gknayak'] = { user: DEFAULT_GKN_USER, pass: DEFAULT_GKN_PASS_HASH };
-  }
-
   return map;
 };
 
@@ -351,11 +343,11 @@ export const Auth = {
    */
   getCurrentUser: (): AuthUser | null => {
     try {
-      const isSignedOut = typeof window !== 'undefined' && localStorage.getItem('notion_os_auth_signed_out') === 'true';
+      const isSignedOut = typeof localStorage !== 'undefined' && localStorage.getItem('notion_os_auth_signed_out') === 'true';
       if (isSignedOut) {
         return null;
       }
-      const stored = typeof window !== 'undefined' ? localStorage.getItem(AUTH_STORAGE_KEY) : null;
+      const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(AUTH_STORAGE_KEY) : null;
       if (stored) {
         const user = JSON.parse(stored);
         if (user && user.email) {
@@ -688,12 +680,14 @@ export const Auth = {
 
     // Strict duplicate protection
     if (
-      raw === 'some_reserved_name' ||
-      cleanId === 'some_reserved_name'
+      raw === 'gknayak@gmail.com' ||
+      raw === 'gknayak' ||
+      cleanId === 'gknayak_gmail_com' ||
+      cleanId === 'gknayak'
     ) {
       return {
         success: false,
-        message: 'The username is already registered and in use. Please choose a different unique username.',
+        message: `The username or email "${usernameOrEmail.trim()}" is already registered. Please choose a different username or sign in.`,
       };
     }
 

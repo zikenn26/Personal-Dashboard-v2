@@ -118,6 +118,7 @@ import {
   checkHasNewerCloudWorkspace,
   setWorkOfflineMode,
   getPayloadSyncTimestamp,
+  broadcastWorkspaceUpdate,
 } from './utils/neonSync';
 import { nativeService } from './services/nativeService';
 import { normalizeExpenseDateKey, getLocalDateKey } from './utils/expenseUtils';
@@ -386,7 +387,7 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error' | 'idle'>(getAutoSyncStatus);
   const isInitialMount = useRef(true);
   const isRemoteUpdating = useRef(false);
-  const lastLocalMutationTimestamp = useRef<number>(Date.now());
+  const lastLocalMutationTimestamp = useRef<number>(0);
   const isCloudReady = useRef(false);
 
   // Global Online / Offline Read-Only State
@@ -828,9 +829,9 @@ export default function App() {
       setExams(Storage.getExams());
       setSchedule(Storage.getSchedule());
 
-      // Immediately sync normal dashboard updates to Supabase.
-      // Scratch Pad saves are handled by its own debounced sync.
-      if (!isRemoteUpdating.current && isSupabaseConfigured()) {
+      // Immediately sync normal dashboard updates to Cloud Database.
+      // Do not sync if triggered by a storage event from another tab (prevents ping-pong loop).
+      if (!isRemoteUpdating.current && isSupabaseConfigured() && e?.type !== 'storage') {
         void flushAutoSyncImmediately(Storage.getAllDataPayload());
       }
     };
@@ -1001,17 +1002,13 @@ export default function App() {
         const result = await fetchWorkspaceFromSupabase();
         if (result.success && result.data && isMounted) {
           const incomingVersion = getPayloadSyncTimestamp(result.data, result.timestamp);
-          const currentLocalPayload = Storage.getAllDataPayload();
-          const localVersion = Math.max(
-            lastLocalMutationTimestamp.current,
-            getPayloadSyncTimestamp(currentLocalPayload)
-          );
+          const localMutationTime = lastLocalMutationTimestamp.current;
 
-          // If local storage has newer or equal mutations than cloud snapshot, do not overwrite local state
-          if (localVersion > 0 && incomingVersion <= localVersion) {
-            console.info('[SUPABASE_SYNC] Local storage has newer or equal mutations. Skipping cloud overwrite.', {
+          // If this tab has a newer in-flight local mutation, do not overwrite local state
+          if (localMutationTime > 0 && incomingVersion <= localMutationTime) {
+            console.info('[NEON_SYNC] Local mutation in progress. Skipping cloud overwrite.', {
               incomingVersion,
-              localVersion,
+              localMutationTime,
             });
             return;
           }
@@ -1030,7 +1027,7 @@ export default function App() {
 
           console.info('[PROFILE_TRACE] autoSyncFromCloud applying snapshot. Incoming name:', result.data.profile?.name);
           isRemoteUpdating.current = true;
-          lastLocalMutationTimestamp.current = Math.max(incomingVersion, Date.now());
+          lastLocalMutationTimestamp.current = 0;
           Storage.importAllDataPayload(result.data);
 
           handleHydrateAllFromStorage(false);
@@ -1136,26 +1133,21 @@ export default function App() {
     const unsubRealtime = subscribeToRealtimeWorkspace(
       (remoteData, remoteTimestamp) => {
         if (remoteData && isMounted) {
-          // Explicit check: Compare updatedAt / syncVersion of incoming payload vs local state
           const incomingVersion = getPayloadSyncTimestamp(remoteData, remoteTimestamp);
-          const currentLocalPayload = Storage.getAllDataPayload();
-          const localVersion = Math.max(
-            lastLocalMutationTimestamp.current,
-            getPayloadSyncTimestamp(currentLocalPayload)
-          );
+          const localMutationTime = lastLocalMutationTimestamp.current;
 
-          // Strictly reject incoming remote updates that are older than or equal to local state
-          if (incomingVersion > 0 && incomingVersion <= localVersion) {
-            console.info('[REALTIME_SYNC] Discarded stale or echo remote update:', {
+          // Reject only if this tab has an active in-flight local mutation newer than incomingVersion
+          if (localMutationTime > 0 && incomingVersion <= localMutationTime) {
+            console.info('[REALTIME_SYNC] In-flight local mutation in progress. Skipping remote update:', {
               incomingVersion,
-              localVersion,
+              localMutationTime,
             });
             return;
           }
 
-          console.info('[PROFILE_TRACE] Realtime workspace event applying strictly newer snapshot. Incoming name:', remoteData.profile?.name);
+          console.info('[PROFILE_TRACE] Realtime workspace event applying snapshot.');
           isRemoteUpdating.current = true;
-          lastLocalMutationTimestamp.current = Math.max(incomingVersion, Date.now());
+          lastLocalMutationTimestamp.current = 0;
           Storage.importAllDataPayload(remoteData);
           handleHydrateAllFromStorage(false);
           setTimeout(() => {
@@ -1724,6 +1716,26 @@ export default function App() {
   };
 
   // Task / Todo Handlers
+  const syncTodoChanges = (updated: TodoItem[]) => {
+    lastLocalMutationTimestamp.current = Date.now();
+    setTodos(updated);
+    Storage.setTodos(updated);
+
+    // 1. Dispatch custom event for in-tab reactive modules
+    window.dispatchEvent(
+      new CustomEvent('dashboard-data-updated', {
+        detail: { module: 'todos', updatedTodos: updated },
+      })
+    );
+
+    // 2. Broadcast immediately across open Chrome tabs via BroadcastChannel (<5ms)
+    broadcastWorkspaceUpdate(Storage.getAllDataPayload());
+
+    // 3. Auto-sync to authoritative database
+    isCloudReady.current = true;
+    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
+  };
+
   const handleAddTodo = (
     title: string,
     priority: Priority,
@@ -1742,8 +1754,7 @@ export default function App() {
       createdAt: Date.now(),
     };
     const updated = [newTodo, ...todos];
-    setTodos(updated);
-    Storage.setTodos(updated);
+    syncTodoChanges(updated);
   };
 
   const handleToggleTodo = (id: string) => {
@@ -1768,8 +1779,7 @@ export default function App() {
       }
       return t;
     });
-    setTodos(updated);
-    Storage.setTodos(updated);
+    syncTodoChanges(updated);
   };
 
   const handleUpdateTodo = (id: string, updatedFields: Partial<TodoItem>) => {
@@ -1786,8 +1796,7 @@ export default function App() {
       }
       return t;
     });
-    setTodos(updated);
-    Storage.setTodos(updated);
+    syncTodoChanges(updated);
   };
 
   const handleUpdateTaskStatus = (id: string, status: TaskStatus) => {
@@ -1801,15 +1810,13 @@ export default function App() {
     const updated = todos.map((t) =>
       t.id === id ? { ...t, status, completed: status === 'complete' } : t
     );
-    setTodos(updated);
-    Storage.setTodos(updated);
+    syncTodoChanges(updated);
   };
 
   const handleDeleteTodo = (id: string) => {
     const target = todos.find((t) => t.id === id);
     const updated = todos.filter((t) => t.id !== id);
-    setTodos(updated);
-    Storage.setTodos(updated);
+    syncTodoChanges(updated);
     if (target) {
       Storage.moveToTrash('tasks', target, target.title);
       setTrash(Storage.getTrash());
@@ -1818,8 +1825,7 @@ export default function App() {
 
   const handleClearCompletedTodos = () => {
     const updated = todos.filter((t) => !t.completed && t.status !== 'complete');
-    setTodos(updated);
-    Storage.setTodos(updated);
+    syncTodoChanges(updated);
   };
 
   // Habit Lifecycle & Automated Monday Rollover Detector

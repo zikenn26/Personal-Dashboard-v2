@@ -1857,7 +1857,7 @@ export const Storage = {
       const activeEmail = (getCustomWorkspaceEmail() || '').toLowerCase().trim();
       const ws = getCustomWorkspaceIdentifier();
       const isGuest = !activeEmail || activeEmail === 'guest@workspace.local' || ws === 'user_guest';
-      const isGknUser = activeEmail === '' || activeEmail === '';
+      const isGknUser = activeEmail.includes('gknayak') || activeEmail.includes('gulshan');
       const serialized = JSON.stringify(sanitized);
 
       if (isGknUser) {
@@ -1865,12 +1865,12 @@ export const Storage = {
       }
 
       if (sanitized.length > 0) {
+        localStorage.setItem('lifeos_offline_expenses_cache', serialized);
         if (!isGuest) {
           localStorage.setItem(`${activeEmail}_offline_expenses_cache`, serialized);
           localStorage.setItem(`${ws}_offline_expenses_cache`, serialized);
           if (isGknUser) {
             localStorage.setItem('lifeos_expenses_backup', serialized);
-            localStorage.setItem('lifeos_offline_expenses_cache', serialized);
           }
         } else {
           localStorage.setItem('user_guest_offline_expenses_cache', serialized);
