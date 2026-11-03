@@ -84,16 +84,11 @@ sequenceDiagram
 
     App->>Local: Save edit and durable mutation locally
     App->>API: Push mutation with id, base revision, and cursor
-    API->>DB: Validate session and serialize entity write
-    alt Revision matches
-        DB-->>API: Commit entity and mutation log entry
-        API-->>App: Accepted ids and ordered changes
-        App->>Local: Apply changes, then acknowledge outbox
-    else Revision is stale
-        DB-->>API: Return current server value and revision
-        API-->>App: Conflict details
-        App->>Local: Three-way merge; save conflicting fields for review
-    end
+    API->>DB: Validate session and entity revision
+    DB-->>API: Commit accepted mutation or return current value
+    API-->>App: Accepted ids, conflicts, and ordered changes
+    App->>Local: Apply changes and acknowledge accepted mutations
+    App->>Local: Retain conflicting fields for user review
 ```
 
 ### Sync storage tables
