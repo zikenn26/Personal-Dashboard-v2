@@ -4838,6 +4838,7 @@ export default function App() {
         onOpenChangePassword={() => setIsChangePasswordOpen(true)}
         onOpenCommandMappings={() => setIsCommandMappingModalOpen(true)}
         onOpenSmsSettings={() => setIsSmsModalOpen(true)}
+        onOpenLiveSyncSimulator={() => setIsLiveSyncSimulatorOpen(true)}
       />
 
       {/* Android SMS Expense Auto-Logger Modal */}

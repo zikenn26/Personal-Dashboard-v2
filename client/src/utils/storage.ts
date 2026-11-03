@@ -1575,7 +1575,9 @@ export const Storage = {
     } else {
       offlineCacheKeys.push(
         'user_guest_offline_expenses_cache',
-        'user_guest_lifeos_expenses_backup'
+        'user_guest_lifeos_expenses_backup',
+        'lifeos_offline_expenses_cache',
+        'lifeos_expenses_backup'
       );
     }
 
@@ -1873,6 +1875,8 @@ export const Storage = {
         } else {
           localStorage.setItem('user_guest_offline_expenses_cache', serialized);
           localStorage.setItem('user_guest_lifeos_expenses_backup', serialized);
+          localStorage.setItem('lifeos_offline_expenses_cache', serialized);
+          localStorage.setItem('lifeos_expenses_backup', serialized);
         }
       } else {
         if (!isGuest) {
