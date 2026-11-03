@@ -7,7 +7,11 @@ import { pool } from './db.js';
 dotenv.config();
 
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY || '';
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://amlegmbvqzbhqqqbrvjx.supabase.co';
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+
+if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
+  console.warn('[MIGRATION] SUPABASE_URL or SUPABASE_SECRET_KEY is missing from environment.');
+}
 
 function fetchSupabase(endpoint: string): Promise<any> {
   return new Promise((resolve, reject) => {

@@ -12,7 +12,13 @@ function getDatabaseConfig(): PoolConfig {
     process.env.DATABASE_URL ||
     process.env.NEON_DATABASE_URL ||
     process.env.NEON_DB_URL ||
-    'postgresql://neondb_owner:npg_G9a4qZEpMUty@ep-curly-glitter-b4fsklnq-pooler.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require';
+    '';
+
+  if (!connectionString) {
+    console.warn(
+      '[DB] Warning: No DATABASE_URL found in environment. Please define DATABASE_URL in your .env or host environment variables.'
+    );
+  }
 
   const isPlaceholder =
     connectionString.includes('[USER]') ||
