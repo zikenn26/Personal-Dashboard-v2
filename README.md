@@ -10,12 +10,12 @@
 [![Capacitor](https://img.shields.io/badge/Capacitor-8.5-119EFF?style=for-the-badge&logo=capacitor&logoColor=white)](https://capacitorjs.com/)
 [![Neon Postgres](https://img.shields.io/badge/Neon-Serverless%20Postgres-00E599?style=for-the-badge&logo=postgresql&logoColor=black)](https://neon.tech/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-4.0-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
-[![Vitest](https://img.shields.io/badge/Tests-777%20Passed-22C55E?style=for-the-badge&logo=vitest&logoColor=white)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/Tests-795%20Passed-22C55E?style=for-the-badge&logo=vitest&logoColor=white)](https://vitest.dev/)
 [![License](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE)
 
 <br/>
 
-[✨ Features](#-core-features) • [⚡ Delta Sync Architecture](#-timestamp-based-delta-sync-architecture) • [📱 Android Native APK](#-android-native-deep-integration) • [🚀 Quick Start](#-quick-start-guide) • [🛠️ Tech Stack](#%EF%B8%8F-technology-stack) • [🧪 Testing](#-testing--quality-assurance)
+[✨ Features](#-core-features) • [⚡ Offline-First Sync](#-offline-first-sync-and-consistency) • [📱 Android Native APK](#-android-native-deep-integration) • [🚀 Quick Start](#-quick-start-guide) • [🛠️ Tech Stack](#%EF%B8%8F-technology-stack) • [🧪 Testing](#-testing--quality-assurance)
 
 <br/>
 
@@ -29,7 +29,7 @@
 
 It solves productivity fragmentation by combining:
 - 💰 **Automated SMS Financial Ledger** with bank auto-logging on Android.
-- ⚡ **Timestamp-Based Delta Sync** with UUID v4 primary keys and conflict-free multi-device reconciliation.
+- ⚡ **Offline-First Sync** with durable local outboxes, revision-checked server writes, and reviewable multi-device conflicts.
 - ⏱️ **Real Hardware Screen Time Tracking** via Android's native `UsageStatsManager`.
 - 🔐 **Military-Grade Vault** protected by client-side AES-GCM-256 encryption.
 - 🎯 **Habits, Tasks & Milestone Roadmaps** with streak analytics.
@@ -46,7 +46,7 @@ Available simultaneously as a high-speed **Progressive Web App** and an installa
 | :--- | :--- | :--- |
 | **Data Ownership** | 🔒 Cloud lock-in, vendor databases | 🏠 **Local-first durability**, works 100% offline |
 | **Financial Logging** | ✍️ Manual entry or paid aggregators | ⚡ **Automatic bank SMS logging** on Android (Free & Private) |
-| **Sync Architecture** | 🐢 Full-snapshot overwrites, collisions | 🚀 **UUID v4 Timestamp Delta Sync** on Neon Postgres |
+| **Sync Architecture** | 🐢 Full-snapshot overwrites, collisions | 🚀 **Revisioned, idempotent sync** on Neon Postgres |
 | **Digital Wellbeing** | 📱 Inaccurate browser estimates | 📊 **Hardware-level Android `UsageStatsManager`** statistics |
 | **Security** | 🔑 Server-side plaintext or reversible hashes | 🛡️ **Zero-knowledge AES-GCM-256 client encryption** |
 | **AI Integration** | 🤖 Chatbots disconnected from app state | 🧠 **Structured AI tool-calling engine** mapped to actions |
@@ -63,12 +63,42 @@ Available simultaneously as a high-speed **Progressive Web App** and an installa
 * **Excel / CSV Statement Importer:** Bulk upload bank statements with automated column mapping, preview reconciliation, and sheet batch management.
 * **Smart Analytics:** Spending breakdown by category, monthly trend forecasts, and home-screen spending widgets.
 
-### ⚡ Timestamp-Based Delta Sync Architecture
-* **Neon Serverless PostgreSQL Engine:** Cloud persistence powered by Neon's serverless connection pooler.
-* **UUID v4 Primary Keys:** Zero auto-incrementing integer collisions across distributed clients.
-* **Incremental Delta PUSH & PULL:** Clients only transmit modified records (outbox mutations) and only receive changes that occurred after `last_sync_timestamp`.
-* **Conflict Resolution (Last-Write-Wins):** Intelligent server-side timestamp comparison (`updated_at` / `client_updated_at`) ensures stale offline writes cannot overwrite newer online modifications.
-* **Soft-Deletion & Tombstones:** Deleted transactions carry `is_deleted: true` tombstones with automated garbage collection and Trash recovery.
+### ⚡ Offline-First Sync
+* **Local-first reads and writes:** The UI uses locally persisted data immediately. Expense records and mutations are stored in IndexedDB, with a localStorage fallback when IndexedDB is unavailable.
+* **Durable retry queues:** Workspace snapshots are queued locally during a network outage. Expense changes use a durable per-record outbox and tombstones.
+* **Revisioned sync API:** Signed-in clients use `POST /api/sync/v2` to submit idempotent mutations with base revisions and pull server-ordered changes using cursors. PostgreSQL transactions serialize concurrent writes and reject stale revisions.
+* **Domain boundaries:** Expenses sync as individual entities. Other workspace data is currently synchronized as one versioned root snapshot.
+* **Conflict review:** Independent field changes merge automatically. If both devices changed the same field while offline, both values are retained locally and the app asks the user which to keep; the selected value is synced before the conflict is cleared.
+* **Explicit Work Offline:** This setting pauses automatic workspace sync and cancels scheduled sync timers. Device disconnection without this setting queues the latest workspace snapshot for retry after reconnection. Local edits continue to persist in either case.
+* **Legacy compatibility:** The timestamp-based `/api/sync` delta endpoint remains available for clients without a versioned account session and during expense migration.
+
+### Sync flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant App as Web or Android app
+    participant Local as Local storage and outbox
+    participant API as Express /api/sync/v2
+    participant DB as Neon PostgreSQL
+
+    App->>Local: Save edit and durable mutation locally
+    App->>API: Push mutation with id, base revision, and cursor
+    API->>DB: Validate session and serialize entity write
+    alt Revision matches
+        DB-->>API: Commit entity and mutation log entry
+        API-->>App: Accepted ids and ordered changes
+        App->>Local: Apply changes, then acknowledge outbox
+    else Revision is stale
+        DB-->>API: Return current server value and revision
+        API-->>App: Conflict details
+        App->>Local: Three-way merge; save conflicting fields for review
+    end
+```
+
+### Sync storage tables
+
+`sync_entities` stores each entity's current payload and revision. `sync_mutations` records accepted operations with cursors for ordered pulls and idempotent retries. The existing `workspaces` and `transactions` tables remain materialized for compatibility with older clients. Schema definitions are in [`server/db.ts`](server/db.ts) and [`neon_schema.sql`](neon_schema.sql).
 
 ### 📱 Android Native Deep Integration (Capacitor 8)
 * **Real Hardware Screen Time:** Powered by a native Capacitor plugin invoking Android's `UsageStatsManager` for true app usage, unlocks, and digital wellbeing trends.
@@ -92,79 +122,11 @@ Available simultaneously as a high-speed **Progressive Web App** and an installa
 
 ---
 
-## ⚡ Timestamp-Based Delta Sync Architecture
+## 🔄 Legacy Delta Sync Compatibility
 
-The system utilizes an optimistic, local-first bidirectional delta sync engine:
+The timestamp-based /api/sync endpoint remains available for older clients and clients without a versioned account session. It transfers transaction changes using last_sync_timestamp and preserves soft-delete tombstones. Signed-in clients use the revisioned /api/sync/v2 path described above.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant APK as 📱 Android Device
-    participant Web as 💻 Web Browser
-    participant API as ⚡ Express Hub (/api/sync)
-    participant Neon as 🐘 Neon PostgreSQL
-
-    Note over APK: 1. Bank SMS arrives -> Assigned UUID v4<br/>2. Stored locally with updated_at = NOW()
-    APK->>API: POST /api/sync { last_sync_timestamp, records: [outbox] }
-    
-    activate API
-    API->>Neon: INSERT ... ON CONFLICT (id) DO UPDATE<br/>WHERE EXCLUDED.client_updated_at > transactions.client_updated_at
-    API->>Neon: SELECT * FROM transactions WHERE updated_at > last_sync_timestamp
-    API->>Neon: SELECT CURRENT_TIMESTAMP AS server_timestamp
-    API-->>APK: 200 OK { server_timestamp, pulled_records: [] }
-    deactivate API
-
-    Note over APK: Dequeues outbox mutations<br/>Updates local last_sync_timestamp
-
-    Note over Web: Web user triggers sync
-    Web->>API: POST /api/sync { last_sync_timestamp: T_prev, records: [] }
-    activate API
-    API->>Neon: SELECT * FROM transactions WHERE updated_at > T_prev
-    API-->>Web: 200 OK { server_timestamp: T_new, pulled_records: [APK_SMS] }
-    deactivate API
-
-    Note over Web: Merges APK_SMS into local state<br/>Updates last_sync_timestamp = T_new
-```
-
-### Database Schema Highlights (`transactions` Table)
-
-```sql
-CREATE TABLE IF NOT EXISTS public.transactions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    workspace_identifier TEXT NOT NULL,
-    user_email TEXT,
-    name TEXT NOT NULL,
-    amount NUMERIC(12, 2) NOT NULL,
-    category TEXT NOT NULL,
-    date TEXT NOT NULL,
-    time TEXT,
-    direction TEXT NOT NULL DEFAULT 'DEBIT',
-    payment_method TEXT,
-    billing_cycle TEXT,
-    notes TEXT,
-    bank_name TEXT,
-    masked_account TEXT,
-    account_last4 TEXT,
-    reference_id TEXT,
-    sms_reference_id TEXT,
-    upi_reference TEXT,
-    raw_sms_text TEXT,
-    merchant TEXT,
-    payee TEXT,
-    source TEXT,
-    active BOOLEAN NOT NULL DEFAULT TRUE,
-    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
-    deleted_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    client_updated_at BIGINT NOT NULL DEFAULT 0,
-    version BIGINT NOT NULL DEFAULT 1
-);
-
--- Optimized Indexes for Delta Sync
-CREATE INDEX idx_transactions_delta_sync ON public.transactions(workspace_identifier, updated_at);
-CREATE INDEX idx_transactions_active_sync ON public.transactions(workspace_identifier, is_deleted);
-```
+The existing transactions table remains the compatibility projection for expense records; sync_entities and sync_mutations support revision checks and ordered change delivery. See server/db.ts and neon_schema.sql for the schema.
 
 ---
 
@@ -236,12 +198,8 @@ GROQ_API_KEY=your_groq_api_key_here
 ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
 ```
 
-### 4. Apply Database Migrations (Neon PostgreSQL)
-To initialize or migrate the Neon database tables, execute the provided migration script:
-```bash
-node -e "const { pool } = require('./dist/server/db.js'); /* or execute neon_delta_sync_migration.sql in Neon Console */"
-```
-*Alternatively, paste the contents of [`neon_delta_sync_migration.sql`](neon_delta_sync_migration.sql) into your Neon SQL Editor console.*
+### 4. Initialize the Database (Neon PostgreSQL)
+The server initializes required tables from `server/db.ts` at startup. For a manual schema review or database setup, apply [`neon_schema.sql`](neon_schema.sql) in the Neon SQL Editor. Configure `DATABASE_URL` before starting the server.
 
 ### 5. Run the Application in Development Mode
 ```bash
@@ -285,23 +243,28 @@ npm run cap:open
 
 ## 🧪 Testing & Quality Assurance
 
-The codebase includes an extensive automated test suite covering all client utilities, UI calculators, local storage persistence, SMS parsing regexes, and delta sync endpoints.
+The automated suite covers unit behavior, client/server integration paths, UI regressions, offline persistence, sync conflicts, multi-user isolation, session revocation, and expense integrity.
 
 ```bash
-# Run full Vitest suite (47 test files, 777 unit & integration tests)
+# Run the full Vitest suite (50 test files, 795 tests)
 npm test
 
 # Run TypeScript type check
 npm run check
 
-# Run end-to-end Neon DB delta sync integration verification
+# Build the client and server for production
+npm run build
+
+# Run the Neon-backed legacy delta sync integration scenario (requires DATABASE_URL)
 npx tsx server/testEndToEndDeltaSync.ts
 ```
 
 ### Test Coverage Highlights
-- ✅ **Delta Sync Architecture:** UUID v4 generation, outbox push, incremental pull, collision detection, and soft-delete propagation ([`deltaSyncArchitecture.test.ts`](client/src/tests/deltaSyncArchitecture.test.ts)).
-- ✅ **SMS Transaction Parser:** Over 60+ Indian bank SMS formats verified for debit/credit accuracy ([`bankFormatRegression.test.ts`](client/src/tests/bankFormatRegression.test.ts)).
-- ✅ **Local-First Durability:** Offline-first IndexedDB persistence, atomic outbox mutations, and recovery ([`localFirstExpenseSync.test.ts`](client/src/tests/localFirstExpenseSync.test.ts)).
+- ✅ **Revisioned Sync & Conflicts:** Accepted/rejected mutations, three-way merges, and review choices ([`deltaSyncArchitecture.test.ts`](client/src/tests/deltaSyncArchitecture.test.ts), [`workspaceConflictResolution.test.ts`](client/src/tests/workspaceConflictResolution.test.ts)).
+- ✅ **Offline Behavior:** Explicit Work Offline suppression, disconnected-device snapshot retry, and durable expense outboxes ([`workOfflineFeature.test.ts`](client/src/tests/workOfflineFeature.test.ts), [`localFirstExpenseSync.test.ts`](client/src/tests/localFirstExpenseSync.test.ts)).
+- ✅ **Security & Account Isolation:** Session expiry/revocation, cryptography, and multi-user workspace separation ([`singletonSessionArchitecture.test.ts`](client/src/tests/singletonSessionArchitecture.test.ts), [`multiUserWorkspaceIsolation.test.ts`](client/src/tests/multiUserWorkspaceIsolation.test.ts)).
+- ✅ **Storage Integrity:** Expense tombstones, persistence round-trips, and cross-platform sync behavior ([`localFirstExpenseSync.test.ts`](client/src/tests/localFirstExpenseSync.test.ts), [`screenTimeCrossPlatformSync.test.ts`](client/src/tests/screenTimeCrossPlatformSync.test.ts)).
+- ✅ **SMS Transaction Parser:** Indian bank SMS formats verified for debit/credit accuracy ([`bankFormatRegression.test.ts`](client/src/tests/bankFormatRegression.test.ts)).
 - ✅ **Hardware Screen Time:** App duration parsing, unlock count tracking, and device reconciliation ([`screenTimeCalculation.test.ts`](client/src/tests/screenTimeCalculation.test.ts)).
 - ✅ **Client Cryptography:** Zero-knowledge password verification and AES-GCM vault security ([`crypto.test.ts`](client/src/utils/crypto.test.ts)).
 
