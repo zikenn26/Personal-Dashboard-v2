@@ -295,6 +295,50 @@ async function handleLogin(request: Request, env: Record<string, string | undefi
     const deviceName = parseReadableDeviceName(request, String(body.device_name || body.deviceName || "").trim());
 
     const userEmail = (matchedUser.email || emailVariant).toLowerCase().trim();
+    const token = `neon_tok_${getRandomHex(32)}`;
+    const now = Date.now();
+
+    // Check if another device or session was previously active for this user
+    let hadOtherSession = false;
+    try {
+      const activeRows = await query(
+        sql,
+        "SELECT token, device_id, device_name FROM user_active_sessions WHERE LOWER(user_email) = LOWER($1) LIMIT 1",
+        [userEmail]
+      );
+      if (activeRows.length > 0 && (activeRows[0].device_id !== deviceId || activeRows[0].token !== token)) {
+        hadOtherSession = true;
+        // Record revoked session so old device receives precise notification
+        await query(
+          sql,
+          `CREATE TABLE IF NOT EXISTS revoked_session_tokens (
+             token TEXT PRIMARY KEY,
+             user_email TEXT NOT NULL,
+             revoked_at NUMERIC(30, 0) NOT NULL,
+             reason TEXT NOT NULL,
+             new_device_name TEXT
+           )`
+        ).catch(() => []);
+        await query(
+          sql,
+          `INSERT INTO revoked_session_tokens (token, user_email, revoked_at, reason, new_device_name)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (token) DO UPDATE SET
+             revoked_at = EXCLUDED.revoked_at,
+             reason = EXCLUDED.reason,
+             new_device_name = EXCLUDED.new_device_name`,
+          [
+            activeRows[0].token,
+            userEmail,
+            now,
+            "Logged out because your account was signed in on another device",
+            deviceName,
+          ]
+        ).catch(() => []);
+      }
+    } catch (checkErr) {
+      console.warn("[CF Auth] Previous session check notice:", checkErr);
+    }
 
     // Revoke previous sessions on other devices
     await query(
@@ -318,9 +362,6 @@ async function handleLogin(request: Request, env: Record<string, string | undefi
       [userEmail, deviceId]
     );
 
-    const token = `neon_tok_${getRandomHex(32)}`;
-    const now = Date.now();
-
     await query(
       sql,
       `INSERT INTO user_active_sessions (user_email, token, device_id, device_name, created_at, updated_at, generation)
@@ -343,6 +384,7 @@ async function handleLogin(request: Request, env: Record<string, string | undefi
         device_id: deviceId,
         device_name: deviceName,
         generation,
+        had_previous_session: hadOtherSession,
         message: "Signed in successfully via Neon DB pool",
       },
       200,
@@ -389,8 +431,29 @@ async function handleVerify(request: Request, env: Record<string, string | undef
     );
 
     if (!rows.length) {
+      let revokedReason = "Logged out because your account was signed in on another device";
+      let newDeviceName: string | undefined;
+
+      try {
+        const revokedRows = await query(
+          sql,
+          "SELECT reason, new_device_name FROM revoked_session_tokens WHERE token = $1 LIMIT 1",
+          [token]
+        );
+        if (revokedRows.length > 0) {
+          revokedReason = revokedRows[0].reason || revokedReason;
+          newDeviceName = revokedRows[0].new_device_name || undefined;
+        }
+      } catch {}
+
       return jsonResponse(
-        { success: false, valid: false, message: "Invalid, revoked, or reset session" },
+        {
+          success: false,
+          valid: false,
+          message: revokedReason,
+          revoked: true,
+          newDeviceName,
+        },
         401,
         request
       );
@@ -522,7 +585,7 @@ async function handleStorageDiagnostic(request: Request, env: Record<string, str
     );
 
     if (!rows.length) {
-      return jsonResponse({ success: false, message: "Invalid or revoked session." }, 401, request);
+      return jsonResponse({ success: false, message: "Logged out because your account was signed in on another device", revoked: true }, 401, request);
     }
 
     const row = rows[0];
@@ -606,7 +669,7 @@ async function handleSyncV2(request: Request, env: Record<string, string | undef
     );
 
     if (!sessionRows.length || sessionRows[0].device_id !== deviceId) {
-      return jsonResponse({ success: false, error: "Session is not active on this device" }, 401, request);
+      return jsonResponse({ success: false, error: "Logged out because your account was signed in on another device", revoked: true }, 401, request);
     }
 
     if (mutations.length > 250) {

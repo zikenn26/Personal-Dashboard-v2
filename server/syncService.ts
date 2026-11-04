@@ -745,7 +745,7 @@ export async function handleAuthVerify(req: any, res: any): Promise<void> {
     `, [token]);
     if (!rows.length) {
       activeSessions.delete(token);
-      return res.status(401).json({ success: false, valid: false, message: "Invalid, revoked, or reset session" });
+      return res.status(401).json({ success: false, valid: false, revoked: true, message: "Logged out because your account was signed in on another device" });
     }
     const sessionRow = rows[0];
     const createdAt = Number(sessionRow.created_at);

@@ -400,20 +400,13 @@ export default function App() {
     typeof navigator !== 'undefined' ? navigator.onLine : true
   );
 
-  // Singleton Session Revocation State
-  const [sessionTerminationAlert, setSessionTerminationAlert] = useState<string | null>(() => {
-    if (typeof localStorage !== 'undefined') {
-      const pending = localStorage.getItem('notion_os_auth_termination_notice');
-      if (pending) {
-        localStorage.removeItem('notion_os_auth_termination_notice');
-        return pending;
-      }
-    }
-    return null;
-  });
-
   useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
+    const handleOnline = () => {
+      setIsOnline(true);
+      void Auth.verifyCurrentSession().then((isValid) => {
+        if (!isValid) handleSignOut();
+      });
+    };
     const handleOffline = () => setIsOnline(false);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
@@ -428,9 +421,10 @@ export default function App() {
     const handleTerminationEvent = (e: any) => {
       const msg = e.detail?.message || 'Logged out because your account was signed in on another device';
       console.warn('[SINGLETON_SESSION]', msg);
-      setSessionTerminationAlert(msg);
       toast.error(msg, { duration: 8000, id: 'singleton-session-terminated' });
       handleSignOut();
+      setAuthInitialMode('signin');
+      setIsAuthModalOpen(true);
     };
 
     window.addEventListener('session_terminated', handleTerminationEvent);
@@ -537,6 +531,11 @@ export default function App() {
 
     // 4. Reset transient UI modals, active menu overlays, and query states
     setCurrentUser(user);
+    setIsInitialSessionVerified(true);
+    try {
+      localStorage.removeItem('notion_os_auth_termination_notice');
+      localStorage.removeItem('notion_os_auth_signed_out');
+    } catch {}
     setIsAuthModalOpen(false);
     setIsAccountMenuOpen(false);
     setIsAddMenuOpen(false);
@@ -1121,8 +1120,11 @@ export default function App() {
       () => {
         if (isMounted) {
           Sound.error(settings.soundEnabled);
-          alert('This device session was logged out from your account settings.');
+          const msg = 'Logged out because your account was signed in on another device';
+          toast.error(msg, { duration: 8000, id: 'singleton-session-terminated' });
           handleSignOut();
+          setAuthInitialMode('signin');
+          setIsAuthModalOpen(true);
         }
       }
     );
@@ -3768,41 +3770,6 @@ export default function App() {
           </div>
         </header>
 
-        {/* Singleton Session Terminated Banner */}
-        {sessionTerminationAlert && (
-          <div
-            id="session-termination-alert"
-            className="w-full bg-red-600/90 dark:bg-red-950/90 border-b border-red-500/50 text-white px-4 py-3 flex items-center justify-between gap-4 z-40 shadow-lg backdrop-blur-md transition-all animate-in slide-in-from-top-2"
-          >
-            <div className="flex items-center gap-3 max-w-4xl">
-              <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center shrink-0">
-                <LogOut className="w-4 h-4 text-white" />
-              </div>
-              <div className="text-xs sm:text-sm">
-                <span className="font-bold uppercase tracking-wider text-red-200 mr-2 text-[10px]">Session Terminated</span>
-                <span className="font-medium text-white">{sessionTerminationAlert}</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                onClick={() => {
-                  setSessionTerminationAlert(null);
-                  setIsAuthModalOpen(true);
-                }}
-                className="px-3 py-1 text-xs font-semibold bg-white text-red-700 hover:bg-red-50 rounded-lg shadow transition-colors"
-              >
-                Sign In
-              </button>
-              <button
-                onClick={() => setSessionTerminationAlert(null)}
-                className="text-red-200 hover:text-white p-1 rounded-md transition-colors"
-                aria-label="Dismiss alert"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Offline Mode Read-Only Banner */}
         {!isOnline && (

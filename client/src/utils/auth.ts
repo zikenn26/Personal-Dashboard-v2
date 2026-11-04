@@ -156,6 +156,7 @@ export const Auth = {
   setCurrentUser: (user: AuthUser | null, token?: string) => {
     try {
       if (user) {
+        localStorage.removeItem('notion_os_auth_termination_notice');
         localStorage.removeItem('notion_os_auth_signed_out');
         localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
         if (token) {
@@ -181,6 +182,7 @@ export const Auth = {
       } else {
         localStorage.removeItem(AUTH_STORAGE_KEY);
         localStorage.removeItem(TOKEN_STORAGE_KEY);
+        localStorage.removeItem('notion_os_auth_termination_notice');
         localStorage.setItem('notion_os_auth_signed_out', 'true');
         setCustomWorkspaceIdentifier('user_guest');
         setCustomWorkspaceEmail('guest@workspace.local');
@@ -271,6 +273,7 @@ export const Auth = {
         await Storage.resetToCleanUserWorkspace(user);
       }
       Auth.setCurrentUser(user, authData.token);
+      localStorage.removeItem('notion_os_auth_termination_notice');
       if (Number(authData.generation) > 0) localStorage.setItem('notion_os_auth_generation_v1', String(authData.generation));
       setCustomWorkspaceIdentifier(getUserWorkspaceKey(user));
       setCustomWorkspaceEmail(user.email);
@@ -423,23 +426,21 @@ export const Auth = {
 
         if (res.status === 401 || res.status === 403) {
           const data = await res.json().catch(() => ({}));
-          const terminationMsg = data.message || 'This session is no longer active.';
+          const terminationMsg = data.message || 'Logged out because your account was signed in on another device';
           console.warn('[AUTH] Singleton session revoked:', terminationMsg);
 
-          // A generation mismatch means the server was globally reset. Purge
-          // every local partition before the UI signs out so stale offline
-          // snapshots and outboxes cannot return after the next login.
+          // Purge sensitive local workspace state
           await Storage.resetToCleanUserWorkspace(user);
           Auth.setCurrentUser(null);
 
           if (typeof window !== 'undefined') {
-            localStorage.setItem('notion_os_auth_termination_notice', terminationMsg);
+            localStorage.removeItem('notion_os_auth_termination_notice');
             localStorage.setItem('notion_os_auth_signed_out', 'true');
             window.dispatchEvent(
               new CustomEvent('session_terminated', {
                 detail: {
                   message: terminationMsg,
-                  newDevice: data.newDeviceName,
+                  newDevice: data.newDeviceName || data.new_device_name,
                   timestamp: new Date().toISOString(),
                 },
               })
