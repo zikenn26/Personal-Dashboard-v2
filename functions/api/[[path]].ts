@@ -28,18 +28,18 @@ function getDb(env: Record<string, string | undefined>) {
 }
 
 async function query(sql: any, text: string, params: any[] = []): Promise<any[]> {
-  try {
-    if (typeof sql.query === "function") {
-      const res = await sql.query(text, params);
-      return Array.isArray(res) ? res : (res?.rows || []);
-    }
-  } catch (queryErr) {
-    // If sql.query fails or is not available, proceed to fallback execution
+  if (!sql) {
+    throw new Error("Neon DB client is null or undefined");
   }
-
-  // Fallback: If sql is a callable tagged-template function
-  const res = await sql(text, params);
-  return Array.isArray(res) ? res : (res?.rows || []);
+  if (typeof sql.query === "function") {
+    const res = await sql.query(text, params);
+    return Array.isArray(res) ? res : (res?.rows || []);
+  }
+  if (typeof sql.unsafe === "function") {
+    const res = await sql.unsafe(text, params);
+    return Array.isArray(res) ? res : (res?.rows || []);
+  }
+  throw new Error("Neon client does not support query() or unsafe() methods");
 }
 
 function corsHeaders(request: Request): HeadersInit {
@@ -132,7 +132,8 @@ async function verifyPasswordRecord(
       diff |= derivedB64.charCodeAt(i) ^ parsed.hash.charCodeAt(i);
     }
     return diff === 0;
-  } catch {
+  } catch (err) {
+    console.error("[CF Auth] verifyPasswordRecord error:", err);
     return false;
   }
 }
@@ -1287,16 +1288,9 @@ export async function onRequest(context: EventContext): Promise<Response> {
         const t0 = Date.now();
         const testRes = await query(sql, "SELECT NOW() AS now, count(*)::text AS user_count FROM app_users");
 
-        // Also test PBKDF2 compute time inside Cloudflare Worker
-        const tPbkdf0 = Date.now();
-        const testSalt = new Uint8Array(16);
-        await derivePbkdf2Hash("testpass", testSalt, 100000);
-        const pbkdfElapsed = Date.now() - tPbkdf0;
-
         return jsonResponse({
           success: true,
           elapsedMs: Date.now() - t0,
-          pbkdfElapsedMs: pbkdfElapsed,
           result: testRes
         }, 200, request);
       } catch (dbErr: any) {
