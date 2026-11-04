@@ -1299,11 +1299,28 @@ export async function onRequest(context: EventContext): Promise<Response> {
       const host = urlObj.hostname;
       const user = urlObj.username;
       const dbName = urlObj.pathname;
+      const sql = getDb(env);
+      let userCount = -1;
+      let usersList: any[] = [];
+      let queryError = null;
+      try {
+        const rows = await query(sql, "SELECT id, email, display_name FROM app_users");
+        userCount = rows.length;
+        usersList = rows.map((r: any) => ({ email: r.email, name: r.display_name }));
+      } catch (err: any) {
+        queryError = err?.message || String(err);
+      }
+
       return jsonResponse({
         success: true,
         endpoint: "cf-pages-functions",
-        version: "v2-tagged-template-diag",
+        version: "v3-query-check",
         db: { host, user, dbName },
+        env_has_DATABASE_URL: Boolean(env?.DATABASE_URL),
+        env_has_PGHOST: Boolean(env?.PGHOST),
+        userCount,
+        usersList,
+        queryError,
         time: new Date().toISOString()
       }, 200, request);
     }
