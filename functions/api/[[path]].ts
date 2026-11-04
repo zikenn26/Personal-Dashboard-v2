@@ -1293,6 +1293,20 @@ export async function onRequest(context: EventContext): Promise<Response> {
     if (pathname === "/api/auth/login" && request.method === "POST") {
       return await handleLogin(request, env);
     }
+    if (pathname === "/api/auth/diag" && request.method === "GET") {
+      const url = getDatabaseUrl(env);
+      const urlObj = new URL(url);
+      const host = urlObj.hostname;
+      const user = urlObj.username;
+      const dbName = urlObj.pathname;
+      return jsonResponse({
+        success: true,
+        endpoint: "cf-pages-functions",
+        version: "v2-tagged-template-diag",
+        db: { host, user, dbName },
+        time: new Date().toISOString()
+      }, 200, request);
+    }
     if (pathname === "/api/auth/verify" && (request.method === "GET" || request.method === "POST")) {
       return await handleVerify(request, env);
     }
