@@ -1476,8 +1476,48 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
           </span>
         </div>
 
-        {/* Right: Export, Excel, + Add Expense */}
+        {/* Right: Cloud Sync, Export, Excel, + Add Expense */}
         <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          {/* Cloud Sync Status / Sync Now Button */}
+          <button
+            type="button"
+            id="btn-sync-expenses"
+            onClick={async () => {
+              Sound.click(soundEnabled);
+              toast.info('Syncing expenses with Cloud...');
+              const res = await expenseSyncService.syncExpenses({ manual: true });
+              if (res.success) {
+                toast.success(
+                  res.pulledCount > 0 || res.pushedCount > 0
+                    ? `Synced! (${res.pushedCount} uploaded, ${res.pulledCount} downloaded)`
+                    : 'Expenses are fully up to date with Cloud.'
+                );
+              } else {
+                toast.error(res.message || 'Sync failed.');
+              }
+            }}
+            disabled={expenseSyncStatus.state === 'syncing'}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold shadow-2xs transition-all cursor-pointer ${
+              expenseSyncStatus.state === 'syncing'
+                ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800 animate-pulse'
+                : expenseSyncStatus.state === 'error'
+                ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800'
+                : expenseSyncStatus.pendingCount > 0
+                ? 'bg-orange-50 dark:bg-orange-950/50 text-orange-700 dark:text-orange-400 border-orange-200 dark:border-orange-800'
+                : 'bg-white dark:bg-[#1A202C] hover:bg-gray-50 dark:hover:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200'
+            }`}
+            title="Click to manually refresh and sync expenses with Cloud database"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${expenseSyncStatus.state === 'syncing' ? 'animate-spin text-blue-500' : ''}`} />
+            <span>
+              {expenseSyncStatus.state === 'syncing'
+                ? 'Syncing...'
+                : expenseSyncStatus.pendingCount > 0
+                ? `Sync (${expenseSyncStatus.pendingCount} pending)`
+                : 'Cloud Synced'}
+            </span>
+          </button>
+
           {/* Export Button */}
           <div className="relative" ref={exportMenuRef}>
             <button

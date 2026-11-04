@@ -658,6 +658,7 @@ export default function App() {
         isRemoteUpdating.current = false;
         isCloudReady.current = true;
       }, 300);
+      void expenseSyncService.syncExpenses({ background: true });
     }
   };
 
@@ -742,7 +743,7 @@ export default function App() {
             ? customEvt.detail.updatedExpenses
             : Storage.getExpenses();
 
-        Storage.setExpenses(incoming);
+        Storage.setExpenses(incoming, { enqueueChanges: false });
         setExpenses(incoming);
       }
 

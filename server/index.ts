@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { registerGeminiRoutes, setupGeminiLiveWebSocket } from "./geminiService.js";
 import { registerSyncRoutes } from "./syncService.js";
+import { registerAuthRoutes } from "./authService.js";
 import { initDb } from "./db.js";
 import { rateLimit, requireAuthForServerKeyUsage } from "./security.js";
 
@@ -61,6 +62,7 @@ async function startServer() {
 
   // Register multi-device cloud workspace sync and device presence routes on /api/sync/*
   registerSyncRoutes(app);
+  registerAuthRoutes(app);
 
   // Init DB
   await initDb();

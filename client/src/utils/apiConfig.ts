@@ -1,13 +1,14 @@
 import { Capacitor } from '@capacitor/core';
 
-// Cloud Run shared backend URL
+// Cloudflare Pages live production backend URL
 export const CLOUD_BACKEND_URL =
-  'https://ais-pre-rgr5axvhvmh3zpbep4rmju-362280100578.asia-southeast1.run.app';
+  (import.meta as any).env?.VITE_API_URL ||
+  'https://personal-dashboard-3ag.pages.dev';
 
 /**
  * Returns the base URL for backend API requests.
  * - In Web Browser and Android Chrome: returns '' so requests use same-origin relative paths.
- * - In Native Android APK (Capacitor on https://localhost): returns the public Cloud Run URL
+ * - In Native Android APK (Capacitor on https://localhost): returns the public Cloud backend URL
  *   so network calls reach the live server rather than failing on localhost.
  */
 export function getApiBaseUrl(): string {

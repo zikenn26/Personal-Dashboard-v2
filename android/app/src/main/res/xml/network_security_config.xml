@@ -10,6 +10,7 @@
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">localhost</domain>
         <domain includeSubdomains="true">127.0.0.1</domain>
+        <domain includeSubdomains="true">pages.dev</domain>
         <domain includeSubdomains="true">groq.com</domain>
         <domain includeSubdomains="true">open-meteo.com</domain>
     </domain-config>

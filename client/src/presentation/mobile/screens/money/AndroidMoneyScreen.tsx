@@ -9,6 +9,7 @@ import {
   Edit3,
   RotateCw,
   RotateCcw,
+  RefreshCw,
   X,
   ChevronDown,
   Download,
@@ -849,6 +850,45 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
             >
               <RotateCw className="w-3 h-3 text-violet-600 dark:text-violet-400" />
               <span>Rescan</span>
+            </button>
+
+            {/* Cloud Sync Button */}
+            <button
+              type="button"
+              onClick={async () => {
+                void nativeService.triggerHaptic('selection');
+                toast.info('Syncing expenses with Cloud...');
+                const res = await expenseSyncService.syncExpenses({ manual: true });
+                if (res.success) {
+                  const fresh = Storage.getExpenses();
+                  setLocalExpenses(fresh);
+                  toast.success(
+                    res.pulledCount > 0 || res.pushedCount > 0
+                      ? `Synced! (${res.pushedCount} uploaded, ${res.pulledCount} downloaded)`
+                      : 'Expenses are fully up to date with Cloud.'
+                  );
+                } else {
+                  toast.error(res.message || 'Sync failed.');
+                }
+              }}
+              disabled={expenseSyncStatus.state === 'syncing'}
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer active:scale-95 ${
+                expenseSyncStatus.state === 'syncing'
+                  ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 animate-pulse'
+                  : expenseSyncStatus.pendingCount > 0
+                  ? 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800'
+                  : 'text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800'
+              }`}
+              title="Sync expenses with Cloud database"
+            >
+              <RefreshCw className={`w-3 h-3 ${expenseSyncStatus.state === 'syncing' ? 'animate-spin text-blue-500' : 'text-slate-500 dark:text-slate-400'}`} />
+              <span>
+                {expenseSyncStatus.state === 'syncing'
+                  ? 'Syncing...'
+                  : expenseSyncStatus.pendingCount > 0
+                  ? `Sync (${expenseSyncStatus.pendingCount})`
+                  : 'Synced'}
+              </span>
             </button>
 
             {/* SMS Sync Status Pill */}

@@ -71,6 +71,16 @@ class ExpenseSyncService {
       });
     });
 
+    // Periodic background polling (every 30 seconds when tab/app is active and authenticated)
+    setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      const workspaceId = getCustomWorkspaceIdentifier();
+      const token = typeof localStorage !== 'undefined' ? localStorage.getItem('notion_os_auth_token_v1') || '' : '';
+      if (!token || !workspaceId || workspaceId.startsWith('user_guest') || isWorkOfflineMode() || !isOnline()) {
+        return;
+      }
+      void this.syncExpenses({ background: true });
+    }, 30000);
   }
 
   public getExpenseSyncStatus(): ExpenseSyncStatus {
