@@ -18,7 +18,14 @@ function getFallbackUrl(): string {
 
 function getDatabaseUrl(env: Record<string, string | undefined>): string {
   const envUrl = env?.DATABASE_URL || env?.NEON_DATABASE_URL || env?.NEON_DB_URL;
-  if (envUrl && envUrl.startsWith("postgres") && !envUrl.includes("[USER]")) {
+  // If the env variable has the old expired password, ignore it and use rotated credentials
+  if (
+    envUrl &&
+    envUrl.startsWith("postgres") &&
+    !envUrl.includes("[USER]") &&
+    !envUrl.includes("npg_v9iZcBo7zKup") &&
+    !envUrl.includes("npg_DX9Zpq0YWfzC")
+  ) {
     return envUrl;
   }
   const host = env?.PGHOST;
@@ -28,7 +35,7 @@ function getDatabaseUrl(env: Record<string, string | undefined>): string {
   const sslmode = env?.PGSSLMODE || "require";
   const channelBinding = env?.PGCHANNELBINDING || "require";
 
-  if (host && password) {
+  if (host && password && !password.includes("npg_v9i") && !password.includes("npg_DX9")) {
     return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}/${database}?sslmode=${sslmode}&channel_binding=${channelBinding}`;
   }
 
@@ -342,25 +349,12 @@ async function handleLogin(request: Request, env: Record<string, string | undefi
 
     const account = userRows[0];
     if (!account) {
-      return jsonResponse(
-        { success: false, message: "Invalid email/username or password", _debug: "User not found in Neon DB" },
-        401,
-        request
-      );
+      return jsonResponse({ success: false, message: "Invalid email/username or password" }, 401, request);
     }
 
     const isPasswordValid = await verifyPasswordRecord(account.password_hash, password);
     if (!isPasswordValid) {
-      return jsonResponse(
-        {
-          success: false,
-          message: "Invalid email/username or password",
-          _debug: "Password mismatch",
-          _accountEmail: account.email,
-        },
-        401,
-        request
-      );
+      return jsonResponse({ success: false, message: "Invalid email/username or password" }, 401, request);
     }
 
     const matchedUser = {
@@ -1293,38 +1287,7 @@ export async function onRequest(context: EventContext): Promise<Response> {
     if (pathname === "/api/auth/login" && request.method === "POST") {
       return await handleLogin(request, env);
     }
-    if (pathname === "/api/auth/diag" && request.method === "GET") {
-      const url = getDatabaseUrl(env);
-      const urlObj = new URL(url);
-      const host = urlObj.hostname;
-      const user = urlObj.username;
-      const dbName = urlObj.pathname;
-      const passPrefix = urlObj.password ? urlObj.password.slice(0, 7) + "..." : "none";
-      const sql = getDb(env);
-      let userCount = -1;
-      let usersList: any[] = [];
-      let queryError = null;
-      try {
-        const rows = await query(sql, "SELECT id, email, display_name FROM app_users");
-        userCount = rows.length;
-        usersList = rows.map((r: any) => ({ email: r.email, name: r.display_name }));
-      } catch (err: any) {
-        queryError = err?.message || String(err);
-      }
 
-      return jsonResponse({
-        success: true,
-        endpoint: "cf-pages-functions",
-        version: "v4-env-check",
-        db: { host, user, dbName, passPrefix },
-        env_has_DATABASE_URL: Boolean(env?.DATABASE_URL),
-        env_DATABASE_URL_preview: env?.DATABASE_URL ? env.DATABASE_URL.slice(0, 35) + "..." : "none",
-        userCount,
-        usersList,
-        queryError,
-        time: new Date().toISOString()
-      }, 200, request);
-    }
     if (pathname === "/api/auth/verify" && (request.method === "GET" || request.method === "POST")) {
       return await handleVerify(request, env);
     }
