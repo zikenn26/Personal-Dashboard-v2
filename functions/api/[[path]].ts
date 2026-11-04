@@ -1,8 +1,5 @@
 import { neon } from "@neondatabase/serverless";
 
-const FALLBACK_DATABASE_URL =
-  "postgresql://neondb_owner:npg_DX9Zpq0YWfzC@ep-curly-glitter-b4fsklnq-pooler.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require";
-
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 interface EventContext {
@@ -18,7 +15,7 @@ function getDatabaseUrl(env: Record<string, string | undefined>): string {
   if (envUrl && envUrl.startsWith("postgres") && !envUrl.includes("[USER]")) {
     return envUrl;
   }
-  return FALLBACK_DATABASE_URL;
+  throw new Error("Missing DATABASE_URL environment variable in Cloudflare Pages settings.");
 }
 
 function getDb(env: Record<string, string | undefined>) {
