@@ -44,10 +44,10 @@ describe('Work Offline Feature & Auto-Sync Suppression', () => {
     supabaseModule.setWorkOfflineMode(true);
 
     const mockPayloadGetter = vi.fn(() => ({ sample: 'data' }));
-    const syncSpy = vi.spyOn(supabaseModule, 'syncWorkspaceToSupabase');
+    const syncSpy = vi.spyOn(supabaseModule, 'syncWorkspaceToServer');
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
 
-    supabaseModule.scheduleAutoSyncToSupabase(mockPayloadGetter, 50);
+    supabaseModule.scheduleAutoSyncToServer(mockPayloadGetter, 50);
 
     expect(mockPayloadGetter).not.toHaveBeenCalled();
     expect(syncSpy).not.toHaveBeenCalled();
@@ -61,9 +61,9 @@ describe('Work Offline Feature & Auto-Sync Suppression', () => {
 
     const payload = { profile: { name: 'Offline' }, todos: [] };
     const payloadGetter = vi.fn(() => payload);
-    const syncSpy = vi.spyOn(supabaseModule, 'syncWorkspaceToSupabase');
+    const syncSpy = vi.spyOn(supabaseModule, 'syncWorkspaceToServer');
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
-    supabaseModule.scheduleAutoSyncToSupabase(payloadGetter, 50);
+    supabaseModule.scheduleAutoSyncToServer(payloadGetter, 50);
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(payloadGetter).not.toHaveBeenCalled();
@@ -76,12 +76,13 @@ describe('Work Offline Feature & Auto-Sync Suppression', () => {
     vi.stubGlobal('navigator', { onLine: false });
     supabaseModule.setCustomWorkspaceIdentifier('account_offline_test');
     supabaseModule.setCustomWorkspaceEmail('offline@example.com');
+    localStorage.setItem('notion_os_auth_token_v1', 'test-token');
     const payload = { profile: { name: 'Disconnected' }, todos: [] };
     const payloadGetter = vi.fn(() => payload);
-    const syncSpy = vi.spyOn(supabaseModule, 'syncWorkspaceToSupabase');
+    const syncSpy = vi.spyOn(supabaseModule, 'syncWorkspaceToServer');
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
 
-    supabaseModule.scheduleAutoSyncToSupabase(payloadGetter, 50);
+    supabaseModule.scheduleAutoSyncToServer(payloadGetter, 50);
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     const stored = JSON.parse(localStorage.getItem('lifeos_workspace_outbox_account_offline_test') || 'null');
@@ -96,7 +97,7 @@ describe('Work Offline Feature & Auto-Sync Suppression', () => {
     supabaseModule.setCustomWorkspaceIdentifier('account_offline_test');
     supabaseModule.setCustomWorkspaceEmail('offline@example.com');
 
-    const syncSpy = vi.spyOn(supabaseModule, 'syncWorkspaceToSupabase');
+    const syncSpy = vi.spyOn(supabaseModule, 'syncWorkspaceToServer');
     await supabaseModule.flushAutoSyncImmediately({ test: 123 });
 
     expect(syncSpy).not.toHaveBeenCalled();
@@ -110,7 +111,7 @@ describe('Work Offline Feature & Auto-Sync Suppression', () => {
     localStorage.setItem('notion_os_auth_token_v1', 'test-token');
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
 
-    const result = await supabaseModule.syncWorkspaceToSupabase({ profile: { name: 'Offline' } });
+    const result = await supabaseModule.syncWorkspaceToServer({ profile: { name: 'Offline' } });
 
     expect(result.success).toBe(false);
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -124,7 +125,7 @@ describe('Work Offline Feature & Auto-Sync Suppression', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     vi.useFakeTimers();
 
-    supabaseModule.scheduleAutoSyncToSupabase(payloadGetter, 50);
+    supabaseModule.scheduleAutoSyncToServer(payloadGetter, 50);
     supabaseModule.setWorkOfflineMode(true);
     await vi.advanceTimersByTimeAsync(1000);
 

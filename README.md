@@ -70,7 +70,7 @@ Available simultaneously as a high-speed **Progressive Web App** and an installa
 * **Domain boundaries:** Expenses sync as individual entities. Other workspace data is currently synchronized as one versioned root snapshot.
 * **Conflict review:** Independent field changes merge automatically. If both devices changed the same field while offline, both values are retained locally and the app asks the user which to keep; the selected value is synced before the conflict is cleared.
 * **Explicit Work Offline:** This setting pauses automatic workspace sync and cancels scheduled sync timers. Device disconnection without this setting queues the latest workspace snapshot for retry after reconnection. Local edits continue to persist in either case.
-* **Legacy compatibility:** The timestamp-based `/api/sync` delta endpoint remains available for clients without a versioned account session and during expense migration.
+* **Derived compatibility projections:** The `workspaces` and `transactions` tables are maintained for reporting and transition support. Clients read and write only through `/api/sync/v2`.
 
 ### Sync flow
 
@@ -117,11 +117,9 @@ sequenceDiagram
 
 ---
 
-## 🔄 Legacy Delta Sync Compatibility
+## 🔄 Workspace storage
 
-The timestamp-based /api/sync endpoint remains available for older clients and clients without a versioned account session. It transfers transaction changes using last_sync_timestamp and preserves soft-delete tombstones. Signed-in clients use the revisioned /api/sync/v2 path described above.
-
-The existing transactions table remains the compatibility projection for expense records; sync_entities and sync_mutations support revision checks and ordered change delivery. See server/db.ts and neon_schema.sql for the schema.
+The authenticated `/api/sync/v2` endpoint is the only client workspace read/write path. It stores versioned workspace entities and mutation history in Neon. `workspaces` and `transactions` remain server-maintained projections for reporting and transition support; clients cannot use them as fallback sources.
 
 ---
 
@@ -146,7 +144,7 @@ The existing transactions table remains the compatibility projection for expense
 │                   ⚡ BACKEND & CLOUD HUB                         │
 ├─────────────────────────────────────────────────────────────────┤
 │  Node.js 20+ • Express.js • WebSocket (ws) • Google GenAI SDK   │
-│  Bidirectional Delta Sync (/api/sync) • Gemini Live Proxy       │
+│  Revisioned Workspace Sync (/api/sync/v2) • Gemini Live Proxy  │
 └────────────────┬────────────────────────────────────────────────┘
                  │
 ┌────────────────▼────────────────────────────────────────────────┐
@@ -241,7 +239,7 @@ npm run cap:open
 The automated suite covers unit behavior, client/server integration paths, UI regressions, offline persistence, sync conflicts, multi-user isolation, session revocation, and expense integrity.
 
 ```bash
-# Run the full Vitest suite (50 test files, 795 tests)
+# Run the full Vitest suite
 npm test
 
 # Run TypeScript type check
@@ -250,9 +248,11 @@ npm run check
 # Build the client and server for production
 npm run build
 
-# Run the Neon-backed legacy delta sync integration scenario (requires DATABASE_URL)
-npx tsx server/testEndToEndDeltaSync.ts
 ```
+
+Workspace sync uses the authenticated `/api/sync/v2` protocol. Legacy Supabase migration and sample-data seeding scripts have been removed so they cannot restore retired account data.
+
+The protected `GET /api/storage/diagnostic` endpoint reports a non-secret database fingerprint and schema version for an authenticated session. Before a global reset, compare that fingerprint with the intended Neon database. The guarded reset is available as `npm run reset:app-data -- "<database-label>"`; it requires `APP_DATA_RESET_TARGET`, `APP_DATA_RESET_EXPECTED_FINGERPRINT`, and `APP_DATA_RESET_CONFIRM=DELETE_ALL_APPLICATION_DATA` to match the connected database.
 
 ### Test Coverage Highlights
 - ✅ **Revisioned Sync & Conflicts:** Accepted/rejected mutations, three-way merges, and review choices ([`deltaSyncArchitecture.test.ts`](client/src/tests/deltaSyncArchitecture.test.ts), [`workspaceConflictResolution.test.ts`](client/src/tests/workspaceConflictResolution.test.ts)).
@@ -287,7 +287,7 @@ Personal-Dashboard-App-GitHub/
 ├── server/                          # Backend Cloud Hub
 │   ├── db.ts                        # Neon PostgreSQL Connection Pool
 │   ├── syncService.ts               # Bidirectional Delta Sync & Device Hub
-│   ├── screenTimeService.ts         # Screen Time Sync Relay
+│   ├── resetApplicationData.ts      # Guarded global app-data reset
 │   ├── geminiService.ts             # Google Gemini Live WebSocket Server
 │   ├── security.ts                  # Security Headers & Rate Limiting
 │   └── index.ts                     # Main Express Entrypoint

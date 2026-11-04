@@ -81,6 +81,21 @@ describe('Local-First Expense Storage & Reliable Sync Test Suite', () => {
     expect(deleteMutation).toBeDefined();
   });
 
+  it('1b. bulk local expense edits use the durable outbox while server hydration does not echo mutations', async () => {
+    const expense: ExpenseItem = {
+      id: 'exp-bulk-local', name: 'Bulk local entry', amount: 72, category: 'Food',
+      date: '2026-11-03', direction: 'DEBIT', active: true,
+    };
+    Storage.setExpenses([expense]);
+    let outbox = await expenseRepo.getPendingOutbox();
+    expect(outbox.some((mutation) => mutation.expenseId === expense.id && mutation.action === 'create')).toBe(true);
+
+    await expenseRepo.clearOutbox();
+    Storage.setExpenses([{ ...expense, name: 'Server confirmed entry' }], { enqueueChanges: false });
+    outbox = await expenseRepo.getPendingOutbox();
+    expect(outbox).toEqual([]);
+  });
+
   it('2. Remote sync reconciliation respects deletion tombstones and never resurrects deleted items', () => {
     const localExpenses: ExpenseItem[] = [
       {
@@ -137,7 +152,7 @@ describe('Local-First Expense Storage & Reliable Sync Test Suite', () => {
 
     Storage.setHabits([habit]);
 
-    // Simulate incoming remote payload from Supabase with older unticked state (completedDays: all false)
+    // Simulate an incoming server payload with older unticked state (completedDays: all false)
     const staleCloudPayload = {
       habits: [
         {
@@ -375,7 +390,7 @@ describe('Local-First Expense Storage & Reliable Sync Test Suite', () => {
       name: 'Gulshan Kumar Nayak',
       avatarUrl: 'https://example.com/original-avatar.webp',
     };
-    Auth.setCurrentUser(initialUser);
+    Auth.setCurrentUser(initialUser, 'profile-atomic-test-token');
 
     const initialProfile = {
       ...Storage.getProfile(),
@@ -699,7 +714,7 @@ describe('Local-First Expense Storage & Reliable Sync Test Suite', () => {
 
     // Check outbox mutation data payload: original attributes are retained
     const pending = await expenseRepo.getPendingOutbox();
-    const deleteMut = pending.find((m) => m.expenseId === 'exp-audit-999');
+    const deleteMut = pending.find((m) => m.expenseId === 'exp-audit-999' && m.action === 'delete');
     expect(deleteMut).toBeDefined();
     expect(deleteMut?.action).toBe('delete');
     expect(deleteMut?.payload?.amount).toBe(45000);

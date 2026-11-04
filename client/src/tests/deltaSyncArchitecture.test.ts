@@ -5,6 +5,7 @@ import { Storage } from '../utils/storage';
 import { expenseRepo } from '../repositories/expenseRepository';
 import { expenseSyncService } from '../services/expenseSyncService';
 import { ExpenseItem } from '../types';
+import { Auth } from '../utils/auth';
 
 beforeAll(() => {
   if (!globalThis.crypto) Object.defineProperty(globalThis, 'crypto', { value: webcrypto });
@@ -35,6 +36,7 @@ describe('Timestamp-Based Delta Sync Architecture with UUIDs', () => {
     Storage.setExpenses([]);
     await expenseRepo.clear();
     await expenseRepo.clearOutbox();
+    Auth.setCurrentUser({ id: 'test-user', email: 'sync-test@example.com', name: 'Sync Test', provider: 'neon' } as any, 'test-server-token');
   });
 
   it('1. Generates standard RFC 4122 v4 UUIDs', () => {
@@ -133,17 +135,13 @@ describe('Timestamp-Based Delta Sync Architecture with UUIDs', () => {
 
     // Mock backend POST /api/sync using the mutation acknowledgement contract.
     const originalFetch = global.fetch;
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        success: true,
-        server_timestamp: serverTimestamp,
-        pulled_records: [remoteRecord],
-        pushed_count: 1,
-        pulled_count: 1,
-        accepted_mutation_ids: [localMutation.id],
-        rejected_mutation_ids: [],
-      }),
+    global.fetch = vi.fn(async (_url: any, init: any) => {
+      const body = JSON.parse(init.body);
+      return { ok: true, json: async () => ({ success: true, conflicts: [], has_more: false,
+        next_cursor: body.mutations?.length ? '1' : '0',
+        accepted_mutation_ids: body.mutations?.map((m: any) => m.mutation_id) || [],
+        changes: body.mutations?.length ? [{ cursor: '1', module: 'expenses', entity_id: remoteId, operation: 'upsert',
+          payload: remoteRecord, revision: 1, device_id: 'remote-device', mutation_id: 'remote-mutation', base_revision: 0 }] : [] }) } as any;
     });
 
     try {
@@ -156,8 +154,8 @@ describe('Timestamp-Based Delta Sync Architecture with UUIDs', () => {
       expect(finalExpenses.some((e) => e.id === remoteId)).toBe(true);
       expect(finalExpenses.some((e) => e.id === localId)).toBe(true);
 
-      // Verify last_sync_timestamp was updated
-      expect(Storage.getLastSyncTimestamp()).toBe(serverTimestamp);
+      // The versioned protocol advances an ordered server cursor, not a client timestamp.
+      expect(localStorage.getItem('notion_os_sync_v2_cursor_user_usr_sync_test_example_com')).toBe('1');
 
       // Verify outbox was dequeued
       const remainingOutbox = await expenseRepo.getPendingOutbox();
@@ -175,15 +173,11 @@ describe('Timestamp-Based Delta Sync Architecture with UUIDs', () => {
     expect(mutation).toBeDefined();
 
     const originalFetch = global.fetch;
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        success: true,
-        server_timestamp: '2026-11-02T12:05:00.000Z',
-        pulled_records: [],
-        accepted_mutation_ids: [],
-        rejected_mutation_ids: [mutation.id],
-      }),
+    global.fetch = vi.fn(async (_url: any, init: any) => {
+      const body = JSON.parse(init.body);
+      return { ok: true, json: async () => ({ success: true, conflicts: [], has_more: false,
+        next_cursor: '0', accepted_mutation_ids: [], changes: [],
+      }) } as any;
     });
 
     try {

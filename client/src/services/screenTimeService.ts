@@ -5,9 +5,9 @@ import { getLocalDateString } from '../utils/screenTimeCalculator';
 import { Storage } from '../utils/storage';
 import { getEmptyScreenTimeData } from '../utils/screenTimeDefaults';
 import {
-  scheduleAutoSyncToSupabase,
+  scheduleAutoSyncToServer,
   flushAutoSyncImmediately,
-  fetchWorkspaceFromSupabase,
+  fetchWorkspaceFromServer,
 } from '../utils/neonSync';
 
 export interface ScreenTimePluginInterface {
@@ -272,71 +272,44 @@ class ScreenTimeService {
     }
   }
 
-  private getServerBaseUrl(): string {
-    if (typeof window === 'undefined') return '';
-    try {
-      const stored = localStorage.getItem('personal_dashboard_backend_url');
-      if (stored && stored.startsWith('http')) {
-        return stored.replace(/\/+$/, '');
-      }
-      const origin = window.location.origin || '';
-      if (origin && !origin.includes('localhost') && !origin.startsWith('capacitor://')) {
-        return origin.replace(/\/+$/, '');
-      }
-    } catch {
-      // Ignore
-    }
-    return '';
-  }
-
   /**
-   * Synchronize screen time to local backend server so Web and Android Chrome can consume it.
+   * Queue screen time through the authenticated workspace sync protocol.
    */
   public async syncToServer(data: ScreenTimeData): Promise<boolean> {
     try {
       if (!ScreenTimeSyncBridge.validateDataSource(data)) {
         return false;
       }
-      const baseUrl = this.getServerBaseUrl();
       const sanitized = Storage.sanitizeScreenTime(data);
-      const res = await fetch(`${baseUrl}/api/screentime/sync`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          screenTime: sanitized,
-          date: sanitized.date,
-          history: Storage.getScreenTimeHistory(),
-        }),
-      });
-      return res.ok;
+      Storage.setDailyScreenTime(sanitized.date || getLocalDateString(), sanitized);
+      scheduleAutoSyncToServer(() => Storage.getAllDataPayload(), 300);
+      return true;
     } catch {
       return false;
     }
   }
 
   /**
-   * Fetch screen time from backend server proxy or Supabase cloud.
+   * Fetch screen time from the current authenticated workspace or this device's scoped store.
    */
   public async fetchFromServer(date?: string): Promise<ScreenTimeData | null> {
     return this.fetchFromCloudOrServer(date || getLocalDateString());
   }
 
   /**
-   * Fetch screen time for a date by querying Supabase cloud first (where the native APK writes),
-   * followed by the local backend server proxy.
+   * Fetch screen time for a date from Neon versioned sync, then use the local device copy offline.
    */
   public async fetchFromCloudOrServer(date: string): Promise<ScreenTimeData | null> {
     const today = getLocalDateString();
     const queryDate = date || today;
 
-    // 1. Primary: Fetch authoritative workspace data from Supabase Cloud
-    // In unit test runner (Vitest), avoid hitting remote live production database
+    // In unit test runner (Vitest), avoid hitting a live workspace service.
     const isTestEnv =
       (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.MODE === 'test') ||
       (typeof process !== 'undefined' && process.env?.NODE_ENV === 'test');
     if (!isTestEnv) {
       try {
-        const cloudRes = await fetchWorkspaceFromSupabase();
+        const cloudRes = await fetchWorkspaceFromServer();
         if (cloudRes.success && cloudRes.data) {
           const payload = cloudRes.data;
           if (payload.screenTime || payload.screenTimeHistory) {
@@ -346,7 +319,7 @@ class ScreenTimeService {
             });
           }
 
-        // Check if Storage now has the record (handles history and past7Days reconstruction)
+        // Check if Storage now has the record (handles history and past7Days reconstruction).
         const localMatch = Storage.getDailyScreenTime(queryDate);
         if (localMatch && ScreenTimeSyncBridge.validateDataSource(localMatch)) {
           const enriched: ScreenTimeData = {
@@ -381,41 +354,17 @@ class ScreenTimeService {
         }
       }
       } catch (e) {
-        console.warn('[ScreenTimeService] Supabase cloud fetch notice:', e);
+        console.warn('[ScreenTimeService] Versioned workspace fetch notice:', e);
       }
     }
 
-    // 2. Secondary fallback: Local backend proxy/server
-    try {
-      const baseUrl = this.getServerBaseUrl();
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
-      const res = await fetch(`${baseUrl}/api/screentime/daily?date=${encodeURIComponent(queryDate)}`, {
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success && json.data) {
-          const item = json.data as ScreenTimeData;
-          if (ScreenTimeSyncBridge.validateDataSource(item)) {
-            const enriched: ScreenTimeData = {
-              ...item,
-              granted: true,
-              isNativeAndroid: false,
-              isFromApk: true,
-              hasData: Boolean(item.totalMinutes > 0 || item.hasData),
-              date: queryDate,
-            };
-            Storage.setDailyScreenTime(queryDate, enriched);
-            return enriched;
-          }
-        }
-      }
-      return null;
-    } catch {
-      return null;
-    }
+    const localMatch = Storage.getDailyScreenTime(queryDate);
+    if (!localMatch || !ScreenTimeSyncBridge.validateDataSource(localMatch)) return null;
+    return {
+      ...localMatch,
+      hasData: Boolean(localMatch.totalMinutes > 0 || localMatch.hasData),
+      date: queryDate,
+    };
   }
 
   private setupStorageListener() {
@@ -696,12 +645,12 @@ class ScreenTimeService {
           message: result?.message,
         };
 
-        // Persist to local storage and sync to Server & Supabase
+        // Persist locally and queue the account workspace snapshot for sync.
         if (screenTimeData.hasData || screenTimeData.granted || screenTimeData.totalMinutes > 0) {
           Storage.setDailyScreenTime(targetDate, screenTimeData);
           void this.syncToServer(screenTimeData);
           this.broadcastUpdate(screenTimeData);
-          scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
+          scheduleAutoSyncToServer(() => Storage.getAllDataPayload(), 300);
         }
 
         memoryCache[cacheKey] = {

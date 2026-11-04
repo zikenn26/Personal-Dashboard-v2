@@ -33,7 +33,7 @@ describe('Offline Spending Persistence and Cache Resilience Suite', () => {
     setCustomWorkspaceEmail('gknayak@gmail.com');
   });
 
-  it('1. persists expenses to dedicated persistent offline cache on Storage.setExpenses', () => {
+  it('1. persists expenses in the account-scoped canonical local store', () => {
     const testExpenses: ExpenseItem[] = [
       {
         id: 'exp-1',
@@ -57,20 +57,20 @@ describe('Offline Spending Persistence and Cache Resilience Suite', () => {
 
     Storage.setExpenses(testExpenses);
 
-    // Verify written to dedicated user offline cache
-    const userCacheRaw = localStorage.getItem('gknayak@gmail.com_offline_expenses_cache');
+    // Workspace-scoped storage is canonical; old global cache keys are ignored.
+    const userCacheRaw = localStorage.getItem(`user_usr_gknayak_gmail_com_${STORAGE_KEYS.EXPENSES}`);
     expect(userCacheRaw).toBeTruthy();
     const parsed = JSON.parse(userCacheRaw!);
     expect(parsed).toHaveLength(2);
     expect(parsed[0].id).toBe('exp-1');
     expect(parsed[1].id).toBe('exp-2');
 
-    // Verify backup keys are also populated
-    expect(localStorage.getItem('lifeos_offline_expenses_cache')).toBeTruthy();
+    expect(localStorage.getItem('lifeos_offline_expenses_cache')).toBeNull();
+    expect(localStorage.getItem('gknayak@gmail.com_offline_expenses_cache')).toBeNull();
   });
 
-  it('2. recovers expenses from offline cache when scoped storage is empty (offline startup)', () => {
-    // Simulate user previously had expenses cached offline
+  it('2. does not recover a legacy account cache when canonical scoped storage is empty', () => {
+    // Simulate an old cache left by the retired multi-tier recovery path.
     const cachedItems: ExpenseItem[] = [
       {
         id: 'exp-cached-101',
@@ -99,14 +99,9 @@ describe('Offline Spending Persistence and Cache Resilience Suite', () => {
     const ws = 'user_usr_gknayak_gmail_com';
     expect(localStorage.getItem(`${ws}_${STORAGE_KEYS.EXPENSES}`)).toBeNull();
 
-    // Call getExpenses()
     const recovered = Storage.getExpenses();
-    expect(recovered).toHaveLength(2);
-    expect(recovered.map((e) => e.id)).toEqual(['exp-cached-101', 'exp-cached-102']);
-
-    // Should also have re-saved into scoped key for subsequent instant reads
-    const savedScoped = localStorage.getItem(`${ws}_${STORAGE_KEYS.EXPENSES}`);
-    expect(savedScoped).toBeTruthy();
+    expect(recovered).toEqual([]);
+    expect(localStorage.getItem(`${ws}_${STORAGE_KEYS.EXPENSES}`)).toBeNull();
   });
 
   it('3. normalizes DD/MM/YYYY and DD-MM-YYYY dates correctly so period filtering does not blank out transactions', () => {
@@ -138,7 +133,7 @@ describe('Offline Spending Persistence and Cache Resilience Suite', () => {
     expect(retrieved[0].date).toBe('2026-10-18');
   });
 
-  it('5. cloud sync payload with empty expenses array does NOT wipe out local offline expenses', () => {
+  it('5. an authoritative empty server snapshot clears stale local expenses', () => {
     const offlineItems: ExpenseItem[] = [
       {
         id: 'exp-local-1',
@@ -173,14 +168,12 @@ describe('Offline Spending Persistence and Cache Resilience Suite', () => {
 
     Storage.importAllDataPayload(remotePayload);
 
-    // Verify local offline expenses are NOT cleared or blanked
+    // Server state is authoritative; untracked local cache rows cannot override it.
     const afterSync = Storage.getExpenses();
-    expect(afterSync).toHaveLength(2);
-    expect(afterSync.map((e) => e.id)).toContain('exp-local-1');
-    expect(afterSync.map((e) => e.id)).toContain('exp-local-2');
+    expect(afterSync).toEqual([]);
   });
 
-  it('6. merges cloud expenses with local offline expenses without losing either', () => {
+  it('6. an authoritative server snapshot replaces the local ledger', () => {
     const localItems: ExpenseItem[] = [
       {
         id: 'exp-local-only',
@@ -211,9 +204,9 @@ describe('Offline Spending Persistence and Cache Resilience Suite', () => {
     Storage.importAllDataPayload(cloudPayload);
 
     const merged = Storage.getExpenses();
-    expect(merged).toHaveLength(2);
+    expect(merged).toHaveLength(1);
     const ids = merged.map((e) => e.id);
-    expect(ids).toContain('exp-local-only');
     expect(ids).toContain('exp-cloud-only');
+    expect(ids).not.toContain('exp-local-only');
   });
 });

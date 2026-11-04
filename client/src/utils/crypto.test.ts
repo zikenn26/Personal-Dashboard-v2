@@ -22,9 +22,9 @@ describe('client-side cryptography', () => {
     await expect(verifyPasswordHash(stored, 'correct-password')).resolves.toBe(true);
   });
 
-  it('verifies legacy Version 1 encrypted password payloads', async () => {
+  it('rejects legacy browser-stored password payloads', async () => {
     const v1Payload = await encryptJson({ password: 'Gulshan@12345!' }, 'Gulshan@12345!');
-    await expect(verifyPasswordHash(JSON.stringify(v1Payload), 'Gulshan@12345!')).resolves.toBe(true);
+    await expect(verifyPasswordHash(JSON.stringify(v1Payload), 'Gulshan@12345!')).resolves.toBe(false);
     await expect(verifyPasswordHash(JSON.stringify(v1Payload), 'WrongPass@999')).resolves.toBe(false);
   });
 });

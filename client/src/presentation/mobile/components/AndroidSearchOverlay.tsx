@@ -195,10 +195,10 @@ const DASHBOARD_PAGES: PageSuggestion[] = [
   {
     id: 'page-backup',
     title: 'Settings & Cloud Backup',
-    subtitle: 'Supabase Cloud Sync, Export & Preferences',
+    subtitle: 'Account sync, export & preferences',
     view: 'backup',
     icon: <Settings className="w-4 h-4 text-gray-500" />,
-    keywords: ['settings', 'backup', 'cloud', 'profile', 'sync', 'account', 'supabase', 'export'],
+    keywords: ['settings', 'backup', 'cloud', 'profile', 'sync', 'account', 'export'],
   },
 ];
 

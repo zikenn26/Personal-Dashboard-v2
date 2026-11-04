@@ -144,7 +144,7 @@ describe('Multi-Device Coexistence & Environment Identification Suite', () => {
     expect(typeof ConnectedDevices).toBe('function');
   });
 
-  it('6. Storage payload atomically carries and merges devices across instances', async () => {
+  it('6. Device registry stays outside workspace snapshots and remains server-owned', async () => {
     const { Storage } = await import('../utils/storage');
 
     // Local device
@@ -160,8 +160,7 @@ describe('Multi-Device Coexistence & Environment Identification Suite', () => {
     ]);
 
     const payload = Storage.getAllDataPayload();
-    expect(payload.devices).toBeDefined();
-    expect(payload.devices.length).toBe(1);
+    expect(payload.devices).toBeUndefined();
 
     // Incoming remote payload from AI Studio instance
     const remotePayload = {
@@ -181,10 +180,10 @@ describe('Multi-Device Coexistence & Environment Identification Suite', () => {
     Storage.importAllDataPayload(remotePayload);
 
     const merged = Storage.getDevices();
-    // Both instances must now exist in Storage!
-    expect(merged.length).toBe(2);
+    // Workspace snapshots cannot create or transfer device sessions.
+    expect(merged.length).toBe(1);
     expect(merged.some((d) => d.id === 'dev_laptop_cloudflare')).toBe(true);
-    expect(merged.some((d) => d.id === 'dev_aistudio_instance')).toBe(true);
+    expect(merged.some((d) => d.id === 'dev_aistudio_instance')).toBe(false);
   });
 
   it('7. subscribeToPresenceState immediately reports active device ID', async () => {
@@ -216,7 +215,7 @@ describe('Multi-Device Coexistence & Environment Identification Suite', () => {
       name: 'Gulshan Kumar Nayak',
       createdAt: Date.now(),
       lastLoginAt: Date.now(),
-      provider: 'supabase' as const,
+      provider: 'neon' as const,
     };
 
     // Should return a valid fallback RegisteredDevice without crashing or throwing
@@ -235,7 +234,7 @@ describe('Multi-Device Coexistence & Environment Identification Suite', () => {
       name: 'Gulshan Kumar Nayak',
       createdAt: Date.now(),
       lastLoginAt: Date.now(),
-      provider: 'supabase' as const,
+      provider: 'neon' as const,
     };
 
     const info = await deviceService.getCurrentDeviceInfo(testUser);

@@ -227,3 +227,55 @@ export async function acknowledgeWorkspaceSnapshot(workspaceId: string, sequence
     if (entry?.sequence === sequence) localStorage.removeItem(key);
   } catch {}
 }
+
+export async function clearWorkspaceSyncState(workspaceId: string): Promise<void> {
+  const db = await snapshotDb();
+  if (db) {
+    await new Promise<void>((resolve, reject) => {
+      const stores = [SNAPSHOT_STORE, CONFLICT_STORE];
+      const tx = db.transaction(stores, 'readwrite');
+      tx.objectStore(SNAPSHOT_STORE).delete(workspaceId);
+      const conflicts = tx.objectStore(CONFLICT_STORE);
+      const request = conflicts.getAll();
+      request.onsuccess = () => request.result
+        .filter((item: WorkspaceSyncConflict) => item.workspaceId === workspaceId)
+        .forEach((item: WorkspaceSyncConflict) => conflicts.delete(item.id));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error('Workspace reset transaction aborted'));
+    });
+    db.close();
+  }
+  try {
+    localStorage.removeItem(`lifeos_workspace_outbox_${workspaceId}`);
+    for (const suffix of ['revision', 'cursor', 'base']) {
+      localStorage.removeItem(`notion_os_workspace_v2_${suffix}_${workspaceId}`);
+    }
+    localStorage.removeItem(`notion_os_sync_v2_cursor_${workspaceId}`);
+    localStorage.removeItem(`notion_os_sync_v2_revisions_${workspaceId}`);
+  } catch {}
+}
+
+/** Clear every durable sync queue when a server reset starts a new data generation. */
+export async function clearAllWorkspaceSyncState(): Promise<void> {
+  const db = await snapshotDb();
+  if (db) {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction([SNAPSHOT_STORE, CONFLICT_STORE], 'readwrite');
+      tx.objectStore(SNAPSHOT_STORE).clear();
+      tx.objectStore(CONFLICT_STORE).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error('Global sync state reset aborted'));
+    });
+    db.close();
+  }
+  try {
+    for (let index = localStorage.length - 1; index >= 0; index--) {
+      const key = localStorage.key(index) || '';
+      if (/^(lifeos_workspace_outbox_|lifeos_workspace_conflicts_|notion_os_workspace_v2_(revision|cursor|base)_|notion_os_sync_v2_(cursor|revisions)_)/.test(key)) {
+        localStorage.removeItem(key);
+      }
+    }
+  } catch {}
+}

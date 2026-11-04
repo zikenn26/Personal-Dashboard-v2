@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { getSupabaseClient, isSupabaseConfigured } from '../utils/neonSync';
 import { Auth } from '../utils/auth';
 
 export type ConnectionState =
@@ -92,8 +91,9 @@ class ConnectionPolicyManagerClass {
         return;
       }
 
-      if (!isSupabaseConfigured()) {
-        this.setState('backend_unavailable');
+      const token = Auth.getAuthToken();
+      if (!token) {
+        this.setState('authentication_required');
         return;
       }
 
@@ -103,22 +103,12 @@ class ConnectionPolicyManagerClass {
         return;
       }
 
-      const client = getSupabaseClient();
-      if (!client) {
-        this.setState('backend_unavailable');
-        return;
-      }
-
-      // Ping Supabase to verify actual connectivity (not just network interface up)
       try {
-        const { error } = await client.from('user_workspaces').select('id').limit(1);
-        if (error) {
-          // If error is related to network or quota
-          this.setState('backend_unavailable');
-        } else {
-          this.setState('online_write_ready');
-        }
-      } catch (err) {
+        const response = await fetch('/api/storage/diagnostic', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        this.setState(response.ok ? 'online_write_ready' : 'backend_unavailable');
+      } catch {
         this.setState('backend_unavailable');
       }
     } finally {

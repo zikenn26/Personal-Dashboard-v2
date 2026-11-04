@@ -29,7 +29,7 @@ function isRetryableError(error: any): boolean {
     if (error.message.includes('NetworkError')) return true;
   }
 
-  // Supabase/Network errors
+  // Transient server/network errors
   if (error?.code === 'NETWORK_ERROR') return true;
   if (error?.code === 'REQUEST_TIMEOUT') return true;
   if (error?.code === 'ECONNREFUSED') return true;

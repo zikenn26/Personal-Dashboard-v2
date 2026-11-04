@@ -146,7 +146,7 @@ export function isDummyMockAvatar(url?: string | null, userEmail?: string | null
  * Clears or rejects cached or local storage avatars if:
  * 1. It is a mock, stock, or placeholder image (Unsplash, DiceBear, Pravatar, etc.).
  * 2. It belongs to another account (e.g. gknayak or gulnayak for any user other than Gulshan).
- * 3. It encodes another username or email domain (e.g. Supabase storage path avatar_<otheruser>_<domain>).
+ * 3. It encodes another username or email domain (e.g. a legacy avatar path avatar_<otheruser>_<domain>).
  * 4. Its email domain does not match the authenticated user's email domain.
  */
 export function isAvatarMatchingUserEmailDomain(url?: string | null, userEmail?: string | null): boolean {

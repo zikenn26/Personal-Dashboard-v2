@@ -59,8 +59,6 @@ describe('Automated Realtime Sync & Offline Read-Only Consistency Suite', () => 
 
     // Spy on getPendingSms to verify it does not acknowledge messages while offline
     const isPluginSpy = vi.spyOn(smsExpenseService as any, 'isNativePluginAvailable').mockResolvedValue(true);
-    const getPendingSpy = vi.spyOn(supabaseModule as any, 'getSupabaseClient');
-
     const result = await smsExpenseService.syncPendingBackgroundMessages();
 
     // Must return 0 and not process writes while offline
@@ -69,7 +67,6 @@ describe('Automated Realtime Sync & Offline Read-Only Consistency Suite', () => 
     // Restore
     Object.defineProperty(navigator, 'onLine', { value: originalNavigatorOnline, configurable: true });
     isPluginSpy.mockRestore();
-    getPendingSpy.mockRestore();
   });
 
   it('3. Processes and pushes held SMS immediately when reconnected online', async () => {
@@ -90,7 +87,7 @@ describe('Automated Realtime Sync & Offline Read-Only Consistency Suite', () => 
 
     const isPluginSpy = vi.spyOn(smsExpenseService as any, 'isNativePluginAvailable').mockResolvedValue(true);
 
-    // Verify online sync can proceed and flush to Supabase
+    // Verify online sync can proceed and flush to the authenticated server API
     expect(Storage.isSmsAutoTrackingEnabled()).toBe(true);
 
     // Restore
@@ -151,14 +148,15 @@ describe('Automated Realtime Sync & Offline Read-Only Consistency Suite', () => 
 
   it('7. flushAutoSyncImmediately serializes sequential writes atomically', async () => {
     const order: number[] = [];
-    const syncSpy = vi.spyOn(supabaseModule, 'syncWorkspaceToSupabase').mockImplementation(async (payload: any) => {
+    supabaseModule.setCustomWorkspaceIdentifier('account_serial_test');
+    supabaseModule.setCustomWorkspaceEmail('serial@example.com');
+    localStorage.setItem('notion_os_auth_token_v1', 'test-token');
+    const syncSpy = vi.spyOn(supabaseModule, 'syncWorkspaceToServer').mockImplementation(async (payload: any) => {
       // Simulate network latency
       await new Promise((r) => setTimeout(r, 20));
       order.push(payload.order);
       return { success: true, message: 'Synced' };
     });
-
-    const isSupabaseConfiguredSpy = vi.spyOn(supabaseModule, 'isSupabaseConfigured').mockReturnValue(true);
 
     // Call 3 flushAutoSyncImmediately operations in quick succession
     const p1 = supabaseModule.flushAutoSyncImmediately({ order: 1 }, syncSpy as any);
@@ -171,6 +169,5 @@ describe('Automated Realtime Sync & Offline Read-Only Consistency Suite', () => 
     expect(order).toEqual([1, 2, 3]);
 
     syncSpy.mockRestore();
-    isSupabaseConfiguredSpy.mockRestore();
   });
 });

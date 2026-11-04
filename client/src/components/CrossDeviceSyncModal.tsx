@@ -168,20 +168,7 @@ export const CrossDeviceSyncModal: React.FC<CrossDeviceSyncModalProps> = ({
           description: `${res.pushedCount} pushed, ${res.pulledCount} pulled.`,
         });
       } else {
-        const isQuota =
-          res.message?.includes('egress') ||
-          res.message?.includes('quota') ||
-          res.message?.includes('exhausted') ||
-          res.message?.includes('402');
-        if (isQuota) {
-          toast.warning('Cloud Sync Paused (Egress Quota Exceeded)', {
-            description:
-              'Supabase free-tier bandwidth quota is reached. Direct file sync works 100% offline between your phone & PC!',
-            duration: 7000,
-          });
-        } else {
-          toast.error(res.message || 'Cloud sync failed. Local data remains safe.');
-        }
+        toast.error(res.message || 'Cloud sync failed. Local data remains safe.');
       }
     } catch (err: any) {
       toast.error(err?.message || 'Sync error occurred');
@@ -204,7 +191,7 @@ export const CrossDeviceSyncModal: React.FC<CrossDeviceSyncModalProps> = ({
                 Cross-Device Expense Sync
               </h2>
               <p className="text-[11px] text-[#7e7384] dark:text-[#a09bb5]">
-                Direct APK ↔ Chrome bridge without cloud limits
+                Authenticated sync across Chrome and Android
               </p>
             </div>
           </div>
@@ -217,13 +204,12 @@ export const CrossDeviceSyncModal: React.FC<CrossDeviceSyncModalProps> = ({
           </button>
         </div>
 
-        {/* Quota Notice Banner */}
-        <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/80 flex items-start gap-2.5">
-          <CloudOff className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-          <div className="text-xs text-amber-900 dark:text-amber-200 space-y-0.5">
-            <p className="font-bold">Supabase Cloud Egress Quota Active</p>
+        <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-800/80 flex items-start gap-2.5">
+          <CloudOff className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+          <div className="text-xs text-indigo-900 dark:text-indigo-200 space-y-0.5">
+            <p className="font-bold">Cloud sync is account-owned</p>
             <p className="text-[11px] opacity-90">
-              Your device data is 100% safe locally. Use this Direct Bridge to sync expenses instantly between your Android APK and Chrome!
+              Online changes use the versioned sync service. If a device is offline, its pending changes stay in local storage until it reconnects.
             </p>
           </div>
         </div>

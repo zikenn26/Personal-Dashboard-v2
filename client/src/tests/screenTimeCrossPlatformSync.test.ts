@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { screenTimeService } from '../services/screenTimeService';
 import { Storage } from '../utils/storage';
 import { getBaselineScreenTimeData } from '../utils/screenTimeDefaults';
@@ -204,7 +204,7 @@ describe('Cross-Platform Screen Time Synchronization (APK, Web & Android Chrome)
     expect(sanitized.apps[0].icon).toBeUndefined(); // exceeds 2048 chars
   });
 
-  it('7. screenTimeService fetches synced data from backend server for Web and Android Chrome', async () => {
+  it('7. screenTimeService uses scoped local data offline without calling the retired screen-time API', async () => {
     const serverPayload: ScreenTimeData = {
       granted: true,
       isNativeAndroid: true,
@@ -242,32 +242,20 @@ describe('Cross-Platform Screen Time Synchronization (APK, Web & Android Chrome)
       lastSyncedTimestamp: Date.now(),
     };
 
-    // Mock global fetch to return serverPayload for /api/screentime/daily
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = async (input: any) => {
-      const url = String(input);
-      if (url.includes('/api/screentime/daily')) {
-        return {
-          ok: true,
-          json: async () => ({ success: true, data: serverPayload }),
-        } as any;
-      }
-      return { ok: false, status: 404 } as any;
-    };
+    Storage.setDailyScreenTime('2026-10-11', serverPayload);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
 
-    try {
-      const fetched = await screenTimeService.fetchFromServer('2026-10-11');
-      expect(fetched).toBeDefined();
-      expect(fetched?.totalMinutes).toBe(245);
-      expect(fetched?.apps[0]?.appName).toBe('Instagram');
-      expect(fetched?.granted).toBe(true);
+    const fetched = await screenTimeService.fetchFromServer('2026-10-11');
+    expect(fetched).toBeDefined();
+    expect(fetched?.totalMinutes).toBe(245);
+    expect(fetched?.apps[0]?.appName).toBe('Instagram');
+    expect(fetched?.granted).toBe(true);
 
-      const usage = await screenTimeService.getDailyUsage({ date: '2026-10-11', forceRefresh: true });
-      expect(usage.totalMinutes).toBe(245);
-      expect(usage.apps[0]?.packageName).toBe('com.instagram.android');
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
+    const usage = await screenTimeService.getDailyUsage({ date: '2026-10-11', forceRefresh: true });
+    expect(usage.totalMinutes).toBe(245);
+    expect(usage.apps[0]?.packageName).toBe('com.instagram.android');
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
   });
 
   it('8. ScreenTimeSyncBridge rejects unverified 185m (3h 5m) mock data and prioritizes 133m (2hr 13m) native Android APK data', async () => {

@@ -167,54 +167,19 @@ export const hashPassword = async (
   });
 };
 
-// Known verified password hashes for instant offline / mobile WebView fallback
-const KNOWN_VERIFIED_HASHES: Record<string, string> = {
-  'S0LQqpogACGu4p46pxHDB/F8KyBX/HD4FySuUnk/6KY=': 'Gulshan@12345!',
-};
-
 export const verifyPasswordHash = async (
   stored: string,
   password: string,
 ): Promise<boolean> => {
   try {
-    let record: any = null;
-    try {
-      record = typeof stored === 'string' ? JSON.parse(stored) : stored;
-    } catch {
-      // Plain text fallback for legacy credentials
-      return stored === password;
-    }
-
-    // Direct check for known verified hashes (e.g. if WebCrypto is restricted in older WebViews)
-    if (record?.hash && KNOWN_VERIFIED_HASHES[record.hash] === password) {
-      return true;
-    }
-
-    // Support Version 1 (AES-GCM-256/PBKDF2-SHA-256 encrypted payload, e.g. {"password":"..."})
-    if (
-      record?.version === 1 &&
-      record?.algorithm === 'AES-GCM-256/PBKDF2-SHA-256'
-    ) {
-      try {
-        const decrypted = await decryptJson<{ password?: string }>(record, password);
-        return Boolean(decrypted && decrypted.password === password);
-      } catch {
-        return false;
-      }
-    }
+    const record: any = typeof stored === 'string' ? JSON.parse(stored) : stored;
 
     // Support Version 2 (PBKDF2-SHA256 derived bits)
     if (
       record?.version === 2 &&
       record?.algorithm === 'PBKDF2-SHA256'
     ) {
-      // If WebCrypto subtle is unavailable on device, check known hashes or return false
-      if (!crypto?.subtle) {
-        if (record?.hash && KNOWN_VERIFIED_HASHES[record.hash] === password) {
-          return true;
-        }
-        return false;
-      }
+      if (!crypto?.subtle) return false;
 
       const salt = fromBase64(record.salt);
 
@@ -257,15 +222,6 @@ export const verifyPasswordHash = async (
     return false;
   } catch (err) {
     console.warn('Password verification notice:', err);
-    // Final check for known verified hash in case crypto.subtle threw in restricted WebView
-    try {
-      const parsed = typeof stored === 'string' ? JSON.parse(stored) : stored;
-      if (parsed?.hash && KNOWN_VERIFIED_HASHES[parsed.hash] === password) {
-        return true;
-      }
-    } catch {
-      // ignore
-    }
     return false;
   }
 };

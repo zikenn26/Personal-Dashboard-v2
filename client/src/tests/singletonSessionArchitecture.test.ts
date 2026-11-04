@@ -1,10 +1,8 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { webcrypto } from 'node:crypto';
-import { handleAuthLogin, handleAuthVerify, handlePostHeartbeat } from '../../../server/syncService';
-import { revokePreviousUserSessions } from '../../../server/syncWebSocket';
+import { webcrypto, pbkdf2Sync } from 'node:crypto';
+import { handleAuthLogin, handleAuthVerify } from '../../../server/syncService';
 import { pool } from '../../../server/db';
 import { Auth } from '../utils/auth';
-import { realtimeHub } from '../utils/realtimeHub';
 
 beforeAll(() => {
   if (!globalThis.crypto) Object.defineProperty(globalThis, 'crypto', { value: webcrypto });
@@ -29,9 +27,42 @@ beforeAll(() => {
 });
 
 describe('Singleton Session & SyncHub Removal Verification Tests', { timeout: 30000 }, () => {
+  let dbSessions: Map<string, any>;
+  let passwordHash: any;
+
   beforeEach(() => {
     vi.restoreAllMocks();
-    vi.spyOn(pool, 'query').mockImplementation(async () => ({ rows: [] } as any));
+    dbSessions = new Map();
+    const salt = Buffer.from('singleton-session-test-salt');
+    const password = 'Gulshan@12345!';
+    passwordHash = { iterations: 210000, salt: salt.toString('base64'), hash: pbkdf2Sync(password, salt, 210000, 32, 'sha256').toString('base64') };
+
+    const client = {
+      query: vi.fn(async (sql: any, params: any[] = []) => {
+        const statement = String(sql);
+        if (statement.includes('SELECT generation FROM app_state')) return { rows: [{ generation: 1 }] } as any;
+        if (statement.includes('FROM app_users')) {
+          const email = String(params?.[0] || 'gknayak@gmail.com');
+          return { rows: [{ id: `id-${email}`, email, display_name: email.split('@')[0], password_hash: passwordHash, created_at: new Date() }] } as any;
+        }
+        if (statement.includes('INSERT INTO user_active_sessions')) {
+          const [email, token, device_id, device_name, created_at, generation] = params;
+          dbSessions.set(String(token), { user_email: email, token, device_id, device_name, created_at, generation,
+            id: `id-${email}`, display_name: String(email).split('@')[0], user_created_at: new Date() });
+        }
+        if (statement.includes('DELETE FROM user_active_sessions')) dbSessions.delete(String(params[0]));
+        return { rows: [] } as any;
+      }),
+      release: vi.fn(),
+    };
+    vi.spyOn(pool, 'connect').mockResolvedValue(client as any);
+    vi.spyOn(pool, 'query').mockImplementation(async (sql: any, params: any[] = []) => {
+      if (String(sql).includes('FROM user_active_sessions') && String(sql).includes('WHERE s.token = $1')) {
+        const session = dbSessions.get(String(params?.[0]));
+        return { rows: session ? [session] : [] } as any;
+      }
+      return { rows: [] } as any;
+    });
   });
 
   afterEach(() => {
@@ -202,76 +233,4 @@ describe('Singleton Session & SyncHub Removal Verification Tests', { timeout: 30
     expect(verifyData.valid).toBe(false);
   });
 
-  it('4. WebSocket revokePreviousUserSessions sends termination payload to older devices', () => {
-    // Test the exported revokePreviousUserSessions helper directly
-    const revoked = revokePreviousUserSessions(
-      ['gknayak@gmail.com', 'usr_gknayak'],
-      'device_new_tablet',
-      'iPad Pro (Chrome)'
-    );
-    expect(typeof revoked).toBe('number');
-  });
-
-  it('5. RealtimeHub handles SESSION_TERMINATED payload and triggers DOM event', () => {
-    let capturedEvent: any = null;
-    const listener = (e: any) => {
-      capturedEvent = e.detail;
-    };
-
-    const target = typeof window !== 'undefined' ? window : (globalThis as any);
-    if (!target.addEventListener) {
-      const handlers: Record<string, Function[]> = {};
-      target.addEventListener = (evt: string, fn: Function) => {
-        handlers[evt] = handlers[evt] || [];
-        handlers[evt].push(fn);
-      };
-      target.removeEventListener = (evt: string, fn: Function) => {
-        if (handlers[evt]) handlers[evt] = handlers[evt].filter((f: any) => f !== fn);
-      };
-      target.dispatchEvent = (evt: any) => {
-        (handlers[evt.type] || []).forEach((fn: any) => fn(evt));
-      };
-    }
-    if (typeof (globalThis as any).window === 'undefined') {
-      (globalThis as any).window = target;
-    }
-    if (typeof (globalThis as any).CustomEvent === 'undefined') {
-      (globalThis as any).CustomEvent = class {
-        type: string;
-        detail: any;
-        constructor(type: string, params: any) {
-          this.type = type;
-          this.detail = params?.detail;
-        }
-      };
-    }
-
-    target.addEventListener('session_terminated', listener);
-
-    (realtimeHub as any).handleIncomingMessage({
-      type: 'SESSION_TERMINATED',
-      newDeviceName: 'Chrome on Linux',
-      message: 'Logged out because your account was signed in on Chrome on Linux',
-      serverTimestamp: new Date().toISOString(),
-    });
-
-    expect(capturedEvent).toBeTruthy();
-    expect(capturedEvent.message).toContain('Chrome on Linux');
-    expect(localStorage.getItem('notion_os_auth_termination_notice')).toContain('Chrome on Linux');
-    expect(localStorage.getItem('notion_os_auth_signed_out')).toBe('true');
-
-    target.removeEventListener('session_terminated', listener);
-  });
-
-  it('6. LiveSyncSimulator and SyncHub are completely removed from the project', async () => {
-    // Attempting to import LiveSyncSimulator should fail because it was deleted
-    let importFailed = false;
-    try {
-      // @ts-expect-error Deleted component
-      await import('../components/LiveSyncSimulator');
-    } catch {
-      importFailed = true;
-    }
-    expect(importFailed).toBe(true);
-  });
 });

@@ -676,7 +676,7 @@ export interface AuthUser {
   avatarUrl?: string;
   createdAt: number;
   lastLoginAt: number;
-  provider: 'neon' | 'supabase' | 'local_demo' | 'local';
+  provider: 'neon' | 'local';
 }
 
 export interface DeviceSession {
@@ -1023,7 +1023,7 @@ export interface OutboxMutation {
 
 export type ExpenseSyncStatusState = 'synced' | 'pending' | 'syncing' | 'offline' | 'error';
 export type LocalDurabilityState = 'durable' | 'degraded' | 'error';
-export type ExpenseSyncMode = 'dedicated_table' | 'workspace_jsonb_fallback' | 'offline_local_first';
+export type ExpenseSyncMode = 'versioned_outbox' | 'offline_local_first';
 export type ExpenseMigrationState = 'pending' | 'in_progress' | 'completed' | 'fallback_mode' | 'failed';
 
 export interface ExpenseSyncStatus {

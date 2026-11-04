@@ -27,7 +27,7 @@ describe('Expenses and Habits Full Offline Persistence & Non-Disappearance Verif
   });
 
   describe('1. Expenses Offline Recovery and Historical Merging', () => {
-    it('recovers full expense dataset from offline cache when scoped storage is empty or blank', () => {
+    it('does not recover a legacy global expense cache when scoped storage is empty', () => {
       const historicalExpenses: ExpenseItem[] = [
         {
           id: 'exp-hist-1',
@@ -55,12 +55,10 @@ describe('Expenses and Habits Full Offline Persistence & Non-Disappearance Verif
       localStorage.setItem(getScopedKey(STORAGE_KEYS.EXPENSES), '[]');
 
       const result = Storage.getExpenses();
-      expect(result.length).toBe(2);
-      expect(result.map((e) => e.id)).toContain('exp-hist-1');
-      expect(result.map((e) => e.id)).toContain('exp-hist-2');
+      expect(result).toEqual([]);
     });
 
-    it('merges historical expenses when scoped storage only contains today transaction', () => {
+    it('reads only canonical scoped expenses when a legacy cache contains history', () => {
       const historicalExpenses: ExpenseItem[] = [
         {
           id: 'exp-older-month',
@@ -88,14 +86,14 @@ describe('Expenses and Habits Full Offline Persistence & Non-Disappearance Verif
       localStorage.setItem(getScopedKey(STORAGE_KEYS.EXPENSES), JSON.stringify([todayExpense]));
       Storage.clearMemoryExpensesCache();
 
-      // Ensure reading back retrieves BOTH today's and historical expenses
+      // Legacy backups cannot silently repopulate a cleared workspace.
       const allExpenses = Storage.getExpenses();
-      expect(allExpenses.length).toBe(2);
+      expect(allExpenses.length).toBe(1);
       expect(allExpenses.some((e) => e.id === 'exp-today-1')).toBe(true);
-      expect(allExpenses.some((e) => e.id === 'exp-older-month')).toBe(true);
+      expect(allExpenses.some((e) => e.id === 'exp-older-month')).toBe(false);
     });
 
-    it('setExpenses updates multi-tier offline cache', () => {
+    it('setExpenses persists to the current scoped key without legacy backup keys', () => {
       const expenses: ExpenseItem[] = [
         {
           id: 'exp-test-offline-write',
@@ -110,16 +108,16 @@ describe('Expenses and Habits Full Offline Persistence & Non-Disappearance Verif
 
       Storage.setExpenses(expenses);
 
-      // Verify backup exists
-      const backup = localStorage.getItem('lifeos_expenses_backup');
-      expect(backup).not.toBeNull();
-      const parsed = JSON.parse(backup!);
+      const canonical = localStorage.getItem(getScopedKey(STORAGE_KEYS.EXPENSES));
+      expect(canonical).not.toBeNull();
+      const parsed = JSON.parse(canonical!);
       expect(parsed[0].id).toBe('exp-test-offline-write');
+      expect(localStorage.getItem('lifeos_expenses_backup')).toBeNull();
     });
   });
 
   describe('2. Habits Offline Persistence and Progress Retention', () => {
-    it('persists habits to offline cache and recovers when scoped storage is lost', () => {
+    it('does not recover legacy habit backups when scoped storage is cleared', () => {
       const sampleHabits: HabitItem[] = [
         {
           id: 'habit-fitness-1',
@@ -133,15 +131,11 @@ describe('Expenses and Habits Full Offline Persistence & Non-Disappearance Verif
 
       Storage.setHabits(sampleHabits);
 
-      // Clear scoped key directly to simulate cold restart / offline reset
+      // Simulate stale legacy backup data after a clean account reset.
+      localStorage.setItem('lifeos_habits_backup', JSON.stringify(sampleHabits));
       localStorage.removeItem(getScopedKey(STORAGE_KEYS.HABITS));
 
-      const recovered = Storage.getHabits();
-      expect(recovered.length).toBeGreaterThan(0);
-      const found = recovered.find((h) => h.id === 'habit-fitness-1');
-      expect(found).toBeDefined();
-      expect(found?.completedDates).toContain('2026-10-19');
-      expect(found?.completedDates).toContain('2026-10-22');
+      expect(Storage.getHabits()).toEqual([]);
     });
 
     it('importAllDataPayload preserves completedDates calendar history across sync', () => {

@@ -17,10 +17,9 @@ import {
 import { Sound } from '../utils/audio';
 import { QuickAlarm } from '../types';
 import { Storage } from '../utils/storage';
+import { Auth } from '../utils/auth';
 import {
-  broadcastAlarmAction,
-  isSupabaseConfigured,
-  scheduleAutoSyncToSupabase,
+  scheduleAutoSyncToServer,
 } from '../utils/neonSync';
 
 type ClockStyle = 'chronometer' | 'analog' | 'cards';
@@ -162,7 +161,7 @@ export const FlipClock: React.FC<FlipClockProps> = ({ className = '', onRingingC
     return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported';
   });
 
-  // Sync alarm state to Storage, Supabase DB, and Realtime WebSocket across all user devices
+  // Sync alarm state through the versioned account workspace across devices
   const syncAlarmAction = (
     action: 'set' | 'snooze' | 'dismiss' | 'delete',
     alarm: QuickAlarm | null
@@ -180,11 +179,10 @@ export const FlipClock: React.FC<FlipClockProps> = ({ className = '', onRingingC
     }
 
     // 1. Instant WebSocket broadcast (<30ms) to other devices logged into the same account
-    broadcastAlarmAction(action, alarm);
 
-    // 2. Persist to authoritative Supabase workspace cloud database
-    if (isSupabaseConfigured()) {
-      scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
+    // 2. Persist to the authoritative versioned workspace
+    if (Auth.getAuthToken()) {
+      scheduleAutoSyncToServer(() => Storage.getAllDataPayload(), 300);
     }
   };
 

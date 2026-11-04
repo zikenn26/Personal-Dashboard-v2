@@ -3,9 +3,6 @@ import { pool } from './db.js';
 async function verify() {
   console.log('--- NEON DATABASE STATUS CHECK ---');
 
-  // Clean up any stale legacy row if exists
-  await pool.query("DELETE FROM workspaces WHERE user_identifier = 'usr_arpitapri125_gmail_com'");
-
   const wsRes = await pool.query(`
     SELECT
       user_identifier,

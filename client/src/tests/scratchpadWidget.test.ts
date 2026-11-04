@@ -103,7 +103,7 @@ describe('Scratch Pad Widget Native Synchronization & Storage Integrity', () => 
     window.removeEventListener('dashboard-data-updated', handleDash);
   });
 
-  it('maintains compatibility with Supabase full data export and import', () => {
+  it('maintains compatibility with full data export and import', () => {
     Storage.setScratchpad('- Synced across all platforms');
 
     const payload = Storage.getAllDataPayload();

@@ -1,18 +1,16 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { webcrypto } from 'node:crypto';
-import { Auth, ensureUserWorkspaceInitialized, getUserWorkspaceKey } from '../utils/auth';
+import { Auth, getUserWorkspaceKey } from '../utils/auth';
 import { Storage, BLANK_PROFILE } from '../utils/storage';
 import { isDummyMockAvatar, isAvatarMatchingUserEmailDomain } from '../utils/userUtils';
 import {
-  getSupabaseClient,
-  isSupabaseConfigured,
   setCustomWorkspaceIdentifier,
   setCustomWorkspaceEmail,
   getCustomWorkspaceIdentifier,
   getCustomWorkspaceEmail,
   broadcastWorkspaceUpdate,
   subscribeToRealtimeWorkspace,
-  fetchWorkspaceFromSupabase,
+  fetchWorkspaceFromServer,
 } from '../utils/neonSync';
 import { AuthUser, ExpenseItem, HabitItem, TodoItem } from '../types';
 
@@ -46,7 +44,7 @@ describe('Multi-User Workspace Isolation & Ownership Security Tests', { timeout:
     avatarUrl: 'https://cdn.example.com/avatars/userA.png',
     createdAt: Date.now() - 100000,
     lastLoginAt: Date.now(),
-    provider: 'supabase',
+    provider: 'neon',
   };
 
   const userB: AuthUser = {
@@ -56,7 +54,7 @@ describe('Multi-User Workspace Isolation & Ownership Security Tests', { timeout:
     avatarUrl: '',
     createdAt: Date.now(),
     lastLoginAt: Date.now(),
-    provider: 'supabase',
+    provider: 'neon',
   };
 
   it('1. A newly registered User B receives a blank, independent workspace', () => {
@@ -246,7 +244,7 @@ describe('Multi-User Workspace Isolation & Ownership Security Tests', { timeout:
 
   it('6. Refreshing the page and reopening the app preserve the correct account workspace', () => {
     // Simulate User B session persisted in localStorage
-    Auth.setCurrentUser(userB);
+    Auth.setCurrentUser(userB, 'test-session-token');
     const restoredUser = Auth.getCurrentUser();
     expect(restoredUser?.email).toBe(userB.email);
     expect(getCustomWorkspaceIdentifier()).toBe(getUserWorkspaceKey(userB));
@@ -288,79 +286,44 @@ describe('Multi-User Workspace Isolation & Ownership Security Tests', { timeout:
     expect(Storage.getExpenses().some((e) => e.id === 'exp-broadcast-a')).toBe(false);
   });
 
-  it('9. A missing workspace is created safely without copying any existing workspace', async () => {
-    const client = getSupabaseClient();
-    if (!client) return;
-
+  it('9. A newly initialized account workspace is empty and independent', async () => {
     const brandNewUser: AuthUser = {
       id: 'brand-new-user-uuid-9999',
       email: 'brand_new_isolated_user@test.org',
       name: 'Brand New User',
       createdAt: Date.now(),
       lastLoginAt: Date.now(),
-      provider: 'supabase',
+      provider: 'neon',
     };
-
-    // Initialize partition
-    await ensureUserWorkspaceInitialized(client, brandNewUser);
-
-    // Fetch created partition
-    const wsKey = getUserWorkspaceKey(brandNewUser);
-    const { data: partition } = await client
-      .from('user_workspaces')
-      .select('workspace_data, user_email')
-      .eq('user_identifier', wsKey)
-      .maybeSingle();
-
-    if (partition) {
-      expect(partition.user_email).toBe(brandNewUser.email);
-      expect(partition.workspace_data.expenses).toEqual([]);
-      expect(partition.workspace_data.habits).toEqual([]);
-      expect(partition.workspace_data.todos).toEqual([]);
-      expect(partition.workspace_data.profile.contactEmail).toBe(brandNewUser.email);
-    }
+    Storage.clearMemoryCaches();
+    Auth.setCurrentUser(brandNewUser);
+    setCustomWorkspaceIdentifier(getUserWorkspaceKey(brandNewUser));
+    setCustomWorkspaceEmail(brandNewUser.email);
+    await Storage.resetToCleanUserWorkspace(brandNewUser);
+    expect(Storage.getExpenses()).toEqual([]);
+    expect(Storage.getHabits()).toEqual([]);
+    expect(Storage.getTodos()).toEqual([]);
+    expect(Storage.getProfile().contactEmail).toBe(brandNewUser.email);
   });
 
-  it('10. Existing users retain their own data after migrations and continue to sign in', async () => {
-    const client = getSupabaseClient();
-    if (!client) return;
-
-    // Verify gknayak@gmail.com workspace still exists and retains data
-    const { data: gknRow } = await client
-      .from('user_workspaces')
-      .select('workspace_data, user_email, user_identifier')
-      .eq('user_identifier', 'user_gknayak_gmail_com')
-      .maybeSingle();
-
-    if (gknRow) {
-      expect(gknRow.user_email).toBe('gknayak@gmail.com');
-      expect(gknRow.workspace_data?.profile?.name).toBe('Gulshan Kumar Nayak');
-      expect(Array.isArray(gknRow.workspace_data?.expenses)).toBe(true);
-    } else {
-      // In offline/mocked environments without live network, verify local user-scoped storage partition retains data
-      const gknUser: AuthUser = {
-        id: 'gkn-migrated-id',
-        email: 'gknayak@gmail.com',
-        name: 'Gulshan Kumar Nayak',
-        createdAt: Date.now(),
-        lastLoginAt: Date.now(),
-        provider: 'supabase',
-      };
-      setCustomWorkspaceIdentifier(getUserWorkspaceKey(gknUser));
-      setCustomWorkspaceEmail(gknUser.email);
-      const prof = Storage.getProfile();
-      expect(prof.name).toBe('Gulshan Kumar Nayak');
-    }
+  it('10. Does not read a server workspace without an authenticated bearer token', async () => {
+    localStorage.removeItem('notion_os_auth_token_v1');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const result = await fetchWorkspaceFromServer();
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('authenticated account is required');
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
   });
 
   it('11. Direct database/API requests that violate ownership are blocked or rejected', async () => {
-    // When in guest mode or cross-account mismatch, fetchWorkspaceFromSupabase rejects guest access
+    // Guest workspaces are never sent to the versioned cloud API.
     setCustomWorkspaceIdentifier('user_guest');
     setCustomWorkspaceEmail('guest@workspace.local');
 
-    const guestFetch = await fetchWorkspaceFromSupabase();
+    const guestFetch = await fetchWorkspaceFromServer();
     expect(guestFetch.success).toBe(false);
-    expect(guestFetch.message).toContain('Guest workspace is local-only');
+    expect(guestFetch.message).toContain('authenticated account is required');
   });
 
   it('12. ANY arbitrary new user gets an identical clean blank account with zero data leakage', () => {
@@ -371,7 +334,7 @@ describe('Multi-User Workspace Isolation & Ownership Security Tests', { timeout:
       avatarUrl: '',
       createdAt: Date.now(),
       lastLoginAt: Date.now(),
-      provider: 'supabase',
+      provider: 'neon',
     };
 
     Storage.clearMemoryCaches();
@@ -429,7 +392,7 @@ describe('Multi-User Workspace Isolation & Ownership Security Tests', { timeout:
       avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
       createdAt: Date.now(),
       lastLoginAt: Date.now(),
-      provider: 'supabase',
+      provider: 'neon',
     };
 
     // isDummyMockAvatar must detect that this avatar belongs to Gulshan and reject it for Arpita
@@ -497,7 +460,7 @@ describe('Multi-User Workspace Isolation & Ownership Security Tests', { timeout:
       avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
       createdAt: Date.now(),
       lastLoginAt: Date.now(),
-      provider: 'supabase',
+      provider: 'neon',
     };
     Auth.setCurrentUser(gknUser);
     setCustomWorkspaceIdentifier(getUserWorkspaceKey(gknUser));
@@ -523,7 +486,7 @@ describe('Multi-User Workspace Isolation & Ownership Security Tests', { timeout:
       name: 'Arpita Priyadarsini',
       createdAt: Date.now(),
       lastLoginAt: Date.now(),
-      provider: 'supabase',
+      provider: 'neon',
     };
     Auth.setCurrentUser(arpitaUser);
     setCustomWorkspaceIdentifier(getUserWorkspaceKey(arpitaUser));

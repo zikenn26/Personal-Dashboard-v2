@@ -68,6 +68,29 @@ export const initDb = async (): Promise<void> => {
         sync_version NUMERIC(30, 0) NOT NULL DEFAULT 0
       );
 
+      -- Credentials are server-owned; workspace snapshots never contain passwords.
+      CREATE TABLE IF NOT EXISTS app_users (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL UNIQUE,
+        display_name TEXT NOT NULL,
+        password_hash JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Monotonic generation survives global data resets. Every authenticated
+      -- write holds a shared row lock while checking this state; reset takes an
+      -- exclusive lock before incrementing and truncating application data.
+      CREATE TABLE IF NOT EXISTS app_state (
+        singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+        generation BIGINT NOT NULL DEFAULT 1,
+        schema_version INTEGER NOT NULL DEFAULT 2,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      INSERT INTO app_state (singleton, generation, schema_version)
+      VALUES (TRUE, 1, 2) ON CONFLICT (singleton) DO UPDATE
+        SET schema_version = GREATEST(app_state.schema_version, EXCLUDED.schema_version);
+
       CREATE TABLE IF NOT EXISTS transactions (
         id TEXT PRIMARY KEY,
         workspace_identifier TEXT NOT NULL,
@@ -151,8 +174,10 @@ export const initDb = async (): Promise<void> => {
         device_id TEXT NOT NULL,
         device_name TEXT NOT NULL,
         created_at NUMERIC(30, 0) NOT NULL,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        generation BIGINT NOT NULL DEFAULT 1
       );
+      ALTER TABLE user_active_sessions ADD COLUMN IF NOT EXISTS generation BIGINT NOT NULL DEFAULT 1;
 
       CREATE TABLE IF NOT EXISTS sync_queues (
         id TEXT PRIMARY KEY,

@@ -20,7 +20,7 @@ import {
   Radio,
 } from 'lucide-react';
 import { Storage } from '../utils/storage';
-import { isSupabaseConfigured } from '../utils/neonSync';
+import { Auth } from '../utils/auth';
 
 interface BackupRestoreViewProps {
   onExportData: () => void;
@@ -39,7 +39,7 @@ export const BackupRestoreView: React.FC<BackupRestoreViewProps> = ({
   const [importStatus, setImportStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [statusMsg, setStatusMsg] = useState('');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const supabaseConnected = isSupabaseConfigured();
+  const cloudSyncEnabled = Boolean(Auth.getAuthToken());
 
   // Compute storage stats safely
   const todos = Storage.getTodos();
@@ -120,7 +120,7 @@ export const BackupRestoreView: React.FC<BackupRestoreViewProps> = ({
             <span>Cloud &amp; Local Storage Engine</span>
           </h1>
           <p className="text-xs sm:text-sm text-[#787774] dark:text-[#9CA3AF] mt-1">
-            Dual-tier persistence: Supabase Free PostgreSQL &amp; Storage with automatic client-side LocalStorage fallback.
+            Local browser and APK storage with durable offline queues and authenticated Neon sync.
           </p>
         </div>
 
@@ -139,7 +139,7 @@ export const BackupRestoreView: React.FC<BackupRestoreViewProps> = ({
         </div>
       </div>
 
-      {/* Supabase & Cloudflare Highlights Card */}
+      {/* Neon sync status card */}
       <div className="p-5 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-indigo-500/5 to-amber-500/10 border border-emerald-200 dark:border-emerald-800/60 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">
@@ -147,13 +147,13 @@ export const BackupRestoreView: React.FC<BackupRestoreViewProps> = ({
               <Cloud className="w-4 h-4" />
             </span>
             <h3 className="text-sm font-bold text-[#111827] dark:text-white flex items-center gap-2">
-              <span>Supabase Cloud Database &amp; Auto Sync</span>
+              <span>Neon Cloud Database &amp; Auto Sync</span>
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                supabaseConnected 
+                cloudSyncEnabled
                   ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200'
                   : 'bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200'
               }`}>
-                {supabaseConnected ? '● Cloud Connected' : '○ Local Storage Active'}
+                {cloudSyncEnabled ? '● Account Sync Enabled' : '○ Local Storage Active'}
               </span>
             </h3>
           </div>
@@ -337,7 +337,7 @@ export const BackupRestoreView: React.FC<BackupRestoreViewProps> = ({
           <span>Danger Zone: Reset Workspace</span>
         </h2>
         <p className="text-xs text-red-600/80 dark:text-red-400/80">
-          Reset all stored tasks, habits, journals, and records to initial sample state. We strongly advise exporting a JSON backup first.
+          Clear this device's workspace data and reset to empty defaults. Signed-in changes will sync through the authenticated cloud service when online. Export a backup first if you want to keep a copy.
         </p>
 
         {showResetConfirm ? (
@@ -367,7 +367,7 @@ export const BackupRestoreView: React.FC<BackupRestoreViewProps> = ({
             onClick={() => setShowResetConfirm(true)}
             className="px-4 py-2 bg-red-100 dark:bg-red-900/40 hover:bg-red-200 text-red-700 dark:text-red-300 text-xs font-semibold rounded-xl border border-red-300 dark:border-red-800 cursor-pointer transition-all"
           >
-            Reset to Sample Data
+              Clear Workspace Data
           </button>
         )}
       </div>

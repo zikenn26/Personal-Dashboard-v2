@@ -323,7 +323,7 @@ describe('P0 — SMS Rescan Selection & Detected Transactions Visibility', () =>
       expect(getCustomWorkspaceIdentifier()).toBe('user_gulnayak1206@gmail.com');
     });
 
-    it('never overwrites existing local expenses with an empty array during cloud sync hydration', () => {
+    it('accepts an authoritative empty server ledger during hydration', () => {
       // Create local expense
       const localExp: ExpenseItem = {
         id: 'local-exp-1',
@@ -344,14 +344,12 @@ describe('P0 — SMS Rescan Selection & Detected Transactions Visibility', () =>
       };
       Storage.importAllDataPayload(emptyCloudPayload);
 
-      // Local expense must NOT be erased!
+      // Local cache rows cannot override the server ledger.
       const current = Storage.getExpenses();
-      expect(current).toHaveLength(1);
-      expect(current[0].id).toBe('local-exp-1');
-      expect(current[0].amount).toBe(220);
+      expect(current).toEqual([]);
     });
 
-    it('merges cloud payload with local expenses deterministically', () => {
+    it('does not merge local cache rows into an authoritative server snapshot', () => {
       const localExp: ExpenseItem = {
         id: 'local-exp-sms',
         name: 'Auto-logged SMS item',
@@ -380,8 +378,8 @@ describe('P0 — SMS Rescan Selection & Detected Transactions Visibility', () =>
       });
 
       const merged = Storage.getExpenses();
-      expect(merged).toHaveLength(2);
-      expect(merged.some((e) => e.id === 'local-exp-sms')).toBe(true);
+      expect(merged).toHaveLength(1);
+      expect(merged.some((e) => e.id === 'local-exp-sms')).toBe(false);
       expect(merged.some((e) => e.id === 'cloud-exp-manual')).toBe(true);
     });
   });

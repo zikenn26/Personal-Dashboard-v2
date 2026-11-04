@@ -1,12 +1,9 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { webcrypto } from 'node:crypto';
-import { Auth, ensureUserWorkspaceInitialized, getUserWorkspaceKey } from '../utils/auth';
+import { Auth } from '../utils/auth';
 import {
-  getSupabaseClient,
-  isSupabaseConfigured,
   broadcastWorkspaceUpdate,
   subscribeToRealtimeWorkspace,
-  getCustomWorkspaceIdentifier,
 } from '../utils/neonSync';
 import { AuthUser } from '../types';
 
@@ -32,133 +29,39 @@ beforeAll(() => {
   }
 });
 
-describe('Supabase Auth & Dashboard Redirect Hardening Tests', { timeout: 30000 }, () => {
-  it('1. Passes raw email and password to supabase.auth.signInWithPassword when configured', async () => {
-    const client = getSupabaseClient();
-    if (!client || !isSupabaseConfigured()) {
-      return; // Supabase not configured in this environment
-    }
-
-    // Test with an unregistered account -> should return proper failure without throwing
-    const res = await Auth.signIn('nonexistent_user_998877@domain.com', 'SomePass123!');
-    expect(res.success).toBe(false);
-    expect(res.message).toMatch(/Invalid email or password|Invalid login credentials/);
-  });
-
-  it('2. Maps specific error responses cleanly without replacing every error blindly', async () => {
-    const client = getSupabaseClient();
-    if (!client || !isSupabaseConfigured()) return;
-
-    // Spy on signInWithPassword to simulate unconfirmed email
-    const originalSignIn = client.auth.signInWithPassword;
-    const spy = vi.spyOn(client.auth, 'signInWithPassword').mockResolvedValueOnce({
-      data: { user: null, session: null },
-      error: {
-        name: 'AuthApiError',
-        message: 'Email not confirmed',
-        status: 400,
-      } as any,
-    });
-
-    const res = await Auth.signIn('unconfirmed_user@gmail.com', 'ValidPass123!');
-    expect(res.success).toBe(false);
-    expect(res.message).toBe('Please confirm your email address before signing in.');
-
-    spy.mockRestore();
-  });
-
-  it('3. Successful login with primary credentials sets persistent session and workspace identity', async () => {
-    const client = getSupabaseClient();
-    if (!client || !isSupabaseConfigured()) return;
-
-    localStorage.clear();
-    expect(Auth.getCurrentUser()).toBeNull();
-
-    const res = await Auth.signIn('testuser@example.com', 'ValidPass123!');
-    if (!res.success) return; // Account not seeded in this environment
-    expect(res.user?.email).toBe('testuser@example.com');
-
-    // Verify session persistence in localStorage (survives page refresh)
-    const storedUser = Auth.getCurrentUser();
-    expect(storedUser).not.toBeNull();
-    expect(storedUser?.email).toBe('testuser@example.com');
-    expect(getCustomWorkspaceIdentifier()).toBe(getUserWorkspaceKey(res.user!));
-  });
-
-  it('4. verifyCurrentSession does NOT falsely log out users when workspace partition is lazy-initialized', async () => {
+describe('Server Auth & Dashboard Redirect Hardening Tests', { timeout: 30000 }, () => {
+  it('verifies an active server session and records its data generation', async () => {
     const testUser: AuthUser = {
       id: 'usr_new_test_user_123',
       email: 'new_verified_user@test.org',
       name: 'New Verified User',
-      provider: 'supabase',
+      provider: 'neon',
       createdAt: Date.now(),
       lastLoginAt: Date.now(),
     };
 
-    Auth.setCurrentUser(testUser);
+    Auth.setCurrentUser(testUser, 'test-session-token');
     expect(Auth.getCurrentUser()?.email).toBe('new_verified_user@test.org');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true, valid: true, generation: 7 }),
+    } as Response);
 
-    const client = getSupabaseClient();
-    if (client) {
-      // Mock getUser to return valid session
-      const getUserSpy = vi.spyOn(client.auth, 'getUser').mockResolvedValueOnce({
-        data: {
-          user: {
-            id: testUser.id,
-            email: testUser.email,
-            user_metadata: { full_name: testUser.name },
-            created_at: new Date().toISOString(),
-          } as any,
-        },
-        error: null,
-      });
-
-      // Verify that verifyCurrentSession returns true and does NOT log out the user
-      const isValid = await Auth.verifyCurrentSession();
-      expect(isValid).toBe(true);
-      expect(Auth.getCurrentUser()?.email).toBe('new_verified_user@test.org');
-
-      getUserSpy.mockRestore();
-    }
+    const isValid = await Auth.verifyCurrentSession();
+    expect(isValid).toBe(true);
+    expect(Auth.getCurrentUser()?.email).toBe('new_verified_user@test.org');
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('/api/auth/verify'),
+      expect.objectContaining({ headers: { Authorization: 'Bearer test-session-token' } }),
+    );
+    expect(localStorage.getItem('notion_os_auth_generation_v1')).toBe('7');
+    fetchSpy.mockRestore();
   });
 
-  it('5. Realtime 422 guard: broadcastWorkspaceUpdate sends ping instead of failing on payloads > 200KB', () => {
-    let sentMessage: any = null;
-    const mockChannel = {
-      send: vi.fn((msg: any) => {
-        sentMessage = msg;
-        return Promise.resolve();
-      }),
-    };
-
-    // Temporarily subscribe / attach channel
+  it('uses local cross-tab notifications without a separate database client', () => {
     const unsub = subscribeToRealtimeWorkspace(() => {});
-    // Test small payload -> sent as workspace_sync
-    const smallPayload = { todos: [{ id: '1', title: 'Task' }] };
-    broadcastWorkspaceUpdate(smallPayload);
-
-    // Test oversized payload (>200KB) -> sent as lightweight workspace_sync_ping to prevent HTTP 422
-    const bigString = 'x'.repeat(210 * 1024);
-    const oversizedPayload = { todos: [], big: bigString };
-    broadcastWorkspaceUpdate(oversizedPayload);
-
+    expect(() => broadcastWorkspaceUpdate({ todos: [{ id: '1', title: 'Task' }] })).not.toThrow();
     unsub();
-  });
-
-  it('6. ensureUserWorkspaceInitialized safely handles idempotent initialization', async () => {
-    const client = getSupabaseClient();
-    if (!client) return;
-
-    const testUser: AuthUser = {
-      id: 'usr_gknayak_gmail_com',
-      email: 'gknayak@gmail.com',
-      name: 'Gulshan Kumar Nayak',
-      provider: 'supabase',
-      createdAt: Date.now(),
-      lastLoginAt: Date.now(),
-    };
-
-    // Must not throw even if called multiple times
-    await expect(ensureUserWorkspaceInitialized(client, testUser)).resolves.not.toThrow();
   });
 });

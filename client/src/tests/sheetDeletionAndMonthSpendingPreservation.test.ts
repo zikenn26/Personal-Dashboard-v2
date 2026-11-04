@@ -76,7 +76,7 @@ describe('Spreadsheet Deletion & Month Spending Preservation', () => {
     expect(Storage.getExpenses()).toHaveLength(0);
   });
 
-  it('preserves current month spendings during cloud hydration even if cloud has older/fewer records', () => {
+  it('uses the authoritative server ledger during cloud hydration', () => {
     const octExpense: ExpenseItem = {
       id: 'exp-oct-1',
       name: 'October Groceries',
@@ -106,10 +106,10 @@ describe('Spreadsheet Deletion & Month Spending Preservation', () => {
 
     Storage.importAllDataPayload(cloudPayload);
 
-    const merged = Storage.getExpenses();
-    // Both October and September expenses must be present
-    expect(merged.some((e) => e.id === 'exp-oct-1')).toBe(true);
-    expect(merged.some((e) => e.id === 'exp-sep-1')).toBe(true);
+    const remote = Storage.getExpenses();
+    expect(remote).toHaveLength(1);
+    expect(remote.some((e) => e.id === 'exp-oct-1')).toBe(false);
+    expect(remote.some((e) => e.id === 'exp-sep-1')).toBe(true);
   });
 
   it('rescues all trashed expenses for target month even if active spendings exist', () => {

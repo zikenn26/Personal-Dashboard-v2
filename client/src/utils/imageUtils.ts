@@ -1,5 +1,3 @@
-import { uploadFileToSupabaseStorage, isSupabaseConfigured, getSupabaseClient } from './neonSync';
-
 /**
  * Optimizes an avatar image file (or Blob) to a lightweight, crisp square avatar.
  * Auto-crops to center square, resizes to maxDimension x maxDimension (default 320px),
@@ -7,7 +5,7 @@ import { uploadFileToSupabaseStorage, isSupabaseConfigured, getSupabaseClient } 
  *
  * Resulting size is typically 15KB - 30KB, which:
  * 1. Easily fits inside browser localStorage (no QuotaExceededError).
- * 2. Easily fits inside Supabase Realtime broadcast WebSocket message (limit 256KB).
+ * 2. Keeps profile snapshots small enough for account sync.
  * 3. Delivers crisp, retina-ready quality on all devices.
  */
 export async function optimizeAvatarImage(
@@ -116,47 +114,18 @@ export async function optimizeAvatarImage(
 }
 
 /**
- * Upload an avatar photo with automatic client-side optimization and cloud storage fallback.
+ * Prepare an avatar photo for storage in the account profile.
  * 1. Centers, resizes to 320x320 and compresses image to ~20KB.
- * 2. If Supabase is connected, uploads to Supabase Storage bucket ('avatars' or 'workspace_media').
- * 3. If storage upload succeeds, returns the public CDN URL.
- * 4. Otherwise, returns the ~20KB high-speed dataUrl which syncs reliably across all devices.
+ * 2. Returns the compact data URL, which is persisted with the account profile snapshot.
  */
 export async function uploadAvatarImage(
   file: File | Blob,
-  userId?: string
+  _userId?: string
 ): Promise<{ url: string; isCloudStorage: boolean; error?: string }> {
   // 1. Optimize image client-side to ~20KB
   const { dataUrl, blob } = await optimizeAvatarImage(file, 320, 0.85);
 
-  // 2. Try Supabase Storage if configured
-  const client = getSupabaseClient();
-  if (client && isSupabaseConfigured()) {
-    try {
-      const cleanUser = (userId || 'user').replace(/[^a-zA-Z0-9_-]/g, '_');
-      const ext = blob.type.includes('webp') ? 'webp' : 'jpg';
-      const filePath = `avatar_${cleanUser}_${Date.now()}.${ext}`;
-
-      // Try 'avatars' bucket first
-      let uploadRes = await uploadFileToSupabaseStorage('avatars', filePath, blob);
-
-      // If 'avatars' bucket failed or doesn't exist, try 'workspace_media'
-      if (!uploadRes.url) {
-        uploadRes = await uploadFileToSupabaseStorage('workspace_media', filePath, blob);
-      }
-
-      if (uploadRes.url) {
-        return {
-          url: uploadRes.url,
-          isCloudStorage: true,
-        };
-      }
-    } catch (err: any) {
-      console.warn('Supabase storage upload notice (using optimized fallback):', err);
-    }
-  }
-
-  // 3. Fallback to ultra-optimized 20KB base64 DataURL
+  // 2. Return the compact profile value for storage and versioned account sync.
   return {
     url: dataUrl,
     isCloudStorage: false,

@@ -1,5 +1,6 @@
 import { Storage } from '../utils/storage';
-import { flushAutoSyncImmediately, isSupabaseConfigured } from '../utils/neonSync';
+import { flushAutoSyncImmediately } from '../utils/neonSync';
+import { Auth } from '../utils/auth';
 import {
   TodoItem,
   HabitItem,
@@ -423,7 +424,7 @@ const notifyDataChanged = (module: string, extraDetail?: any) => {
       // ignore
     }
   }
-  if (isSupabaseConfigured()) {
+  if (Auth.getAuthToken()) {
     void flushAutoSyncImmediately(Storage.getAllDataPayload());
   }
 };

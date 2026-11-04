@@ -3,12 +3,11 @@ import react from "@vitejs/plugin-react";
 import path from "node:path";
 import { defineConfig, loadEnv } from "vite";
 import { geminiVitePlugin } from "./server/geminiService";
-import { screenTimeVitePlugin } from "./server/screenTimeService";
 import { syncVitePlugin } from "./server/syncService";
 
 export default defineConfig(({ mode }) => {
   return {
-    plugins: [react(), tailwindcss(), geminiVitePlugin(), screenTimeVitePlugin(), syncVitePlugin()],
+    plugins: [react(), tailwindcss(), geminiVitePlugin(), syncVitePlugin()],
     resolve: {
       dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime"],
       alias: {

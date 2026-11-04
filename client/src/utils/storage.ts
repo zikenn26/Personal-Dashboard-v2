@@ -50,12 +50,12 @@ import { normalizeExpenseDateKey, getLocalDateKey, mergeExpenseLists as mergeExp
 import { scratchpadWidgetService } from '../services/scratchpadWidgetService';
 import { spendingWidgetService } from '../services/spendingWidgetService';
 import { getLocalDateString, resolveCleanAppName } from './screenTimeCalculator';
-import { isDummyMockAvatar, isAvatarMatchingUserEmailDomain, getUserWorkspaceKey, OWNER_GKN_EXPENSES } from './userUtils';
-export { OWNER_GKN_EXPENSES };
+import { isDummyMockAvatar, isAvatarMatchingUserEmailDomain, getUserWorkspaceKey } from './userUtils';
 import { Capacitor } from '@capacitor/core';
 import { generateUUID, isValidUUID } from './uuid';
 import { expenseRepo } from '../repositories/expenseRepository';
 import { expenseSyncService } from '../services/expenseSyncService';
+import { clearAllWorkspaceSyncState } from '../services/syncProtocol';
 
 export const STORAGE_KEYS = {
   TODOS: 'notion_os_v4_todos',
@@ -602,7 +602,7 @@ export const INITIAL_PROFILE: UserProfile = {
   location: 'San Francisco, CA',
   statusText: 'Open to opportunities',
   statusEmoji: '💼',
-  avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar__gmail_com_1792214229699.webp',
+  avatarUrl: '',
   avatarEnabled: true,
   bannerType: 'gradient',
   bannerBg: 'linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 50%, #FDF4FF 100%)',
@@ -933,41 +933,6 @@ export const DEMO_HABITS: HabitItem[] = [
   },
 ];
 
-export const DEMO_EXPENSES: ExpenseItem[] = [
-  {
-    id: 'exp-1',
-    name: 'Grocery & Nutrition Mart',
-    amount: 350,
-    category: 'Groceries & Food',
-    date: new Date().toISOString().split('T')[0],
-    paymentMethod: 'Credit Card',
-  },
-  {
-    id: 'exp-2',
-    name: 'Metro Transit Pass',
-    amount: 120,
-    category: 'Taxi & Transit',
-    date: new Date().toISOString().split('T')[0],
-    paymentMethod: 'Apple / Google Pay',
-  },
-  {
-    id: 'exp-3',
-    name: 'Cloud Server & Dev Hosting',
-    amount: 240,
-    category: 'Tech & Subscriptions',
-    date: new Date(Date.now() - 86400000).toISOString().split('T')[0],
-    paymentMethod: 'Credit Card',
-  },
-  {
-    id: 'exp-4',
-    name: 'Coffee & Team Refreshments',
-    amount: 95,
-    category: 'Snacks & Coffee',
-    date: new Date(Date.now() - 172800000).toISOString().split('T')[0],
-    paymentMethod: 'Debit Card',
-  },
-];
-
 export const DEMO_JOURNAL: JournalEntry[] = [
   {
     id: 'jr-1',
@@ -1021,7 +986,7 @@ export const DEMO_PROJECTS: PortfolioProject[] = [
     title: 'Workfolio LifeOS Cloud Workspace',
     tagLine: 'Personal productivity & portfolio operating system',
     description: 'Comprehensive personal operating system with real-time sync, journal, timeline, expense tracking, and resume builder.',
-    techStack: ['React', 'TypeScript', 'Tailwind', 'Supabase'],
+    techStack: ['React', 'TypeScript', 'Tailwind', 'Neon PostgreSQL'],
     category: 'Fullstack',
     featured: true,
   },
@@ -1050,7 +1015,7 @@ export const DEMO_SKILLS: SkillCategory[] = [
     category: 'Cloud & Database',
     skills: [
       { name: 'PostgreSQL', level: 85, experience: '2+ yrs', highlight: true },
-      { name: 'Supabase', level: 90, experience: '2+ yrs', highlight: true },
+      { name: 'Neon PostgreSQL', level: 90, experience: '2+ yrs', highlight: true },
       { name: 'REST APIs', level: 92, experience: '3+ yrs', highlight: false },
     ],
   },
@@ -1317,91 +1282,11 @@ export const Storage = {
   setTodos: (items: TodoItem[]) => saveToStorage(STORAGE_KEYS.TODOS, items),
 
   getHabits: (): HabitItem[] => {
-    const activeEmail = (getCustomWorkspaceEmail() || '').toLowerCase().trim();
-    const ws = getCustomWorkspaceIdentifier();
-    const isGknUser = activeEmail === '' || activeEmail === '';
-    const scopedKey = getScopedKey(STORAGE_KEYS.HABITS);
-    const hasScopedKey = localStorage.getItem(scopedKey) !== null;
-    let loaded = loadFromStorage<HabitItem[]>(STORAGE_KEYS.HABITS, []);
-
-    // Multi-tier offline recovery for habits: check across all partitions if loaded is empty
-    if (isGknUser && (!Array.isArray(loaded) || loaded.length === 0)) {
-      const habitCandidates = [
-        `${activeEmail}_offline_habits_cache`,
-        `${ws}_offline_habits_cache`,
-        '_offline_habits_cache',
-        'user_guest_offline_habits_cache',
-        'user_guest_notion_os_v4_habits',
-        'notion_os_v4_habits',
-        'user_036fe7d3-6a13-4740-b028-afb55e81e00e_notion_os_v4_habits',
-        'lifeos_habits_backup',
-      ];
-      for (const hk of habitCandidates) {
-        try {
-          const rawH = localStorage.getItem(hk);
-          if (rawH) {
-            const parsedH = JSON.parse(rawH);
-            if (Array.isArray(parsedH) && parsedH.length > 0) {
-              loaded = parsedH;
-              saveToStorage(STORAGE_KEYS.HABITS, loaded);
-              break;
-            }
-          }
-        } catch {}
-      }
-      if (!Array.isArray(loaded) || loaded.length === 0) {
-        loaded = [...OWNER_GKN_HABITS];
-        saveToStorage(STORAGE_KEYS.HABITS, loaded);
-      }
-      return loaded;
-    }
-
-    if (!hasScopedKey && (!Array.isArray(loaded) || loaded.length === 0)) {
-      try {
-        const cachedRaw =
-          localStorage.getItem(`${activeEmail}_offline_habits_cache`) ||
-          localStorage.getItem(`${ws}_offline_habits_cache`) ||
-          (isGknUser ? localStorage.getItem('_offline_habits_cache') : null);
-        if (cachedRaw) {
-          const parsed = JSON.parse(cachedRaw);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            loaded = parsed;
-            saveToStorage(STORAGE_KEYS.HABITS, loaded);
-          }
-        }
-      } catch {}
-    }
-
-    if (isGknUser) {
-      if (Array.isArray(loaded) && loaded.length > 0) return loaded;
-      saveToStorage(STORAGE_KEYS.HABITS, OWNER_GKN_HABITS);
-      return [...OWNER_GKN_HABITS];
-    }
-    return Array.isArray(loaded) && loaded.length > 0 ? loaded : (hasScopedKey ? [] : INITIAL_HABITS);
+    const loaded = loadFromStorage<HabitItem[]>(STORAGE_KEYS.HABITS, []);
+    return Array.isArray(loaded) ? loaded : [];
   },
   setHabits: (items: HabitItem[]) => {
     saveToStorage(STORAGE_KEYS.HABITS, items);
-    try {
-      const activeEmail = (getCustomWorkspaceEmail() || '').toLowerCase().trim();
-      const ws = getCustomWorkspaceIdentifier();
-      const isGuest = !activeEmail || activeEmail === 'guest@workspace.local' || ws === 'user_guest';
-      if (Array.isArray(items) && items.length > 0) {
-        const serialized = JSON.stringify(items);
-        if (!isGuest) {
-          localStorage.setItem(`${activeEmail}_offline_habits_cache`, serialized);
-          localStorage.setItem(`${ws}_offline_habits_cache`, serialized);
-        } else {
-          localStorage.setItem('user_guest_offline_habits_cache', serialized);
-        }
-      } else if (Array.isArray(items) && items.length === 0) {
-        if (!isGuest) {
-          localStorage.removeItem(`${activeEmail}_offline_habits_cache`);
-          localStorage.removeItem(`${ws}_offline_habits_cache`);
-        } else {
-          localStorage.removeItem('user_guest_offline_habits_cache');
-        }
-      }
-    } catch {}
   },
   updateHabit: (habit: HabitItem): HabitItem[] => {
     const current = Storage.getHabits();
@@ -1518,163 +1403,15 @@ export const Storage = {
   },
 
   getExpenses: (): ExpenseItem[] => {
-    const scopedKey = getScopedKey(STORAGE_KEYS.EXPENSES);
-    const hasScopedItem = localStorage.getItem(scopedKey) !== null;
     const raw = loadFromStorage<ExpenseItem[]>(STORAGE_KEYS.EXPENSES, []);
-    let list: ExpenseItem[] = Array.isArray(raw) ? raw.filter((e) => e && typeof e === 'object' && e.id) : [];
-
-    const activeEmail = (getCustomWorkspaceEmail() || '').toLowerCase().trim();
-    const ws = getCustomWorkspaceIdentifier();
-    const isGuest = !activeEmail || activeEmail === 'guest@workspace.local' || ws === 'user_guest';
-    const isGknUser = !isGuest && (activeEmail.includes('gknayak') || activeEmail.includes('gulshan'));
-
-    // Strictly user-scoped offline cache recovery:
-    // Gather all persistent offline caches to ensure spending data is always readable offline and never blanked
-    const offlineCacheKeys: string[] = [];
-    if (!isGuest) {
-      offlineCacheKeys.push(
-        `${activeEmail}_offline_expenses_cache`,
-        `${ws}_offline_expenses_cache`,
-        `${ws}_lifeos_expenses_backup`
-      );
-
-      if (isGknUser) {
-        offlineCacheKeys.push(
-          'user_guest_notion_os_v4_expenses',
-          'notion_os_v4_expenses',
-          'user_036fe7d3-6a13-4740-b028-afb55e81e00e_notion_os_v4_expenses',
-          'user_usr__gmail_com_notion_os_v4_expenses',
-          'user__notion_os_v4_expenses',
-          'user_guest_offline_expenses_cache',
-          'user_guest_lifeos_expenses_backup',
-          '_offline_expenses_cache',
-          'lifeos_offline_expenses_cache',
-          'account_auth__gmail_com_notion_os_v4_expenses',
-          'lifeos_expenses_backup',
-          'lifeos_last_imported_sheet_expenses'
-        );
-
-        if (typeof window !== 'undefined') {
-          try {
-            for (let i = 0; i < localStorage.length; i++) {
-              const k = localStorage.key(i);
-              if (
-                k &&
-                (k.includes('expenses') || k.includes('expense')) &&
-                !k.includes('trash') &&
-                !k.includes('tombstone') &&
-                !k.includes('deleted') &&
-                !offlineCacheKeys.includes(k)
-              ) {
-                offlineCacheKeys.push(k);
-              }
-            }
-          } catch {}
-        }
-      }
-    } else {
-      offlineCacheKeys.push(
-        'user_guest_offline_expenses_cache',
-        'user_guest_lifeos_expenses_backup',
-        'lifeos_offline_expenses_cache',
-        'lifeos_expenses_backup'
-      );
-    }
-
+    const list = Array.isArray(raw) ? raw.filter((expense) => expense && typeof expense === 'object' && expense.id) : [];
     const deletedIds = new Set(Storage.getDeletedExpenseIds().map((id) => String(id).trim()));
-    const trash = Storage.getTrash().filter((t) => t.module === 'expenses');
-    trash.forEach((t) => {
-      if (t.data?.id) deletedIds.add(String(t.data.id).trim());
-      if (typeof t.data === 'string' && t.data.trim()) deletedIds.add(t.data.trim());
-      if (t.id) deletedIds.add(String(t.id).trim());
-    });
-
-    const isExplicitlyDeleted = (id: string, refObj?: any) => {
-      const clean = String(id).trim();
-      if (deletedIds.has(clean) || Storage.isExpenseDeleted(clean)) return true;
-      if (refObj) {
-        const r1 = refObj.referenceId ? String(refObj.referenceId).trim().toUpperCase() : '';
-        const r2 = refObj.smsReferenceId ? String(refObj.smsReferenceId).trim().toUpperCase() : '';
-        const r3 = refObj.upiReference ? String(refObj.upiReference).trim().toUpperCase() : '';
-        if (r1 && Storage.isRefTombstoned(r1)) return true;
-        if (r2 && Storage.isRefTombstoned(r2)) return true;
-        if (r3 && Storage.isRefTombstoned(r3)) return true;
-      }
-      return false;
-    };
-
-    const recoveredMap = new Map<string, ExpenseItem>();
-
-    for (const key of offlineCacheKeys) {
-      try {
-        const cachedRaw = localStorage.getItem(key);
-        if (cachedRaw) {
-          const parsed = JSON.parse(cachedRaw);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            for (const e of parsed) {
-              if (e && typeof e === 'object' && e.id && !isExplicitlyDeleted(e.id, e)) {
-                const cleanId = String(e.id).trim();
-                if (!recoveredMap.has(cleanId)) {
-                  recoveredMap.set(cleanId, e);
-                }
-              }
-            }
-          }
-        }
-      } catch {}
-    }
-
-    const recoveredFromCache: ExpenseItem[] = Array.from(recoveredMap.values());
-
-    if ((!hasScopedItem || list.length === 0) && recoveredFromCache.length > 0) {
-      // Cold start or blank scoped storage: recover completely from persistent offline cache
-      list = recoveredFromCache.filter((e) => !isExplicitlyDeleted(e.id, e));
-      saveToStorage(STORAGE_KEYS.EXPENSES, list);
-    } else if (!hasScopedItem && recoveredFromCache.length === 0) {
-      // Cold start with blank workspace: initialize with authoritative expenses for primary user or empty for others
-      list = isGknUser ? [...OWNER_GKN_EXPENSES] : [];
-      saveToStorage(STORAGE_KEYS.EXPENSES, list);
-    } else if (isGknUser && list.length === 0) {
-      // Primary user safeguard: restore authoritative expenses if partition was wiped
-      list = [...OWNER_GKN_EXPENSES];
-      saveToStorage(STORAGE_KEYS.EXPENSES, list);
-    } else if (list.length > 0 && recoveredFromCache.length > 0) {
-      // Merge historical expenses present in offline cache but absent from current scoped partition,
-      // strictly excluding deleted and tombstoned items
-      const existingIds = new Set(list.map((e) => String(e.id).trim()));
-      const missingHistorical = recoveredFromCache.filter(
-        (e) => !existingIds.has(String(e.id).trim()) && !isExplicitlyDeleted(e.id, e)
-      );
-      if (missingHistorical.length > 0) {
-        list = [...list, ...missingHistorical];
-        saveToStorage(STORAGE_KEYS.EXPENSES, list);
-      }
-    }
-
-    // Ensure immediate read-after-write consistency if memory cache contains newly committed items
-    if (memoryExpensesCache && memoryExpensesCache.length > 0) {
-      const listIds = new Set(list.map((e) => e.id));
-      const unpersistedFromMemory = memoryExpensesCache.filter(
-        (e) => !listIds.has(e.id) && !isExplicitlyDeleted(e.id, e)
-      );
-      if (unpersistedFromMemory.length > 0) {
-        list = [...unpersistedFromMemory, ...list];
-        saveToStorage(STORAGE_KEYS.EXPENSES, list);
-      }
-    }
-
-    // Date healing: Ensure every expense in list has normalized YYYY-MM-DD date key
-    list = list
-      .filter((e) => !deletedIds.has(String(e.id).trim()))
-      .map((e) => {
-        const normalizedDate = normalizeExpenseDateKey(e.date) || e.date || getLocalDateKey();
-        if (e.date !== normalizedDate) {
-          return { ...e, date: normalizedDate };
-        }
-        return e;
+    return list
+      .filter((expense) => !deletedIds.has(String(expense.id).trim()))
+      .map((expense) => {
+        const date = normalizeExpenseDateKey(expense.date) || expense.date || getLocalDateKey();
+        return expense.date === date ? expense : { ...expense, date };
       });
-
-    return list;
   },
 
   clearMemoryExpensesCache: () => {
@@ -1696,20 +1433,26 @@ export const Storage = {
     );
   },
 
-  resetToCleanUserWorkspace: (user: AuthUser | null) => {
-    Storage.clearMemoryCaches();
+  resetToCleanUserWorkspace: async (user: AuthUser | null): Promise<void> => {
     if (!user || !user.email) return;
+    // This is a global client reset boundary: remove stale account partitions,
+    // legacy password material, snapshots, conflicts, outboxes, and IndexedDB rows.
+    const keepKeys = ['notion_os_auth_user_v1', 'notion_os_auth_token_v1', 'notion_os_auth_generation_v1', 'app_device_fingerprint_v1', 'notion_os_device_session_id'];
+    const kept = new Map<string, string>();
+    keepKeys.forEach((key) => { const value = localStorage.getItem(key); if (value !== null) kept.set(key, value); });
+    localStorage.clear();
+    kept.forEach((value, key) => localStorage.setItem(key, value));
+    await clearAllWorkspaceSyncState();
+    await expenseRepo.clearAllPartitions();
+    Storage.clearMemoryCaches();
     const cleanEmail = user.email.toLowerCase().trim();
-    const isGknUser = cleanEmail === '';
-    const cleanName = isGknUser
-      ? (user.name && user.name !== '' ? user.name : '')
-      : (user.name || cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
+    const cleanName = user.name || cleanEmail.split('@')[0].replace(/[\._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
     const wsKey = getUserWorkspaceKey(user);
     setCustomWorkspaceIdentifier(wsKey);
     setCustomWorkspaceEmail(cleanEmail);
+    await expenseRepo.setWorkspace(wsKey);
 
-    const defaultGknAvatar = 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar__gmail_com_1792214229699.webp';
     const cleanProfile: UserProfile = {
       ...BLANK_PROFILE,
       name: cleanName,
@@ -1720,9 +1463,7 @@ export const Storage = {
       location: '',
       statusText: 'Active',
       statusEmoji: '✨',
-      avatarUrl: isGknUser
-        ? (user.avatarUrl && isAvatarMatchingUserEmailDomain(user.avatarUrl, cleanEmail) ? user.avatarUrl : defaultGknAvatar)
-        : (user.avatarUrl && isAvatarMatchingUserEmailDomain(user.avatarUrl, cleanEmail) ? user.avatarUrl : ''),
+      avatarUrl: '',
       avatarEnabled: true,
       bannerType: 'gradient',
       bannerBg: 'linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 50%, #FDF4FF 100%)',
@@ -1753,7 +1494,9 @@ export const Storage = {
     Storage.setHabitActiveWeek('');
     Storage.setHabitActivities([]);
     Storage.setGoals([]);
-    Storage.setExpenses([]);
+    Storage.setScratchpad('');
+    Storage.setExpenses([], { enqueueChanges: false });
+    Storage.setExcelImportLogs([]);
     Storage.setJournal([]);
     Storage.setMedia([]);
     Storage.setAchievements([]);
@@ -1788,55 +1531,34 @@ export const Storage = {
     });
     Storage.setQuotes([]);
     Storage.setExams([]);
-    Storage.setSchedule(INITIAL_SCHEDULE);
+    Storage.setSchedule({
+      version: '2.0',
+      weekdayTemplate: [],
+      weekendTemplate: [],
+      days: {
+        monday: { isCustomized: true, activities: [] },
+        tuesday: { isCustomized: true, activities: [] },
+        wednesday: { isCustomized: true, activities: [] },
+        thursday: { isCustomized: true, activities: [] },
+        friday: { isCustomized: true, activities: [] },
+        saturday: { isCustomized: true, activities: [] },
+        sunday: { isCustomized: true, activities: [] },
+      },
+    });
     Storage.setTrash([]);
     Storage.setDeletedExpenseIds([]);
     Storage.setDeletedSheetIds([]);
+    Storage.setTombstonedRefs([]);
+    Storage.setDevices([]);
+    Storage.setScreenTimeHistory({});
+    Storage.setActiveAlarm(null);
+    Storage.setCommandMappings([]);
 
-    // Clear user-scoped offline expense caches
-    try {
-      localStorage.removeItem(`${cleanEmail}_offline_expenses_cache`);
-      localStorage.removeItem(`${wsKey}_offline_expenses_cache`);
-      localStorage.removeItem(`${wsKey}_lifeos_expenses_backup`);
-      // A confirmed clean workspace must not be repopulated from legacy/global
-      // offline backups on the next getExpenses() call.
-      const legacyExpenseKeys = [
-        'lifeos_offline_expenses_cache',
-        'lifeos_expenses_backup',
-        'lifeos_last_imported_sheet_expenses',
-        'user_guest_offline_expenses_cache',
-        'user_guest_lifeos_expenses_backup',
-        'user_guest_notion_os_v4_expenses',
-        'notion_os_v4_expenses',
-        'user_036fe7d3-6a13-4740-b028-afb55e81e00e_notion_os_v4_expenses',
-        'user_usr__gmail_com_notion_os_v4_expenses',
-        'user__notion_os_v4_expenses',
-        '_offline_expenses_cache',
-        'account_auth__gmail_com_notion_os_v4_expenses',
-      ];
-      legacyExpenseKeys.forEach((key) => localStorage.removeItem(key));
-      for (let index = localStorage.length - 1; index >= 0; index--) {
-        const key = localStorage.key(index);
-        if (
-          key &&
-          (key.toLowerCase().includes(cleanEmail) || key.includes(wsKey)) &&
-          key.toLowerCase().includes('expense')
-        ) {
-          localStorage.removeItem(key);
-        }
-      }
-      memoryExpensesCache = [];
-      void expenseRepo.clear().catch((err) => {
-        console.warn('[STORAGE] Failed to clear local expense repository:', err);
-      });
-      if (cleanEmail === 'guest@workspace.local' || wsKey === 'user_guest') {
-        localStorage.removeItem('user_guest_offline_expenses_cache');
-        localStorage.removeItem('user_guest_lifeos_expenses_backup');
-      }
-    } catch {}
+    Storage.clearMemoryCaches();
+    await expenseRepo.clear();
   },
 
-  setExpenses: (items: ExpenseItem[]): ExpenseItem[] => {
+  setExpenses: (items: ExpenseItem[], options: { enqueueChanges?: boolean } = {}): ExpenseItem[] => {
     if (!Array.isArray(items)) {
       items = [];
     }
@@ -1882,55 +1604,13 @@ export const Storage = {
     memoryExpensesCache = sanitized;
     saveToStorage(STORAGE_KEYS.EXPENSES, sanitized);
 
-    // Multi-tier persistent offline caching (strictly scoped to current user workspace):
-    // Guarantees spending data is always readable offline and never blanked by network reconnection
-    try {
-      const activeEmail = (getCustomWorkspaceEmail() || '').toLowerCase().trim();
-      const ws = getCustomWorkspaceIdentifier();
-      const isGuest = !activeEmail || activeEmail === 'guest@workspace.local' || ws === 'user_guest';
-      const isGknUser = activeEmail.includes('gknayak') || activeEmail.includes('gulshan');
-      const serialized = JSON.stringify(sanitized);
-
-      if (isGknUser) {
-        saveToStorage('lifeos_expenses_backup', sanitized);
-      }
-
-      if (sanitized.length > 0) {
-        if (!isGuest) {
-          localStorage.setItem(`${activeEmail}_offline_expenses_cache`, serialized);
-          localStorage.setItem(`${ws}_offline_expenses_cache`, serialized);
-          if (isGknUser) {
-            localStorage.setItem('lifeos_offline_expenses_cache', serialized);
-            localStorage.setItem('lifeos_expenses_backup', serialized);
-          }
-        } else {
-          localStorage.setItem('user_guest_offline_expenses_cache', serialized);
-          localStorage.setItem('user_guest_lifeos_expenses_backup', serialized);
-          localStorage.setItem('lifeos_offline_expenses_cache', serialized);
-          localStorage.setItem('lifeos_expenses_backup', serialized);
-        }
-      } else {
-        if (!isGuest) {
-          localStorage.removeItem(`${activeEmail}_offline_expenses_cache`);
-          localStorage.removeItem(`${ws}_offline_expenses_cache`);
-          if (isGknUser) {
-            localStorage.removeItem('lifeos_offline_expenses_cache');
-            localStorage.removeItem('lifeos_expenses_backup');
-          }
-        } else {
-          localStorage.removeItem('user_guest_offline_expenses_cache');
-          localStorage.removeItem('user_guest_lifeos_expenses_backup');
-          localStorage.removeItem('lifeos_offline_expenses_cache');
-          localStorage.removeItem('lifeos_expenses_backup');
-        }
-      }
-    } catch (e) {
-      console.warn('Failed to persist offline expense cache:', e);
-    }
-
     void spendingWidgetService.syncToNativeWidget(sanitized);
-    // Commit to local-first durable repository (IndexedDB / SQLite)
-    void expenseRepo.saveBatch(sanitized).catch((err) => {
+    // Commit each local change together with its durable outbox mutation.
+    void expenseRepo.replaceAll(sanitized, options.enqueueChanges !== false).then(async () => {
+      if (options.enqueueChanges === false) return;
+      const outbox = await expenseRepo.getPendingOutbox();
+      expenseSyncService.notifyMutationEnqueued(outbox.length);
+    }).catch((err) => {
       console.warn('[STORAGE] Failed to commit expenses to local database:', err);
     });
     return sanitized;
@@ -2049,7 +1729,7 @@ export const Storage = {
       expense.id = expenseWithTimestamps.id;
       updated = [expenseWithTimestamps, ...current];
     }
-    Storage.setExpenses(updated);
+    Storage.setExpenses(updated, { enqueueChanges: false });
 
     // Commit the local record and its outbox mutation in one IndexedDB transaction.
     void expenseRepo.save(expenseWithTimestamps, existingIndex >= 0 ? 'update' : 'create').then(() => {
@@ -2083,54 +1763,6 @@ export const Storage = {
     const refSet = new Set(refs.map((r) => String(r || '').trim().toUpperCase()).filter((r) => r.length >= 3));
     if (idSet.size === 0 && refSet.size === 0) return;
 
-    const activeEmail = (getCustomWorkspaceEmail() || '').toLowerCase().trim();
-    const ws = getCustomWorkspaceIdentifier();
-
-    const allCacheKeys = [
-      `${activeEmail}_offline_expenses_cache`,
-      `${ws}_offline_expenses_cache`,
-      `${ws}_lifeos_expenses_backup`,
-      'lifeos_expenses_backup',
-      'lifeos_offline_expenses_cache',
-      '_offline_expenses_cache',
-      'user_usr__gmail_com_notion_os_v4_expenses',
-      'account_auth__gmail_com_notion_os_v4_expenses',
-      'user_guest_offline_expenses_cache',
-      'user_guest_lifeos_expenses_backup',
-      'lifeos_last_imported_sheet_expenses',
-      getScopedKey('lifeos_last_imported_sheet_expenses'),
-      getScopedKey('lifeos_expenses_backup'),
-      getScopedKey(STORAGE_KEYS.EXPENSES),
-    ];
-
-    for (const key of allCacheKeys) {
-      try {
-        const raw = localStorage.getItem(key);
-        if (!raw) continue;
-        const parsed = JSON.parse(raw);
-        if (!Array.isArray(parsed)) continue;
-
-        const filtered = parsed.filter((e: any) => {
-          if (!e || typeof e !== 'object') return false;
-          const cleanId = String(e.id || '').trim();
-          if (cleanId && idSet.has(cleanId)) return false;
-          const r1 = e.referenceId ? String(e.referenceId).trim().toUpperCase() : '';
-          const r2 = e.smsReferenceId ? String(e.smsReferenceId).trim().toUpperCase() : '';
-          const r3 = e.upiReference ? String(e.upiReference).trim().toUpperCase() : '';
-          if (r1 && refSet.has(r1)) return false;
-          if (r2 && refSet.has(r2)) return false;
-          if (r3 && refSet.has(r3)) return false;
-          return true;
-        });
-
-        if (filtered.length === 0 && (key.includes('backup') || key.includes('offline') || key.includes('imported'))) {
-          localStorage.removeItem(key);
-        } else {
-          localStorage.setItem(key, JSON.stringify(filtered));
-        }
-      } catch {}
-    }
-
     if (memoryExpensesCache && Array.isArray(memoryExpensesCache)) {
       memoryExpensesCache = memoryExpensesCache.filter((e) => {
         const cleanId = String(e.id || '').trim();
@@ -2159,7 +1791,7 @@ export const Storage = {
       if (refs.length > 0) Storage.recordTombstonedRefs(refs);
     }
     const updated = current.filter((e) => String(e.id).trim() !== cleanId);
-    Storage.setExpenses(updated);
+    Storage.setExpenses(updated, { enqueueChanges: false });
     Storage.purgeExpensesFromAllCaches([cleanId], refs);
 
     // Commit delete to local database & outbox
@@ -2206,7 +1838,7 @@ export const Storage = {
     });
     if (allRefs.length > 0) Storage.recordTombstonedRefs(allRefs);
     const updated = current.filter((e) => !idSet.has(String(e.id).trim()));
-    Storage.setExpenses(updated);
+    Storage.setExpenses(updated, { enqueueChanges: false });
     Storage.purgeExpensesFromAllCaches(cleanIds, allRefs);
 
     void expenseRepo.deleteBatch(cleanIds).then(() => {
@@ -2239,15 +1871,10 @@ export const Storage = {
     });
     if (allRefs.length > 0) Storage.recordTombstonedRefs(allRefs);
     Storage.recordDeletedExpenseId(allIds);
-    Storage.setExpenses([]);
+    Storage.setExpenses([], { enqueueChanges: false });
     Storage.setExcelImportLogs([]);
     Storage.purgeExpensesFromAllCaches(allIds, allRefs);
     try {
-      localStorage.removeItem(getScopedKey('lifeos_last_imported_sheet_expenses'));
-      localStorage.removeItem(getScopedKey('lifeos_expenses_backup'));
-      localStorage.removeItem('lifeos_last_imported_sheet_expenses');
-      localStorage.removeItem('lifeos_expenses_backup');
-      localStorage.removeItem('lifeos_offline_expenses_cache');
     } catch {}
 
     void expenseRepo.clear().then(() => {
@@ -2274,11 +1901,11 @@ export const Storage = {
 
       if (existingInDb.length > 0) {
         if (local.length === 0) {
-          Storage.setExpenses(existingInDb);
+          Storage.setExpenses(existingInDb, { enqueueChanges: false });
           return existingInDb;
         } else {
           const merged = Storage.mergeExpenseLists(local, existingInDb);
-          Storage.setExpenses(merged);
+          Storage.setExpenses(merged, { enqueueChanges: false });
           await expenseRepo.saveBatch(merged);
           return merged;
         }
@@ -2465,77 +2092,8 @@ export const Storage = {
     return 0;
   },
 
-  /**
-   * Restores current month expenses from authoritative local backups (lifeos_last_imported_sheet_expenses
-   * or lifeos_expenses_backup) if a cloud hydration or cache wipe removed them.
-   */
-  restoreAuthoritativeMonthExpenses: (monthPrefix: string): number => {
-    try {
-      let restoredCount = 0;
-      const currentExpenses = Storage.getExpenses();
-      const currentIds = new Set(currentExpenses.map((e) => e.id));
-      const seenFp = new Set(
-        currentExpenses.map(
-          (e) => `${normalizeExpenseDateKey(e.date)}_${e.amount}_${(e.name || '').trim().toLowerCase()}`
-        )
-      );
-
-      const toAdd: ExpenseItem[] = [];
-
-      // 1. Check user-scoped lifeos_last_imported_sheet_expenses backup
-      try {
-        const rawImported = localStorage.getItem(getScopedKey('lifeos_last_imported_sheet_expenses'));
-        if (rawImported) {
-          const parsed = JSON.parse(rawImported);
-          if (Array.isArray(parsed)) {
-            for (const item of parsed) {
-              if (item && item.id) {
-                const dateKey = normalizeExpenseDateKey(item.date);
-                const fp = `${dateKey}_${item.amount}_${(item.name || '').trim().toLowerCase()}`;
-                if (dateKey.startsWith(monthPrefix) && !currentIds.has(item.id) && !seenFp.has(fp)) {
-                  toAdd.push({ ...item, active: true });
-                  currentIds.add(item.id);
-                  seenFp.add(fp);
-                  restoredCount++;
-                }
-              }
-            }
-          }
-        }
-      } catch {}
-
-      // 2. Check user-scoped lifeos_expenses_backup
-      try {
-        const rawBackup = localStorage.getItem(getScopedKey('lifeos_expenses_backup'));
-        if (rawBackup) {
-          const parsed = JSON.parse(rawBackup);
-          if (Array.isArray(parsed)) {
-            for (const item of parsed) {
-              if (item && item.id) {
-                const dateKey = normalizeExpenseDateKey(item.date);
-                const fp = `${dateKey}_${item.amount}_${(item.name || '').trim().toLowerCase()}`;
-                if (dateKey.startsWith(monthPrefix) && !currentIds.has(item.id) && !seenFp.has(fp)) {
-                  toAdd.push({ ...item, active: true });
-                  currentIds.add(item.id);
-                  seenFp.add(fp);
-                  restoredCount++;
-                }
-              }
-            }
-          }
-        }
-      } catch {}
-
-      if (toAdd.length > 0) {
-        const updated = [...toAdd, ...currentExpenses];
-        Storage.setExpenses(updated);
-        return restoredCount;
-      }
-    } catch (err) {
-      console.warn('Failed to restore authoritative month expenses:', err);
-    }
-    return 0;
-  },
+  /** Legacy local expense backup restore is retired; server snapshots are authoritative. */
+  restoreAuthoritativeMonthExpenses: (_monthPrefix: string): number => 0,
 
   getDoodles: (): DoodleItem[] => loadFromStorage(STORAGE_KEYS.DOODLES, []),
 
@@ -2596,10 +2154,6 @@ export const Storage = {
       data.avatarUrl = '';
     }
 
-    const defaultGknAvatar = 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar__gmail_com_1792214229699.webp';
-    if (isGknUser && !data.avatarUrl) {
-      data.avatarUrl = defaultGknAvatar;
-    }
     if (!data.educationRecords) data.educationRecords = [];
     if (!data.jobExperiences) data.jobExperiences = [];
     if (!data.hobbies) data.hobbies = [];
@@ -2778,10 +2332,10 @@ export const Storage = {
     }
     return {
       version: '2.0',
-      weekdayTemplate: Array.isArray(loaded.weekdayTemplate) && loaded.weekdayTemplate.length > 0
+      weekdayTemplate: Array.isArray(loaded.weekdayTemplate)
         ? loaded.weekdayTemplate
         : INITIAL_SCHEDULE.weekdayTemplate,
-      weekendTemplate: Array.isArray(loaded.weekendTemplate) && loaded.weekendTemplate.length > 0
+      weekendTemplate: Array.isArray(loaded.weekendTemplate)
         ? loaded.weekendTemplate
         : INITIAL_SCHEDULE.weekendTemplate,
       days: {
@@ -3194,7 +2748,6 @@ export const Storage = {
       commandMappings: Storage.getCommandMappings(),
       trash: Storage.getTrash(),
       deletedExpenseIds: Storage.getDeletedExpenseIds(),
-      devices: Storage.getDevices(),
     };
   },
 
@@ -3206,7 +2759,7 @@ export const Storage = {
         'expenses', 'excelImportLogs', 'deletedSheetIds', 'deletedExpenseIds', 'journal', 'media', 'achievements', 'doodles',
         'timeline', 'projects', 'skills', 'settings', 'sections',
         'photos', 'resume', 'quotes', 'exams', 'schedule', 'version', 'activeAlarm', 'alarmSnoozeInterval',
-        'commandMappings', 'trash', 'scratchpad', 'screenTime', 'screenTimeHistory', 'devices'
+        'commandMappings', 'trash', 'scratchpad', 'screenTime', 'screenTimeHistory'
       ];
       const hasKnownKey = knownKeys.some((k) => k in data && data[k] !== undefined);
       if (!hasKnownKey) return false;
@@ -3302,13 +2855,10 @@ export const Storage = {
           mergedProfile.name = '';
         }
 
-        const defaultGknAvatar = 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar__gmail_com_1792214229699.webp';
         if (currentAvatar && isAvatarMatchingUserEmailDomain(currentAvatar, targetEmail)) {
           mergedProfile.avatarUrl = currentAvatar;
         } else if (incomingAvatar && isAvatarMatchingUserEmailDomain(incomingAvatar, targetEmail)) {
           mergedProfile.avatarUrl = incomingAvatar;
-        } else if (isGknUser) {
-          mergedProfile.avatarUrl = defaultGknAvatar;
         } else {
           mergedProfile.avatarUrl = '';
         }
@@ -3457,63 +3007,15 @@ export const Storage = {
       }
 
       if (Array.isArray(data.expenses)) {
-        const currentLocal = Storage.getExpenses();
-        const trash = Storage.getTrash().filter((t) => t.module === 'expenses');
-        const trashedIds = new Set<string>();
-        trash.forEach((t) => {
-          if (t.data?.id) trashedIds.add(String(t.data.id).trim());
-          if (typeof t.data === 'string' && t.data.trim()) trashedIds.add(t.data.trim());
-          if (t.id) trashedIds.add(String(t.id).trim());
+        const deletedIds = data._meta?.deletedExpenseIds || data.deletedExpenseIds;
+        if (Array.isArray(deletedIds)) Storage.recordDeletedExpenseId(deletedIds);
+        const serverExpenses = data.expenses.filter((expense: any) => {
+          if (!expense || !expense.id) return false;
+          return !Storage.isSheetDeleted(expense.importBatchId) && !Storage.isSheetDeleted(expense.sourceFile);
         });
-
-        // Also incorporate any explicit deletedExpenseIds from metadata or payload
-        const metaDeleted = data._meta?.deletedExpenseIds || data.deletedExpenseIds;
-        if (Array.isArray(metaDeleted)) {
-          Storage.recordDeletedExpenseId(metaDeleted);
-          metaDeleted.forEach((id: string) => {
-            if (id) trashedIds.add(String(id).trim());
-          });
-        }
-        Storage.getDeletedExpenseIds().forEach((id) => {
-          if (id) trashedIds.add(String(id).trim());
-        });
-
-        const remoteMeta = data._meta || {};
-        const remoteTimestamp = Number(remoteMeta.syncVersion || remoteMeta.clientTimestamp || 0);
-        const isRemoteClearAll = Boolean(remoteMeta.clearedAllExpenses);
-
-        if (isRemoteClearAll) {
-          // Authoritative remote clear-all: only preserve items created locally AFTER clear-all
-          const preservedLocal = currentLocal.filter((localExp) => {
-            if (!localExp || !localExp.id) return false;
-            const id = String(localExp.id).trim();
-            if (trashedIds.has(id) || Storage.isExpenseDeleted(id)) return false;
-            const localCreated = Number(localExp.createdAt || 0);
-            return localCreated > remoteTimestamp;
-          });
-          Storage.setExpenses(preservedLocal);
-        } else {
-          // Authoritative cloud expenses, strictly excluding any trashed IDs OR deleted sheet items OR deleted expense tombstones
-          const validCloudExpenses = data.expenses.filter((e: any) => {
-            if (!e || !e.id) return false;
-            const id = String(e.id).trim();
-            if (trashedIds.has(id)) return false;
-            if (Storage.isExpenseDeleted(id)) return false;
-            if (Storage.isSheetDeleted(e.importBatchId) || Storage.isSheetDeleted(e.sourceFile)) {
-              return false;
-            }
-            return true;
-          });
-
-          // Safeguard: If incoming validCloudExpenses is empty, but local has active expenses,
-          // NEVER wipe local expenses with an empty array unless explicitly cleared
-          if (validCloudExpenses.length === 0 && currentLocal.length > 0) {
-            console.info('[STORAGE] Preserved local expenses against empty cloud sync payload:', currentLocal.length);
-          } else {
-            const finalExpenses = Storage.mergeExpenseLists(currentLocal, validCloudExpenses);
-            Storage.setExpenses(finalExpenses);
-          }
-        }
+        // Imported snapshots are authoritative for this module. Local expense
+        // caches and tombstones must never repopulate an empty server result.
+        Storage.setExpenses(serverExpenses, { enqueueChanges: false });
       }
       if (Array.isArray(data.excelImportLogs)) {
         // Merge spreadsheet logs so local sheet uploads are not wiped by older cloud snapshots
@@ -3555,30 +3057,6 @@ export const Storage = {
       }
       if (Array.isArray(data.commandMappings)) {
         Storage.setCommandMappings(data.commandMappings);
-      }
-      if (Array.isArray(data.devices)) {
-        const currentDevices = Storage.getDevices();
-        const deviceMap = new Map<string, any>();
-        currentDevices.forEach((d) => {
-          if (d && d.id) deviceMap.set(d.id, d);
-        });
-        data.devices.forEach((d: any) => {
-          if (d && d.id) {
-            const existing = deviceMap.get(d.id);
-            if (!existing) {
-              deviceMap.set(d.id, d);
-            } else {
-              deviceMap.set(d.id, {
-                ...existing,
-                ...d,
-                deviceName: d.deviceName || existing.deviceName,
-                lastActive: Math.max(existing.lastActive || 0, d.lastActive || 0),
-                createdAt: Math.min(existing.createdAt || Date.now(), d.createdAt || Date.now()),
-              });
-            }
-          }
-        });
-        Storage.setDevices(Array.from(deviceMap.values()));
       }
       if (data.screenTime && typeof data.screenTime === 'object') {
         const isCurrentNativeApk =

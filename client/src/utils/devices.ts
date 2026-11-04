@@ -1,19 +1,14 @@
 import { Capacitor } from '@capacitor/core';
 import { DeviceSession } from '../types';
-import {
-  getSupabaseClient,
-  isSupabaseConfigured,
-  DEVICE_SESSION_ID,
-  getCustomWorkspaceIdentifier,
-  scheduleAutoSyncToSupabase,
-  subscribeToPresenceState,
-  getOnlineDeviceIds,
-} from './neonSync';
+import { DEVICE_SESSION_ID, getOnlineDeviceIds, subscribeToPresenceState } from './neonSync';
 import { Storage } from './storage';
 
-export { DEVICE_SESSION_ID, getOnlineDeviceIds, subscribeToPresenceState };
+const authenticatedHeaders = (): Record<string, string> => {
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('notion_os_auth_token_v1') || '' : '';
+  return { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+};
 
-const DEVICE_STORAGE_PREFIX = 'notion_os_device_sessions_';
+export { DEVICE_SESSION_ID, getOnlineDeviceIds, subscribeToPresenceState };
 
 /**
  * Detect client device, operating system, and browser platform cleanly
@@ -103,24 +98,6 @@ export const getDeviceInfo = (): {
   };
 };
 
-const getLocalDevices = (cleanEmail: string): DeviceSession[] => {
-  try {
-    const raw = localStorage.getItem(`${DEVICE_STORAGE_PREFIX}${cleanEmail}`);
-    if (raw) return JSON.parse(raw);
-  } catch {
-    // ignore
-  }
-  return [];
-};
-
-const saveLocalDevices = (cleanEmail: string, devices: DeviceSession[]) => {
-  try {
-    localStorage.setItem(`${DEVICE_STORAGE_PREFIX}${cleanEmail}`, JSON.stringify(devices));
-  } catch {
-    // ignore
-  }
-};
-
 /**
  * Deduplicate device sessions strictly by persistent Session ID.
  * Each separate device/browser instance (with its own persistent ID) is preserved,
@@ -175,225 +152,61 @@ export const deduplicateDevices = (
  */
 export const registerCurrentDevice = async (email: string): Promise<DeviceSession[]> => {
   if (!email) return [];
-  const cleanEmail = email.trim().toLowerCase();
-  const list = await fetchAccountDevices(cleanEmail);
-
-  // Trigger sync of primary workspace to Supabase Cloud so all devices receive the updated registry
+  const info = getDeviceInfo();
   try {
-    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 50);
+    await fetch('/api/sync/devices/heartbeat', {
+      method: 'POST',
+      headers: authenticatedHeaders(),
+      body: JSON.stringify({ device_id: DEVICE_SESSION_ID, device_name: info.deviceName, platform: info.isApk ? 'android' : info.deviceType, environment: info.browser }),
+    });
   } catch {}
-
-  return list;
+  return fetchAccountDevices(email);
 };
 
-/**
- * Fetch all active devices where this account is logged in
- */
 export const fetchAccountDevices = async (email: string): Promise<DeviceSession[]> => {
   if (!email) return [];
-  const cleanEmail = email.trim().toLowerCase();
-
-  // 1. Read from Storage (synced atomically with primary Supabase workspace)
-  let stored = Storage.getDevices();
-  if (!Array.isArray(stored) || stored.length === 0) {
-    stored = getLocalDevices(cleanEmail);
-  }
-
-  const currentInfo = getDeviceInfo();
-  const currentDevice: DeviceSession = {
-    id: DEVICE_SESSION_ID,
-    deviceName: currentInfo.deviceName,
-    browser: currentInfo.browser,
-    os: currentInfo.os,
-    deviceType: currentInfo.deviceType,
-    lastActive: Date.now(),
-    createdAt: Date.now(),
-    isCurrent: true,
-    isApk: Boolean(currentInfo.isApk),
-  };
-
-  // Upsert current device into the list
-  const existingIdx = stored.findIndex((d) => d.id === DEVICE_SESSION_ID);
-  if (existingIdx >= 0) {
-    stored[existingIdx] = {
-      ...stored[existingIdx],
-      ...currentDevice,
-      lastActive: Date.now(),
-    };
-  } else {
-    stored.unshift(currentDevice);
-  }
-
-  // Cross-Device Server Hub Sync: Emit heartbeat and pull all instances
   try {
-    fetch('/api/sync/devices/heartbeat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        device_id: DEVICE_SESSION_ID,
-        user_email: cleanEmail,
-        user_identifier: getCustomWorkspaceIdentifier(),
-        device_name: currentInfo.deviceName,
-        platform: currentInfo.isApk ? 'android' : currentInfo.deviceType,
-        environment: currentInfo.browser,
-      }),
-    }).catch(() => {});
-
-    const sRes = await fetch(`/api/sync/devices?user_email=${encodeURIComponent(cleanEmail)}`);
-    if (sRes.ok) {
-      const sJson = await sRes.json();
-      if (sJson.success && Array.isArray(sJson.devices)) {
-        sJson.devices.forEach((sd: any) => {
-          if (!sd.id) return;
-          const exIdx = stored.findIndex((x) => x.id === sd.id);
-          const devItem: DeviceSession = {
-            id: sd.id,
-            deviceName: sd.device_name || 'Active Session',
-            browser: sd.environment || sd.user_agent || 'Web Browser',
-            os: sd.platform || 'Web',
-            deviceType: (sd.platform === 'android' || sd.platform === 'ios') ? 'mobile' : 'desktop',
-            lastActive: sd.last_active || Date.now(),
-            createdAt: sd.created_at || Date.now(),
-            isCurrent: sd.id === DEVICE_SESSION_ID,
-            isApk: Boolean(sd.platform === 'android' || sd.device_name?.includes('APK') || sd.environment?.includes('APK')),
-          };
-          if (exIdx >= 0) {
-            stored[exIdx] = {
-              ...stored[exIdx],
-              ...devItem,
-              lastActive: Math.max(stored[exIdx].lastActive || 0, devItem.lastActive || 0),
-              isCurrent: sd.id === DEVICE_SESSION_ID,
-            };
-          } else {
-            stored.push(devItem);
-          }
-        });
-      }
-    }
-  } catch {}
-
-  const deduplicated = deduplicateDevices(stored, DEVICE_SESSION_ID);
-  Storage.setDevices(deduplicated);
-  saveLocalDevices(cleanEmail, deduplicated);
-
-  return deduplicated
-    .map((d) => ({
-      ...d,
-      isCurrent: d.id === DEVICE_SESSION_ID,
-    }))
-    .sort((a, b) => (b.isCurrent ? 1 : 0) - (a.isCurrent ? 1 : 0));
+    const response = await fetch('/api/sync/devices', { headers: authenticatedHeaders() });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !Array.isArray(result.devices)) return [];
+    const devices: DeviceSession[] = result.devices.map((device: any) => ({
+      id: device.id,
+      deviceName: device.device_name || 'Active Session',
+      browser: device.environment || device.user_agent || 'Web Browser',
+      os: device.platform || 'Web',
+      deviceType: ['android', 'ios'].includes(String(device.platform).toLowerCase()) ? 'mobile' : 'desktop',
+      lastActive: Number(device.last_active) || Date.now(),
+      createdAt: Number(device.created_at) || Date.now(),
+      isCurrent: device.id === DEVICE_SESSION_ID,
+      isApk: Boolean(device.platform === 'android' || device.device_name?.includes('APK') || device.environment?.includes('APK')),
+    }));
+    Storage.setDevices(devices);
+    return devices.sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent));
+  } catch {
+    return [];
+  }
 };
 
-/**
- * Revoke/Logout a specific device session
- */
 export const revokeDeviceSession = async (
   email: string,
   targetDeviceId: string
 ): Promise<{ success: boolean; isSelf: boolean }> => {
   if (!email || !targetDeviceId) return { success: false, isSelf: false };
-  const cleanEmail = email.trim().toLowerCase();
   const isSelf = targetDeviceId === DEVICE_SESSION_ID;
-
-  // Remove from Storage and local cache
-  const currentList = Storage.getDevices();
-  const updatedList = currentList.filter((d) => d.id !== targetDeviceId);
-  Storage.setDevices(updatedList);
-  saveLocalDevices(cleanEmail, updatedList);
-
-  // Revoke in Server Cloud Hub
   try {
-    fetch(`/api/sync/devices/${encodeURIComponent(targetDeviceId)}`, { method: 'DELETE' }).catch(() => {});
-  } catch {}
-
-  // Broadcast revocation command over Supabase Realtime websocket
-  const client = getSupabaseClient();
-  if (client && isSupabaseConfigured()) {
-    try {
-      const channelName = `realtime_workspace_${getCustomWorkspaceIdentifier()}`;
-      const channel = client.channel(channelName);
-      await channel.send({
-        type: 'broadcast',
-        event: 'device_logout_command',
-        payload: {
-          targetDeviceId,
-          email: cleanEmail,
-          timestamp: new Date().toISOString(),
-        },
-      });
-    } catch (err) {
-      console.warn('Error broadcasting remote device logout:', err);
-    }
+    const response = await fetch(`/api/sync/devices/${encodeURIComponent(targetDeviceId)}`, { method: 'DELETE', headers: authenticatedHeaders() });
+    if (!response.ok) return { success: false, isSelf };
+    Storage.setDevices(Storage.getDevices().filter((device) => device.id !== targetDeviceId));
+    return { success: true, isSelf };
+  } catch {
+    return { success: false, isSelf };
   }
-
-  // Trigger immediate sync of primary workspace to persist the revoked list
-  scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 50);
-
-  return { success: true, isSelf };
 };
 
-/**
- * Helper to simulate a secondary device for demonstration or testing
- */
 export const simulateSecondaryDevice = async (email: string): Promise<DeviceSession[]> => {
-  if (!email) return [];
-  const cleanEmail = email.trim().toLowerCase();
-  const currentList = await fetchAccountDevices(cleanEmail);
-
-  const mockTypes: Array<{ name: string; browser: string; os: string; type: 'mobile' | 'desktop' | 'tablet' }> = [
-    { name: 'Apple Safari on iPhone 15', browser: 'Safari', os: 'iOS 18', type: 'mobile' },
-    { name: 'Google Chrome on Windows 11', browser: 'Chrome', os: 'Windows 11', type: 'desktop' },
-    { name: 'Apple Safari on iPad Pro', browser: 'Safari', os: 'iPadOS', type: 'tablet' },
-    { name: 'Mozilla Firefox on MacBook Air', browser: 'Firefox', os: 'macOS', type: 'desktop' },
-  ];
-
-  const pick = mockTypes[currentList.length % mockTypes.length];
-  const simId = 'dev_sim_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now();
-
-  const simulatedDevice: DeviceSession = {
-    id: simId,
-    deviceName: pick.name,
-    browser: pick.browser,
-    os: pick.os,
-    deviceType: pick.type,
-    lastActive: Date.now() - 1000 * 60 * 12, // 12 mins ago
-    createdAt: Date.now() - 1000 * 60 * 60 * 24, // 1 day ago
-    isCurrent: false,
-  };
-
-  const updatedList = [...currentList, simulatedDevice];
-  saveLocalDevices(cleanEmail, updatedList);
-
-  const client = getSupabaseClient();
-  if (client && isSupabaseConfigured()) {
-    try {
-      const authIdentifier = `account_devices_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
-      await client.from('user_workspaces').upsert(
-        {
-          user_identifier: authIdentifier,
-          user_email: cleanEmail,
-          workspace_data: {
-            devices: updatedList,
-            updatedAt: Date.now(),
-          },
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_identifier' }
-      );
-    } catch {
-      // ignore
-    }
-  }
-
-  return updatedList.map((d) => ({
-    ...d,
-    isCurrent: d.id === DEVICE_SESSION_ID,
-  }));
+  // The server enforces one active device session per account.
+  return fetchAccountDevices(email);
 };
-
-/**
- * Checks whether an authentic Android APK device is present in the account device session list.
- */
 export const hasApkDeviceInstalled = (devices: DeviceSession[]): boolean => {
   if (!Array.isArray(devices)) return false;
   return devices.some(
@@ -453,33 +266,11 @@ export const subscribeToDevicePresence = (
   onDevicesChange: (devices: DeviceSession[]) => void
 ): (() => void) => {
   if (!email) return () => {};
-  const cleanEmail = email.trim().toLowerCase();
-
-  // 1. Listen to storage devices-updated event (fired when workspace data syncs from cloud or local change)
-  const handleStorageUpdate = async () => {
-    const list = await fetchAccountDevices(cleanEmail);
-    onDevicesChange(list);
-  };
-
-  if (typeof window !== 'undefined') {
-    window.addEventListener('devices-updated', handleStorageUpdate);
-  }
-
-  // 2. Continuous cross-browser heartbeat polling every 8s
-  const pollTimer = setInterval(handleStorageUpdate, 8000);
-
-  // 3. Listen to Supabase Realtime presence state changes
-  const unsubPresence = subscribeToPresenceState(async () => {
-    const list = await fetchAccountDevices(cleanEmail);
-    onDevicesChange(list);
-  });
-
+  const poll = async () => onDevicesChange(await fetchAccountDevices(email));
+  const timer = setInterval(() => void poll(), 8000);
+  if (typeof window !== 'undefined') window.addEventListener('focus', poll);
   return () => {
-    if (typeof window !== 'undefined') {
-      window.removeEventListener('devices-updated', handleStorageUpdate);
-    }
-    clearInterval(pollTimer);
-    unsubPresence();
+    clearInterval(timer);
+    if (typeof window !== 'undefined') window.removeEventListener('focus', poll);
   };
 };
-

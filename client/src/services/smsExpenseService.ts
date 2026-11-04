@@ -10,7 +10,7 @@ import { Sound } from '../utils/audio';
 import { parseSmsTransaction } from './smsParser';
 import { normalizeExpenseDateKey } from '../utils/expenseUtils';
 import { generateUUID } from '../utils/uuid';
-import { scheduleAutoSyncToSupabase, flushAutoSyncImmediately, getCustomWorkspaceIdentifier } from '../utils/neonSync';
+import { scheduleAutoSyncToServer, flushAutoSyncImmediately, getCustomWorkspaceIdentifier } from '../utils/neonSync';
 import { toast } from 'sonner';
 
 export interface SmsTransactionCandidate {
@@ -1346,7 +1346,7 @@ class SmsExpenseService {
 
       if (loggedCount > 0) {
         const fresh = Storage.getExpenses();
-        // Immediately persist merged workspace state to Supabase so background wakeups don't overwrite it
+        // Immediately persist the merged workspace state so background wakeups don't overwrite it
         try {
           await flushAutoSyncImmediately({
             ...Storage.getAllDataPayload(),
@@ -1603,7 +1603,7 @@ class SmsExpenseService {
    * If a candidate already corresponds to an existing transaction, deterministically report
    * it as "already existing" without corrupting existing records.
    * If candidate is new, create canonical ExpenseItem, persist to Storage, verify,
-   * push to Supabase, and dispatch UI updates.
+   * queue for versioned sync, and dispatch UI updates.
    */
   public async logSelectedCandidates(
     selectedCandidates: SmsTransactionCandidate[]
@@ -1697,12 +1697,12 @@ class SmsExpenseService {
     if (result.imported > 0) {
       const freshExpenses = Storage.getExpenses();
 
-      // Synchronize to Supabase Cloud in background
+      // Synchronize through the authenticated server API in background
       void flushAutoSyncImmediately({
         ...Storage.getAllDataPayload(),
         expenses: freshExpenses,
       }).then(() => {
-        logDeviceDiagnostic('info', 'LifeOS_SMS:RESCAN_CLOUD_SYNC', 'Synchronized imported rescan expenses to Supabase cloud', {
+        logDeviceDiagnostic('info', 'LifeOS_SMS:RESCAN_CLOUD_SYNC', 'Synchronized imported rescan expenses to cloud', {
           importedCount: result.imported,
           totalExpenses: freshExpenses.length,
         });

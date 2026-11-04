@@ -1,6 +1,5 @@
 import { ExpenseItem, OutboxMutation, OutboxMutationAction, ExpenseSyncStatus, ExpenseSyncStatusState } from '../types';
 import { normalizeExpenseDateKey, getLocalDateKey } from '../utils/expenseUtils';
-import { fetchExpensesFromDedicatedTable } from '../utils/neonSync';
 import { generateUUID, isValidUUID } from '../utils/uuid';
 
 export class DurableStorageError extends Error {
@@ -17,10 +16,12 @@ export interface ExpenseRepository {
   getById(id: string): Promise<ExpenseItem | null>;
   save(expense: ExpenseItem, enqueueAction?: OutboxMutationAction): Promise<ExpenseItem>;
   saveBatch(expenses: ExpenseItem[]): Promise<ExpenseItem[]>;
+  replaceAll(expenses: ExpenseItem[], enqueueChanges?: boolean): Promise<ExpenseItem[]>;
   delete(id: string): Promise<void>;
   deleteAndEnqueue(id: string, payload: any): Promise<void>;
   deleteBatch(ids: string[]): Promise<void>;
   clear(): Promise<void>;
+  clearAllPartitions(): Promise<void>;
 
   // Outbox mutations
   enqueueMutation(mutation: Omit<OutboxMutation, 'id' | 'timestamp' | 'retryCount'>): Promise<OutboxMutation>;
@@ -40,7 +41,6 @@ export interface ExpenseRepository {
   setSyncStatus(status: Partial<ExpenseSyncStatus>): Promise<void>;
   getDurabilityState(): 'durable' | 'degraded' | 'error';
 
-  syncFromServer(): Promise<void>;
 }
 
 const DEFAULT_DB_NAME = 'lifeos_local_first_db';
@@ -379,6 +379,112 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
     return sanitizedList;
   }
 
+  /**
+   * Replace the local expense view and, for user edits, persist matching
+   * mutations in the same IndexedDB transaction as the records themselves.
+   */
+  public async replaceAll(expenses: ExpenseItem[], enqueueChanges = false): Promise<ExpenseItem[]> {
+    await this.init();
+    const now = Date.now();
+    const next = new Map<string, ExpenseItem>();
+    for (const expense of Array.isArray(expenses) ? expenses : []) {
+      if (!expense || typeof expense !== 'object') continue;
+      const id = String(expense.id || '').trim();
+      if (!id || next.has(id)) continue;
+      const amount = Number(expense.amount);
+      const direction = expense.direction === 'CREDIT' || expense.transactionType === 'CREDIT' ||
+        expense.transactionType === 'income' || (expense as any).type === 'income' ||
+        (expense as any).type === 'CREDIT' || (expense as any).type === 'credit' ? 'CREDIT' : 'DEBIT';
+      next.set(id, {
+        ...expense,
+        id,
+        amount: Number.isFinite(amount) ? Math.round(Math.abs(amount) * 100) / 100 : 0,
+        name: String(expense.name || 'Expense').trim() || 'Expense',
+        category: String(expense.category || 'Other').trim() || 'Other',
+        date: normalizeExpenseDateKey(expense.date) || getLocalDateKey(),
+        direction,
+        transactionType: direction,
+        active: expense.active !== false,
+        createdAt: expense.createdAt || now,
+        updatedAt: expense.updatedAt || now,
+      });
+    }
+
+    const sameValue = (left: ExpenseItem, right: ExpenseItem) => {
+      const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+      for (const key of keys) {
+        if (JSON.stringify((left as any)[key]) !== JSON.stringify((right as any)[key])) return false;
+      }
+      return true;
+    };
+    const mutations: OutboxMutation[] = [];
+    const removed = [...this.memoryExpenses.entries()].filter(([id]) => !next.has(id));
+
+    for (const [id, expense] of next) {
+      const previous = this.memoryExpenses.get(id);
+      const changed = !previous || !sameValue(previous, expense);
+      if (enqueueChanges && changed) {
+        mutations.push({
+          id: generateUUID(),
+          expenseId: id,
+          action: previous ? 'update' : 'create',
+          payload: expense,
+          timestamp: now,
+          retryCount: 0,
+        });
+      }
+      this.memoryExpenses.set(id, expense);
+      this.memoryTombstones.delete(id);
+    }
+
+    for (const [id, expense] of removed) {
+      this.memoryExpenses.delete(id);
+      this.memoryTombstones.add(id);
+      if (enqueueChanges) {
+        mutations.push({
+          id: generateUUID(),
+          expenseId: id,
+          action: 'delete',
+          payload: { ...expense, id, is_deleted: true },
+          timestamp: now,
+          retryCount: 0,
+        });
+      }
+    }
+    mutations.forEach((mutation) => this.memoryOutbox.set(mutation.id, mutation));
+
+    if (this.db) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const stores = enqueueChanges
+            ? [STORE_EXPENSES, STORE_TOMBSTONES, STORE_OUTBOX]
+            : [STORE_EXPENSES, STORE_TOMBSTONES];
+          const tx = this.db!.transaction(stores, 'readwrite');
+          const expenseStore = tx.objectStore(STORE_EXPENSES);
+          expenseStore.clear();
+          next.forEach((expense, id) => {
+            expenseStore.put(expense);
+            tx.objectStore(STORE_TOMBSTONES).delete(id);
+          });
+          removed.forEach(([id]) => tx.objectStore(STORE_TOMBSTONES).put({ id }));
+          mutations.forEach((mutation) => tx.objectStore(STORE_OUTBOX).put(mutation));
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error || new Error('Expense snapshot transaction aborted'));
+        });
+        this.lastDurabilityState = 'durable';
+      } catch (error) {
+        console.warn('[EXPENSE_REPO] replaceAll transaction notice:', error);
+        this.persistDegradedBackup();
+        this.lastDurabilityState = 'degraded';
+      }
+    } else {
+      this.persistDegradedBackup();
+    }
+    this.saveCurrentToPartition();
+    return [...next.values()];
+  }
+
   public async delete(id: string): Promise<void> {
     await this.init();
 
@@ -463,6 +569,7 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
     this.memoryExpenses.clear();
     this.memoryOutbox.clear();
     this.memoryTombstones.clear();
+    this.memoryWorkspaces.clear();
 
     if (this.db) {
       try {
@@ -486,6 +593,65 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
     } else {
       this.persistDegradedBackup();
     }
+  }
+
+  public async clearAllPartitions(): Promise<void> {
+    const idb = typeof window !== 'undefined' ? window.indexedDB : (globalThis as any).indexedDB;
+    const names = new Set<string>();
+    const known = [
+      this.workspaceKey,
+      'default',
+      'user_usr_gknayak_gmail_com',
+      'user_usr_arpitapri125_gmail_com',
+    ];
+    known.forEach((workspace) => names.add(`${DEFAULT_DB_NAME}_${workspace}`));
+    if (idb && typeof idb.databases === 'function') {
+      try {
+        const databases = await idb.databases();
+        databases.forEach((database: { name?: string | null }) => {
+          if (database.name?.startsWith(`${DEFAULT_DB_NAME}_`)) names.add(database.name);
+        });
+      } catch {}
+    }
+
+    if (this.db) {
+      try { this.db.close(); } catch {}
+    }
+    this.db = null;
+    this.isInitialized = false;
+    this.initPromise = null;
+    this.memoryExpenses.clear();
+    this.memoryOutbox.clear();
+    this.memoryTombstones.clear();
+
+    if (idb) {
+      for (const name of names) {
+        await new Promise<void>((resolve) => {
+          const openRequest = idb.open(name);
+          openRequest.onerror = () => resolve();
+          openRequest.onsuccess = () => {
+            const db = openRequest.result as IDBDatabase;
+            const stores = [STORE_EXPENSES, STORE_OUTBOX, STORE_TOMBSTONES, STORE_META]
+              .filter((store) => db.objectStoreNames.contains(store));
+            if (!stores.length) { db.close(); resolve(); return; }
+            const tx = db.transaction(stores, 'readwrite');
+            stores.forEach((store) => tx.objectStore(store).clear());
+            tx.oncomplete = () => { db.close(); resolve(); };
+            tx.onerror = () => { db.close(); resolve(); };
+            tx.onabort = () => { db.close(); resolve(); };
+          };
+        });
+      }
+    }
+    try {
+      for (let index = localStorage.length - 1; index >= 0; index--) {
+        const key = localStorage.key(index) || '';
+        if (/^lifeos_(expenses|outbox|tombstones)_degraded_/.test(key)) localStorage.removeItem(key);
+      }
+    } catch {}
+    this.workspaceKey = 'default';
+    this.loadFromPartition(this.workspaceKey);
+    this.lastDurabilityState = 'durable';
   }
 
   public async enqueueMutation(mutation: Omit<OutboxMutation, 'id' | 'timestamp' | 'retryCount'>): Promise<OutboxMutation> {
@@ -622,52 +788,6 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
   public async isTombstoned(id: string): Promise<boolean> {
     await this.init();
     return this.memoryTombstones.has(id);
-  }
-
-  public async syncFromServer(): Promise<void> {
-    await this.init();
-    const result = await fetchExpensesFromDedicatedTable();
-    if (!result.success || result.isFallbackNeeded) {
-      return;
-    }
-
-    const { data: serverExpenses, tombstones: serverTombstones } = result;
-
-    this.memoryExpenses.clear();
-    this.memoryTombstones.clear();
-
-    serverExpenses.forEach(exp => this.memoryExpenses.set(exp.id, exp));
-    serverTombstones.forEach(id => this.memoryTombstones.add(id));
-
-    if (this.db) {
-      try {
-        await new Promise<void>((resolve, reject) => {
-          const tx = this.db!.transaction([STORE_EXPENSES, STORE_TOMBSTONES], 'readwrite');
-          const expStore = tx.objectStore(STORE_EXPENSES);
-          const tombStore = tx.objectStore(STORE_TOMBSTONES);
-
-          expStore.clear();
-          tombStore.clear();
-
-          serverExpenses.forEach((exp) => expStore.put(exp));
-          serverTombstones.forEach((id) => tombStore.put({ id }));
-
-          tx.oncomplete = () => resolve();
-          tx.onerror = () => reject(tx.error);
-        });
-        this.lastDurabilityState = 'durable';
-      } catch (err) {
-        console.warn('[EXPENSE_REPO] syncFromServer IDB transaction notice:', err);
-        try {
-          this.persistDegradedBackup();
-          this.lastDurabilityState = 'degraded';
-        } catch {
-          this.lastDurabilityState = 'error';
-        }
-      }
-    } else {
-      this.persistDegradedBackup();
-    }
   }
 
   public async getSyncStatus(): Promise<ExpenseSyncStatus> {

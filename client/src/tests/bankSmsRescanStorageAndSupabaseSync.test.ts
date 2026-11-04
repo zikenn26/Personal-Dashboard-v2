@@ -23,7 +23,7 @@ function setupMockStorage() {
   }
 }
 
-describe('Bank SMS Rescan – Storage Verification, Persistence & Supabase Cloud Sync Suite', () => {
+describe('Bank SMS Rescan – Storage Verification, Persistence & Versioned Cloud Sync Suite', () => {
   beforeAll(() => {
     setupMockStorage();
   });
@@ -129,7 +129,7 @@ describe('Bank SMS Rescan – Storage Verification, Persistence & Supabase Cloud
     expect(names).toContain('Amazon India');
     expect(names).toContain('Swiggy');
 
-    // Supabase auto-sync flush was properly invoked and awaited
+    // Versioned server sync flush was properly invoked and awaited
     expect(flushSpy).toHaveBeenCalled();
   });
 
@@ -207,7 +207,7 @@ describe('Bank SMS Rescan – Storage Verification, Persistence & Supabase Cloud
     expect(expensesAfterRestart[0].id).toBe(parsedFromStorage[0].id);
   });
 
-  it('4. ensures graceful resilience if Supabase cloud sync rejects or is offline', async () => {
+  it('4. ensures graceful resilience if cloud sync rejects or is offline', async () => {
     const candidate: SmsTransactionCandidate = {
       id: 'cand-offline-1',
       sender: 'AD-HDFCBK-S',
@@ -227,7 +227,7 @@ describe('Bank SMS Rescan – Storage Verification, Persistence & Supabase Cloud
       isExisting: false,
     };
 
-    // Simulate Supabase network/cloud failure
+    // Simulate a server network failure
     vi.spyOn(supabaseUtils, 'flushAutoSyncImmediately').mockRejectedValue(new Error('Network offline'));
 
     // Rescan should still succeed in persisting locally and verifying
@@ -371,7 +371,7 @@ describe('Bank SMS Rescan – Storage Verification, Persistence & Supabase Cloud
   });
 
   it('9. cross-device reconciliation: web client preserves remote APK-authoritative SMS transactions', async () => {
-    // Simulate Supabase existing cloud data containing an SMS transaction committed by the APK
+    // Simulate existing cloud data containing an SMS transaction committed by the APK
     const apkSmsExpense = {
       id: 'exp-sms-1792260835864-8fne0',
       name: 'Uber India',
@@ -604,7 +604,7 @@ describe('Bank SMS Rescan – Storage Verification, Persistence & Supabase Cloud
       name: 'Alice',
       createdAt: Date.now(),
       lastLoginAt: Date.now(),
-      provider: 'supabase' as const,
+      provider: 'neon' as const,
     };
     Auth.setCurrentUser(testUser);
 

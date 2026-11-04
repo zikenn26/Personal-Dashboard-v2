@@ -10,7 +10,7 @@ import {
 } from '../types';
 import { Sound } from '../utils/audio';
 import { Storage } from '../utils/storage';
-import { scheduleAutoSyncToSupabase } from '../utils/neonSync';
+import { scheduleAutoSyncToServer } from '../utils/neonSync';
 import { IndianCalendarWidget } from './IndianCalendarWidget';
 import { DynamicScheduleCard } from './DynamicScheduleCard';
 import { ScreenTimeCard } from './screentime/ScreenTimeCard';
@@ -324,7 +324,7 @@ export const ScratchPadWidget: React.FC<ScratchPadWidgetProps> = ({
 
     Storage.setScratchpad(valueToSave);
 
-    scheduleAutoSyncToSupabase(
+    scheduleAutoSyncToServer(
       () => Storage.getAllDataPayload(),
       500
     );

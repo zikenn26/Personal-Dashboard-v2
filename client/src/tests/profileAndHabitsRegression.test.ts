@@ -40,11 +40,11 @@ describe('User Profile Name, Avatar and Habits Persistence Tests', () => {
     avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
     createdAt: Date.now() - 500000,
     lastLoginAt: Date.now(),
-    provider: 'supabase',
+    provider: 'neon',
   };
 
   it('1. Updating name from Gknayak to Gulshan Kumar Nayak persists and is not reverted by cloud payload with Gknayak', async () => {
-    Auth.setCurrentUser(gknUser);
+    Auth.setCurrentUser(gknUser, 'profile-test-token');
     setCustomWorkspaceIdentifier(getUserWorkspaceKey(gknUser));
     setCustomWorkspaceEmail(gknUser.email);
 
@@ -119,7 +119,7 @@ describe('User Profile Name, Avatar and Habits Persistence Tests', () => {
     expect(habits).toEqual([]);
   });
 
-  it('4. User B (arpitapri125@gmail.com) remains clean and does not inherit Gulshan habits', () => {
+  it('4. User B (arpitapri125@gmail.com) remains clean and does not inherit Gulshan habits', async () => {
     const userArpita: AuthUser = {
       id: 'user-arpita-uuid-999',
       email: 'arpitapri125@gmail.com',
@@ -127,13 +127,13 @@ describe('User Profile Name, Avatar and Habits Persistence Tests', () => {
       avatarUrl: '',
       createdAt: Date.now(),
       lastLoginAt: Date.now(),
-      provider: 'supabase',
+      provider: 'neon',
     };
 
     Auth.setCurrentUser(userArpita);
     setCustomWorkspaceIdentifier(getUserWorkspaceKey(userArpita));
     setCustomWorkspaceEmail(userArpita.email);
-    Storage.resetToCleanUserWorkspace(userArpita);
+    await Storage.resetToCleanUserWorkspace(userArpita);
 
     const habits = Storage.getHabits();
     expect(habits).toEqual([]);
@@ -144,7 +144,7 @@ describe('User Profile Name, Avatar and Habits Persistence Tests', () => {
     expect(profile.contactEmail).toBe('arpitapri125@gmail.com');
   });
 
-  it('5. Confirms validity for gknayak@gmail.com: authentic habits, avatar, and profile persistence', async () => {
+  it('5. Confirms gknayak@gmail.com starts with a clean profile and profile edits persist', async () => {
     const gknOwnerUser: AuthUser = {
       id: '036fe7d3-6a13-4740-b028-afb55e81e00e',
       email: 'gknayak@gmail.com',
@@ -152,22 +152,21 @@ describe('User Profile Name, Avatar and Habits Persistence Tests', () => {
       avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
       createdAt: Date.now() - 500000,
       lastLoginAt: Date.now(),
-      provider: 'supabase',
+      provider: 'neon',
     };
 
-    Auth.setCurrentUser(gknOwnerUser);
+    Auth.setCurrentUser(gknOwnerUser, 'clean-profile-test-token');
     setCustomWorkspaceIdentifier(getUserWorkspaceKey(gknOwnerUser));
     setCustomWorkspaceEmail(gknOwnerUser.email);
-    Storage.resetToCleanUserWorkspace(gknOwnerUser);
+    await Storage.resetToCleanUserWorkspace(gknOwnerUser);
 
     // 1. Fresh workspace habits start clean
     const habits = Storage.getHabits();
     expect(habits).toEqual([]);
 
-    // 2. Avatar must match and not be dummy mock
+    // A clean account starts without a preloaded profile image.
     const profile = Storage.getProfile();
-    expect(isAvatarMatchingUserEmailDomain(profile.avatarUrl, 'gknayak@gmail.com')).toBe(true);
-    expect(isDummyMockAvatar(profile.avatarUrl, 'gknayak@gmail.com')).toBe(false);
+    expect(profile.avatarUrl).toBe('');
 
     // 3. Name update must persist and not revert
     const updated = { ...profile, name: 'Gulshan Kumar Nayak' };

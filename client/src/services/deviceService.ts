@@ -1,7 +1,12 @@
 import { Capacitor } from '@capacitor/core';
 import { Device } from '@capacitor/device';
 import { AuthUser } from '../types';
-import { getSupabaseClient } from '../utils/neonSync';
+import { DEVICE_SESSION_ID } from '../utils/neonSync';
+
+const sessionHeaders = (json = false): Record<string, string> => {
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('notion_os_auth_token_v1') || '' : '';
+  return { ...(json ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+};
 type CapacitorDevice = typeof Device;
 
 /**
@@ -242,10 +247,9 @@ async function getBrowserInfo(): Promise<string> {
 }
 
 /**
- * Register or update device in Supabase (race-condition safe)
+ * Register or update the current device session through the authenticated server.
 /**
- * Check if an error from Supabase is due to plan limits (e.g. egress quota),
- * spend caps, network unavailability, or service restrictions.
+ * Check whether the device service is unavailable because of quota or network restrictions.
  */
 export function isCloudQuotaOrNetworkError(err: any): boolean {
   if (!err) return false;
@@ -267,7 +271,7 @@ export function isCloudQuotaOrNetworkError(err: any): boolean {
  * Builds or retrieves a reliable local registered device fallback
  */
 async function buildLocalFallbackDevice(user: AuthUser): Promise<RegisteredDevice> {
-  const deviceId = await getOrCreateDeviceId();
+  const deviceId = DEVICE_SESSION_ID;
   const deviceType = await getDeviceType();
   const platform = await getPlatformName();
   const browserInfo = await getBrowserInfo();
@@ -298,358 +302,83 @@ async function buildLocalFallbackDevice(user: AuthUser): Promise<RegisteredDevic
 }
 
 /**
- * Register or update device in Supabase (race-condition safe)
- * Uses INSERT first, then UPDATE on conflict to prevent duplicate entries
+ * Register or update this device session in the server-owned Neon registry.
  */
 export async function registerDevice(user: AuthUser): Promise<RegisteredDevice | null> {
+  if (!user?.id) return null;
+  const localDevice = await buildLocalFallbackDevice(user);
   try {
-    if (!user || !user.id) {
-      return null;
-    }
-
-    const localDevice = await buildLocalFallbackDevice(user);
-
-    const supabase = getSupabaseClient();
-    if (!supabase) {
-      return localDevice;
-    }
-
-    const deviceId = localDevice.device_id;
-    const deviceType = localDevice.device_type;
-    const platform = localDevice.platform;
-    const browserInfo = localDevice.browser_info || '';
-    const deviceName = localDevice.device_name;
-    const now = new Date().toISOString();
-
-    console.info('[DEVICE_REGISTER] Registering session for user account:', {
-      deviceId,
-      deviceName,
-      platform,
-      userEmail: user.email,
-      userId: user.id,
-      timestamp: now,
+    const response = await fetch('/api/sync/devices/heartbeat', {
+      method: 'POST', headers: sessionHeaders(true),
+      body: JSON.stringify({ device_id: DEVICE_SESSION_ID, device_name: localDevice.device_name, platform: localDevice.platform, environment: localDevice.browser_info }),
     });
-
-    // Notify Server Cloud Hub with current device pulse
-    try {
-      fetch('/api/sync/devices/heartbeat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          device_id: deviceId,
-          user_email: (user.email || '').trim().toLowerCase(),
-          user_identifier: user.id.startsWith('user_') ? user.id : `user_${user.id}`,
-          device_name: deviceName,
-          platform,
-          environment: browserInfo,
-        }),
-      }).catch(() => {});
-    } catch {}
-
-    // Step 1: Try INSERT (fails silently if already exists due to UNIQUE constraint)
-    let { data, error } = await supabase
-      .from('user_devices')
-      .insert({
-        user_id: user.id,
-        device_id: deviceId,
-        device_name: deviceName,
-        device_type: deviceType,
-        platform: platform,
-        browser_info: browserInfo,
-        is_active: true,
-        first_login_at: now,
-        last_seen_at: now,
-      })
-      .select()
-      .single();
-
-    // Step 2: If insert fails due to uniqueness constraint, do UPDATE instead
-    if (error && error.code === '23505') {
-      // Unique constraint violation - device already exists
-      const { data: updateData, error: updateError } = await supabase
-        .from('user_devices')
-        .update({
-          device_name: deviceName,
-          device_type: deviceType,
-          platform: platform,
-          browser_info: browserInfo,
-          is_active: true,
-          last_seen_at: now,
-          updated_at: now,
-        })
-        .eq('user_id', user.id)
-        .eq('device_id', deviceId)
-        .select()
-        .single();
-
-      if (updateError) {
-        if (!isCloudQuotaOrNetworkError(updateError)) {
-          console.warn('[DEVICE] Cloud device update notice:', updateError);
-        }
-        return localDevice;
-      }
-
-      data = updateData;
-    } else if (error) {
-      if (!isCloudQuotaOrNetworkError(error)) {
-        console.warn('[DEVICE] Cloud device registration notice:', error);
-      }
-      return localDevice;
+    if (response.ok && typeof localStorage !== 'undefined') {
+      localStorage.setItem(`local_registered_device_${user.id}`, JSON.stringify(localDevice));
     }
-
-    if (data && typeof localStorage !== 'undefined') {
-      localStorage.setItem(`local_registered_device_${user.id}`, JSON.stringify(data));
-    }
-
-    return (data as RegisteredDevice) || localDevice;
-  } catch (err) {
-    if (!isCloudQuotaOrNetworkError(err)) {
-      console.warn('[DEVICE] Unexpected notice during registration:', err);
-    }
-    return buildLocalFallbackDevice(user);
-  }
+  } catch {}
+  return localDevice;
 }
-
-/**
- * Get list of active devices for current user
- */
 export async function getActiveDevices(user: AuthUser): Promise<RegisteredDevice[]> {
+  if (!user?.id) return [];
   try {
-    if (!user || !user.id) return [];
-
-    const localDev = await getCurrentDeviceInfo(user);
-    const fallbackList = localDev ? [localDev] : [];
-
-    // Query Server Cloud Hub first for active cross-device sessions
-    try {
-      const email = (user.email || '').trim().toLowerCase();
-      const res = await fetch(`/api/sync/devices?user_email=${encodeURIComponent(email)}`);
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success && Array.isArray(json.devices) && json.devices.length > 0) {
-          const serverList: RegisteredDevice[] = json.devices.map((d: any) => ({
-            id: d.id,
-            device_id: d.id,
-            device_name: d.device_name || 'Active Device',
-            device_type: (d.platform === 'android' || d.platform === 'ios') ? 'native' : 'web',
-            platform: d.platform,
-            browser_info: d.environment || d.user_agent,
-            is_active: d.isOnline,
-            last_seen_at: new Date(d.last_active).toISOString(),
-            first_login_at: new Date(d.created_at).toISOString(),
-            created_at: new Date(d.created_at).toISOString(),
-            updated_at: new Date(d.last_active).toISOString(),
-          }));
-          return serverList;
-        }
-      }
-    } catch {}
-
-    const supabase = getSupabaseClient();
-    if (!supabase) return fallbackList;
-
-    const { data, error } = await supabase
-      .from('user_devices')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
-      .order('last_seen_at', { ascending: false });
-
-    if (error) {
-      if (!isCloudQuotaOrNetworkError(error)) {
-        console.warn('[DEVICE] Notice fetching active devices:', error);
-      }
-      return fallbackList;
-    }
-
-    return (data as RegisteredDevice[]) || fallbackList;
-  } catch (err) {
-    if (!isCloudQuotaOrNetworkError(err)) {
-      console.warn('[DEVICE] Unexpected notice fetching devices:', err);
-    }
-    const localDev = await getCurrentDeviceInfo(user);
-    return localDev ? [localDev] : [];
+    const response = await fetch('/api/sync/devices', { headers: sessionHeaders() });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !Array.isArray(result.devices)) return [];
+    return result.devices.map((device: any) => ({
+      id: device.id,
+      device_id: device.id,
+      device_name: device.device_name || 'Active Device',
+      device_type: device.platform === 'android' || device.platform === 'ios' ? 'native' : 'web',
+      platform: device.platform || 'unknown',
+      browser_info: device.environment || device.user_agent || '',
+      is_active: Boolean(device.isOnline),
+      last_seen_at: new Date(Number(device.last_active) || Date.now()).toISOString(),
+      first_login_at: new Date(Number(device.created_at) || Date.now()).toISOString(),
+      created_at: new Date(Number(device.created_at) || Date.now()).toISOString(),
+      updated_at: new Date(Number(device.last_active) || Date.now()).toISOString(),
+    }));
+  } catch {
+    return [];
   }
 }
-
-/**
- * Update device last_seen_at timestamp (call periodically to keep device active)
- */
 export async function updateDeviceHeartbeat(user: AuthUser): Promise<boolean> {
+  if (!user?.id) return false;
   try {
-    if (!user || !user.id) return false;
-
-    const now = new Date().toISOString();
-    const deviceId = await getOrCreateDeviceId();
-    const userEmail = (user.email || '').trim().toLowerCase();
-
-    console.info('[DEVICE_HEARTBEAT] Emitting pulse for user account:', {
-      deviceId,
-      userEmail,
-      userId: user.id,
-      timestamp: now,
-      environment: typeof window !== 'undefined' ? window.location.hostname : 'node',
+    const platform = await getPlatformName();
+    const browserInfo = await getBrowserInfo();
+    const response = await fetch('/api/sync/devices/heartbeat', {
+      method: 'POST', headers: sessionHeaders(true),
+      body: JSON.stringify({
+        device_id: DEVICE_SESSION_ID,
+        device_name: `${browserInfo.split('/')[0]} on ${platform.charAt(0).toUpperCase() + platform.slice(1)}`,
+        platform,
+        environment: typeof window !== 'undefined' ? window.location.hostname : 'Web',
+      }),
     });
-
-    // Pulse Server Cloud Hub immediately
-    try {
-      const platform = await getPlatformName();
-      const browserInfo = await getBrowserInfo();
-      fetch('/api/sync/devices/heartbeat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          device_id: deviceId,
-          user_email: userEmail,
-          user_identifier: user.id.startsWith('user_') ? user.id : `user_${user.id}`,
-          device_name: `${browserInfo.split('/')[0]} on ${platform.charAt(0).toUpperCase() + platform.slice(1)}`,
-          platform,
-          environment: typeof window !== 'undefined' ? (window.location.hostname.includes('run.app') ? 'AI Studio' : window.location.hostname) : 'Web',
-        }),
-      }).catch(() => {});
-    } catch {}
-
-    // Always keep local registration updated
-    try {
-      if (typeof localStorage !== 'undefined') {
-        const stored = localStorage.getItem(`local_registered_device_${user.id}`);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          parsed.last_seen_at = now;
-          localStorage.setItem(`local_registered_device_${user.id}`, JSON.stringify(parsed));
-        }
-      }
-    } catch {}
-
-    const supabase = getSupabaseClient();
-    if (!supabase) {
-      console.info('[DEVICE_HEARTBEAT] Local heartbeat updated (Supabase client unconfigured)');
-      return true;
-    }
-
-    const { data: updateRes, error } = await supabase
-      .from('user_devices')
-      .update({ last_seen_at: now })
-      .eq('user_id', user.id)
-      .eq('device_id', deviceId)
-      .select('id, device_name, is_active, last_seen_at');
-
-    if (error) {
-      if (!isCloudQuotaOrNetworkError(error)) {
-        console.warn('[DEVICE_HEARTBEAT] Notice updating device heartbeat in Supabase:', error);
-      } else {
-        console.info('[DEVICE_HEARTBEAT] Heartbeat preserved locally (Cloud egress quota reached / offline)');
-      }
-      return true; // Local heartbeat remains valid
-    }
-
-    console.info('[DEVICE_HEARTBEAT] Heartbeat successfully acknowledged by Supabase:', {
-      deviceId,
-      userEmail,
-      acknowledgedAt: now,
-      matchedRows: updateRes?.length ?? 1,
-    });
-
-    return true;
-  } catch (err) {
-    if (!isCloudQuotaOrNetworkError(err)) {
-      console.warn('[DEVICE_HEARTBEAT] Unexpected notice updating heartbeat:', err);
-    }
+    return response.ok;
+  } catch {
     return true;
   }
 }
-
-/**
- * Logout device (mark as inactive)
- */
 export async function logoutDevice(user: AuthUser, targetDeviceId?: string): Promise<boolean> {
+  if (!user?.id) return false;
+  const deviceId = targetDeviceId || DEVICE_SESSION_ID;
   try {
-    if (!user || !user.id) return false;
-
-    const deviceId = targetDeviceId || (await getOrCreateDeviceId());
-
-    try {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.removeItem(`local_registered_device_${user.id}`);
-      }
-    } catch {}
-
-    const supabase = getSupabaseClient();
-    if (!supabase) return true;
-
-    const { error } = await supabase
-      .from('user_devices')
-      .update({ is_active: false })
-      .eq('user_id', user.id)
-      .eq('device_id', deviceId);
-
-    if (error) {
-      if (!isCloudQuotaOrNetworkError(error)) {
-        console.warn('[DEVICE] Notice logging out device:', error);
-      }
-      return true;
-    }
-
-    return true;
-  } catch (err) {
-    if (!isCloudQuotaOrNetworkError(err)) {
-      console.warn('[DEVICE] Unexpected notice logging out device:', err);
-    }
+    if (typeof localStorage !== 'undefined') localStorage.removeItem(`local_registered_device_${user.id}`);
+    const response = await fetch(`/api/sync/devices/${encodeURIComponent(deviceId)}`, { method: 'DELETE', headers: sessionHeaders() });
+    return response.ok;
+  } catch {
     return true;
   }
 }
-
-/**
- * Get current device info
- */
 export async function getCurrentDeviceInfo(user: AuthUser): Promise<RegisteredDevice | null> {
+  if (!user?.id) return null;
   try {
-    if (!user || !user.id) return null;
-
-    const deviceId = await getOrCreateDeviceId();
-
-    let localCachedDevice: RegisteredDevice | null = null;
-    try {
-      if (typeof localStorage !== 'undefined') {
-        const stored = localStorage.getItem(`local_registered_device_${user.id}`);
-        if (stored) {
-          localCachedDevice = JSON.parse(stored);
-        }
-      }
-    } catch {}
-
-    const supabase = getSupabaseClient();
-    if (!supabase) {
-      return localCachedDevice || (await buildLocalFallbackDevice(user));
-    }
-
-    const { data, error } = await supabase
-      .from('user_devices')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('device_id', deviceId)
-      .single();
-
-    if (error) {
-      if (error.code !== 'PGRST116' && !isCloudQuotaOrNetworkError(error)) {
-        console.warn('[DEVICE] Notice querying current device info:', error);
-      }
-      return localCachedDevice || (await buildLocalFallbackDevice(user));
-    }
-
-    if (data && typeof localStorage !== 'undefined') {
-      localStorage.setItem(`local_registered_device_${user.id}`, JSON.stringify(data));
-    }
-
-    return (data as RegisteredDevice) || localCachedDevice || (await buildLocalFallbackDevice(user));
-  } catch (err) {
-    if (!isCloudQuotaOrNetworkError(err)) {
-      console.warn('[DEVICE] Unexpected notice fetching current device info:', err);
-    }
-    return buildLocalFallbackDevice(user);
-  }
+    const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(`local_registered_device_${user.id}`) : null;
+    if (stored) return JSON.parse(stored) as RegisteredDevice;
+  } catch {}
+  return buildLocalFallbackDevice(user);
 }
-
 export const deviceService = {
   getOrCreateDeviceId,
   registerDevice,

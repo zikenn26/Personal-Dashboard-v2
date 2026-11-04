@@ -4,7 +4,7 @@ import { StickyNote, Copy, Undo2, Plus, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { nativeService } from '../../../../services/nativeService';
 import { Storage } from '../../../../utils/storage';
-import { scheduleAutoSyncToSupabase } from '../../../../utils/neonSync';
+import { scheduleAutoSyncToServer } from '../../../../utils/neonSync';
 
 export const AndroidScratchPad: React.FC = () => {
   const [content, setContent] = useState<string>(() => {
@@ -82,7 +82,7 @@ export const AndroidScratchPad: React.FC = () => {
     try {
       Storage.setScratchpad(valueToSave);
 
-      scheduleAutoSyncToSupabase(
+      scheduleAutoSyncToServer(
         () => Storage.getAllDataPayload(),
         500
       );

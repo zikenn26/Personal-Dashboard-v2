@@ -1,7 +1,6 @@
-import { beforeAll, afterAll, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { webcrypto } from 'node:crypto';
 import { Auth } from './auth';
-import { getSupabaseClient, isSupabaseConfigured } from './neonSync';
 
 beforeAll(() => {
   if (!globalThis.crypto) Object.defineProperty(globalThis, 'crypto', { value: webcrypto });
@@ -19,27 +18,31 @@ beforeAll(() => {
   }
 });
 
-afterAll(async () => {
-  const client = getSupabaseClient();
-  if (client && isSupabaseConfigured()) {
-    try {
-      const { data: rows } = await client
-        .from('user_workspaces')
-        .select('id, user_email, user_identifier');
-      if (Array.isArray(rows)) {
-        for (const r of rows) {
-          const email = (r.user_email || '').toLowerCase().trim();
-          const ident = r.user_identifier || '';
-          if (email !== 'gknayak@gmail.com' && !ident.includes('gknayak')) {
-            await client.from('user_workspaces').delete().eq('id', r.id);
-          }
-        }
-      }
-    } catch {}
-  }
-});
-
 describe('Authentication Engine & Persistence', { timeout: 30000 }, () => {
+  const accounts = new Map<string, { password: string; user: any }>();
+  beforeEach(() => {
+    accounts.clear();
+    vi.stubGlobal('fetch', vi.fn(async (input: any, init: any = {}) => {
+      const path = String(input);
+      const body = JSON.parse(init.body || '{}');
+      const respond = (status: number, value: any) => Promise.resolve({ ok: status >= 200 && status < 300, status, json: async () => value });
+      if (path.includes('/api/auth/register')) {
+        if (accounts.has(body.email)) return respond(409, { success: false, message: 'An account with this email already exists.' });
+        const user = { id: `id-${body.email}`, email: body.email, name: body.name, provider: 'neon' };
+        accounts.set(body.email, { password: body.password, user });
+        return respond(201, { success: true, user });
+      }
+      if (path.includes('/api/auth/login')) {
+        const account = accounts.get(body.email);
+        return account && account.password === body.password
+          ? respond(200, { success: true, user: account.user, token: `server-token-${body.email}` })
+          : respond(401, { success: false, message: 'Invalid email or password.' });
+      }
+      return respond(404, { success: false });
+    }));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
   it('rejects unregistered accounts with a generic message (no user enumeration)', async () => {
     const res = await Auth.signIn('nonexistent@example.com', '12345678');
     expect(res.success).toBe(false);
@@ -71,20 +74,18 @@ describe('Authentication Engine & Persistence', { timeout: 30000 }, () => {
     expect(Auth.getCurrentUser()).toBeNull();
   });
 
-  it('persists local credentials across a cleared session (re-login on the same device)', async () => {
-    // 1. Sign up on this device (Supabase not configured in this test env, so this exercises
-    // the offline local-credential fallback path)
+  it('persists account credentials on the server across a cleared local session', async () => {
     const res1 = await Auth.signUp('multidevice@example.com', 'PassDevice123', 'Multi Device User');
     expect(res1.success).toBe(true);
 
     const user1 = Auth.getCurrentUser();
     expect(user1?.email).toBe('multidevice@example.com');
 
-    // 2. Simulate a cleared session (e.g. browser restart) without wiping stored credentials
+    // 2. Simulate a cleared session (e.g. browser restart)
     localStorage.removeItem('notion_os_auth_user_v1');
     expect(Auth.getCurrentUser()).toBeNull();
 
-    // 3. Signing back in should succeed against the locally stored password hash
+    // 3. Signing in again is verified by the server-owned account service
     const loginRes2 = await Auth.signIn('multidevice@example.com', 'PassDevice123');
     expect(loginRes2.success).toBe(true);
     expect(loginRes2.user?.email).toBe('multidevice@example.com');
@@ -111,25 +112,13 @@ describe('Authentication Engine & Persistence', { timeout: 30000 }, () => {
     expect(Auth.getCurrentUser()).toBeNull();
   });
 
-  it('strictly blocks duplicate signups for gknayak or existing usernames to avoid conflicts', async () => {
-    // 1. Trying to sign up with gknayak or gknayak@gmail.com must be immediately rejected
-    const blockGkn1 = await Auth.signUp('gknayak@gmail.com', 'Pass123456');
-    expect(blockGkn1.success).toBe(false);
-    expect(blockGkn1.message).toContain('already registered');
-
-    const blockGkn2 = await Auth.signUp('gknayak', 'Pass123456');
-    expect(blockGkn2.success).toBe(false);
-    expect(blockGkn2.message).toContain('already registered');
-
-    // 2. A new user can create an account with a new unique username
-    const uniqueUser = 'alex_unique_' + Date.now();
-    const newSignup = await Auth.signUp(uniqueUser, 'StrongPass99!', 'Alex Smith');
+  it('allows a deleted email to register again and rejects duplicate server registrations', async () => {
+    const newSignup = await Auth.signUp('gknayak@gmail.com', 'StrongPass99!', 'Gulshan');
     expect(newSignup.success).toBe(true);
-    expect(newSignup.user?.name).toBe('Alex Smith');
+    expect(newSignup.user?.email).toBe('gknayak@gmail.com');
 
-    // 3. Another user attempting to reuse that same username must be blocked
-    const duplicateSignup = await Auth.signUp(uniqueUser, 'OtherPass99!', 'Another Person');
+    const duplicateSignup = await Auth.signUp('gknayak@gmail.com', 'OtherPass99!', 'Another Person');
     expect(duplicateSignup.success).toBe(false);
-    expect(duplicateSignup.message).toContain('already in use');
+    expect(duplicateSignup.message).toContain('already exists');
   });
 });

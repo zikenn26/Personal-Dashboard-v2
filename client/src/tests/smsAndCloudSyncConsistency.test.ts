@@ -61,7 +61,7 @@ describe('SMS Logging and Cloud Sync Consistency Suite', () => {
     expect(active[0].id).toBe('exp-1');
   });
 
-  it('2. preserves recently received unsynced SMS transactions when cloud sync arrives', () => {
+  it('2. does not recover unsynced SMS rows from a local cache over the server snapshot', () => {
     // Device receives SMS transaction locally while offline/unsynced
     const recentSmsId = `exp-sms-${Date.now()}-abc`;
     const smsExp: ExpenseItem = {
@@ -81,9 +81,9 @@ describe('SMS Logging and Cloud Sync Consistency Suite', () => {
 
     Storage.importAllDataPayload(cloudPayload);
 
-    // Both old cloud expense and newly auto-logged local SMS are present
+    // Only the server-owned ledger is shown; pending expense mutations use the outbox protocol.
     const updated = Storage.getExpenses();
-    expect(updated.some((e) => e.id === recentSmsId)).toBe(true);
+    expect(updated.some((e) => e.id === recentSmsId)).toBe(false);
     expect(updated.some((e) => e.id === 'exp-old')).toBe(true);
   });
 
@@ -148,7 +148,7 @@ describe('SMS Logging and Cloud Sync Consistency Suite', () => {
     expect(ids).toContain('remote-tx-201');
   });
 
-  it('6. preserves older local transactions even if cloud snapshot has higher syncVersion and is missing them', () => {
+  it('6. uses the server ledger even if a newer snapshot omits an old local cache row', () => {
     const olderLocalExpense: ExpenseItem = {
       id: 'local-sms-older',
       name: 'Quick Chai',
@@ -180,9 +180,9 @@ describe('SMS Logging and Cloud Sync Consistency Suite', () => {
 
     Storage.importAllDataPayload(cloudPayload);
 
-    // Both the cloud transaction AND the local transaction must be preserved
+    // Legacy local cache rows do not merge into canonical server state.
     const current = Storage.getExpenses();
-    expect(current.some((e) => e.id === 'local-sms-older')).toBe(true);
+    expect(current.some((e) => e.id === 'local-sms-older')).toBe(false);
     expect(current.some((e) => e.id === 'cloud-tx-301')).toBe(true);
   });
 

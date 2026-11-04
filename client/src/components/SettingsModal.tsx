@@ -688,7 +688,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <button
             type="button"
             onClick={() => {
-              if (confirm('Are you sure you want to reset all dashboard data back to initial sample state?')) {
+              if (confirm('Clear this workspace and reset it to empty defaults?')) {
                 Sound.click(settings.soundEnabled);
                 onResetData();
                 onClose();
@@ -697,7 +697,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             className="text-xs text-rose-500 hover:text-rose-600 font-semibold flex items-center gap-1 cursor-pointer"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>Reset to Demo State</span>
+            <span>Clear Workspace Data</span>
           </button>
 
           <button

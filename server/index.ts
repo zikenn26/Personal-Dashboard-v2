@@ -3,9 +3,7 @@ import { createServer } from "http";
 import path from "path";
 import { fileURLToPath } from "url";
 import { registerGeminiRoutes, setupGeminiLiveWebSocket } from "./geminiService.js";
-import { registerScreenTimeRoutes } from "./screenTimeService.js";
 import { registerSyncRoutes } from "./syncService.js";
-import { setupSyncWebSocket } from "./syncWebSocket.js";
 import { initDb } from "./db.js";
 import { rateLimit, requireAuthForServerKeyUsage } from "./security.js";
 
@@ -58,14 +56,8 @@ async function startServer() {
   // Setup Gemini Live WebSocket server on /live
   setupGeminiLiveWebSocket(server);
 
-  // Setup full-duplex live workspace sync WebSocket server on /api/sync/ws
-  setupSyncWebSocket(server);
-
   // Register Gemini Chat, Commands, TTS and Health routes on /api/gemini/*
   registerGeminiRoutes(app);
-
-  // Register Screen Time sync, daily, and history routes on /api/screentime/*
-  registerScreenTimeRoutes(app);
 
   // Register multi-device cloud workspace sync and device presence routes on /api/sync/*
   registerSyncRoutes(app);
@@ -125,46 +117,6 @@ async function startServer() {
     }
   });
 
-  // Proxy /api/supabase to Supabase backend if configured to prevent CORS/sandbox issues in iframes
-  const rawSupabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "";
-  if (rawSupabaseUrl) {
-    app.all("/api/supabase*", async (req, res) => {
-      try {
-        const subPath = req.originalUrl.replace(/^\/api\/supabase/, "");
-        const targetUrl = `${rawSupabaseUrl.replace(/\/+$/, "")}${subPath}`;
-        const headers: Record<string, string> = {};
-        for (const [k, v] of Object.entries(req.headers)) {
-          if (k.toLowerCase() !== "host" && typeof v === "string") {
-            headers[k] = v;
-          }
-        }
-        const fetchOpts: RequestInit = {
-          method: req.method,
-          headers,
-        };
-        if (!["GET", "HEAD"].includes(req.method)) {
-          const chunks: any[] = [];
-          for await (const chunk of req) {
-            chunks.push(chunk);
-          }
-          fetchOpts.body = Buffer.concat(chunks);
-        }
-        const upstreamRes = await fetch(targetUrl, fetchOpts);
-        res.status(upstreamRes.status);
-        upstreamRes.headers.forEach((value, name) => {
-          if (name.toLowerCase() !== "content-encoding") {
-            res.setHeader(name, value);
-          }
-        });
-        const buf = await upstreamRes.arrayBuffer();
-        res.send(Buffer.from(buf));
-      } catch (err: any) {
-        console.error("[supabase proxy]", err);
-        res.status(502).json({ error: "Upstream service unavailable" });
-      }
-    });
-  }
-
   // Proxy /api/weather to Open-Meteo to bypass browser sandbox / CORS restrictions
   app.get("/api/weather*", async (req, res) => {
     try {
@@ -176,67 +128,6 @@ async function startServer() {
     } catch (err: any) {
       console.error("[weather proxy]", err);
       res.status(502).json({ error: "Upstream service unavailable" });
-    }
-  });
-
-  // Device heartbeat endpoint - Update device last_seen_at timestamp
-  app.post("/api/device/heartbeat", async (req, res) => {
-    try {
-      const authHeader = req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        return res.status(401).json({ error: "Missing or invalid authorization" });
-      }
-
-      const token = authHeader.substring(7);
-      const { device_id } = req.body;
-
-      if (!device_id) {
-        return res.status(400).json({ error: "Missing device_id in body" });
-      }
-
-      // Note: Actual verification would use Supabase JWT verification
-      // For now, we trust the client to send valid data (Supabase RLS will enforce ownership)
-      // In production, decrypt and verify the JWT token here
-
-      res.status(200).json({
-        success: true,
-        message: "Device heartbeat recorded",
-        timestamp: new Date().toISOString(),
-      });
-    } catch (err: any) {
-      console.error("[device heartbeat]", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  // Device sync status endpoint - Report sync health
-  app.post("/api/device/sync-status", async (req, res) => {
-    try {
-      const authHeader = req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        return res.status(401).json({ error: "Missing or invalid authorization" });
-      }
-
-      const { device_id, status, pending_count, last_sync_error } = req.body;
-
-      if (!device_id || !status) {
-        return res.status(400).json({ error: "Missing required fields" });
-      }
-
-      // Log sync status for monitoring (can be used to track sync health issues)
-      console.log(`[Device Sync Status] Device: ${device_id}, Status: ${status}, Pending: ${pending_count || 0}`);
-
-      if (last_sync_error) {
-        console.warn(`[Device Sync Error] Device: ${device_id}, Error: ${last_sync_error}`);
-      }
-
-      res.status(200).json({
-        success: true,
-        message: "Sync status recorded",
-      });
-    } catch (err: any) {
-      console.error("[device sync-status]", err);
-      res.status(500).json({ error: "Internal server error" });
     }
   });
 

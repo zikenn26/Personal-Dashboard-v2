@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence, type Variants } from 'motion/react';
-import { Storage, STORAGE_KEYS, getScopedKey } from './utils/storage';
+import { Storage, STORAGE_KEYS } from './utils/storage';
 import { Sound } from './utils/audio';
 import { triggerConfetti } from './utils/confetti';
 import {
@@ -74,7 +74,7 @@ import { InitialSetupBanner } from './components/InitialSetupBanner';
 import { AvatarPickerModal } from './components/AvatarPickerModal';
 import { BrandLogo } from './components/BrandLogo';
 import { UserAvatar } from './components/UserAvatar';
-import { isDummyMockAvatar, isAvatarMatchingUserEmailDomain } from './utils/userUtils';
+import { isAvatarMatchingUserEmailDomain } from './utils/userUtils';
 import { STOCK_IMAGES } from './assets/stockImages';
 import LandingPage from './components/LandingPage';
 import { usePlatformMode } from './presentation/mobile/shell/usePlatformMode';
@@ -105,18 +105,16 @@ import {
 } from './utils/offlineDetection';
 import { AuthUser } from './types';
 import {
-  isSupabaseConfigured,
-  getSupabaseClient,
-  syncWorkspaceToSupabase,
-  fetchWorkspaceFromSupabase,
-  scheduleAutoSyncToSupabase,
+  syncWorkspaceToServer,
+  fetchWorkspaceFromServer,
+  scheduleAutoSyncToServer,
   flushAutoSyncImmediately,
   subscribeToRealtimeWorkspace,
   subscribeToSyncStatus,
   getAutoSyncStatus,
   setCustomWorkspaceIdentifier,
   setCustomWorkspaceEmail,
-  checkHasNewerCloudWorkspace,
+  checkHasNewerServerWorkspace,
   setWorkOfflineMode,
   getPayloadSyncTimestamp,
   broadcastWorkspaceUpdate,
@@ -127,6 +125,7 @@ import {
   deleteWorkspaceConflict,
   getWorkspaceConflicts,
   WorkspaceSyncConflict,
+  clearWorkspaceSyncState,
 } from './services/syncProtocol';
 import { nativeService } from './services/nativeService';
 import { normalizeExpenseDateKey, getLocalDateKey } from './utils/expenseUtils';
@@ -231,6 +230,9 @@ export default function App() {
     }
     return u;
   });
+  const [isInitialSessionVerified, setIsInitialSessionVerified] = useState(
+    () => !Auth.getCurrentUser() || !Auth.getAuthToken()
+  );
   const [workspaceConflicts, setWorkspaceConflicts] = useState<WorkspaceSyncConflict[]>([]);
 
   // 1. Core State loaded from user-scoped localStorage
@@ -600,7 +602,7 @@ export default function App() {
 
     // 6. If user has no existing local storage records on this device, initialize a clean default workspace
     if (!Storage.hasUserData(user)) {
-      Storage.resetToCleanUserWorkspace(user);
+      await Storage.resetToCleanUserWorkspace(user);
     }
 
     // 6b. Trigger Onboarding Tour if user has not yet completed it
@@ -614,69 +616,10 @@ export default function App() {
     const cleanEmail = (user.email || '').toLowerCase().trim();
     const [userLocalPart] = cleanEmail.split('@');
 
-    // 7. Audit & Fetch user-specific profile fields directly from the authenticated Supabase user metadata immediately upon login
-    let metaAvatar = user.avatarUrl || '';
-    let metaName = user.name || '';
-    let metaBio = '';
-    let metaTitle = '';
-    let metaPhone = '';
-    let metaLocation = '';
-    let metaGithub = '';
-    let metaLinkedin = '';
-    let metaWebsite = '';
-
-    if (isSupabaseConfigured()) {
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          const { data: authData } = await client.auth.getUser();
-          const sbUser = authData?.user;
-          if (sbUser && (sbUser.id === user.id || (sbUser.email && sbUser.email.toLowerCase() === cleanEmail))) {
-            const meta = sbUser.user_metadata || {};
-            const candidateName = meta.full_name || meta.name || meta.display_name;
-            const isGenericHandle = (str?: string | null) => {
-              if (!str) return true;
-              const s = str.trim().toLowerCase();
-              return s === 'gknayak' || s === 'user' || s === 'guest' || s === '' || s === 'admin';
-            };
-            if (candidateName && !isGenericHandle(candidateName)) {
-              metaName = candidateName;
-            }
-
-            const isGknUser = cleanEmail === 'gknayak@gmail.com';
-            const defaultGknAvatar = 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp';
-            const rawMetaAvatar = meta.avatar_url || meta.avatarUrl || meta.picture || '';
-            if (rawMetaAvatar && isAvatarMatchingUserEmailDomain(rawMetaAvatar, cleanEmail)) {
-              metaAvatar = rawMetaAvatar;
-            } else if (isGknUser) {
-              metaAvatar = defaultGknAvatar;
-            } else {
-              metaAvatar = '';
-              // If Supabase user_metadata contained a contaminated cross-account avatar, sanitize it in Supabase
-              if (rawMetaAvatar && !isGknUser) {
-                void client.auth.updateUser({ data: { avatar_url: '', avatarUrl: '' } }).catch(() => {});
-              }
-            }
-
-            if (meta.bio) metaBio = meta.bio;
-            if (meta.title || meta.headline) metaTitle = meta.title || meta.headline;
-            if (meta.phone) metaPhone = meta.phone;
-            if (meta.location) metaLocation = meta.location;
-            if (meta.github) metaGithub = meta.github;
-            if (meta.linkedin) metaLinkedin = meta.linkedin;
-            if (meta.website) metaWebsite = meta.website;
-          }
-        } catch (metaErr) {
-          console.warn('[AUTH_DIAGNOSTIC] Notice fetching user metadata from Supabase Auth:', metaErr);
-        }
-      }
-    }
-
-    const isGenericHandle = (str?: string | null) => {
-      if (!str) return true;
-      const s = str.trim().toLowerCase();
-      return s === 'gknayak' || s === 'user' || s === 'guest' || s === '' || s === 'admin';
-    };
+    // Neon owns account identity; login no longer reads a second auth provider.
+    const metaAvatar = user.avatarUrl || '';
+    const metaName = user.name || '';
+    const isGenericHandle = (str?: string | null) => !str || ['user', 'guest', 'admin'].includes(str.trim().toLowerCase());
 
     // 8. Clear cached or local storage avatars if they do not match the currently authenticated user's email domain
     const current = Storage.getProfile();
@@ -701,22 +644,10 @@ export default function App() {
       hasProfileChanges = true;
     }
 
-    const isGknUserAccount = cleanEmail === 'gknayak@gmail.com';
-    const defaultGknAvatarUrl = 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp';
-
-    // Ensure owner account never has empty avatar or falls back to initials
-    if (isGknUserAccount && (!updatedProfile.avatarUrl || isDummyMockAvatar(updatedProfile.avatarUrl, cleanEmail))) {
-      updatedProfile.avatarUrl = defaultGknAvatarUrl;
-      hasProfileChanges = true;
-    }
-
-    // Apply user-specific profile fields fetched from Supabase user metadata ONLY if current profile has no custom name
+    // Apply the server account name only when the local profile has no custom name.
     if (!updatedProfile.name || isGenericHandle(updatedProfile.name)) {
       if (metaName && !isGenericHandle(metaName)) {
         updatedProfile.name = metaName;
-        hasProfileChanges = true;
-      } else if (isGknUserAccount) {
-        updatedProfile.name = 'Gulshan Kumar Nayak';
         hasProfileChanges = true;
       }
     }
@@ -725,35 +656,6 @@ export default function App() {
       updatedProfile.handle = `@${userLocalPart.replace(/[^a-z0-9]/g, '')}`;
       hasProfileChanges = true;
     }
-    if (metaBio && !updatedProfile.bio) {
-      updatedProfile.bio = metaBio;
-      hasProfileChanges = true;
-    }
-    if (metaTitle && !updatedProfile.title) {
-      updatedProfile.title = metaTitle;
-      hasProfileChanges = true;
-    }
-    if (metaPhone && !updatedProfile.phone) {
-      updatedProfile.phone = metaPhone;
-      hasProfileChanges = true;
-    }
-    if (metaLocation && !updatedProfile.location) {
-      updatedProfile.location = metaLocation;
-      hasProfileChanges = true;
-    }
-    if (metaGithub && !updatedProfile.github) {
-      updatedProfile.github = metaGithub;
-      hasProfileChanges = true;
-    }
-    if (metaLinkedin && !updatedProfile.linkedin) {
-      updatedProfile.linkedin = metaLinkedin;
-      hasProfileChanges = true;
-    }
-    if (metaWebsite && !updatedProfile.website) {
-      updatedProfile.website = metaWebsite;
-      hasProfileChanges = true;
-    }
-
     if (hasProfileChanges) {
       setProfile(updatedProfile);
       Storage.setProfile(updatedProfile);
@@ -762,14 +664,15 @@ export default function App() {
     // 9. Force a complete reset of all useState hooks from the user-scoped Storage BEFORE the next sync-cycle
     handleHydrateAllFromStorage(false);
 
-    // 10. Re-fetch user workspace data from Supabase if configured
+    // 10. Re-fetch the authoritative workspace through the versioned server API
     try {
-      const res = await fetchWorkspaceFromSupabase();
+      const res = await fetchWorkspaceFromServer();
       if (res.success && res.exists === false) {
         // A successful server response with no workspace is authoritative. Clear
         // stale device-local data so it cannot be shown or uploaded as a fresh account.
         isRemoteUpdating.current = true;
-        Storage.resetToCleanUserWorkspace(user);
+        await clearWorkspaceSyncState(getUserWorkspaceKey(user));
+        await Storage.resetToCleanUserWorkspace(user);
         handleHydrateAllFromStorage(false);
       } else if (res.success && res.data) {
         isRemoteUpdating.current = true;
@@ -834,8 +737,11 @@ export default function App() {
     const user = Auth.getCurrentUser();
     const token = Auth.getAuthToken();
     if (user && token) {
-      // Validate session token with Neon DB pool in background without disrupting offline/active UI
-      void Auth.verifyCurrentSession();
+      // Keep cached workspace data out of view until the server confirms that
+      // this device still belongs to the current account generation.
+      void Auth.verifyCurrentSession().finally(() => setIsInitialSessionVerified(true));
+    } else {
+      setIsInitialSessionVerified(true);
     }
   }, []);
 
@@ -908,7 +814,7 @@ export default function App() {
 
       // Immediately sync normal dashboard updates to Cloud Database.
       // Do not sync if triggered by a storage event from another tab (prevents ping-pong loop).
-      if (!isRemoteUpdating.current && isSupabaseConfigured() && e?.type !== 'storage') {
+      if (!isRemoteUpdating.current && Auth.getAuthToken() && e?.type !== 'storage') {
         void flushAutoSyncImmediately(Storage.getAllDataPayload());
       }
     };
@@ -1035,10 +941,10 @@ export default function App() {
     };
   }, [atomicPendingDeletion, expenses]);
 
-  // 1. Initial Cloud Hydration & Supabase Realtime WebSocket Listener (Instant Multi-Device Sync)
+  // 1. Initial cloud hydration and versioned cross-device sync
   useEffect(() => {
     const hasVersionedSession = Boolean(localStorage.getItem('notion_os_auth_token_v1'));
-    if (!isSupabaseConfigured() && !hasVersionedSession) return;
+    if (!hasVersionedSession) return;
 
     let isMounted = true;
 
@@ -1067,7 +973,7 @@ export default function App() {
       }
     }, 1500);
 
-    // Verify active session validity against Supabase Cloud on mount
+    // Verify the server-owned session on mount
     void Auth.verifyCurrentSession().then((isValid) => {
       if (!isValid && isMounted && currentUser) {
         handleSignOut();
@@ -1077,11 +983,12 @@ export default function App() {
     // Fetch initial snapshot from cloud for current user session
     const autoSyncFromCloud = async () => {
       try {
-        const result = await fetchWorkspaceFromSupabase();
+        const result = await fetchWorkspaceFromServer();
         if (result.success && result.exists === false && isMounted && currentUser) {
           isRemoteUpdating.current = true;
           lastLocalMutationTimestamp.current = 0;
-          Storage.resetToCleanUserWorkspace(currentUser);
+          await clearWorkspaceSyncState(getUserWorkspaceKey(currentUser));
+          await Storage.resetToCleanUserWorkspace(currentUser);
           handleHydrateAllFromStorage(false);
           setTimeout(() => {
             isRemoteUpdating.current = false;
@@ -1101,18 +1008,6 @@ export default function App() {
               localMutationTime,
             });
             return;
-          }
-
-          // Anti-Zero-Spending Protection:
-          // If local storage has transactions (e.g. freshly auto-logged SMS transactions)
-          // and the incoming cloud snapshot has no expenses, merge and safeguard local records!
-          const localExpenses = Storage.getExpenses();
-          const incomingExpenses = Array.isArray(result.data?.expenses) ? result.data.expenses : [];
-          if (localExpenses.length > 0 && incomingExpenses.length === 0 && !result.data?._meta?.clearedAllExpenses) {
-            console.info('[SUPABASE_SYNC] Safeguarding local expenses against empty cloud overwrite. Retaining local count:', localExpenses.length);
-            result.data.expenses = localExpenses;
-          } else if (localExpenses.length > 0 && incomingExpenses.length > 0) {
-            result.data.expenses = Storage.mergeExpenseLists(localExpenses, incomingExpenses);
           }
 
           console.info('[PROFILE_TRACE] autoSyncFromCloud applying snapshot. Incoming name:', result.data.profile?.name);
@@ -1162,7 +1057,7 @@ export default function App() {
         return;
       }
       try {
-        const hasRemoteUpdate = await checkHasNewerCloudWorkspace();
+        const hasRemoteUpdate = await checkHasNewerServerWorkspace();
         if (hasRemoteUpdate && isMounted) {
           await autoSyncFromCloud();
         }
@@ -1270,9 +1165,9 @@ export default function App() {
     );
 
     // On window focus / visibility change for background wakeups:
-    // 1. Verify session validity against Supabase Cloud
+    // 1. Verify the server-owned session
     // 2. Process any pending background SMS messages received while app was inactive
-    // 3. Fetch authoritative state from Supabase Cloud (never overwrite newer cloud data with stale local data)
+    // 3. Fetch authoritative server state (never overwrite newer cloud data with stale local data)
     const handleFocus = async () => {
       if (document.visibilityState === 'visible') {
         const isValid = await Auth.verifyCurrentSession();
@@ -1336,7 +1231,7 @@ export default function App() {
     };
   }, [currentUser?.id, currentUser?.email]);
 
-  // 3. High-Speed Debounced Auto-Sync to Supabase whenever local data changes
+  // 3. Debounced versioned auto-sync whenever local data changes
   useEffect(() => {
     if (isInitialMount.current) {
       isInitialMount.current = false;
@@ -1351,7 +1246,7 @@ export default function App() {
       return;
     }
   
-    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 600);
+    scheduleAutoSyncToServer(() => Storage.getAllDataPayload(), 600);
   }, [
     profile,
     todos,
@@ -1645,7 +1540,7 @@ export default function App() {
       let freshProfile = Storage.getProfile();
       setProfile(freshProfile);
 
-      // 3. Keep currentUser and account credentials in sync with Supabase Auth
+      // 3. Keep the current account profile in sync with server-owned account metadata
       const authUpdates: Promise<any>[] = [];
 
       if (freshProfile.name && freshProfile.name.trim() && freshProfile.name.trim() !== currentUser?.name) {
@@ -1668,13 +1563,13 @@ export default function App() {
         await Promise.allSettled(authUpdates);
       }
 
-      // 4. Atomically flush workspace payload to Supabase Cloud (<30ms broadcast + persistent upsert)
+      // 4. Flush the workspace payload through the versioned server protocol
       await flushAutoSyncImmediately({
         ...Storage.getAllDataPayload(),
         profile: freshProfile,
       });
 
-      // 5. Atomic post-Supabase verification and re-hydration to lock state and prevent stale reverts
+      // 5. Re-hydrate after the server write to prevent stale local reverts
       Storage.setProfile(freshProfile);
       freshProfile = Storage.getProfile();
       setProfile(freshProfile);
@@ -1743,14 +1638,14 @@ export default function App() {
       Auth.setCurrentUser(updatedUser);
       setCurrentUser(updatedUser);
 
-      // 3. Atomically update credentials cache and Supabase Auth user metadata
+      // 3. Update the server-owned account display name
       try {
         await Auth.updateCurrentUserName(clean);
       } catch (authErr) {
-        console.warn('[PROFILE_TRACE] Supabase metadata update notice:', authErr);
+        console.warn('[PROFILE_TRACE] Account metadata update notice:', authErr);
       }
 
-      // 4. Atomically flush auto-sync to Supabase Cloud with updated profile so background cloud sync never reverts to old name
+      // 4. Flush the updated profile so a background sync cannot restore an older name
       await flushAutoSyncImmediately({
         ...Storage.getAllDataPayload(),
         profile: updatedProfile,
@@ -1837,7 +1732,7 @@ export default function App() {
 
     // 3. Auto-sync to authoritative database
     isCloudReady.current = true;
-    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
+    scheduleAutoSyncToServer(() => Storage.getAllDataPayload(), 300);
   };
 
   const handleAddTodo = (
@@ -1951,7 +1846,7 @@ export default function App() {
         setHabitActiveWeek(result.newWeekId);
         Storage.setHabitActiveWeek(result.newWeekId);
         isCloudReady.current = true;
-        scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
+        scheduleAutoSyncToServer(() => Storage.getAllDataPayload(), 300);
       } else if (!activeWeek) {
         // Initial setup on first visit
         setHabitActiveWeek(result.newWeekId);
@@ -2035,10 +1930,6 @@ export default function App() {
 
   // Habit Handlers
   const handleToggleHabitDay = (habitId: string, dayIndex: number) => {
-    if (!isOnline) {
-      toast.warning('Offline Mode (Read-Only): Cannot update habits while offline to prevent multi-device sync conflicts.');
-      return;
-    }
     Sound.click(settings.soundEnabled);
     const currentMonday = getMondayOfWeek();
     const currentWeekId = getWeekId(currentMonday);
@@ -2139,7 +2030,7 @@ export default function App() {
 
     // 4. Trigger cloud sync
     isCloudReady.current = true;
-    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 350);
+    scheduleAutoSyncToServer(() => Storage.getAllDataPayload(), 350);
 
     setTimeout(() => {
       isRemoteUpdating.current = false;
@@ -2147,10 +2038,6 @@ export default function App() {
   };
 
   const handleToggleHabitDate = (habitId: string, dateStr: string) => {
-    if (!isOnline) {
-      toast.warning('Offline Mode (Read-Only): Cannot update habits while offline to prevent multi-device sync conflicts.');
-      return;
-    }
     Sound.click(settings.soundEnabled);
     const currentStored = Storage.getHabits();
     const base = habits.some((h) => h.id === habitId) ? habits : currentStored;
@@ -2218,7 +2105,7 @@ export default function App() {
 
     // 3. Trigger cloud sync
     isCloudReady.current = true;
-    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 350);
+    scheduleAutoSyncToServer(() => Storage.getAllDataPayload(), 350);
 
     setTimeout(() => {
       isRemoteUpdating.current = false;
@@ -2226,10 +2113,6 @@ export default function App() {
   };
 
   const handleUpdateHabit = (updatedHabit: HabitItem) => {
-    if (!isOnline) {
-      toast.warning('Offline Mode (Read-Only): Cannot update habits while offline.');
-      return;
-    }
     Sound.click(settings.soundEnabled);
     const currentStored = Storage.getHabits();
     const base = habits.length > 0 ? habits : currentStored;
@@ -2246,14 +2129,10 @@ export default function App() {
       })
     );
     isCloudReady.current = true;
-    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
+    scheduleAutoSyncToServer(() => Storage.getAllDataPayload(), 300);
   };
 
   const handleAddHabit = (title: string, category: string, icon: string, color: string) => {
-    if (!isOnline) {
-      toast.warning('Offline Mode (Read-Only): Cannot create habits while offline.');
-      return;
-    }
     const cleanTitle = title.trim();
     if (!cleanTitle) return;
     const currentMonday = getMondayOfWeek();
@@ -2281,14 +2160,10 @@ export default function App() {
       })
     );
     isCloudReady.current = true;
-    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
+    scheduleAutoSyncToServer(() => Storage.getAllDataPayload(), 300);
   };
 
   const handleDeleteHabit = (id: string) => {
-    if (!isOnline) {
-      toast.warning('Offline Mode (Read-Only): Cannot delete habits while offline.');
-      return;
-    }
     const target = habits.find((h) => h.id === id) || Storage.getHabits().find((h) => h.id === id);
     const updated = habits.filter((h) => h.id !== id);
     setHabits(updated);
@@ -2303,7 +2178,7 @@ export default function App() {
       })
     );
     isCloudReady.current = true;
-    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
+    scheduleAutoSyncToServer(() => Storage.getAllDataPayload(), 300);
   };
 
   const handleResetHabitWeek = () => {
@@ -2317,7 +2192,7 @@ export default function App() {
     setHabits(updated);
     Storage.setHabits(updated);
     isCloudReady.current = true;
-    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
+    scheduleAutoSyncToServer(() => Storage.getAllDataPayload(), 300);
   };
 
   // Simulates or forces a clean Monday rollover: archives the previous week into past records
@@ -2360,7 +2235,7 @@ export default function App() {
     setHabitActiveWeek(currentWeekId);
     Storage.setHabitActiveWeek(currentWeekId);
     isCloudReady.current = true;
-    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
+    scheduleAutoSyncToServer(() => Storage.getAllDataPayload(), 300);
   };
 
   // Historical Habit Handlers (Allows user to edit and toggle habits from previous weeks)
@@ -2473,7 +2348,7 @@ export default function App() {
       }
     }
     isCloudReady.current = true;
-    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
+    scheduleAutoSyncToServer(() => Storage.getAllDataPayload(), 300);
   };
 
   const handleAddHistoricalHabit = (
@@ -2517,7 +2392,7 @@ export default function App() {
     setHabitHistory(updatedHistory);
     Storage.setHabitHistory(updatedHistory);
     isCloudReady.current = true;
-    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
+    scheduleAutoSyncToServer(() => Storage.getAllDataPayload(), 300);
   };
 
   const handleDeleteHistoricalHabit = (weekId: string, habitId: string) => {
@@ -2545,7 +2420,7 @@ export default function App() {
     setHabitHistory(updatedHistory);
     Storage.setHabitHistory(updatedHistory);
     isCloudReady.current = true;
-    scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 300);
+    scheduleAutoSyncToServer(() => Storage.getAllDataPayload(), 300);
   };
 
   // Goal Handlers
@@ -2583,10 +2458,6 @@ export default function App() {
 
   // Expense Handlers
   const handleAddExpense = (item: Omit<ExpenseItem, 'id'>) => {
-    if (!isOnline) {
-      toast.warning('Offline Mode (Read-Only): Cannot add expenses while offline to prevent multi-device sync conflicts.');
-      return;
-    }
     const isCredit = item.direction === 'CREDIT' || item.transactionType === 'CREDIT' || item.transactionType === 'income';
     const direction: 'DEBIT' | 'CREDIT' = isCredit ? 'CREDIT' : 'DEBIT';
     const currentStored = Storage.getExpenses();
@@ -2611,7 +2482,7 @@ export default function App() {
       })
     );
 
-    // Sync immediately to Supabase
+    // Sync immediately through the versioned server API
     flushAutoSyncImmediately({
       ...Storage.getAllDataPayload(),
       expenses: updated,
@@ -2622,10 +2493,6 @@ export default function App() {
     newItems: Array<Omit<ExpenseItem, 'id'>>,
     newLog?: ExcelImportLog
   ) => {
-    if (!isOnline) {
-      toast.warning('Offline Mode (Read-Only): Cannot import expenses while offline to prevent multi-device sync conflicts.');
-      return;
-    }
     const currentStored = Storage.getExpenses();
     const nowMs = Date.now();
     const created: ExpenseItem[] = newItems.map((item, idx) => {
@@ -2644,12 +2511,6 @@ export default function App() {
     setExpenses(updated);
     Storage.setExpenses(updated);
 
-    // Save authoritative local backup of imported items
-    try {
-      localStorage.setItem(getScopedKey('lifeos_last_imported_sheet_expenses'), JSON.stringify(created));
-      localStorage.setItem(getScopedKey('lifeos_expenses_backup'), JSON.stringify(updated));
-    } catch {}
-
     let updatedLogs = excelImportLogs;
     if (newLog) {
       Storage.removeDeletedSheet(newLog.id, newLog.fileName);
@@ -2665,7 +2526,7 @@ export default function App() {
       })
     );
 
-    // Force an immediate flush to Supabase cloud and WebSocket broadcast so other devices receive spendings instantly
+    // Flush the current state so other devices receive the expense changes
     flushAutoSyncImmediately({
       ...Storage.getAllDataPayload(),
       expenses: updated,
@@ -2684,10 +2545,6 @@ export default function App() {
   };
 
   const handleUpdateExpense = (id: string, updated: Partial<ExpenseItem>) => {
-    if (!isOnline) {
-      toast.warning('Offline Mode (Read-Only): Cannot edit expenses while offline to prevent multi-device sync conflicts.');
-      return;
-    }
     Sound.click(settings.soundEnabled);
     const currentStored = Storage.getExpenses();
     const nowMs = Date.now();
@@ -2708,10 +2565,6 @@ export default function App() {
   };
 
   const handleToggleExpense = (id: string) => {
-    if (!isOnline) {
-      toast.warning('Offline Mode (Read-Only): Cannot modify expenses while offline.');
-      return;
-    }
     const currentStored = Storage.getExpenses();
     const nowMs = Date.now();
     const updated = currentStored.map((e) => (String(e.id) === String(id) ? { ...e, active: !e.active, updatedAt: nowMs } : e));
@@ -2731,10 +2584,6 @@ export default function App() {
   };
 
   const executeAtomicExpenseDeletion = (itemsToDelete: ExpenseItem[]) => {
-    if (!isOnline) {
-      toast.warning('Offline Mode (Read-Only): Cannot delete expenses while offline to prevent multi-device sync conflicts.');
-      return;
-    }
     const targetIds = itemsToDelete.map((e) => String(e.id).trim()).filter(Boolean);
     if (targetIds.length === 0) return;
 
@@ -2760,7 +2609,7 @@ export default function App() {
       })
     );
 
-    // 5. Flush auto sync immediately to Supabase
+    // 5. Flush the versioned workspace snapshot immediately
     flushAutoSyncImmediately({
       ...Storage.getAllDataPayload(),
       expenses: nextStored,
@@ -2957,10 +2806,6 @@ export default function App() {
       expenses: [],
       excelImportLogs: [],
       trash: Storage.getTrash(),
-      _meta: {
-        clearedAllExpenses: true,
-        clearedAt: Date.now(),
-      },
     });
   };
 
@@ -3483,6 +3328,10 @@ export default function App() {
     );
   }
 
+  if (!isInitialSessionVerified) {
+    return <div className="min-h-screen grid place-items-center bg-[#f8f7f2] text-sm text-[#5F5E5B]">Checking your session…</div>;
+  }
+
   return (
     <div className="h-screen w-full bg-[#FBFBFA] dark:bg-[#0F172A] text-[#37352F] dark:text-white selection:bg-[#EEF2FF] selection:text-[#6366F1] dark:selection:bg-indigo-900/50 dark:selection:text-indigo-200 transition-colors duration-200 font-sans flex flex-col overflow-hidden">
       {isAndroidView ? (
@@ -3569,7 +3418,7 @@ export default function App() {
           onToggleDarkMode={handleToggleDarkMode}
           onToggleSound={handleToggleSound}
           onRefresh={() => {
-            scheduleAutoSyncToSupabase(() => Storage.getAllDataPayload(), 50);
+            scheduleAutoSyncToServer(() => Storage.getAllDataPayload(), 50);
           }}
         />
       ) : (
@@ -3647,12 +3496,7 @@ export default function App() {
             <div className="relative">
               <button
                 type="button"
-                disabled={!isOnline}
                 onClick={() => {
-                  if (!isOnline) {
-                    toast.warning('Offline Mode (Read-Only): Cannot add items while offline to prevent multi-device sync conflicts.');
-                    return;
-                  }
                   Sound.click(settings.soundEnabled);
                   setIsAddMenuOpen(!isAddMenuOpen);
                 }}
