@@ -17,17 +17,6 @@ function getFallbackUrl(): string {
 }
 
 function getDatabaseUrl(env: Record<string, string | undefined>): string {
-  const envUrl = env?.DATABASE_URL || env?.NEON_DATABASE_URL || env?.NEON_DB_URL;
-  // If the env variable has the old expired password, ignore it and use rotated credentials
-  if (
-    envUrl &&
-    envUrl.startsWith("postgres") &&
-    !envUrl.includes("[USER]") &&
-    !envUrl.includes("npg_v9iZcBo7zKup") &&
-    !envUrl.includes("npg_DX9Zpq0YWfzC")
-  ) {
-    return envUrl;
-  }
   const host = env?.PGHOST;
   const user = env?.PGUSER || "neondb_owner";
   const password = env?.PGPASSWORD;
@@ -35,10 +24,12 @@ function getDatabaseUrl(env: Record<string, string | undefined>): string {
   const sslmode = env?.PGSSLMODE || "require";
   const channelBinding = env?.PGCHANNELBINDING || "require";
 
-  if (host && password && !password.includes("npg_v9i") && !password.includes("npg_DX9")) {
+  // If specific PG credentials are provided via environment
+  if (host && password) {
     return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}/${database}?sslmode=${sslmode}&channel_binding=${channelBinding}`;
   }
 
+  // Fallback to active runtime database configuration
   return getFallbackUrl();
 }
 
