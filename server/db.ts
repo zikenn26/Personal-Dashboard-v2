@@ -77,6 +77,8 @@ export const initDb = async (): Promise<void> => {
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
+      CREATE UNIQUE INDEX IF NOT EXISTS app_users_email_lower_unique
+        ON app_users (LOWER(email));
 
       -- Monotonic generation survives global data resets. Every authenticated
       -- write holds a shared row lock while checking this state; reset takes an

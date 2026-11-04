@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { webcrypto, pbkdf2Sync } from 'node:crypto';
-import { handleAuthLogin, handleAuthVerify } from '../../../server/syncService';
+import { handleAuthLogin, handleAuthRegister, handleAuthVerify } from '../../../server/syncService';
 import { pool } from '../../../server/db';
 import { Auth } from '../utils/auth';
 
@@ -231,6 +231,34 @@ describe('Singleton Session & SyncHub Removal Verification Tests', { timeout: 30
 
     expect(statusCode).toBe(401);
     expect(verifyData.valid).toBe(false);
+  });
+
+  it('4. Signup checks existing emails case-insensitively and returns a duplicate response', async () => {
+    const query = vi.fn(async (sql: string) => ({ rows: sql.includes('SELECT id FROM app_users') ? [{ id: 'existing-account' }] : [] } as any));
+    vi.spyOn(pool, 'connect').mockResolvedValue({ query, release: vi.fn() } as any);
+    let statusCode = 0;
+    let responseBody: any;
+    const response = { status: (code: number) => { statusCode = code; return response; }, json: (body: any) => { responseBody = body; return response; } };
+    await handleAuthRegister({ body: { email: 'GKNAYAK@gmail.com', password: 'valid-password', name: 'Test User' } }, response);
+    expect(statusCode).toBe(409);
+    expect(responseBody.message).toContain('already exists');
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('LOWER(email)'), ['gknayak@gmail.com']);
+    expect(query).not.toHaveBeenCalledWith(expect.stringContaining('INSERT INTO app_users'), expect.anything());
+  });
+
+  it('5. Signup maps a concurrent unique-email race to a duplicate response', async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes('INSERT INTO app_users')) throw Object.assign(new Error('duplicate'), { code: '23505', constraint: 'app_users_email_lower_unique' });
+      return { rows: [] } as any;
+    });
+    vi.spyOn(pool, 'connect').mockResolvedValue({ query, release: vi.fn() } as any);
+    let statusCode = 0;
+    let responseBody: any;
+    const response = { status: (code: number) => { statusCode = code; return response; }, json: (body: any) => { responseBody = body; return response; } };
+    await handleAuthRegister({ body: { email: 'fresh@example.com', password: 'valid-password', name: 'Test User' } }, response);
+    expect(statusCode).toBe(409);
+    expect(responseBody.message).toContain('already exists');
+    expect(query).toHaveBeenCalledWith('ROLLBACK');
   });
 
 });

@@ -495,6 +495,11 @@ export async function handleAuthRegister(req: any, res: any): Promise<void> {
   try {
     await client.query("BEGIN");
     await client.query("SELECT generation FROM app_state WHERE singleton = TRUE FOR SHARE");
+    const existing = await client.query("SELECT id FROM app_users WHERE LOWER(email) = $1 LIMIT 1", [email]);
+    if (existing.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ success: false, message: "An account with this email already exists. Sign in instead." });
+    }
     const id = crypto.randomUUID();
     await client.query(
       "INSERT INTO app_users (id, email, display_name, password_hash) VALUES ($1, $2, $3, $4::jsonb)",
@@ -509,8 +514,10 @@ export async function handleAuthRegister(req: any, res: any): Promise<void> {
     return res.status(201).json({ success: true, user: { id, email, name: displayName, provider: "neon", createdAt: Date.now() } });
   } catch (error: any) {
     await client.query("ROLLBACK").catch(() => {});
-    const duplicate = error?.code === "23505";
-    return res.status(duplicate ? 409 : 500).json({ success: false, message: duplicate ? "An account with this email already exists." : "Account registration failed." });
+    const duplicateEmail = error?.code === "23505" &&
+      ["app_users_email_lower_unique", "app_users_email_key"].includes(String(error?.constraint));
+    console.error("[AUTH] Registration database failure", { code: error?.code, constraint: error?.constraint, detail: error?.detail });
+    return res.status(duplicateEmail ? 409 : 500).json({ success: false, message: duplicateEmail ? "An account with this email already exists. Sign in instead." : "Account registration failed. Please retry, and contact support if it continues." });
   } finally {
     client.release();
   }
