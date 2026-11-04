@@ -97,4 +97,18 @@ describe('Versioned workspace conflict resolution', () => {
     await clearAllWorkspaceConflicts(workspaceId);
     expect(await getWorkspaceConflicts(workspaceId)).toEqual([]);
   });
+
+  it('adopts remote workspace without creating conflicts when opening on a fresh device without prior base', async () => {
+    // When a user signs into a fresh device, there is no previous baseKey in localStorage.
+    // reconcileIncomingWorkspaceSnapshotV2 must simply accept the remote snapshot with no conflicts.
+    const local = { profile: { name: 'Gulshan Nayak', theme: 'light' }, todos: [] };
+    const remote = { profile: { name: 'Gulshan Nayak Senior', theme: 'dark' }, todos: [{ id: '1', title: 'Work' }] };
+
+    const result = await reconcileIncomingWorkspaceSnapshotV2(local, remote, 10, '25');
+
+    expect(result.payload.profile.name).toBe('Gulshan Nayak Senior');
+    expect(result.payload.todos.length).toBe(1);
+    expect(result.needsSync).toBe(false);
+    expect(await getWorkspaceConflicts(workspaceId)).toEqual([]);
+  });
 });

@@ -701,6 +701,9 @@ export default function App() {
         handleHydrateAllFromStorage(false);
       } else if (res.success && res.data) {
         isRemoteUpdating.current = true;
+        // On new device login, the server cloud workspace is authoritative.
+        // Clear any previous conflict items and adopt the cloud data directly.
+        await clearAllWorkspaceConflicts(getUserWorkspaceKey(user));
         Storage.importAllDataPayload(res.data);
 
         // Sanitize imported profile to guarantee no cross-account avatar was loaded from cloud row
@@ -1019,10 +1022,33 @@ export default function App() {
             isRemoteUpdating.current = false;
           }, 300);
         } else if (result.success && result.data && isMounted) {
-          const reconciliation = localStorage.getItem('notion_os_auth_token_v1')
-            ? await reconcileIncomingWorkspaceSnapshotV2(Storage.getAllDataPayload(), result.data, result.revision, result.cursor)
-            : { payload: result.data, needsSync: false };
-          result.data = reconciliation.payload;
+          const workspaceKey = currentUser ? getUserWorkspaceKey(currentUser) : '';
+          const baseKey = workspaceKey ? `notion_os_workspace_v2_base_${workspaceKey}` : '';
+          const hasLocalBase = baseKey ? Boolean(localStorage.getItem(baseKey)) : false;
+
+          let dataToApply = result.data;
+          let needsSync = false;
+
+          // Only perform three-way conflict reconciliation if this device has an established base
+          // (i.e. was previously working offline with existing data). On a new device with no base,
+          // the cloud snapshot is authoritative and must not trigger conflicts against local default blanks.
+          if (hasLocalBase && localStorage.getItem('notion_os_auth_token_v1')) {
+            const reconciliation = await reconcileIncomingWorkspaceSnapshotV2(
+              Storage.getAllDataPayload(),
+              result.data,
+              result.revision,
+              result.cursor
+            );
+            dataToApply = reconciliation.payload;
+            needsSync = reconciliation.needsSync;
+          } else if (workspaceKey) {
+            // New device / freshly logged-in device: clear any conflict markers and record current base
+            await clearAllWorkspaceConflicts(workspaceKey);
+            localStorage.setItem(baseKey, JSON.stringify(result.data));
+            if (result.revision != null) localStorage.setItem(`notion_os_workspace_v2_revision_${workspaceKey}`, String(result.revision));
+            if (result.cursor) localStorage.setItem(`notion_os_workspace_v2_cursor_${workspaceKey}`, result.cursor);
+          }
+          result.data = dataToApply;
           const incomingVersion = getPayloadSyncTimestamp(result.data, result.timestamp);
           const localMutationTime = lastLocalMutationTimestamp.current;
 
@@ -1044,7 +1070,7 @@ export default function App() {
           setTimeout(() => {
             isRemoteUpdating.current = false;
           }, 300);
-          if (reconciliation.needsSync) {
+          if (needsSync) {
             setTimeout(() => void flushAutoSyncImmediately(Storage.getAllDataPayload()), 350);
           }
         }
@@ -1161,11 +1187,17 @@ export default function App() {
           console.info('[PROFILE_TRACE] Realtime workspace event applying snapshot.');
           let dataToApply = remoteData;
           let needsSync = false;
+          const workspaceKey = currentUser ? getUserWorkspaceKey(currentUser) : '';
+          const baseKey = workspaceKey ? `notion_os_workspace_v2_base_${workspaceKey}` : '';
+          const hasLocalBase = baseKey ? Boolean(localStorage.getItem(baseKey)) : false;
+
           const isWorkspaceSnapshot = ['profile', 'todos', 'habits', 'goals', 'settings', 'sections'].some((key) => key in remoteData);
-          if (isWorkspaceSnapshot && localStorage.getItem('notion_os_auth_token_v1')) {
+          if (isWorkspaceSnapshot && hasLocalBase && localStorage.getItem('notion_os_auth_token_v1')) {
             const reconciliation = await reconcileIncomingWorkspaceSnapshotV2(Storage.getAllDataPayload(), remoteData);
             dataToApply = reconciliation.payload;
             needsSync = reconciliation.needsSync;
+          } else if (isWorkspaceSnapshot && workspaceKey) {
+            localStorage.setItem(baseKey, JSON.stringify(remoteData));
           }
           isRemoteUpdating.current = true;
           lastLocalMutationTimestamp.current = 0;
