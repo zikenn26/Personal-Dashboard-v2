@@ -184,7 +184,7 @@ describe('Cloudflare Pages Functions API (/api/*)', () => {
       ['deriveBits']
     );
     const derived = await crypto.subtle.deriveBits(
-      { name: 'PBKDF2', salt: saltBytes, iterations: 210000, hash: 'SHA-256' },
+      { name: 'PBKDF2', salt: saltBytes, iterations: 100000, hash: 'SHA-256' },
       keyMaterial,
       256
     );
@@ -200,7 +200,7 @@ describe('Cloudflare Pages Functions API (/api/*)', () => {
           password_hash: JSON.stringify({
             version: 2,
             algorithm: 'PBKDF2-SHA256',
-            iterations: 210000,
+            iterations: 100000,
             salt: saltB64,
             hash: hashB64,
           }),

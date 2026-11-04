@@ -471,7 +471,7 @@ function verifyPasswordRecord(record: any, attemptedPass: string): boolean {
     }
     if (!parsed || !parsed.salt || !parsed.hash) return false;
     const saltBuf = Buffer.from(parsed.salt, "base64");
-    const iterations = Number(parsed.iterations) || 210000;
+    const iterations = Number(parsed.iterations) || 100000;
     const derived = crypto.pbkdf2Sync(attemptedPass, saltBuf, iterations, 32, "sha256");
     const derivedB64 = derived.toString("base64");
     return crypto.timingSafeEqual(Buffer.from(derivedB64), Buffer.from(parsed.hash));
@@ -488,7 +488,7 @@ export async function handleAuthRegister(req: any, res: any): Promise<void> {
     return res.status(400).json({ success: false, message: "A valid email and password of at least 8 characters are required." });
   }
   const salt = crypto.randomBytes(16);
-  const iterations = 210000;
+  const iterations = 100000;
   const hash = crypto.pbkdf2Sync(password, salt, iterations, 32, "sha256");
   const passwordRecord = { version: 2, algorithm: "PBKDF2-SHA256", iterations, salt: salt.toString("base64"), hash: hash.toString("base64") };
   const client = await pool.connect();
@@ -550,7 +550,7 @@ export async function handleAuthChangePassword(req: any, res: any): Promise<void
       return res.status(401).json({ success: false, message: "Current password is incorrect or the session has expired." });
     }
     const salt = crypto.randomBytes(16);
-    const iterations = 210000;
+    const iterations = 100000;
     const hash = crypto.pbkdf2Sync(newPassword, salt, iterations, 32, "sha256");
     const passwordRecord = { version: 2, algorithm: "PBKDF2-SHA256", iterations, salt: salt.toString("base64"), hash: hash.toString("base64") };
     await client.query("UPDATE app_users SET password_hash = $2::jsonb, updated_at = CURRENT_TIMESTAMP WHERE id = $1",

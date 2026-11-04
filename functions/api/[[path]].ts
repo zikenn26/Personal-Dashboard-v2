@@ -80,7 +80,7 @@ function getRandomHex(byteLength: number): string {
 async function derivePbkdf2Hash(
   password: string,
   salt: Uint8Array,
-  iterations = 210000
+  iterations = 100000
 ): Promise<string> {
   const keyMaterial = await crypto.subtle.importKey(
     "raw",
@@ -113,7 +113,7 @@ async function verifyPasswordRecord(
     }
     if (!parsed || !parsed.salt || !parsed.hash) return false;
     const saltBytes = base64ToUint8Array(parsed.salt);
-    const iterations = Number(parsed.iterations) || 210000;
+    const iterations = Number(parsed.iterations) || 100000;
     const derivedB64 = await derivePbkdf2Hash(attemptedPass, saltBytes, iterations);
     if (derivedB64.length !== parsed.hash.length) return false;
     let diff = 0;
@@ -190,7 +190,7 @@ async function handleRegister(request: Request, env: Record<string, string | und
     }
 
     const saltBytes = getRandomBytes(16);
-    const iterations = 210000;
+    const iterations = 100000;
     const hashB64 = await derivePbkdf2Hash(password, saltBytes, iterations);
     const passwordRecord = {
       version: 2,
@@ -481,7 +481,7 @@ async function handleChangePassword(request: Request, env: Record<string, string
     }
 
     const saltBytes = getRandomBytes(16);
-    const iterations = 210000;
+    const iterations = 100000;
     const hashB64 = await derivePbkdf2Hash(newPassword, saltBytes, iterations);
     const passwordRecord = {
       version: 2,
