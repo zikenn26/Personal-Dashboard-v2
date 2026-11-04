@@ -14,12 +14,11 @@ interface EventContext {
 }
 
 function getDatabaseUrl(env: Record<string, string | undefined>): string {
-  return (
-    env?.DATABASE_URL ||
-    env?.NEON_DATABASE_URL ||
-    env?.NEON_DB_URL ||
-    FALLBACK_DATABASE_URL
-  );
+  const envUrl = env?.DATABASE_URL || env?.NEON_DATABASE_URL || env?.NEON_DB_URL;
+  if (envUrl && envUrl.startsWith("postgres") && !envUrl.includes("[USER]")) {
+    return envUrl;
+  }
+  return FALLBACK_DATABASE_URL;
 }
 
 function getDb(env: Record<string, string | undefined>) {
@@ -240,6 +239,7 @@ async function handleRegister(request: Request, env: Record<string, string | und
         message: duplicateEmail
           ? "An account with this email already exists. Sign in instead."
           : "Account registration failed. Please retry, and contact support if it continues.",
+        debug_error: String(error?.stack || error?.message || error),
       },
       duplicateEmail ? 409 : 500,
       request
