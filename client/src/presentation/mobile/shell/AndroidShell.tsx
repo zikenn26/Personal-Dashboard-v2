@@ -149,6 +149,7 @@ export interface AndroidShellProps {
   onOpenSmsSettings?: () => void;
   onToggleDarkMode?: () => void;
   onToggleSound?: () => void;
+  onSignOut?: () => void;
   onRefresh?: () => Promise<void> | void;
 }
 
@@ -234,6 +235,7 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
   onClearAllExpenses,
   onToggleDarkMode,
   onToggleSound,
+  onSignOut,
   onRefresh,
 }) => {
   const [isMoreOpen, setIsMoreOpen] = useState(false);
@@ -629,6 +631,7 @@ export const AndroidShell: React.FC<AndroidShellProps> = ({
         onOpenProfile={onOpenProfile || onOpenSettings}
         onToggleDarkMode={onToggleDarkMode}
         onToggleSound={onToggleSound}
+        onSignOut={onSignOut}
       />
 
       {/* 7. ZIKENN AI ASSISTANT SHEET (Native Material You Bottom Sheet) */}

@@ -1016,7 +1016,7 @@ export default function App() {
           handleSignOut();
         }
       }
-    }, 25000);
+    }, 10000);
 
     // Periodic check to auto-pull remote workspace updates if WebSocket was idle or reconnecting
     const cloudSyncInterval = setInterval(async () => {
@@ -1277,7 +1277,9 @@ export default function App() {
     smsExpenseService.initialize();
 
     const handleSmsExpenseLogged = () => {
-      setExpenses((prev) => Storage.mergeExpenseLists(prev, Storage.getExpenses()));
+      const current = Storage.getExpenses();
+      setExpenses(current);
+      scheduleAutoSyncToServer(() => Storage.getAllDataPayload(), 50);
     };
     window.addEventListener('sms_expense_auto_logged', handleSmsExpenseLogged);
     return () => {
@@ -3382,6 +3384,7 @@ export default function App() {
           onOpenSmsSettings={() => setIsSmsModalOpen(true)}
           onToggleDarkMode={handleToggleDarkMode}
           onToggleSound={handleToggleSound}
+          onSignOut={handleSignOut}
           onRefresh={() => {
             scheduleAutoSyncToServer(() => Storage.getAllDataPayload(), 50);
           }}

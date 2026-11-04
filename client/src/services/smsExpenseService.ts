@@ -1449,7 +1449,7 @@ class SmsExpenseService {
    * Filters candidate SMS through financial parser logic and returns sorted newest -> oldest.
    */
   public async getRecentTransactionCandidates(
-    count: 10 | 20 | 30 | 50 = 20
+    count: number = 15
   ): Promise<SmsTransactionCandidate[]> {
     let rawMessages: Array<{ sender: string; body: string; timestamp: number }> = [];
 

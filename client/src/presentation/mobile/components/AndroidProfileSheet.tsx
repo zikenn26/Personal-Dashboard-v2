@@ -1,5 +1,5 @@
 import React from 'react';
-import { User, Moon, Sun, Volume2, VolumeX, ChevronRight } from 'lucide-react';
+import { User, Moon, Sun, Volume2, VolumeX, ChevronRight, LogOut } from 'lucide-react';
 import { UserProfile, AppSettings } from '../../../types';
 import { nativeService } from '../../../services/nativeService';
 import { BottomSheet } from '../gestures/BottomSheet';
@@ -13,6 +13,7 @@ export interface AndroidProfileSheetProps {
   onOpenProfile?: () => void;
   onToggleDarkMode?: () => void;
   onToggleSound?: () => void;
+  onSignOut?: () => void;
 }
 
 export const AndroidProfileSheet: React.FC<AndroidProfileSheetProps> = ({
@@ -23,6 +24,7 @@ export const AndroidProfileSheet: React.FC<AndroidProfileSheetProps> = ({
   onOpenProfile,
   onToggleDarkMode,
   onToggleSound,
+  onSignOut,
 }) => {
   const isDarkMode = settings.darkMode;
 
@@ -159,6 +161,22 @@ export const AndroidProfileSheet: React.FC<AndroidProfileSheetProps> = ({
             </button>
           </div>
         </div>
+
+        {/* 4. Sign Out Action Button */}
+        {onSignOut && (
+          <button
+            type="button"
+            onClick={() => {
+              void nativeService.triggerHaptic('impactMedium');
+              onClose();
+              onSignOut();
+            }}
+            className="w-full flex items-center justify-center gap-2 p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/40 text-rose-600 dark:text-rose-400 font-extrabold text-xs active:scale-[0.98] transition-all cursor-pointer hover:bg-rose-100 dark:hover:bg-rose-900/60 shadow-2xs"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>Sign Out</span>
+          </button>
+        )}
 
         {/* App Info Footer */}
         <div className="p-2.5 rounded-2xl bg-gray-50 dark:bg-[#1A2234] text-center text-xs text-gray-500 dark:text-gray-400">

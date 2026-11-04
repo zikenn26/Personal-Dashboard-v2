@@ -36,7 +36,7 @@ type RescanStep =
   | 'logging'
   | 'result_summary';
 
-const COUNT_OPTIONS: Array<10 | 20 | 30 | 50> = [10, 20, 30, 50];
+const COUNT_OPTIONS: Array<5 | 15 | 50 | 200> = [5, 15, 50, 200];
 
 export const ControlledSmsRescanModal: React.FC<ControlledSmsRescanModalProps> = ({
   isOpen,
@@ -44,7 +44,7 @@ export const ControlledSmsRescanModal: React.FC<ControlledSmsRescanModalProps> =
   onSuccess,
 }) => {
   const [step, setStep] = useState<RescanStep>('select_count');
-  const [selectedCount, setSelectedCount] = useState<10 | 20 | 30 | 50>(20);
+  const [selectedCount, setSelectedCount] = useState<5 | 15 | 50 | 200>(15);
   const [candidates, setCandidates] = useState<SmsTransactionCandidate[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [rescanResult, setRescanResult] = useState<SmsRescanResult | null>(null);
@@ -54,7 +54,7 @@ export const ControlledSmsRescanModal: React.FC<ControlledSmsRescanModalProps> =
   useEffect(() => {
     if (isOpen) {
       setStep('select_count');
-      setSelectedCount(20);
+      setSelectedCount(15);
       setCandidates([]);
       setSelectedIds(new Set());
       setRescanResult(null);
@@ -64,7 +64,7 @@ export const ControlledSmsRescanModal: React.FC<ControlledSmsRescanModalProps> =
 
   if (!isOpen) return null;
 
-  const handleStartScan = async (count: 10 | 20 | 30 | 50) => {
+  const handleStartScan = async (count: 5 | 15 | 50 | 200) => {
     void nativeService.triggerHaptic('selection');
     setSelectedCount(count);
     setStep('scanning');
@@ -141,6 +141,15 @@ export const ControlledSmsRescanModal: React.FC<ControlledSmsRescanModalProps> =
       setRescanResult(result);
       setStep('result_summary');
 
+      // Dispatch event so App.tsx and dashboards immediately refresh and push to cloud
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('sms_expense_auto_logged', {
+            detail: { updatedExpenses: Storage.getExpenses(), rescanResult: result },
+          })
+        );
+      }
+
       if (onSuccess) {
         onSuccess(result);
       }
@@ -200,15 +209,6 @@ export const ControlledSmsRescanModal: React.FC<ControlledSmsRescanModalProps> =
           {/* STEP 1: Select Count */}
           {step === 'select_count' && (
             <div className="space-y-4">
-              <div className="p-3.5 rounded-2xl bg-purple-50 dark:bg-purple-950/40 border border-purple-100 dark:border-purple-900/40 text-purple-900 dark:text-purple-200">
-                <div className="flex items-start gap-2.5">
-                  <Sparkles className="w-4 h-4 text-purple-600 dark:text-purple-400 mt-0.5 shrink-0" />
-                  <p className="text-xs leading-relaxed">
-                    LifeOS will scan genuine banking transaction SMS, sort them from newest to oldest, and let you manually select which transactions to log.
-                  </p>
-                </div>
-              </div>
-
               <div>
                 <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-2">
                   How many recent transaction SMS should be scanned?
@@ -231,7 +231,7 @@ export const ControlledSmsRescanModal: React.FC<ControlledSmsRescanModalProps> =
                   ))}
                 </div>
                 <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-2 text-center">
-                  Maximum = 50 recent transaction SMS
+                  Maximum = 200 recent transaction SMS
                 </p>
               </div>
             </div>

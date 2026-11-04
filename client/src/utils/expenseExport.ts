@@ -1,4 +1,7 @@
 import * as XLSX from 'xlsx';
+import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 import { ExpenseItem } from '../types';
 import { isCreditTransaction, getLocalDateKey } from './expenseUtils';
 import { nativeService } from '../services/nativeService';
@@ -117,25 +120,87 @@ export function generateExpenseJSON(expenses: ExpenseItem[]): string {
   return JSON.stringify(expenses, null, 2);
 }
 
+function toBase64(content: string | Uint8Array): string {
+  if (typeof content === 'string') {
+    return btoa(unescape(encodeURIComponent(content)));
+  }
+  let binary = '';
+  const len = content.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(content[i]);
+  }
+  return btoa(binary);
+}
+
 /**
- * Downloads a file onto the device using standard browser/WebView blob download with data URI and DOM fallback.
+ * Downloads a file onto the device.
+ * - On Native Android APK: saves to device storage via @capacitor/filesystem and opens the native save/share sheet.
+ * - In Web Browser: uses standard browser blob download with DOM <a> fallback.
  */
 export async function downloadExpenseFile(
   content: string | Uint8Array,
   filename: string,
   mimeType: string = 'text/csv;charset=utf-8;'
 ): Promise<void> {
+  // 1. Native Android APK execution path
+  if (Capacitor.isNativePlatform()) {
+    try {
+      try {
+        const perm = await Filesystem.checkPermissions();
+        if (perm.publicStorage !== 'granted') {
+          await Filesystem.requestPermissions();
+        }
+      } catch (permErr) {
+        console.warn('[EXPORT] Permission check warning:', permErr);
+      }
+
+      const base64Data = toBase64(content);
+      let fileUri = '';
+
+      try {
+        const res = await Filesystem.writeFile({
+          path: filename,
+          data: base64Data,
+          directory: Directory.Documents,
+          recursive: true,
+        });
+        fileUri = res.uri;
+      } catch (docErr) {
+        console.warn('[EXPORT] Write to Documents failed, attempting Cache:', docErr);
+        const res = await Filesystem.writeFile({
+          path: filename,
+          data: base64Data,
+          directory: Directory.Cache,
+          recursive: true,
+        });
+        fileUri = res.uri;
+      }
+
+      if (fileUri) {
+        await Share.share({
+          title: filename,
+          text: `Exported expenses: ${filename}`,
+          url: fileUri,
+          files: [fileUri],
+          dialogTitle: `Save or Open ${filename}`,
+        });
+        return;
+      }
+    } catch (nativeErr) {
+      console.warn('[EXPORT] Native file save failed, attempting web fallback:', nativeErr);
+    }
+  }
+
+  // 2. Standard Web Browser / Desktop DOM anchor download
   const blobPart = content instanceof Uint8Array ? content : content;
   const blob = new Blob([blobPart], { type: mimeType });
 
   try {
-    // 1. Check for legacy IE/Edge msSaveOrOpenBlob
     if (typeof window !== 'undefined' && (window.navigator as any)?.msSaveOrOpenBlob) {
       (window.navigator as any).msSaveOrOpenBlob(blob, filename);
       return;
     }
 
-    // 2. Off-screen anchor download (ensures element is in layout tree without display: none)
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -149,7 +214,6 @@ export async function downloadExpenseFile(
     link.style.opacity = '0';
     document.body.appendChild(link);
 
-    // Trigger file save across modern browsers
     try {
       link.click();
     } catch {
@@ -161,7 +225,6 @@ export async function downloadExpenseFile(
       link.dispatchEvent(clickEvt);
     }
 
-    // Give browser download manager ample time to stream blob before revoking
     setTimeout(() => {
       try {
         if (link.parentNode) {
@@ -172,7 +235,6 @@ export async function downloadExpenseFile(
     }, 60000);
   } catch (blobErr) {
     console.warn('[EXPORT] Blob download failed, attempting data URI fallback:', blobErr);
-    // 3. Data URI fallback for sandboxed iframes
     try {
       let dataUri = '';
       if (typeof content === 'string') {
@@ -224,24 +286,23 @@ export async function downloadExpenseCSV(expenses: ExpenseItem[], filename?: str
 
 /**
  * Convenience helper to download Excel (.xlsx) directly with dual fallback:
- * SheetJS native XLSX.writeFile -> Blob Anchor -> Base64 Data URI.
+ * - On Native Android: converts to buffer and writes to device storage via downloadExpenseFile.
+ * - In Web Browser: uses SheetJS native XLSX.writeFile or Blob Anchor.
  */
 export async function downloadExpenseExcel(expenses: ExpenseItem[], filename?: string): Promise<void> {
   const dateStr = getLocalDateKey();
   const name = filename || `expense_transactions_${dateStr}.xlsx`;
   const workbook = generateExpenseWorkbook(expenses);
 
-  try {
-    // Primary browser download method via SheetJS's built-in file saver
-    if (typeof window !== 'undefined') {
+  if (!Capacitor.isNativePlatform() && typeof window !== 'undefined') {
+    try {
       XLSX.writeFile(workbook, name, { bookType: 'xlsx' });
       return;
+    } catch (sheetJsErr) {
+      console.warn('[EXPORT] XLSX.writeFile direct attempt encountered issue, falling back to Blob:', sheetJsErr);
     }
-  } catch (sheetJsErr) {
-    console.warn('[EXPORT] XLSX.writeFile direct attempt encountered issue, falling back to Blob:', sheetJsErr);
   }
 
-  // Secondary fallback: ArrayBuffer -> Blob -> Anchor download
   try {
     const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
     const uint8Array = new Uint8Array(buffer);
@@ -266,8 +327,8 @@ export async function downloadExpenseBundle(expenses: ExpenseItem[]): Promise<vo
 }
 
 /**
- * Shares exported expenses using Web Share API (Level 2 with File support)
- * or falls back to nativeService.shareContent / text share.
+ * Shares exported expenses using Native Capacitor Share (Android APK),
+ * Web Share API (Level 2 with File support), or falls back to nativeService.shareContent.
  */
 export async function shareExpenseExport(options: {
   filename: string;
@@ -278,7 +339,30 @@ export async function shareExpenseExport(options: {
 }): Promise<boolean> {
   const { filename, content, mimeType, title, text } = options;
 
-  // Try Web Share API Level 2 with File attachment
+  // 1. Native Android APK Share with file URL
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const base64Data = toBase64(content);
+      const res = await Filesystem.writeFile({
+        path: filename,
+        data: base64Data,
+        directory: Directory.Cache,
+        recursive: true,
+      });
+      await Share.share({
+        title,
+        text: text || title,
+        url: res.uri,
+        files: [res.uri],
+        dialogTitle: title,
+      });
+      return true;
+    } catch (nativeErr) {
+      console.warn('[EXPORT] Native share file failed, attempting Web Share fallback:', nativeErr);
+    }
+  }
+
+  // 2. Try Web Share API Level 2 with File attachment
   if (typeof navigator !== 'undefined' && 'canShare' in navigator) {
     try {
       const blobPart = content instanceof Uint8Array ? content : content;
@@ -296,7 +380,7 @@ export async function shareExpenseExport(options: {
     }
   }
 
-  // Fallback to text content sharing via nativeService / standard share
+  // 3. Fallback to text content sharing via nativeService / standard share
   const fallbackText =
     typeof content === 'string'
       ? `${title}\n\n${content.slice(0, 1000)}...`

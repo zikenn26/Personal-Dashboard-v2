@@ -1239,6 +1239,13 @@ export const AndroidMoneyScreen: React.FC<AndroidMoneyScreenProps> = ({
               setSelectedMonthPrefix(firstDateKey.slice(0, 7));
             }
           }
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(
+              new CustomEvent('sms_expense_auto_logged', {
+                detail: { updatedExpenses: fresh },
+              })
+            );
+          }
         }}
       />
 
