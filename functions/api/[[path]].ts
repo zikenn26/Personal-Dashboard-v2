@@ -289,9 +289,12 @@ async function handleLogin(request: Request, env: Record<string, string | undefi
     );
 
     const account = userRows[0];
-    const isPasswordValid = account ? await verifyPasswordRecord(account.password_hash, password) : false;
+    if (!account) {
+      return jsonResponse({ success: false, message: "Invalid email/username or password" }, 401, request);
+    }
 
-    if (!account || !isPasswordValid) {
+    const isPasswordValid = await verifyPasswordRecord(account.password_hash, password);
+    if (!isPasswordValid) {
       return jsonResponse({ success: false, message: "Invalid email/username or password" }, 401, request);
     }
 
@@ -1283,9 +1286,17 @@ export async function onRequest(context: EventContext): Promise<Response> {
         const sql = getDb(env);
         const t0 = Date.now();
         const testRes = await query(sql, "SELECT NOW() AS now, count(*)::text AS user_count FROM app_users");
+
+        // Also test PBKDF2 compute time inside Cloudflare Worker
+        const tPbkdf0 = Date.now();
+        const testSalt = new Uint8Array(16);
+        await derivePbkdf2Hash("testpass", testSalt, 100000);
+        const pbkdfElapsed = Date.now() - tPbkdf0;
+
         return jsonResponse({
           success: true,
           elapsedMs: Date.now() - t0,
+          pbkdfElapsedMs: pbkdfElapsed,
           result: testRes
         }, 200, request);
       } catch (dbErr: any) {
