@@ -56,31 +56,37 @@ async function query(sql: any, text: string, params: any[] = []): Promise<any[]>
     throw new Error("Neon DB client is null or undefined");
   }
 
-  // 1. If sql is an object with a query method (or Vitest mock)
-  if (typeof sql.query === "function") {
+  const rawSql = interpolateSql(text, params);
+
+  // 1. Neon serverless tagged template invocation (native contract)
+  if (typeof sql === "function") {
     try {
-      const res = await sql.query(text, params);
+      const templateStrings: any = [rawSql];
+      templateStrings.raw = [rawSql];
+      const res = await sql(templateStrings);
       return Array.isArray(res) ? res : (res?.rows || []);
     } catch (err: any) {
-      // If error is about tagged-template usage, fall through to tagged template
-      if (!err?.message?.includes("tagged-template")) {
+      if (typeof sql.query !== "function" && typeof sql.unsafe !== "function") {
         throw err;
       }
     }
   }
 
-  // 2. Neon serverless tagged template invocation
-  const rawSql = interpolateSql(text, params);
-
-  if (typeof sql.unsafe === "function") {
-    const res = await sql.unsafe(rawSql);
-    return Array.isArray(res) ? res : (res?.rows || []);
+  // 2. If sql is an object with a query method (or Vitest mock)
+  if (typeof sql.query === "function") {
+    try {
+      const res = await sql.query(text, params);
+      return Array.isArray(res) ? res : (res?.rows || []);
+    } catch (err: any) {
+      if (typeof sql.unsafe !== "function") {
+        throw err;
+      }
+    }
   }
 
-  if (typeof sql === "function") {
-    const templateStrings: any = [rawSql];
-    templateStrings.raw = [rawSql];
-    const res = await sql(templateStrings);
+  // 3. Raw SQL unsafe fallback
+  if (typeof sql.unsafe === "function") {
+    const res = await sql.unsafe(rawSql);
     return Array.isArray(res) ? res : (res?.rows || []);
   }
 
@@ -455,7 +461,11 @@ async function handleLogin(request: Request, env: Record<string, string | undefi
     );
   } catch (err: any) {
     console.error("[CF Auth] Login error:", err);
-    return jsonResponse({ success: false, message: "Internal authentication error" }, 500, request);
+    return jsonResponse(
+      { success: false, message: `Internal authentication error: ${err?.message || "Unknown error"}` },
+      500,
+      request
+    );
   }
 }
 
