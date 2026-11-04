@@ -27,33 +27,27 @@ describe('Versioned workspace conflict resolution', () => {
     vi.unstubAllGlobals();
   });
 
-  it('merges independent local and remote field changes without creating a conflict', async () => {
-    const base = { profile: { name: 'Original', theme: 'light' } };
+  it('directly adopts remote workspace snapshot without manual conflict prompt', async () => {
     const local = { profile: { name: 'Local name', theme: 'light' } };
-    const remote = { profile: { name: 'Original', theme: 'dark' } };
-    localStorage.setItem(`notion_os_workspace_v2_base_${workspaceId}`, JSON.stringify(base));
+    const remote = { profile: { name: 'Authoritative remote', theme: 'dark' } };
 
     const result = await reconcileIncomingWorkspaceSnapshotV2(local, remote, 4, '9');
 
-    expect(result.payload).toEqual({ profile: { name: 'Local name', theme: 'dark' } });
-    expect(result.needsSync).toBe(true);
+    expect(result.payload).toEqual({ profile: { name: 'Authoritative remote', theme: 'dark' } });
+    expect(result.needsSync).toBe(false);
     expect(await getWorkspaceConflicts(workspaceId)).toEqual([]);
   });
 
-  it('retains same-field conflicts for review and applies either selected value', async () => {
-    const base = { profile: { name: 'Original' } };
-    const local = { profile: { name: 'This device' } };
-    const remote = { profile: { name: 'Other device' } };
-    localStorage.setItem(`notion_os_workspace_v2_base_${workspaceId}`, JSON.stringify(base));
+  it('preserves collection updates from remote authoritative workspace', async () => {
+    const local = { todos: [{ id: 'task-1', title: 'Local' }] };
+    const remote = { todos: [{ id: 'task-1', title: 'Remote updated' }, { id: 'task-2', title: 'New remote task' }] };
 
     const result = await reconcileIncomingWorkspaceSnapshotV2(local, remote, 5, '12');
-    const [conflict] = await getWorkspaceConflicts(workspaceId);
 
-    expect(result.payload.profile.name).toBe('This device');
-    expect(result.needsSync).toBe(true);
-    expect(conflict).toMatchObject({ path: ['profile', 'name'], baseValue: 'Original', localValue: 'This device', remoteValue: 'Other device', remoteRevision: 5 });
-    expect(applyWorkspaceConflictChoice(result.payload, conflict, 'local').profile.name).toBe('This device');
-    expect(applyWorkspaceConflictChoice(result.payload, conflict, 'remote').profile.name).toBe('Other device');
+    expect(result.payload.todos.length).toBe(2);
+    expect(result.payload.todos[0].title).toBe('Remote updated');
+    expect(result.needsSync).toBe(false);
+    expect(await getWorkspaceConflicts(workspaceId)).toEqual([]);
   });
 
   it('applies a choice inside an item in a workspace collection', () => {

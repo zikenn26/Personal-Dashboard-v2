@@ -130,34 +130,14 @@ export async function reconcileIncomingWorkspaceSnapshotV2(
   const baseKey = `notion_os_workspace_v2_base_${workspaceId}`;
   const revisionKey = `notion_os_workspace_v2_revision_${workspaceId}`;
   const cursorKey = `notion_os_workspace_v2_cursor_${workspaceId}`;
-  let base: any = null;
-  try {
-    const rawBase = localStorage.getItem(baseKey);
-    if (rawBase) base = JSON.parse(rawBase);
-  } catch {}
 
-  const localWorkspace = workspacePayloadWithoutExpenseLedger(localPayload || {});
+  // In a singleton session architecture, remote cloud snapshots are authoritative
   const remoteWorkspace = workspacePayloadWithoutExpenseLedger(remotePayload || {});
-  let merged = remoteWorkspace;
-  const pending = await getPendingWorkspaceSnapshot(workspaceId);
-  if (base || pending) {
-    const conflicts: Array<Omit<WorkspaceSyncConflict, 'id' | 'workspaceId' | 'detectedAt' | 'remoteRevision'>> = [];
-    merged = mergeWorkspaceConflict(base || {}, localWorkspace, remoteWorkspace, [], conflicts);
-    if (conflicts.length) {
-      await saveWorkspaceConflicts(conflicts.map((conflict) => ({
-        ...conflict,
-        id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `conflict-${Date.now()}-${Math.random()}`,
-        workspaceId,
-        detectedAt: Date.now(),
-        remoteRevision: remoteRevision || 0,
-      })));
-    }
-  }
-
   localStorage.setItem(baseKey, JSON.stringify(remoteWorkspace));
   if (remoteRevision != null) localStorage.setItem(revisionKey, String(remoteRevision));
   if (remoteCursor) localStorage.setItem(cursorKey, remoteCursor);
-  return { payload: merged, needsSync: JSON.stringify(merged) !== JSON.stringify(remoteWorkspace) };
+
+  return { payload: remoteWorkspace, needsSync: false };
 }
 
 const workspacePayloadWithoutExpenseLedger = (payload: any): any => {
@@ -178,14 +158,11 @@ async function syncWorkspaceSnapshotV2(payload: any, auto: boolean): Promise<Clo
   const cursorKey = `notion_os_workspace_v2_cursor_${workspaceId}`;
   let revision = Number(localStorage.getItem(revisionKey) || 0);
   let cursor = localStorage.getItem(cursorKey) || '0';
-  let base: any = {};
-  try { base = JSON.parse(localStorage.getItem(baseKey) || '{}'); } catch {}
   const queued = await queueWorkspaceSnapshot(workspaceId, payload);
   const pending = await getPendingWorkspaceSnapshot(workspaceId);
   const snapshotSequence = pending?.sequence || queued.sequence;
   let candidate = workspacePayloadWithoutExpenseLedger(pending?.payload || payload);
   const deviceId = DEVICE_SESSION_ID;
-  const recordedConflicts: Array<Omit<WorkspaceSyncConflict, 'id' | 'workspaceId' | 'detectedAt' | 'remoteRevision'>> = [];
 
   for (let attempt = 0; attempt < 4; attempt++) {
     const mutationId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `workspace-${Date.now()}-${Math.random()}`;
@@ -208,24 +185,12 @@ async function syncWorkspaceSnapshotV2(payload: any, auto: boolean): Promise<Clo
     }
     const conflict = result.conflicts.find((item) => item.mutation_id === mutationId);
     if (!conflict?.current) throw new Error('Workspace sync conflict did not include the current server snapshot.');
-    const remotePayload = workspacePayloadWithoutExpenseLedger(conflict.current.payload);
-    const found: typeof recordedConflicts = [];
-    candidate = mergeWorkspaceConflict(base, candidate, remotePayload, [], found);
-    recordedConflicts.push(...found);
-    base = remotePayload;
+    // Singleton session: advance our local base revision to the server's current revision and retry saving immediately
     revision = conflict.current_revision;
-    if (found.length) {
-      await saveWorkspaceConflicts(found.map((item) => ({
-        ...item,
-        id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `conflict-${Date.now()}-${Math.random()}`,
-        workspaceId,
-        detectedAt: Date.now(),
-        remoteRevision: conflict.current_revision,
-      })));
-    }
+    cursor = result.next_cursor || cursor;
   }
   notifyStatus('error');
-  return { success: false, message: 'Workspace changed on another device repeatedly. Local data was kept; sync will retry.' };
+  return { success: false, message: 'Workspace sync retried. Changes will retry automatically.' };
 }
 
 const getInitialActiveUser = (): { id: string; email: string } => {
