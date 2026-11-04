@@ -123,6 +123,7 @@ import {
 } from './utils/neonSync';
 import {
   deleteWorkspaceConflict,
+  clearAllWorkspaceConflicts,
   getWorkspaceConflicts,
   WorkspaceSyncConflict,
   clearWorkspaceSyncState,
@@ -559,6 +560,30 @@ export default function App() {
     }
     await deleteWorkspaceConflict(conflict.id, workspaceId);
     toast.success('Conflict resolved and synced.');
+  };
+
+  const handleResolveAllWorkspaceConflicts = async (choice: 'local' | 'remote') => {
+    const workspaceId = currentUser ? getUserWorkspaceKey(currentUser) : '';
+    if (!workspaceId || workspaceConflicts.length === 0) return;
+    const currentPayload = Storage.getAllDataPayload();
+    const { expenses: _expenses, deletedExpenseIds: _deletedExpenseIds, ...workspacePayload } = currentPayload;
+    let resolvedWorkspace = workspacePayload;
+    for (const conflict of workspaceConflicts) {
+      resolvedWorkspace = applyWorkspaceConflictChoice(resolvedWorkspace, conflict, choice);
+    }
+    if (!Storage.importAllDataPayload(resolvedWorkspace)) {
+      toast.error('Could not apply conflict values.');
+      return;
+    }
+    handleHydrateAllFromStorage(false);
+    const syncPayload = Storage.getAllDataPayload();
+    const result = await flushAutoSyncImmediately(syncPayload);
+    if (!result || !result.success) {
+      toast.error((result && result.message) || 'The selected values are saved on this device and will sync when available.');
+      return;
+    }
+    await clearAllWorkspaceConflicts(workspaceId);
+    toast.success(`All ${workspaceConflicts.length} conflicts resolved and synced.`);
   };
 
   // Handle successful login or account switch
@@ -5055,6 +5080,7 @@ export default function App() {
         <WorkspaceConflictReviewModal
           conflicts={workspaceConflicts}
           onResolve={handleResolveWorkspaceConflict}
+          onResolveAll={handleResolveAllWorkspaceConflicts}
         />
       )}
     </div>

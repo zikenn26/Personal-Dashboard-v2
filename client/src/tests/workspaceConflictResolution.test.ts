@@ -67,4 +67,34 @@ describe('Versioned workspace conflict resolution', () => {
     expect(applyWorkspaceConflictChoice(payload, conflict, 'remote').todos[0].title).toBe('Remote title');
     expect(applyWorkspaceConflictChoice(payload, conflict, 'local').todos[0].title).toBe('Local title');
   });
+
+  it('bulk applies conflict choices across multiple fields and clears all conflicts', async () => {
+    const { clearAllWorkspaceConflicts, saveWorkspaceConflicts } = await import('../services/syncProtocol');
+    const conflicts: WorkspaceSyncConflict[] = [
+      {
+        id: 'conflict-1', workspaceId, detectedAt: 1,
+        path: ['profile', 'name'],
+        baseValue: 'Original', localValue: 'Local Gulshan', remoteValue: 'Remote Gulshan', remoteRevision: 10,
+      },
+      {
+        id: 'conflict-2', workspaceId, detectedAt: 2,
+        path: ['profile', 'title'],
+        baseValue: 'Dev', localValue: 'Local Architect', remoteValue: 'Remote Architect', remoteRevision: 10,
+      },
+    ];
+
+    await saveWorkspaceConflicts(conflicts);
+    expect((await getWorkspaceConflicts(workspaceId)).length).toBe(2);
+
+    let payload = { profile: { name: 'Original', title: 'Dev' } };
+    for (const conflict of conflicts) {
+      payload = applyWorkspaceConflictChoice(payload, conflict, 'remote');
+    }
+
+    expect(payload.profile.name).toBe('Remote Gulshan');
+    expect(payload.profile.title).toBe('Remote Architect');
+
+    await clearAllWorkspaceConflicts(workspaceId);
+    expect(await getWorkspaceConflicts(workspaceId)).toEqual([]);
+  });
 });

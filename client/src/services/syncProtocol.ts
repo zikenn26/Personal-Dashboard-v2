@@ -158,6 +158,23 @@ export async function deleteWorkspaceConflict(conflictId: string, workspaceId: s
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('workspace-sync-conflicts-updated'));
 }
 
+export async function clearAllWorkspaceConflicts(workspaceId: string): Promise<void> {
+  const db = await snapshotDb();
+  if (db) {
+    const all = await getWorkspaceConflicts(workspaceId);
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(CONFLICT_STORE, 'readwrite');
+      const store = tx.objectStore(CONFLICT_STORE);
+      all.forEach((item) => store.delete(item.id));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  }
+  localStorage.removeItem(`lifeos_workspace_conflicts_${workspaceId}`);
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('workspace-sync-conflicts-updated'));
+}
+
 /** Persist the latest complete local workspace for retry after offline periods. */
 export async function queueWorkspaceSnapshot(workspaceId: string, payload: any): Promise<PendingWorkspaceSnapshot> {
   const db = await snapshotDb();
