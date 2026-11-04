@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Auth } from '../utils/auth';
+import { getApiBaseUrl } from '../utils/apiConfig';
 
 export type ConnectionState =
   | 'initializing'
@@ -104,7 +105,7 @@ class ConnectionPolicyManagerClass {
       }
 
       try {
-        const response = await fetch('/api/storage/diagnostic', {
+        const response = await fetch(`${getApiBaseUrl()}/api/storage/diagnostic`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         this.setState(response.ok ? 'online_write_ready' : 'backend_unavailable');

@@ -1,16 +1,1 @@
-{
-  "dev_test_123": {
-    "id": "dev_test_123",
-    "user_email": "gknayak@gmail.com",
-    "user_identifier": "user_gknayak",
-    "device_name": "Android APK App",
-    "platform": "android",
-    "environment": "Android Native APK",
-    "app_version": "1.0.0",
-    "created_at": 1793556639822,
-    "last_active": 1793556639822,
-    "ip_address": "127.0.0.1",
-    "user_agent": "curl/7.88.1",
-    "is_revoked": true
-  }
-}
+{}

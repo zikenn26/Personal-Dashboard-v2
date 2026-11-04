@@ -9,6 +9,7 @@ import { getDeviceInfo } from './devices';
 import { Storage } from './storage';
 import { smsExpenseService } from '../services/smsExpenseService';
 import { getUserWorkspaceKey } from './userUtils';
+import { getApiBaseUrl } from './apiConfig';
 
 export { getUserWorkspaceKey };
 
@@ -246,7 +247,7 @@ export const Auth = {
     // Authentication is server-authoritative; cached credentials are never accepted.
     try {
       const currentDevice = getDeviceInfo();
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(`${getApiBaseUrl()}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -319,7 +320,7 @@ export const Auth = {
         .replace(/\b\w/g, (c) => c.toUpperCase());
 
     try {
-      const response = await fetch('/api/auth/register', {
+      const response = await fetch(`${getApiBaseUrl()}/api/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: cleanEmail, password: cleanPass, name: displayName }),
@@ -348,7 +349,7 @@ export const Auth = {
     const token = Auth.getAuthToken();
     if (!token) return { success: false, message: 'Please sign in before changing your password.' };
     try {
-      const response = await fetch('/api/auth/change-password', {
+      const response = await fetch(`${getApiBaseUrl()}/api/auth/change-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
         body: JSON.stringify({ current_password: currentPass, new_password: newPass }),
@@ -392,7 +393,7 @@ export const Auth = {
     }
     if (token) {
       try {
-        await fetch('/api/auth/logout', {
+        await fetch(`${getApiBaseUrl()}/api/auth/logout`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -416,7 +417,7 @@ export const Auth = {
     if (token) {
       try {
         const query = user.email ? `?user_email=${encodeURIComponent(user.email)}` : '';
-        const res = await fetch(`/api/auth/verify${query}`, {
+        const res = await fetch(`${getApiBaseUrl()}/api/auth/verify${query}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
 

@@ -2,6 +2,7 @@ import { Capacitor } from '@capacitor/core';
 import { mergeExpenseLists, normalizeExpenseDateKey, getLocalDateKey } from './expenseUtils';
 import { ExpenseItem, OutboxMutation } from '../types';
 import { acknowledgeWorkspaceSnapshot, exchangeSyncBatch, fetchWorkspaceSnapshotV2, getPendingWorkspaceSnapshot, queueWorkspaceSnapshot, saveWorkspaceConflicts, WorkspaceSyncConflict } from '../services/syncProtocol';
+import { getApiBaseUrl } from './apiConfig';
 export { mergeExpenseLists };
 
 
@@ -518,7 +519,7 @@ export const testStorageConnection = async (): Promise<{
 }> => {
   try {
     const token = localStorage.getItem('notion_os_auth_token_v1') || '';
-    const response = await fetch('/api/storage/diagnostic', {
+    const response = await fetch(`${getApiBaseUrl()}/api/storage/diagnostic`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     return {
@@ -763,7 +764,7 @@ export const subscribeToRealtimeWorkspace = (
     if (!token) return;
     isVerifying = true;
     try {
-      const response = await fetch('/api/auth/verify', { headers: { Authorization: `Bearer ${token}` } });
+      const response = await fetch(`${getApiBaseUrl()}/api/auth/verify`, { headers: { Authorization: `Bearer ${token}` } });
       if ((response.status === 401 || response.status === 403) && !isDestroyed) onDeviceRevoked();
     } catch {
       // A temporary network failure does not revoke an offline session.

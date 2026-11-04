@@ -2,6 +2,7 @@ import { Capacitor } from '@capacitor/core';
 import { Device } from '@capacitor/device';
 import { AuthUser } from '../types';
 import { DEVICE_SESSION_ID } from '../utils/neonSync';
+import { getApiBaseUrl } from '../utils/apiConfig';
 
 const sessionHeaders = (json = false): Record<string, string> => {
   const token = typeof localStorage !== 'undefined' ? localStorage.getItem('notion_os_auth_token_v1') || '' : '';
@@ -308,7 +309,7 @@ export async function registerDevice(user: AuthUser): Promise<RegisteredDevice |
   if (!user?.id) return null;
   const localDevice = await buildLocalFallbackDevice(user);
   try {
-    const response = await fetch('/api/sync/devices/heartbeat', {
+    const response = await fetch(`${getApiBaseUrl()}/api/sync/devices/heartbeat`, {
       method: 'POST', headers: sessionHeaders(true),
       body: JSON.stringify({ device_id: DEVICE_SESSION_ID, device_name: localDevice.device_name, platform: localDevice.platform, environment: localDevice.browser_info }),
     });
@@ -321,7 +322,7 @@ export async function registerDevice(user: AuthUser): Promise<RegisteredDevice |
 export async function getActiveDevices(user: AuthUser): Promise<RegisteredDevice[]> {
   if (!user?.id) return [];
   try {
-    const response = await fetch('/api/sync/devices', { headers: sessionHeaders() });
+    const response = await fetch(`${getApiBaseUrl()}/api/sync/devices`, { headers: sessionHeaders() });
     const result = await response.json().catch(() => ({}));
     if (!response.ok || !Array.isArray(result.devices)) return [];
     return result.devices.map((device: any) => ({
@@ -346,7 +347,7 @@ export async function updateDeviceHeartbeat(user: AuthUser): Promise<boolean> {
   try {
     const platform = await getPlatformName();
     const browserInfo = await getBrowserInfo();
-    const response = await fetch('/api/sync/devices/heartbeat', {
+    const response = await fetch(`${getApiBaseUrl()}/api/sync/devices/heartbeat`, {
       method: 'POST', headers: sessionHeaders(true),
       body: JSON.stringify({
         device_id: DEVICE_SESSION_ID,
@@ -365,7 +366,7 @@ export async function logoutDevice(user: AuthUser, targetDeviceId?: string): Pro
   const deviceId = targetDeviceId || DEVICE_SESSION_ID;
   try {
     if (typeof localStorage !== 'undefined') localStorage.removeItem(`local_registered_device_${user.id}`);
-    const response = await fetch(`/api/sync/devices/${encodeURIComponent(deviceId)}`, { method: 'DELETE', headers: sessionHeaders() });
+    const response = await fetch(`${getApiBaseUrl()}/api/sync/devices/${encodeURIComponent(deviceId)}`, { method: 'DELETE', headers: sessionHeaders() });
     return response.ok;
   } catch {
     return true;

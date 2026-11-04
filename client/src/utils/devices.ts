@@ -2,6 +2,7 @@ import { Capacitor } from '@capacitor/core';
 import { DeviceSession } from '../types';
 import { DEVICE_SESSION_ID, getOnlineDeviceIds, subscribeToPresenceState } from './neonSync';
 import { Storage } from './storage';
+import { getApiBaseUrl } from './apiConfig';
 
 const authenticatedHeaders = (): Record<string, string> => {
   const token = typeof localStorage !== 'undefined' ? localStorage.getItem('notion_os_auth_token_v1') || '' : '';
@@ -154,7 +155,7 @@ export const registerCurrentDevice = async (email: string): Promise<DeviceSessio
   if (!email) return [];
   const info = getDeviceInfo();
   try {
-    await fetch('/api/sync/devices/heartbeat', {
+    await fetch(`${getApiBaseUrl()}/api/sync/devices/heartbeat`, {
       method: 'POST',
       headers: authenticatedHeaders(),
       body: JSON.stringify({ device_id: DEVICE_SESSION_ID, device_name: info.deviceName, platform: info.isApk ? 'android' : info.deviceType, environment: info.browser }),
@@ -166,7 +167,7 @@ export const registerCurrentDevice = async (email: string): Promise<DeviceSessio
 export const fetchAccountDevices = async (email: string): Promise<DeviceSession[]> => {
   if (!email) return [];
   try {
-    const response = await fetch('/api/sync/devices', { headers: authenticatedHeaders() });
+    const response = await fetch(`${getApiBaseUrl()}/api/sync/devices`, { headers: authenticatedHeaders() });
     const result = await response.json().catch(() => ({}));
     if (!response.ok || !Array.isArray(result.devices)) return [];
     const devices: DeviceSession[] = result.devices.map((device: any) => ({
@@ -194,7 +195,7 @@ export const revokeDeviceSession = async (
   if (!email || !targetDeviceId) return { success: false, isSelf: false };
   const isSelf = targetDeviceId === DEVICE_SESSION_ID;
   try {
-    const response = await fetch(`/api/sync/devices/${encodeURIComponent(targetDeviceId)}`, { method: 'DELETE', headers: authenticatedHeaders() });
+    const response = await fetch(`${getApiBaseUrl()}/api/sync/devices/${encodeURIComponent(targetDeviceId)}`, { method: 'DELETE', headers: authenticatedHeaders() });
     if (!response.ok) return { success: false, isSelf };
     Storage.setDevices(Storage.getDevices().filter((device) => device.id !== targetDeviceId));
     return { success: true, isSelf };
