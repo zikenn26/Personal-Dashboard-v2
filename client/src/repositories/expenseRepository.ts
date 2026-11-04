@@ -71,15 +71,21 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
   private lastDurabilityState: 'durable' | 'degraded' | 'error' = 'durable';
 
   constructor() {
-    this.restoreDegradedBackup();
+    // Do not restore before auth has selected a workspace and generation.
   }
 
   private persistDegradedBackup() {
     if (typeof localStorage !== 'undefined') {
       try {
+        const generation = Number(localStorage.getItem('notion_os_auth_generation_v1') || 0);
+        if (!Number.isSafeInteger(generation) || generation < 1 || !this.workspaceKey || this.workspaceKey === 'default') return;
         localStorage.setItem(`lifeos_expenses_degraded_${this.workspaceKey}`, JSON.stringify(Array.from(this.memoryExpenses.values())));
         localStorage.setItem(`lifeos_outbox_degraded_${this.workspaceKey}`, JSON.stringify(Array.from(this.memoryOutbox.values())));
         localStorage.setItem(`lifeos_tombstones_degraded_${this.workspaceKey}`, JSON.stringify(Array.from(this.memoryTombstones)));
+        localStorage.setItem(`lifeos_expenses_degraded_meta_${this.workspaceKey}`, JSON.stringify({
+          workspaceKey: this.workspaceKey,
+          generation,
+        }));
       } catch (e) {
         console.warn('Degraded backup failed to write to localStorage', e);
       }
@@ -89,6 +95,15 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
   private restoreDegradedBackup() {
     if (typeof localStorage !== 'undefined') {
       try {
+        const key = this.workspaceKey;
+        const metaKey = `lifeos_expenses_degraded_meta_${key}`;
+        const metadata = JSON.parse(localStorage.getItem(metaKey) || 'null');
+        const generation = Number(localStorage.getItem('notion_os_auth_generation_v1') || 0);
+        if (!metadata || metadata.workspaceKey !== key || !Number.isSafeInteger(metadata.generation) ||
+            metadata.generation < 1 || generation < 1 || metadata.generation !== generation || key === 'default') {
+          this.removeDegradedBackup(key);
+          return;
+        }
         const exp = localStorage.getItem(`lifeos_expenses_degraded_${this.workspaceKey}`);
         if (exp) {
           const parsed = JSON.parse(exp);
@@ -113,9 +128,19 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
           }
         }
       } catch (e) {
-        // ignore
+        this.removeDegradedBackup(this.workspaceKey);
       }
     }
+  }
+
+  private removeDegradedBackup(key: string): void {
+    if (typeof localStorage === 'undefined') return;
+    for (const storageKey of [
+      `lifeos_expenses_degraded_${key}`,
+      `lifeos_outbox_degraded_${key}`,
+      `lifeos_tombstones_degraded_${key}`,
+      `lifeos_expenses_degraded_meta_${key}`,
+    ]) try { localStorage.removeItem(storageKey); } catch {}
   }
 
   private saveCurrentToPartition(): void {
@@ -164,6 +189,7 @@ class IndexedDBExpenseRepository implements ExpenseRepository {
     this.isInitialized = false;
     this.initPromise = null;
     this.loadFromPartition(cleanKey);
+    this.restoreDegradedBackup();
     await this.init();
   }
 

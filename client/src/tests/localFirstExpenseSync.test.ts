@@ -39,6 +39,28 @@ describe('Local-First Expense Storage & Reliable Sync Test Suite', () => {
     await expenseRepo.clearOutbox();
   });
 
+  it('restores a degraded offline backup only for its matching workspace and server generation', async () => {
+    const workspaceKey = `workspace-recovery-${Date.now()}`;
+    const expense = { id: 'offline-recovery-expense', name: 'Offline recovery', amount: 12 } as ExpenseItem;
+    localStorage.setItem('notion_os_auth_generation_v1', '7');
+    localStorage.setItem(`lifeos_expenses_degraded_${workspaceKey}`, JSON.stringify([expense]));
+    localStorage.setItem(`lifeos_outbox_degraded_${workspaceKey}`, JSON.stringify([{ id: 'pending-1' }]));
+    localStorage.setItem(`lifeos_tombstones_degraded_${workspaceKey}`, JSON.stringify(['deleted-1']));
+    localStorage.setItem(`lifeos_expenses_degraded_meta_${workspaceKey}`, JSON.stringify({ workspaceKey, generation: 7 }));
+
+    await expenseRepo.setWorkspace(workspaceKey);
+    expect((await expenseRepo.getAll()).map((item) => item.id)).toContain(expense.id);
+    expect((await expenseRepo.getPendingOutbox()).map((item) => item.id)).toContain('pending-1');
+
+    const staleWorkspaceKey = `${workspaceKey}-stale`;
+    localStorage.setItem(`lifeos_expenses_degraded_${staleWorkspaceKey}`, JSON.stringify([expense]));
+    localStorage.setItem(`lifeos_expenses_degraded_meta_${staleWorkspaceKey}`, JSON.stringify({ workspaceKey: staleWorkspaceKey, generation: 6 }));
+    await expenseRepo.setWorkspace(staleWorkspaceKey);
+    expect(await expenseRepo.getAll()).toEqual([]);
+    expect(localStorage.getItem(`lifeos_expenses_degraded_${staleWorkspaceKey}`)).toBeNull();
+    expect(localStorage.getItem(`lifeos_expenses_degraded_meta_${staleWorkspaceKey}`)).toBeNull();
+  });
+
   it('1. Expense CRUD commits locally to repository and enqueues outbox mutation with tombstones', async () => {
     const expense: ExpenseItem = {
       id: 'exp-loc-1',
