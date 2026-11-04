@@ -1299,6 +1299,7 @@ export async function onRequest(context: EventContext): Promise<Response> {
       const host = urlObj.hostname;
       const user = urlObj.username;
       const dbName = urlObj.pathname;
+      const passPrefix = urlObj.password ? urlObj.password.slice(0, 7) + "..." : "none";
       const sql = getDb(env);
       let userCount = -1;
       let usersList: any[] = [];
@@ -1314,10 +1315,10 @@ export async function onRequest(context: EventContext): Promise<Response> {
       return jsonResponse({
         success: true,
         endpoint: "cf-pages-functions",
-        version: "v3-query-check",
-        db: { host, user, dbName },
+        version: "v4-env-check",
+        db: { host, user, dbName, passPrefix },
         env_has_DATABASE_URL: Boolean(env?.DATABASE_URL),
-        env_has_PGHOST: Boolean(env?.PGHOST),
+        env_DATABASE_URL_preview: env?.DATABASE_URL ? env.DATABASE_URL.slice(0, 35) + "..." : "none",
         userCount,
         usersList,
         queryError,
