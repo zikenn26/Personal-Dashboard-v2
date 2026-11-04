@@ -27,19 +27,46 @@ function getDb(env: Record<string, string | undefined>) {
   return neon(url);
 }
 
+function interpolateSql(text: string, params: any[]): string {
+  if (!params || params.length === 0) return text;
+  return text.replace(/\$(\d+)/g, (_, idx) => {
+    const val = params[parseInt(idx, 10) - 1];
+    if (val === null || val === undefined) return "NULL";
+    if (typeof val === "number" || typeof val === "boolean") return String(val);
+    const escaped = String(val).replace(/'/g, "''");
+    return `'${escaped}'`;
+  });
+}
+
 async function query(sql: any, text: string, params: any[] = []): Promise<any[]> {
   if (!sql) {
     throw new Error("Neon DB client is null or undefined");
   }
+
+  // 1. If params are provided, interpolate safely or call tagged template / unsafe
+  const rawSql = interpolateSql(text, params);
+
+  // 2. Try sql.unsafe(rawSql) which accepts raw string
+  if (typeof sql.unsafe === "function") {
+    try {
+      const res = await sql.unsafe(rawSql);
+      return Array.isArray(res) ? res : (res?.rows || []);
+    } catch {}
+  }
+
+  // 3. Try sql(rawSql) which is the tagged template / raw execution
+  try {
+    const res = await sql(rawSql);
+    return Array.isArray(res) ? res : (res?.rows || []);
+  } catch {}
+
+  // 4. Try sql.query(text, params)
   if (typeof sql.query === "function") {
     const res = await sql.query(text, params);
     return Array.isArray(res) ? res : (res?.rows || []);
   }
-  if (typeof sql.unsafe === "function") {
-    const res = await sql.unsafe(text, params);
-    return Array.isArray(res) ? res : (res?.rows || []);
-  }
-  throw new Error("Neon client does not support query() or unsafe() methods");
+
+  throw new Error("Unable to execute query on Neon serverless client");
 }
 
 function corsHeaders(request: Request): HeadersInit {
@@ -1289,6 +1316,7 @@ export async function onRequest(context: EventContext): Promise<Response> {
         const testRes = await query(sql, "SELECT NOW() AS now, count(*)::text AS user_count FROM app_users");
 
         return jsonResponse({
+          version: "d052305_check",
           success: true,
           elapsedMs: Date.now() - t0,
           result: testRes
