@@ -407,22 +407,32 @@ async function handleLogin(request: Request, env: Record<string, string | undefi
       console.warn("[CF Auth] Previous session check notice:", checkErr);
     }
 
-    // Revoke previous sessions on other devices and activate the new device
-    await query(
-      sql,
-      `UPDATE devices SET is_revoked = (id != $2) WHERE LOWER(user_email) = LOWER($1);
-       UPDATE connected_devices SET is_revoked = (id != $2) WHERE LOWER(user_email) = LOWER($1);
-       INSERT INTO user_active_sessions (user_email, token, device_id, device_name, created_at, updated_at, generation)
-       VALUES ($1, $3, $2, $4, $5, CURRENT_TIMESTAMP, $6)
-       ON CONFLICT (user_email) DO UPDATE SET
-         token = EXCLUDED.token,
-         device_id = EXCLUDED.device_id,
-         device_name = EXCLUDED.device_name,
-         created_at = EXCLUDED.created_at,
-         updated_at = CURRENT_TIMESTAMP,
-         generation = EXCLUDED.generation`,
-      [userEmail, deviceId, token, deviceName, now, generation]
-    );
+    // Revoke previous sessions on other devices and activate the new device concurrently
+    await Promise.all([
+      query(
+        sql,
+        "UPDATE devices SET is_revoked = (id != $2) WHERE LOWER(user_email) = LOWER($1)",
+        [userEmail, deviceId]
+      ),
+      query(
+        sql,
+        "UPDATE connected_devices SET is_revoked = (id != $2) WHERE LOWER(user_email) = LOWER($1)",
+        [userEmail, deviceId]
+      ),
+      query(
+        sql,
+        `INSERT INTO user_active_sessions (user_email, token, device_id, device_name, created_at, updated_at, generation)
+         VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, $6)
+         ON CONFLICT (user_email) DO UPDATE SET
+           token = EXCLUDED.token,
+           device_id = EXCLUDED.device_id,
+           device_name = EXCLUDED.device_name,
+           created_at = EXCLUDED.created_at,
+           updated_at = CURRENT_TIMESTAMP,
+           generation = EXCLUDED.generation`,
+        [userEmail, token, deviceId, deviceName, now, generation]
+      ),
+    ]);
 
     return jsonResponse(
       {
