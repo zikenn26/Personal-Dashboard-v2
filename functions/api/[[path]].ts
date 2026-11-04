@@ -442,12 +442,7 @@ async function handleLogin(request: Request, env: Record<string, string | undefi
     );
   } catch (err: any) {
     console.error("[CF Auth] Login error:", err);
-    return jsonResponse({
-      success: false,
-      message: "Internal authentication error",
-      error_detail: String(err?.message || err),
-      stack: String(err?.stack || "")
-    }, 500, request);
+    return jsonResponse({ success: false, message: "Internal authentication error" }, 500, request);
   }
 }
 
