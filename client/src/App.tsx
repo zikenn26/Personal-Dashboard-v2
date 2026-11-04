@@ -583,7 +583,17 @@ export default function App() {
       return;
     }
     await clearAllWorkspaceConflicts(workspaceId);
+    setWorkspaceConflicts([]);
     toast.success(`All ${workspaceConflicts.length} conflicts resolved and synced.`);
+  };
+
+  const handleDismissWorkspaceConflicts = async () => {
+    const workspaceId = currentUser ? getUserWorkspaceKey(currentUser) : '';
+    if (workspaceId) {
+      await clearAllWorkspaceConflicts(workspaceId);
+    }
+    setWorkspaceConflicts([]);
+    toast.info('Conflict review closed.');
   };
 
   // Handle successful login or account switch
@@ -767,7 +777,11 @@ export default function App() {
     if (user && token) {
       // Keep cached workspace data out of view until the server confirms that
       // this device still belongs to the current account generation.
-      void Auth.verifyCurrentSession().finally(() => setIsInitialSessionVerified(true));
+      void Auth.verifyCurrentSession().then((isValid) => {
+        if (!isValid) {
+          handleSignOut();
+        }
+      }).finally(() => setIsInitialSessionVerified(true));
     } else {
       setIsInitialSessionVerified(true);
     }
@@ -5113,6 +5127,7 @@ export default function App() {
           conflicts={workspaceConflicts}
           onResolve={handleResolveWorkspaceConflict}
           onResolveAll={handleResolveAllWorkspaceConflicts}
+          onDismiss={handleDismissWorkspaceConflicts}
         />
       )}
     </div>

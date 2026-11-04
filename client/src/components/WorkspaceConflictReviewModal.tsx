@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
+import { X } from 'lucide-react';
 import { WorkspaceSyncConflict } from '../services/syncProtocol';
 
 interface Props {
   conflicts: WorkspaceSyncConflict[];
   onResolve: (conflict: WorkspaceSyncConflict, choice: 'local' | 'remote') => Promise<void>;
   onResolveAll?: (choice: 'local' | 'remote') => Promise<void>;
+  onDismiss?: () => void;
 }
 
 const describePath = (path: WorkspaceSyncConflict['path']) => path.map((part) =>
@@ -17,7 +19,7 @@ const formatValue = (value: unknown) => value === undefined
     ? value || '(empty)'
     : JSON.stringify(value, null, 2) || '(empty)';
 
-export const WorkspaceConflictReviewModal: React.FC<Props> = ({ conflicts, onResolve, onResolveAll }) => {
+export const WorkspaceConflictReviewModal: React.FC<Props> = ({ conflicts, onResolve, onResolveAll, onDismiss }) => {
   const [index, setIndex] = useState(0);
   const [saving, setSaving] = useState(false);
   const conflict = conflicts[index];
@@ -51,17 +53,30 @@ export const WorkspaceConflictReviewModal: React.FC<Props> = ({ conflicts, onRes
             <h2 id="workspace-conflict-title" className="text-lg font-semibold">Review a sync conflict</h2>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Both devices changed this field while offline. Choose which value to keep.</p>
           </div>
-          <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-200">{index + 1} of {conflicts.length}</span>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-200">{index + 1} of {conflicts.length}</span>
+            {onDismiss && (
+              <button
+                type="button"
+                onClick={onDismiss}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                title="Dismiss conflict review"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            )}
+          </div>
         </div>
-        {conflicts.length > 1 && onResolveAll && (
+        {onResolveAll && (
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800/60">
-            <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">Bulk Action ({conflicts.length} total conflicts):</span>
+            <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">Quick 1-Click Resolution ({conflicts.length} conflict{conflicts.length > 1 ? 's' : ''}):</span>
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 disabled={saving}
                 onClick={() => void chooseAll('local')}
-                className="rounded-lg bg-sky-100 px-3 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-200 dark:bg-sky-950 dark:text-sky-300 dark:hover:bg-sky-900 disabled:opacity-50"
+                className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
               >
                 Keep all from this device
               </button>
@@ -69,7 +84,7 @@ export const WorkspaceConflictReviewModal: React.FC<Props> = ({ conflicts, onRes
                 type="button"
                 disabled={saving}
                 onClick={() => void chooseAll('remote')}
-                className="rounded-lg bg-violet-100 px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-200 dark:bg-violet-950 dark:text-violet-300 dark:hover:bg-violet-900 disabled:opacity-50"
+                className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
               >
                 Keep all from server
               </button>
