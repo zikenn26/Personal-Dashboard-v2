@@ -651,6 +651,8 @@ export default function App() {
         // Re-reset all useState hooks with the verified cloud payload
         handleHydrateAllFromStorage(false);
       }
+      // Immediately pull down expenses from the cloud ledger
+      void expenseSyncService.syncExpenses({ manual: true });
     } catch (fetchErr) {
       console.warn('[AUTH_DIAGNOSTIC] Notice during initial cloud workspace fetch:', fetchErr);
     } finally {

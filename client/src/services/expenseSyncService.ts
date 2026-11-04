@@ -168,9 +168,13 @@ class ExpenseSyncService {
       // Initialize the revisioned cursor from its own event history. Legacy
       // workspace snapshots and dedicated expense tables are never imported.
       if (cursor === '0') {
-        // Read the v2 event history first so records already migrated by another
-        // device start at the correct revision instead of colliding at revision 0.
-        for (let page = 0; page < 20; page++) {
+        const localExpenses = Storage.getExpenses();
+        const localById = new Map(localExpenses.map((e) => [String(e.id), e]));
+        let initialPulled = 0;
+
+        // Read the v2 event history first so records already created by other
+        // devices are ingested into local storage and start at the correct revision.
+        for (let page = 0; page < 30; page++) {
           const history = await exchangeSyncBatch({
             workspaceIdentifier: workspaceId,
             userEmail: getCustomWorkspaceEmail(),
@@ -180,11 +184,30 @@ class ExpenseSyncService {
             mutations: [],
           });
           for (const change of history.changes) {
-            if (change.module === 'expenses') revisions[change.entity_id] = Math.max(Number(revisions[change.entity_id] || 0), change.revision);
+            if (change.module === 'expenses') {
+              revisions[change.entity_id] = Math.max(Number(revisions[change.entity_id] || 0), change.revision);
+              if (change.operation === 'delete') {
+                localById.delete(change.entity_id);
+              } else if (change.payload) {
+                const remote = { ...(change.payload as any), id: change.entity_id, _syncRevision: change.revision } as ExpenseItem;
+                localById.set(change.entity_id, remote);
+                initialPulled++;
+              }
+            }
           }
           cursor = history.next_cursor || cursor;
           if (!history.has_more) break;
         }
+
+        if (initialPulled > 0) {
+          const mergedInitial = Array.from(localById.values());
+          Storage.setExpenses(mergedInitial, { enqueueChanges: false });
+          await expenseRepo.saveBatch(mergedInitial);
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('dashboard-data-updated', { detail: { module: 'expenses', updatedExpenses: mergedInitial } }));
+          }
+        }
+
         localStorage.setItem(cursorKey, cursor);
         localStorage.setItem(revisionsKey, JSON.stringify(revisions));
       }

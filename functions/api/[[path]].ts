@@ -407,32 +407,13 @@ async function handleLogin(request: Request, env: Record<string, string | undefi
       console.warn("[CF Auth] Previous session check notice:", checkErr);
     }
 
-    // Revoke previous sessions on other devices
+    // Revoke previous sessions on other devices and activate the new device
     await query(
       sql,
-      "UPDATE devices SET is_revoked = true WHERE LOWER(user_email) = LOWER($1) AND id != $2",
-      [userEmail, deviceId]
-    );
-    await query(
-      sql,
-      "UPDATE connected_devices SET is_revoked = true WHERE LOWER(user_email) = LOWER($1) AND id != $2",
-      [userEmail, deviceId]
-    );
-    await query(
-      sql,
-      "UPDATE devices SET is_revoked = false WHERE LOWER(user_email) = LOWER($1) AND id = $2",
-      [userEmail, deviceId]
-    );
-    await query(
-      sql,
-      "UPDATE connected_devices SET is_revoked = false WHERE LOWER(user_email) = LOWER($1) AND id = $2",
-      [userEmail, deviceId]
-    );
-
-    await query(
-      sql,
-      `INSERT INTO user_active_sessions (user_email, token, device_id, device_name, created_at, updated_at, generation)
-       VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, $6)
+      `UPDATE devices SET is_revoked = (id != $2) WHERE LOWER(user_email) = LOWER($1);
+       UPDATE connected_devices SET is_revoked = (id != $2) WHERE LOWER(user_email) = LOWER($1);
+       INSERT INTO user_active_sessions (user_email, token, device_id, device_name, created_at, updated_at, generation)
+       VALUES ($1, $3, $2, $4, $5, CURRENT_TIMESTAMP, $6)
        ON CONFLICT (user_email) DO UPDATE SET
          token = EXCLUDED.token,
          device_id = EXCLUDED.device_id,
@@ -440,7 +421,7 @@ async function handleLogin(request: Request, env: Record<string, string | undefi
          created_at = EXCLUDED.created_at,
          updated_at = CURRENT_TIMESTAMP,
          generation = EXCLUDED.generation`,
-      [userEmail, token, deviceId, deviceName, now, generation]
+      [userEmail, deviceId, token, deviceName, now, generation]
     );
 
     return jsonResponse(
@@ -976,7 +957,7 @@ async function handleSyncV2(request: Request, env: Record<string, string | undef
       `SELECT server_cursor, mutation_id, device_id, module, entity_id, operation, base_revision, revision, payload
        FROM sync_mutations
        WHERE workspace_identifier = $1 AND user_email = $2 AND server_cursor > $3
-       ORDER BY server_cursor ASC LIMIT 1000`,
+       ORDER BY server_cursor ASC LIMIT 100`,
       [workspaceId, userEmail, cursor]
     );
 
@@ -1005,7 +986,7 @@ async function handleSyncV2(request: Request, env: Record<string, string | undef
         next_cursor: pulledRows.length
           ? String(pulledRows[pulledRows.length - 1].server_cursor)
           : String(latestRows[0]?.cursor || cursor),
-        has_more: pulledRows.length === 1000,
+        has_more: pulledRows.length === 100,
       },
       200,
       request
