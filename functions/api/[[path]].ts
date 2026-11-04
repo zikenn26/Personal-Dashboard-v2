@@ -342,12 +342,25 @@ async function handleLogin(request: Request, env: Record<string, string | undefi
 
     const account = userRows[0];
     if (!account) {
-      return jsonResponse({ success: false, message: "Invalid email/username or password" }, 401, request);
+      return jsonResponse(
+        { success: false, message: "Invalid email/username or password", _debug: "User not found in Neon DB" },
+        401,
+        request
+      );
     }
 
     const isPasswordValid = await verifyPasswordRecord(account.password_hash, password);
     if (!isPasswordValid) {
-      return jsonResponse({ success: false, message: "Invalid email/username or password" }, 401, request);
+      return jsonResponse(
+        {
+          success: false,
+          message: "Invalid email/username or password",
+          _debug: "Password mismatch",
+          _accountEmail: account.email,
+        },
+        401,
+        request
+      );
     }
 
     const matchedUser = {
