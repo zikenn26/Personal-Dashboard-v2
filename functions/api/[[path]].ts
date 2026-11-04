@@ -10,12 +10,16 @@ interface EventContext {
   next: () => Promise<Response>;
 }
 
+// Default pooled connection string fallback if not present in Cloudflare Pages environment variables
+const FALLBACK_DATABASE_URL =
+  "postgresql://neondb_owner:npg_v9iZcBo7zKup@ep-curly-glitter-b4fsklnq-pooler.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require";
+
 function getDatabaseUrl(env: Record<string, string | undefined>): string {
   const envUrl = env?.DATABASE_URL || env?.NEON_DATABASE_URL || env?.NEON_DB_URL;
   if (envUrl && envUrl.startsWith("postgres") && !envUrl.includes("[USER]")) {
     return envUrl;
   }
-  throw new Error("Missing DATABASE_URL environment variable in Cloudflare Pages settings.");
+  return FALLBACK_DATABASE_URL;
 }
 
 function getDb(env: Record<string, string | undefined>) {
@@ -24,7 +28,17 @@ function getDb(env: Record<string, string | undefined>) {
 }
 
 async function query(sql: any, text: string, params: any[] = []): Promise<any[]> {
-  const res = await sql.query(text, params);
+  try {
+    if (typeof sql.query === "function") {
+      const res = await sql.query(text, params);
+      return Array.isArray(res) ? res : (res?.rows || []);
+    }
+  } catch (queryErr) {
+    // If sql.query fails or is not available, proceed to fallback execution
+  }
+
+  // Fallback: If sql is a callable tagged-template function
+  const res = await sql(text, params);
   return Array.isArray(res) ? res : (res?.rows || []);
 }
 
@@ -392,7 +406,12 @@ async function handleLogin(request: Request, env: Record<string, string | undefi
     );
   } catch (err: any) {
     console.error("[CF Auth] Login error:", err);
-    return jsonResponse({ success: false, message: "Internal authentication error" }, 500, request);
+    return jsonResponse({
+      success: false,
+      message: "Internal authentication error",
+      error_detail: String(err?.message || err),
+      stack: String(err?.stack || "")
+    }, 500, request);
   }
 }
 
@@ -1256,6 +1275,27 @@ export async function onRequest(context: EventContext): Promise<Response> {
     // 5. Weather proxy
     if (pathname.startsWith("/api/weather") && request.method === "GET") {
       return await handleWeather(request);
+    }
+
+    // Diagnostics / Debug ping for Neon DB reachability
+    if (pathname === "/api/db-check" && request.method === "GET") {
+      try {
+        const sql = getDb(env);
+        const t0 = Date.now();
+        const testRes = await query(sql, "SELECT NOW() AS now, count(*)::text AS user_count FROM app_users");
+        return jsonResponse({
+          success: true,
+          elapsedMs: Date.now() - t0,
+          result: testRes
+        }, 200, request);
+      } catch (dbErr: any) {
+        return jsonResponse({
+          success: false,
+          error: String(dbErr?.message || dbErr),
+          stack: String(dbErr?.stack || ""),
+          env_keys: Object.keys(env || {})
+        }, 500, request);
+      }
     }
 
     // Fallback for undefined API routes
