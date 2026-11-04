@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ConnectionPolicyManager } from '../services/connectionPolicy';
 import { smsExpenseService } from '../services/smsExpenseService';
 import { Storage } from '../utils/storage';
-import * as supabaseModule from '../utils/neonSync';
+import * as neonSync from '../utils/neonSync';
 
 function setupMockStorage() {
   if (typeof globalThis.localStorage === 'undefined') {
@@ -79,7 +79,7 @@ describe('Automated Realtime Sync & Offline Read-Only Consistency Suite', () => 
     Storage.setSmsAutoTrackingEnabled(true);
 
     // Mock flushAutoSyncImmediately
-    const flushSpy = vi.spyOn(supabaseModule, 'flushAutoSyncImmediately').mockResolvedValue({
+    const flushSpy = vi.spyOn(neonSync, 'flushAutoSyncImmediately').mockResolvedValue({
       success: true,
       data: null,
       error: null,
@@ -137,8 +137,8 @@ describe('Automated Realtime Sync & Offline Read-Only Consistency Suite', () => 
       profile: { name: 'Fresh Local Edit' },
     };
 
-    const remoteVersion = supabaseModule.getPayloadSyncTimestamp(olderRemote);
-    const localVersion = supabaseModule.getPayloadSyncTimestamp(newerLocal);
+    const remoteVersion = neonSync.getPayloadSyncTimestamp(olderRemote);
+    const localVersion = neonSync.getPayloadSyncTimestamp(newerLocal);
 
     expect(remoteVersion).toBe(1000000);
     expect(localVersion).toBe(2000000);
@@ -148,10 +148,10 @@ describe('Automated Realtime Sync & Offline Read-Only Consistency Suite', () => 
 
   it('7. flushAutoSyncImmediately serializes sequential writes atomically', async () => {
     const order: number[] = [];
-    supabaseModule.setCustomWorkspaceIdentifier('account_serial_test');
-    supabaseModule.setCustomWorkspaceEmail('serial@example.com');
+    neonSync.setCustomWorkspaceIdentifier('account_serial_test');
+    neonSync.setCustomWorkspaceEmail('serial@example.com');
     localStorage.setItem('notion_os_auth_token_v1', 'test-token');
-    const syncSpy = vi.spyOn(supabaseModule, 'syncWorkspaceToServer').mockImplementation(async (payload: any) => {
+    const syncSpy = vi.spyOn(neonSync, 'syncWorkspaceToServer').mockImplementation(async (payload: any) => {
       // Simulate network latency
       await new Promise((r) => setTimeout(r, 20));
       order.push(payload.order);
@@ -159,9 +159,9 @@ describe('Automated Realtime Sync & Offline Read-Only Consistency Suite', () => 
     });
 
     // Call 3 flushAutoSyncImmediately operations in quick succession
-    const p1 = supabaseModule.flushAutoSyncImmediately({ order: 1 }, syncSpy as any);
-    const p2 = supabaseModule.flushAutoSyncImmediately({ order: 2 }, syncSpy as any);
-    const p3 = supabaseModule.flushAutoSyncImmediately({ order: 3 }, syncSpy as any);
+    const p1 = neonSync.flushAutoSyncImmediately({ order: 1 }, syncSpy as any);
+    const p2 = neonSync.flushAutoSyncImmediately({ order: 2 }, syncSpy as any);
+    const p3 = neonSync.flushAutoSyncImmediately({ order: 3 }, syncSpy as any);
 
     await Promise.all([p1, p2, p3]);
 

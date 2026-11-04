@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
 import { smsExpenseService, SmsTransactionCandidate, isDeepEqualExpense } from '../services/smsExpenseService';
 import { Storage } from '../utils/storage';
-import * as supabaseUtils from '../utils/neonSync';
+import * as neonSync from '../utils/neonSync';
 
 function setupMockStorage() {
   if (typeof globalThis.localStorage === 'undefined') {
@@ -36,7 +36,7 @@ describe('Bank SMS Rescan – Storage Verification, Persistence & Versioned Clou
     Storage.clearProcessedSmsFingerprints();
     Storage.clearSmsTransactionLogs();
     vi.restoreAllMocks();
-    vi.spyOn(supabaseUtils, 'flushAutoSyncImmediately').mockResolvedValue(undefined as any);
+    vi.spyOn(neonSync, 'flushAutoSyncImmediately').mockResolvedValue(undefined as any);
   });
 
   it('1. performs immediate read-after-write verification for 3 detected transactions without storage verification errors', async () => {
@@ -103,7 +103,7 @@ describe('Bank SMS Rescan – Storage Verification, Persistence & Versioned Clou
       isExisting: false,
     };
 
-    const flushSpy = vi.spyOn(supabaseUtils, 'flushAutoSyncImmediately').mockResolvedValue(undefined as any);
+    const flushSpy = vi.spyOn(neonSync, 'flushAutoSyncImmediately').mockResolvedValue(undefined as any);
 
     // Execute rescan logging
     const result = await smsExpenseService.logSelectedCandidates([candidate1, candidate2, candidate3]);
@@ -193,7 +193,7 @@ describe('Bank SMS Rescan – Storage Verification, Persistence & Versioned Clou
     await smsExpenseService.logSelectedCandidates([candidate]);
 
     // Cold start simulation: read directly from localStorage through a new call
-    const rawFromStorage = localStorage.getItem(supabaseUtils.getCustomWorkspaceIdentifier() + '_notion_os_v4_expenses');
+    const rawFromStorage = localStorage.getItem(neonSync.getCustomWorkspaceIdentifier() + '_notion_os_v4_expenses');
     expect(rawFromStorage).not.toBeNull();
     const parsedFromStorage = JSON.parse(rawFromStorage!);
     expect(Array.isArray(parsedFromStorage)).toBe(true);
@@ -228,7 +228,7 @@ describe('Bank SMS Rescan – Storage Verification, Persistence & Versioned Clou
     };
 
     // Simulate a server network failure
-    vi.spyOn(supabaseUtils, 'flushAutoSyncImmediately').mockRejectedValue(new Error('Network offline'));
+    vi.spyOn(neonSync, 'flushAutoSyncImmediately').mockRejectedValue(new Error('Network offline'));
 
     // Rescan should still succeed in persisting locally and verifying
     const result = await smsExpenseService.logSelectedCandidates([candidate]);
@@ -402,7 +402,7 @@ describe('Bank SMS Rescan – Storage Verification, Persistence & Versioned Clou
     };
 
     // Reconcile via mergeExpenseLists with APK authority rules
-    const reconciled = supabaseUtils.mergeExpenseLists([webManualExpense], [apkSmsExpense]);
+    const reconciled = neonSync.mergeExpenseLists([webManualExpense], [apkSmsExpense]);
 
     // Both the manual web expense AND the APK-committed SMS expense are preserved
     expect(reconciled.length).toBe(2);
@@ -437,7 +437,7 @@ describe('Bank SMS Rescan – Storage Verification, Persistence & Versioned Clou
     };
 
     const trashedIds = new Set<string>([deletedId]);
-    const reconciled = supabaseUtils.mergeExpenseLists([activeExpense], [activeExpense, deletedExpense], trashedIds);
+    const reconciled = neonSync.mergeExpenseLists([activeExpense], [activeExpense, deletedExpense], trashedIds);
 
     expect(reconciled.length).toBe(1);
     expect(reconciled[0].id).toBe('exp-active-1');
@@ -687,7 +687,7 @@ describe('Bank SMS Rescan – Storage Verification, Persistence & Versioned Clou
     };
 
     // Non-native web sync performs merge
-    const merged = supabaseUtils.mergeExpenseLists(
+    const merged = neonSync.mergeExpenseLists(
       [editedManualExpense, newWebManualExpense],
       [apkSmsExpense, olderManualExpense]
     );

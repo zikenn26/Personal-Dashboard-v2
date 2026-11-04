@@ -37,7 +37,7 @@ describe('User Profile Name, Avatar and Habits Persistence Tests', () => {
     id: '036fe7d3-6a13-4740-b028-afb55e81e00e',
     email: 'gknayak@gmail.com',
     name: 'Gknayak',
-    avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
+    avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.legacy-avatar.example/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
     createdAt: Date.now() - 500000,
     lastLoginAt: Date.now(),
     provider: 'neon',
@@ -65,7 +65,7 @@ describe('User Profile Name, Avatar and Habits Persistence Tests', () => {
       profile: {
         name: 'Gknayak',
         contactEmail: 'gknayak@gmail.com',
-        avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
+        avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.legacy-avatar.example/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
       },
     };
 
@@ -79,7 +79,7 @@ describe('User Profile Name, Avatar and Habits Persistence Tests', () => {
     setCustomWorkspaceEmail('gknayak@gmail.com');
 
     const gknCdnUrl =
-      'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp';
+      'https://amlegmbvqzbhqqqbrvjx.legacy-avatar.example/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp';
 
     // Must be valid for gknayak@gmail.com
     expect(isAvatarMatchingUserEmailDomain(gknCdnUrl, 'gknayak@gmail.com')).toBe(true);
@@ -149,7 +149,7 @@ describe('User Profile Name, Avatar and Habits Persistence Tests', () => {
       id: '036fe7d3-6a13-4740-b028-afb55e81e00e',
       email: 'gknayak@gmail.com',
       name: 'Gulshan Kumar Nayak',
-      avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
+      avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.legacy-avatar.example/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
       createdAt: Date.now() - 500000,
       lastLoginAt: Date.now(),
       provider: 'neon',
@@ -200,7 +200,7 @@ describe('User Profile Name, Avatar and Habits Persistence Tests', () => {
 
   it('7. Storage.setProfile preserves custom photo and does not wipe to empty when activeEmail matches contactEmail', () => {
     setCustomWorkspaceEmail('gknayak@gmail.com');
-    const cdnUrl = 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp';
+    const cdnUrl = 'https://amlegmbvqzbhqqqbrvjx.legacy-avatar.example/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp';
 
     const p = Storage.getProfile();
     Storage.setProfile({
@@ -230,7 +230,7 @@ describe('User Profile Name, Avatar and Habits Persistence Tests', () => {
     expect(Storage.getProfile().name).toBe('Gulshan Kumar Nayak');
 
     // Avatar check for handle 'gknayak' without full email
-    const cdnUrl = 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp';
+    const cdnUrl = 'https://amlegmbvqzbhqqqbrvjx.legacy-avatar.example/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp';
     expect(isAvatarMatchingUserEmailDomain(cdnUrl, 'gknayak')).toBe(true);
     expect(isDummyMockAvatar(cdnUrl, 'gknayak')).toBe(false);
 

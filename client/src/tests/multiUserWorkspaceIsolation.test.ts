@@ -389,7 +389,7 @@ describe('Multi-User Workspace Isolation & Ownership Security Tests', { timeout:
       id: '9e637e3b-c199-4611-8af9-c16c1fa942d5',
       email: 'arpitapri125@gmail.com',
       name: 'Arpita Priyadarsini',
-      avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
+      avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.legacy-avatar.example/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
       createdAt: Date.now(),
       lastLoginAt: Date.now(),
       provider: 'neon',
@@ -411,7 +411,7 @@ describe('Multi-User Workspace Isolation & Ownership Security Tests', { timeout:
     // If a contaminated profile payload is saved or loaded, it must be sanitized
     Storage.setProfile({
       ...Storage.getProfile(),
-      avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
+      avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.legacy-avatar.example/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
     });
     expect(Storage.getProfile().avatarUrl).toBe('');
   });
@@ -420,7 +420,7 @@ describe('Multi-User Workspace Isolation & Ownership Security Tests', { timeout:
     // Correct Gulshan avatar for Gulshan's email
     expect(
       isAvatarMatchingUserEmailDomain(
-        'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
+        'https://amlegmbvqzbhqqqbrvjx.legacy-avatar.example/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
         'gknayak@gmail.com'
       )
     ).toBe(true);
@@ -428,7 +428,7 @@ describe('Multi-User Workspace Isolation & Ownership Security Tests', { timeout:
     // Gulshan avatar for another gmail user (arpitapri125@gmail.com) MUST be rejected
     expect(
       isAvatarMatchingUserEmailDomain(
-        'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
+        'https://amlegmbvqzbhqqqbrvjx.legacy-avatar.example/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
         'arpitapri125@gmail.com'
       )
     ).toBe(false);
@@ -436,7 +436,7 @@ describe('Multi-User Workspace Isolation & Ownership Security Tests', { timeout:
     // Mismatched domain (e.g. yahoo vs gmail) in avatar filename must be rejected
     expect(
       isAvatarMatchingUserEmailDomain(
-        'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_alice_yahoo_com_123.webp',
+        'https://amlegmbvqzbhqqqbrvjx.legacy-avatar.example/storage/v1/object/public/avatars/avatar_alice_yahoo_com_123.webp',
         'alice@gmail.com'
       )
     ).toBe(false);
@@ -457,7 +457,7 @@ describe('Multi-User Workspace Isolation & Ownership Security Tests', { timeout:
       id: 'gkn-uuid-1234',
       email: 'gknayak@gmail.com',
       name: 'Gulshan Kumar Nayak',
-      avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.supabase.co/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
+      avatarUrl: 'https://amlegmbvqzbhqqqbrvjx.legacy-avatar.example/storage/v1/object/public/avatars/avatar_gknayak_gmail_com_1792214229699.webp',
       createdAt: Date.now(),
       lastLoginAt: Date.now(),
       provider: 'neon',

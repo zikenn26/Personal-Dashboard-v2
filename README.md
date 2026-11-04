@@ -250,7 +250,7 @@ npm run build
 
 ```
 
-Workspace sync uses the authenticated `/api/sync/v2` protocol. Legacy Supabase migration and sample-data seeding scripts have been removed so they cannot restore retired account data.
+Workspace sync uses the authenticated `/api/sync/v2` protocol. Retired migration and sample-data seeding scripts have been removed so they cannot restore old account data.
 
 The protected `GET /api/storage/diagnostic` endpoint reports a non-secret database fingerprint and schema version for an authenticated session. Before a global reset, compare that fingerprint with the intended Neon database. The guarded reset is available as `npm run reset:app-data -- "<database-label>"`; it requires `APP_DATA_RESET_TARGET`, `APP_DATA_RESET_EXPECTED_FINGERPRINT`, and `APP_DATA_RESET_CONFIRM=DELETE_ALL_APPLICATION_DATA` to match the connected database.
 
